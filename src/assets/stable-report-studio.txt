@@ -1,0 +1,3273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stable 报告编辑器</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+/* ============ CSS Design System ============ */
+:root {
+  --c-bg: #f0f4f8;
+  --c-surface: #ffffff;
+  --c-surface-hover: #f8fafc;
+  --c-border: #e2e8f0;
+  --c-border-light: #f1f5f9;
+  --c-text: #1e293b;
+  --c-text-secondary: #64748b;
+  --c-text-muted: #94a3b8;
+  --c-primary: #f97316;
+  --c-primary-light: #fff7ed;
+  --c-primary-dark: #ea580c;
+  --c-primary-gradient: linear-gradient(135deg, #f97316, #fb923c, #fbbf24);
+  --c-accent: #6366f1;
+  --c-accent-light: #eef2ff;
+  --c-accent-dark: #4f46e5;
+  --c-success: #10b981;
+  --c-success-light: #ecfdf5;
+  --c-danger: #ef4444;
+  --c-danger-light: #fef2f2;
+  --c-warning: #f59e0b;
+  --c-info: #3b82f6;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.04);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.08), 0 4px 8px rgba(0,0,0,.04);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,.12);
+  --shadow-glow: 0 0 0 3px rgba(249,115,22,.12);
+  --transition-fast: .15s cubic-bezier(.4,0,.2,1);
+  --transition-normal: .25s cubic-bezier(.4,0,.2,1);
+  --font-sans: -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:var(--font-sans);
+  font-size:14px;
+  background:var(--c-bg);
+  color:var(--c-text);
+  height:100vh;overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* ============ 顶部工具栏 ============ */
+.toolbar{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;
+  background:var(--c-surface);
+  border-bottom:1px solid var(--c-border);
+  box-shadow:var(--shadow-xs);
+  z-index:100;flex-shrink:0;
+  position:relative;
+}
+.toolbar::after{
+  content:'';position:absolute;bottom:-1px;left:0;right:0;
+  height:3px;
+  background:linear-gradient(90deg,var(--c-primary),var(--c-accent),var(--c-info));
+}
+.toolbar .brand{
+  font-size:19px;font-weight:800;margin-right:auto;
+  background:var(--c-primary-gradient);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  display:flex;align-items:center;gap:8px;
+}
+.toolbar .brand::before{
+  content:'📊';-webkit-text-fill-color:initial;font-size:22px;
+}
+.toolbar button{
+  padding:7px 15px;border-radius:var(--radius-sm);border:1px solid transparent;
+  cursor:pointer;font-size:13px;font-weight:500;font-family:var(--font-sans);
+  transition:all var(--transition-fast);
+  display:inline-flex;align-items:center;gap:5px;
+  white-space:nowrap;
+}
+.toolbar button:active{transform:scale(.97)}
+.toolbar .divider{width:1px;height:26px;background:var(--c-border);border-radius:1px}
+
+.btn-primary{
+  background:var(--c-primary-gradient);
+  color:#fff;border:none;
+  box-shadow:0 2px 6px rgba(249,115,22,.25);
+}
+.btn-primary:hover{
+  box-shadow:0 4px 12px rgba(249,115,22,.35);
+  transform:translateY(-1px);
+}
+
+.btn-secondary{
+  background:var(--c-surface);color:var(--c-text);
+  border:1px solid var(--c-border);
+}
+.btn-secondary:hover{background:var(--c-surface-hover);border-color:#cbd5e1}
+
+.btn-blue{
+  background:var(--c-accent);color:#fff;border:none;
+  box-shadow:0 2px 6px rgba(99,102,241,.2);
+}
+.btn-blue:hover{background:var(--c-accent-dark);box-shadow:0 4px 12px rgba(99,102,241,.3)}
+
+.btn-green{
+  background:var(--c-success);color:#fff;border:none;
+  box-shadow:0 2px 6px rgba(16,185,129,.2);
+}
+.btn-green:hover{background:#059669;box-shadow:0 4px 12px rgba(16,185,129,.3)}
+
+.btn-danger{
+  background:var(--c-surface);color:var(--c-danger);
+  border:1px solid #fecaca!important;
+}
+.btn-danger:hover{background:var(--c-danger-light);border-color:var(--c-danger)!important}
+
+/* ============ 主布局 ============ */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* ============ 左侧面板 ============ */
+.left-panel{
+  width:210px;background:var(--c-surface);
+  border-right:1px solid var(--c-border);
+  overflow-y:auto;flex-shrink:0;padding:16px 12px;
+}
+.left-panel .section-label{
+  font-size:11px;color:var(--c-text-muted);margin:14px 0 8px 4px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+}
+.left-panel .section-label:first-child{margin-top:0}
+.left-panel .add-btn{
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:9px 12px;margin:2px 0;
+  border:1px solid transparent;
+  border-radius:var(--radius-md);
+  background:var(--c-surface);cursor:pointer;
+  text-align:left;font-size:13px;font-family:var(--font-sans);
+  transition:all var(--transition-fast);color:var(--c-text-secondary);
+  font-weight:500;
+}
+.left-panel .add-btn:hover{
+  background:var(--c-primary-light);
+  border-color:#fed7aa;
+  color:var(--c-primary-dark);
+  transform:translateX(2px);
+  box-shadow:var(--shadow-xs);
+}
+.left-panel .add-btn .icon{
+  display:flex;align-items:center;justify-content:center;
+  width:30px;height:30px;border-radius:var(--radius-sm);
+  background:var(--c-bg);
+  font-size:15px;flex-shrink:0;
+  transition:background var(--transition-fast);
+}
+.left-panel .add-btn:hover .icon{
+  background:#fed7aa;
+}
+
+/* 快捷操作单独样式 */
+.left-panel .quick-actions .add-btn{
+  font-size:12px;padding:7px 12px;
+  border:1px dashed var(--c-border);
+  border-radius:var(--radius-sm);
+}
+.left-panel .quick-actions .add-btn:hover{
+  border-style:solid;border-color:var(--c-primary);
+  background:var(--c-primary-light);
+}
+.left-panel .quick-actions .add-btn.danger{
+  color:var(--c-danger);
+}
+.left-panel .quick-actions .add-btn.danger:hover{
+  background:var(--c-danger-light);
+  border-color:var(--c-danger);
+}
+
+/* ============ 中间画布 ============ */
+.canvas-wrap{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  padding:24px;
+  background:
+    radial-gradient(circle at 20% 50%,rgba(249,115,22,.02) 0%,transparent 50%),
+    radial-gradient(circle at 80% 20%,rgba(99,102,241,.02) 0%,transparent 50%);
+}
+.canvas{
+  max-width:1200px;margin:0 auto;min-height:600px;
+  position:relative;
+  display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;
+}
+.canvas-empty{
+  border:2.5px dashed #cbd5e1;
+  border-radius:var(--radius-xl);
+  height:240px;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;
+  color:var(--c-text-muted);font-size:15px;width:100%;
+  background:var(--c-surface);
+  transition:all var(--transition-normal);
+  gap:12px;
+}
+.canvas-empty::before{
+  content:'📋';
+  font-size:48px;opacity:.3;
+}
+.canvas-empty:hover{
+  border-color:var(--c-primary);
+  background:var(--c-primary-light);
+}
+
+/* ============ Block 通用样式 ============ */
+.block{
+  position:relative;
+  border:2px solid transparent;
+  border-radius:var(--radius-lg);
+  background:var(--c-surface);
+  box-shadow:var(--shadow-sm);
+  transition:all var(--transition-normal);
+}
+.block:hover{
+  border-color:#e2e8f0;
+  box-shadow:var(--shadow-md);
+}
+.block.selected{
+  border-color:var(--c-primary)!important;
+  box-shadow:var(--shadow-md),var(--shadow-glow)!important;
+}
+.block .block-toolbar{
+  display:none;
+  position:absolute;top:-14px;right:8px;z-index:10;
+  background:var(--c-surface);
+  border-radius:var(--radius-md);
+  box-shadow:var(--shadow-lg);
+  overflow:hidden;border:1px solid var(--c-border);
+}
+.block.selected .block-toolbar,.block:hover .block-toolbar{display:flex}
+.block-toolbar button{
+  width:34px;height:30px;border:none;background:var(--c-surface);
+  cursor:pointer;font-size:14px;color:var(--c-text-secondary);
+  display:flex;align-items:center;justify-content:center;
+  transition:all var(--transition-fast);
+  font-family:var(--font-sans);
+}
+.block-toolbar button:hover{background:var(--c-bg)}
+.block-toolbar .drag-handle{cursor:grab;color:var(--c-text-muted);width:28px;font-size:16px}
+.block-toolbar .drag-handle:active{cursor:grabbing}
+.block-toolbar .btn-del:hover{background:var(--c-danger-light);color:var(--c-danger)}
+.block.dragging{opacity:.35;box-shadow:none}
+.block.drag-over{
+  border-color:var(--c-accent)!important;border-style:dashed;
+  background:var(--c-accent-light);
+  box-shadow:0 0 0 3px rgba(99,102,241,.1)!important;
+}
+.block-content{position:relative}
+
+/* ============ 右侧属性面板 ============ */
+.right-panel{
+  width:290px;background:var(--c-surface);
+  border-left:1px solid var(--c-border);
+  overflow-y:auto;flex-shrink:0;padding:20px 16px;
+  display:none;
+}
+.right-panel.active{display:block}
+.right-panel h3{
+  font-size:16px;font-weight:700;color:var(--c-text);
+  margin-bottom:18px;padding-bottom:12px;
+  border-bottom:2px solid var(--c-primary);
+  display:flex;align-items:center;gap:6px;
+}
+.right-panel .prop-group{margin-bottom:14px}
+.right-panel .prop-group label{
+  display:block;font-size:12px;color:var(--c-text-muted);
+  margin-bottom:5px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.right-panel .prop-group select,
+.right-panel .prop-group input,
+.right-panel .prop-group textarea{
+  width:100%;padding:8px 12px;
+  border:1.5px solid var(--c-border);
+  border-radius:var(--radius-sm);
+  font-size:13px;font-family:var(--font-sans);
+  outline:none;color:var(--c-text);
+  transition:all var(--transition-fast);
+  background:var(--c-surface);
+}
+.right-panel .prop-group select:hover,
+.right-panel .prop-group input:hover{background:var(--c-surface-hover)}
+.right-panel .prop-group select:focus,
+.right-panel .prop-group input:focus,
+.right-panel .prop-group textarea:focus{
+  border-color:var(--c-primary);
+  box-shadow:0 0 0 3px rgba(249,115,22,.08);
+  background:var(--c-surface);
+}
+
+.right-panel .prop-group input[type=color]{
+  padding:2px 4px;height:38px;cursor:pointer;
+}
+
+/* Range 滑块 */
+.right-panel .prop-group input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:6px;
+  background:linear-gradient(90deg,var(--c-primary-light),var(--c-primary));
+  border-radius:3px;outline:none;padding:0;border:none;cursor:pointer;
+}
+.right-panel .prop-group input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--c-surface);
+  cursor:pointer;
+  border:2.5px solid var(--c-primary);
+  box-shadow:var(--shadow-md);
+  transition:all var(--transition-fast);
+}
+.right-panel .prop-group input[type=range]::-webkit-slider-thumb:hover{
+  transform:scale(1.12);
+  box-shadow:var(--shadow-lg);
+}
+.right-panel .prop-group input[type=range]::-moz-range-thumb{
+  width:22px;height:22px;border-radius:50%;
+  background:var(--c-surface);cursor:pointer;
+  border:2.5px solid var(--c-primary);
+  box-shadow:var(--shadow-md);
+}
+.right-panel .prop-group input[type=range]::-moz-range-track{height:6px;background:linear-gradient(90deg,var(--c-primary-light),var(--c-primary));border-radius:3px}
+
+/* 上传 */
+.upload-label{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:12px;border-radius:var(--radius-md);
+  cursor:pointer;font-size:13px;font-weight:600;
+  background:var(--c-primary-light);color:var(--c-primary-dark);
+  border:1.5px dashed #fed7aa;
+  transition:all var(--transition-fast);
+}
+.upload-label:hover{background:#fed7aa;border-style:solid}
+
+.right-panel .prop-group textarea{resize:vertical;font-size:12px;min-height:80px}
+.right-panel .no-select{
+  color:var(--c-text-muted);text-align:center;
+  padding:60px 0;font-size:14px;
+}
+.right-panel .no-select::before{
+  content:'👆';display:block;font-size:36px;margin-bottom:12px;opacity:.5;
+}
+
+/* 右面板内的小卡片 */
+.right-panel .prop-card{
+  border:1px solid var(--c-border);
+  border-radius:var(--radius-md);padding:10px 12px;margin-bottom:8px;
+  background:var(--c-surface-hover);
+  transition:border-color var(--transition-fast);
+}
+.right-panel .prop-card:hover{border-color:#cbd5e1}
+.right-panel .prop-card label{font-size:11px!important;margin-bottom:3px!important}
+
+/* 分区标题 */
+.right-panel .section-header{
+  font-size:11px;font-weight:700;color:var(--c-text-muted);
+  text-transform:uppercase;letter-spacing:.5px;
+  margin:12px 0 8px;padding-top:12px;
+  border-top:1px solid var(--c-border-light);
+}
+
+/* ============ 弹窗 ============ */
+.modal-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(15,23,42,.5);
+  backdrop-filter:blur(4px);
+  z-index:9999;justify-content:center;align-items:center;
+  padding:20px;
+}
+.modal-overlay.active{display:flex}
+.modal-content{
+  background:var(--c-surface);
+  border-radius:var(--radius-xl);
+  padding:28px;max-width:95vw;width:920px;
+  max-height:90vh;overflow-y:auto;position:relative;
+  box-shadow:var(--shadow-xl);
+  border:1px solid var(--c-border);
+  animation:modalIn .25s cubic-bezier(.4,0,.2,1);
+}
+@keyframes modalIn{
+  from{opacity:0;transform:scale(.95) translateY(10px)}
+  to{opacity:1;transform:scale(1) translateY(0)}
+}
+.modal-close{
+  position:absolute;top:12px;right:16px;
+  background:var(--c-bg);border:none;
+  width:32px;height:32px;border-radius:50%;
+  font-size:20px;color:var(--c-text-muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all var(--transition-fast);
+}
+.modal-close:hover{background:var(--c-danger-light);color:var(--c-danger)}
+.modal-content h3{
+  font-size:20px;font-weight:700;color:var(--c-text);
+  margin-bottom:20px;display:flex;align-items:center;gap:8px;
+}
+
+/* 数据表格 */
+.data-table-wrap{overflow-x:auto;margin:12px 0;border-radius:var(--radius-md);border:1px solid var(--c-border)}
+.data-table{border-collapse:collapse;width:100%;min-width:600px}
+.data-table th,.data-table td{
+  border-bottom:1px solid var(--c-border-light);
+  padding:8px 10px;font-size:12px;min-width:80px;
+}
+.data-table th{background:var(--c-bg);font-weight:600;font-size:11px;color:var(--c-text-secondary)}
+.data-table td input{
+  width:100%;border:1.5px solid transparent;outline:none;
+  font-size:12px;padding:5px 8px;border-radius:var(--radius-sm);
+  font-family:var(--font-sans);
+  transition:all var(--transition-fast);
+}
+.data-table td input:focus{
+  border-color:var(--c-primary);background:var(--c-primary-light);
+  box-shadow:0 0 0 2px rgba(249,115,22,.08);
+}
+.data-table .add-col,.data-table .add-row{
+  text-align:center;color:var(--c-accent);cursor:pointer;
+  font-weight:700;font-size:18px;padding:6px 10px;
+  transition:all var(--transition-fast);
+}
+.data-table .add-col:hover,.data-table .add-row:hover{
+  background:var(--c-accent-light);color:var(--c-accent-dark);
+}
+.data-table .del-col,.data-table .del-row{
+  color:var(--c-danger);cursor:pointer;font-weight:700;
+  font-size:16px;text-align:center;padding:4px 8px;
+  border-radius:var(--radius-sm);
+  transition:all var(--transition-fast);
+}
+.data-table .del-col:hover,.data-table .del-row:hover{
+  background:var(--c-danger-light);
+}
+
+/* ============ 预览模式 ============ */
+.preview-mode .block{border-color:transparent!important;box-shadow:none!important}
+.preview-mode .block-toolbar{display:none!important}
+.preview-mode .left-panel{display:none}
+.preview-mode .right-panel{display:none}
+.preview-mode .canvas{max-width:1400px}
+.preview-mode .canvas-wrap{background:#f5f5f5}
+
+/* ============ 报告内容块样式 ============ */
+.report-header{
+  background:var(--c-primary-gradient);
+  color:#fff;padding:44px 52px;text-align:left;
+  box-shadow:0 4px 20px rgba(249,115,22,.2);
+  border-radius:var(--radius-lg);
+}
+.report-header h1{font-size:40px;font-weight:800;letter-spacing:.5px}
+.report-header .sub{font-size:17px;opacity:.9;margin-top:8px;font-weight:400}
+.report-header .range{font-size:14px;opacity:.7;margin-top:8px}
+
+.insight-box{
+  background:linear-gradient(135deg,#fff7ed,#fed7aa);
+  border-radius:var(--radius-lg);padding:24px 28px;margin-bottom:14px;
+  font-size:16px;line-height:1.85;
+  border-left:4px solid var(--c-primary);
+  box-shadow:var(--shadow-xs);
+}
+.insight-box strong{color:var(--c-primary-dark)}
+
+.conclusion-box{
+  background:linear-gradient(135deg,#eef2ff,#e0e7ff);
+  border-radius:var(--radius-lg);padding:24px 28px;margin-bottom:14px;
+  border-left:4px solid var(--c-accent);
+  font-size:16px;line-height:2.1;
+  box-shadow:var(--shadow-xs);
+}
+
+.text-block{
+  background:var(--c-surface);border-radius:var(--radius-lg);
+  padding:24px 28px;box-shadow:var(--shadow-sm);
+  margin-bottom:14px;line-height:1.85;font-size:16px;
+  border:1px solid var(--c-border-light);
+}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.kpi-card{
+  background:var(--c-surface);border-radius:var(--radius-lg);
+  padding:22px 16px;text-align:center;
+  box-shadow:var(--shadow-sm);
+  border:1px solid var(--c-border-light);
+  transition:all var(--transition-normal);
+}
+.kpi-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
+.kpi-card .kpi-label{font-size:12px;color:var(--c-text-muted);margin-bottom:8px;font-weight:500}
+.kpi-card .kpi-value{font-size:32px;font-weight:700;background:var(--c-primary-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.kpi-card .kpi-change{font-size:13px;font-weight:500;margin-top:6px}
+
+.chart-box{
+  background:var(--c-surface);border-radius:var(--radius-lg);
+  padding:20px;box-shadow:var(--shadow-sm);
+  border:1px solid var(--c-border-light);
+}
+.chart-box h4{font-size:18px;font-weight:700;color:var(--c-text);margin-bottom:16px}
+.chart-canvas-wrap{height:400px;position:relative}
+.chart-canvas-wrap canvas{width:100%!important;height:100%!important}
+.chart-diag{
+  font-size:15px;color:var(--c-text-secondary);margin-top:14px;
+  padding:12px 16px;background:var(--c-bg);border-radius:var(--radius-md);
+  line-height:1.7;border-left:3px solid var(--c-accent);
+}
+
+.image-block{text-align:center;margin-bottom:14px}
+.image-block img{border-radius:var(--radius-md);max-width:100%;box-shadow:var(--shadow-sm)}
+.image-block .image-caption{font-size:13px;color:var(--c-text-muted);margin-top:8px;font-style:italic}
+
+.table-wrap{
+  overflow-x:auto;margin-bottom:14px;
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);
+  background:var(--c-surface);padding:2px;
+  border:1px solid var(--c-border-light);
+}
+.table-wrap table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
+.table-wrap thead th{
+  background:var(--c-primary-gradient);color:#fff;
+  padding:12px 12px;font-weight:600;font-size:13px;
+}
+.table-wrap thead th:first-child{border-radius:var(--radius-md) 0 0 0}
+.table-wrap thead th:last-child{border-radius:0 var(--radius-md) 0 0}
+.table-wrap tbody td{padding:10px 12px;text-align:center;border-bottom:1px solid var(--c-border-light)}
+.table-wrap tbody tr:hover{background:var(--c-primary-light)}
+.table-wrap tbody tr:last-child td{border-bottom:none}
+
+/* SWOT */
+.swot-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.swot-card{
+  border-radius:var(--radius-lg);padding:20px;min-height:120px;
+  box-shadow:var(--shadow-xs);
+  transition:all var(--transition-normal);
+}
+.swot-card:hover{box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+.swot-card h5{font-size:15px;margin-bottom:10px;font-weight:700}
+.swot-card .swot-body{
+  font-size:14px;line-height:1.7;color:var(--c-text-secondary);
+  min-height:24px;border:1.5px solid transparent;border-radius:var(--radius-sm);padding:6px;
+  transition:border-color var(--transition-fast);
+}
+.swot-card .swot-body:focus{outline:none;border-color:currentColor}
+.swot-str{background:#ecfdf5;border-left:4px solid var(--c-success)}
+.swot-str h5{color:#059669}
+.swot-weak{background:var(--c-primary-light);border-left:4px solid var(--c-primary)}
+.swot-weak h5{color:var(--c-primary-dark)}
+.swot-opp{background:var(--c-accent-light);border-left:4px solid var(--c-accent)}
+.swot-opp h5{color:var(--c-accent-dark)}
+.swot-thr{background:var(--c-danger-light);border-left:4px solid var(--c-danger)}
+.swot-thr h5{color:var(--c-danger)}
+
+/* 时间轴 */
+.timeline-vert{position:relative;padding-left:34px}
+.timeline-vert::before{
+  content:'';position:absolute;left:13px;top:0;bottom:0;
+  width:3px;background:linear-gradient(180deg,var(--c-primary),var(--c-accent));
+  border-radius:2px;
+}
+.timeline-item{position:relative;margin-bottom:24px}
+.timeline-item::before{
+  content:'';position:absolute;left:-26px;top:4px;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--c-surface);
+  border:2.5px solid var(--c-primary);
+  box-shadow:0 0 0 3px rgba(249,115,22,.15);
+}
+.timeline-item .tl-date{
+  font-size:12px;color:var(--c-primary);font-weight:700;margin-bottom:4px;
+  letter-spacing:.3px;
+}
+.timeline-item .tl-title{font-size:16px;font-weight:700;color:var(--c-text);margin-bottom:4px}
+.timeline-item .tl-desc{font-size:14px;color:var(--c-text-secondary);line-height:1.6}
+
+.timeline-horiz{display:flex;gap:16px;overflow-x:auto;padding:10px 0}
+.timeline-horiz .timeline-item{
+  flex:0 0 200px;padding-top:32px;
+  border-top:3px solid var(--c-primary-gradient);
+  margin-bottom:0;
+}
+.timeline-horiz .timeline-item::before{
+  left:50%;top:calc(-1px - 7px);transform:translateX(-50%);
+}
+
+/* 对比卡片 */
+.compare-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.compare-card{
+  background:var(--c-surface);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);overflow:hidden;
+  border:1px solid var(--c-border-light);
+  transition:all var(--transition-normal);
+}
+.compare-card:hover{box-shadow:var(--shadow-md)}
+.compare-card .cc-head{
+  padding:14px 20px;font-size:16px;font-weight:700;color:#fff;text-align:center;
+}
+.compare-card .cc-head.left{background:linear-gradient(135deg,var(--c-accent),var(--c-accent-dark))}
+.compare-card .cc-head.right{background:var(--c-primary-gradient)}
+.compare-card .cc-row{
+  display:flex;justify-content:space-between;padding:12px 20px;
+  border-bottom:1px solid var(--c-border-light);font-size:14px;
+}
+.compare-card .cc-row:last-child{border-bottom:none}
+.compare-card .cc-row .cc-label{color:var(--c-text-muted)}
+.compare-card .cc-row .cc-val{font-weight:700;color:var(--c-text)}
+
+/* 进度条 */
+.progress-list{padding:8px 0}
+.progress-item{margin-bottom:18px}
+.progress-item .prog-label{
+  display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px;
+}
+.progress-item .prog-label span:first-child{color:var(--c-text);font-weight:600}
+.progress-item .prog-label span:last-child{color:var(--c-text-muted);font-weight:700}
+.progress-bar-wrap{
+  height:18px;background:var(--c-bg);border-radius:9px;overflow:hidden;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.06);
+}
+.progress-bar-fill{
+  height:100%;border-radius:9px;
+  transition:width .5s cubic-bezier(.4,0,.2,1);
+  display:flex;align-items:center;justify-content:flex-end;
+  padding-right:8px;min-width:0;
+  box-shadow:0 2px 4px rgba(0,0,0,.1);
+  background-size:200% 100%;
+}
+.progress-bar-fill span{font-size:10px;color:#fff;font-weight:700;white-space:nowrap}
+
+/* ============ Toast ============ */
+.toast{
+  position:fixed;bottom:36px;left:50%;transform:translateX(-50%);
+  background:var(--c-text);color:#fff;
+  padding:10px 28px;border-radius:30px;font-size:13px;font-weight:500;
+  z-index:99999;
+  box-shadow:var(--shadow-xl);
+  animation:toastIn 2.2s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes toastIn{
+  0%{opacity:0;transform:translateX(-50%) translateY(16px) scale(.95)}
+  8%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+  75%{opacity:1}
+  100%{opacity:0;transform:translateX(-50%) translateY(-8px)}
+}
+
+/* ============ 滚动条美化 ============ */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+
+/* ============ 富文本格式工具栏（右侧面板内嵌） ============ */
+.format-toolbar-section{display:none;margin-bottom:6px}
+.format-toolbar-section.active{display:block}
+.format-toolbar-section .ft-hint{font-size:11px;color:var(--c-text-muted);margin-top:4px;line-height:1.4}
+.format-toolbar{display:flex;flex-wrap:wrap;background:var(--c-surface);border-radius:8px;border:1px solid var(--c-border);padding:6px 8px;gap:2px;align-items:center}
+.format-toolbar button{width:30px;height:28px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer;font-size:14px;color:#555;display:flex;align-items:center;justify-content:center;transition:all .15s;font-weight:600;font-family:inherit}
+.format-toolbar button:hover{background:#f1f5f9;border-color:#e2e8f0;color:#1e293b}
+.format-toolbar button:active{background:#e2e8f0}
+.format-toolbar button.active{background:var(--c-primary-light);color:var(--c-primary);border-color:var(--c-primary-light)}
+.format-toolbar .ft-sep{width:1px;height:20px;background:#e2e8f0;margin:0 4px}
+.format-toolbar input[type=color]{width:28px;height:28px;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;padding:2px;background:#fff}
+.format-toolbar select{border:1px solid #e2e8f0;border-radius:6px;padding:3px 6px;font-size:12px;cursor:pointer;background:#fff;color:#333;font-family:inherit}
+.format-toolbar .ft-label{font-size:11px;color:#888;padding:0 2px;font-family:inherit}
+/* 预设色板 */
+.ft-color-row{display:flex;align-items:center;gap:4px;margin-top:6px;flex-wrap:wrap}
+.ft-color-row .ft-clabel{font-size:11px;color:var(--c-text-muted);margin-right:2px;white-space:nowrap}
+.ft-swatch{width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #cbd5e1;cursor:pointer;transition:all .15s;padding:0;flex-shrink:0}
+.ft-swatch:hover{transform:scale(1.2);box-shadow:0 0 0 2px var(--c-primary)}
+.ft-swatch.empty{background:#fff!important;box-shadow:none;cursor:default}
+.ft-swatch.empty:hover{transform:none;box-shadow:none}
+.ft-recent-wrap{margin-top:4px}
+#ftRecent{display:flex;gap:4px;flex-wrap:wrap}
+
+/* ============ Tabs 多标签导航 ============ */
+.tabs-bar{
+  display:flex;align-items:center;gap:6px;
+  max-width:1200px;margin:0 auto 16px;
+  padding:8px 8px 0;
+  border-bottom:2px solid var(--c-border-light);
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.tabs-bar::-webkit-scrollbar{height:4px}
+.tab-item{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 16px;font-size:13px;font-weight:500;
+  color:var(--c-text-secondary);
+  background:transparent;
+  border:1.5px solid transparent;border-bottom:none;
+  border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+  cursor:pointer;white-space:nowrap;
+  transition:all var(--transition-fast);
+  font-family:var(--font-sans);
+  position:relative;top:2px;
+}
+.tab-item:hover{
+  background:var(--c-surface-hover);color:var(--c-text);
+}
+.tab-item.active{
+  background:var(--c-surface);
+  border-color:var(--c-border-light);
+  color:var(--c-primary-dark);
+  font-weight:600;
+  border-bottom:2px solid var(--c-surface);
+  margin-bottom:-2px;
+}
+.tab-item.active::after{
+  content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;
+  background:var(--c-surface);
+}
+.tab-item .tab-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--c-primary-light);color:var(--c-primary-dark);
+  font-size:10px;font-weight:700;
+  padding:2px 6px;border-radius:10px;min-width:18px;
+}
+.tab-item.active .tab-badge{background:var(--c-primary);color:#fff}
+.tabs-bar .tab-add{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:8px 12px;font-size:14px;
+  background:transparent;border:none;
+  color:var(--c-text-muted);cursor:pointer;
+  border-radius:var(--radius-sm);
+  transition:all var(--transition-fast);
+  font-family:var(--font-sans);
+}
+.tabs-bar .tab-add:hover{background:var(--c-primary-light);color:var(--c-primary-dark)}
+
+/* ============ 页面管理 (Section Manager) ============ */
+.section-manager{margin:6px 0}
+.section-manager .section-row{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px;border-radius:var(--radius-sm);
+  background:var(--c-surface);border:1px solid var(--c-border);
+  margin-bottom:5px;
+  cursor:pointer;transition:all var(--transition-fast);
+}
+.section-manager .section-row:hover{border-color:#cbd5e1;background:var(--c-surface-hover)}
+.section-manager .section-row.active{
+  background:var(--c-primary-light);
+  border-color:var(--c-primary);
+  color:var(--c-primary-dark);
+}
+.section-manager .section-row .sname{
+  flex:1;font-size:13px;font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.section-manager .section-row .scount{
+  font-size:10px;color:var(--c-text-muted);
+  background:var(--c-bg);padding:2px 6px;border-radius:8px;
+}
+.section-manager .section-row.active .scount{
+  background:#fff;color:var(--c-primary-dark);
+}
+.section-manager .srow-actions{display:flex;gap:3px}
+.section-manager .srow-actions button{
+  width:22px;height:22px;border:none;background:transparent;
+  cursor:pointer;font-size:11px;color:var(--c-text-muted);
+  border-radius:3px;display:flex;align-items:center;justify-content:center;
+  transition:all var(--transition-fast);
+}
+.section-manager .srow-actions button:hover{background:var(--c-bg);color:var(--c-text)}
+.section-manager .srow-actions .srow-del:hover{background:var(--c-danger-light);color:var(--c-danger)}
+.section-manager .section-row input.sname-input{
+  flex:1;border:1.5px solid var(--c-primary);background:#fff;
+  padding:3px 6px;font-size:12px;border-radius:4px;outline:none;
+  font-family:var(--font-sans);
+}
+
+/* ============ 表格手动标记单元格 ============ */
+/* 编辑器侧样式（带左侧色条 + 装饰符号） */
+.cell-mark{
+  position:relative;
+  padding-left:14px !important;
+}
+.cell-mark::before{
+  position:absolute;
+  left:4px;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:10px;
+  font-weight:700;
+}
+.cell-mark-leader{background:#fee2e2 !important;color:#dc2626 !important;font-weight:700}
+.cell-mark-leader::before{content:"▲";color:#dc2626}
+.cell-mark-lowest{background:#d1fae5 !important;color:#059669 !important;font-weight:700}
+.cell-mark-lowest::before{content:"▼";color:#059669}
+.cell-mark-warning{background:#fef3c7 !important;color:#d97706 !important;font-weight:700}
+.cell-mark-warning::before{content:"⚠";color:#d97706}
+.cell-mark-critical{background:#fecaca !important;color:#991b1b !important;font-weight:700}
+.cell-mark-critical::before{content:"🔥";color:#991b1b}
+.cell-mark-info{background:#dbeafe !important;color:#1d4ed8 !important;font-weight:600}
+.cell-mark-info::before{content:"ℹ";color:#1d4ed8}
+.cell-mark-success{background:#dcfce7 !important;color:#15803d !important;font-weight:600}
+.cell-mark-success::before{content:"✓";color:#15803d}
+.cell-mark-muted{background:#f3f4f6 !important;color:#6b7280 !important;font-weight:400}
+.cell-mark-muted::before{content:"·";color:#6b7280}
+/* 表格编辑器内选中态：行/列/单元格高亮描边 */
+#dataTable .cell-selected{
+  outline:2px solid #f97316 !important;
+  outline-offset:-2px;
+  background:#fff7ed !important;
+  box-shadow:inset 0 0 0 1px rgba(249,115,22,.4);
+}
+#dataTable .row-selected{
+  background:#f97316 !important;
+  color:#fff !important;
+  font-weight:700;
+}
+#dataTable .col-selected{
+  background:#ffedd5 !important;
+  color:#9a3412 !important;
+}
+#dataTable .row-num{cursor:pointer;user-select:none}
+#dataTable .row-num:hover{background:#fb923c!important;color:#fff!important}
+#dataTable .col-head{cursor:pointer;user-select:none}
+#dataTable .data-cell{cursor:pointer}
+#dataTable .data-cell:hover{outline:1px dashed #fb923c;outline-offset:-1px}
+/* 旧的条件格式 class 别名（保留向后兼容，CSV/旧数据不会出乱样式） */
+.cell-pos{color:#059669;font-weight:600}
+.cell-neg{color:var(--c-danger);font-weight:600}
+.cell-zero{color:var(--c-text-muted)}
+
+/* 表格表头多行合并样式 */
+.table-wrap table .merged-cell{
+  text-align:center;vertical-align:middle;
+}
+
+/* ============ 表格格式化编辑器 ============ */
+.table-edit-toolbar{
+  display:flex;flex-wrap:wrap;gap:6px;
+  padding:10px 12px;background:var(--c-bg);
+  border-radius:var(--radius-md);margin-bottom:10px;
+}
+.table-edit-toolbar .tool-group{
+  display:flex;align-items:center;gap:4px;
+  background:#fff;padding:4px 8px;border-radius:var(--radius-sm);
+  border:1px solid var(--c-border);font-size:12px;
+}
+.table-edit-toolbar .tool-group label{
+  font-size:11px;color:var(--c-text-muted);font-weight:600;
+}
+.table-edit-toolbar .tool-group select,
+.table-edit-toolbar .tool-group input{
+  border:none;background:transparent;
+  font-size:12px;padding:2px 4px;
+  outline:none;font-family:var(--font-sans);
+}
+
+/* 表格编辑器的合并单元格模式 */
+.merge-mode-on .data-table td,.merge-mode-on .data-table th{cursor:cell}
+
+/* ============ 组合图（双 Y 轴）编辑器样式 ============ */
+.combo-dataset-bar{
+  display:flex;align-items:center;gap:6px;
+  padding:7px 10px;background:var(--c-bg);
+  border-radius:var(--radius-sm);margin-bottom:5px;
+  font-size:12px;flex-wrap:wrap;
+}
+.combo-dataset-bar .ds-label{flex:1;font-weight:600;color:var(--c-text)}
+.combo-dataset-bar select{
+  padding:4px 8px;border:1px solid var(--c-border);
+  border-radius:var(--radius-sm);font-size:12px;
+  background:#fff;outline:none;font-family:var(--font-sans);
+}
+.combo-dataset-bar select:focus{border-color:var(--c-primary)}
+.combo-dataset-bar input[type=color]{
+  width:30px;height:24px;padding:2px;border:1px solid var(--c-border);
+  border-radius:var(--radius-sm);cursor:pointer;background:#fff;
+}
+.combo-section{
+  background:#fff;border:1px solid var(--c-border-light);
+  border-radius:var(--radius-md);padding:10px;margin-top:8px;
+}
+.combo-section h5{
+  font-size:12px;color:var(--c-text-muted);
+  margin-bottom:8px;font-weight:700;letter-spacing:.3px;
+  text-transform:uppercase;
+}
+
+/* ============ 响应式适配 ============ */
+@media (max-width:1200px){
+  .left-panel{width:180px;padding:12px 8px}
+  .right-panel{width:260px}
+  .tabs-bar{padding-left:8px;padding-right:8px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="toolbar">
+  <span class="brand">Stable 报告编辑器</span>
+  <button class="btn-secondary" onclick="toggleMode()" id="modeBtn">👁 预览</button>
+  <span class="divider"></span>
+  <button class="btn-blue" onclick="saveProject()">💾 保存工程</button>
+  <button class="btn-secondary" onclick="loadProject()">📂 加载工程</button>
+  <button class="btn-green" onclick="exportReport()">📄 导出报告</button>
+  <button class="btn-danger" onclick="clearAllBlocks()">🗑 清空画布</button>
+  <button class="btn-danger" onclick="resetAll()">🔄 重置</button>
+</div>
+
+<div class="main" id="mainArea">
+  <div class="left-panel" id="leftPanel">
+    <div class="section-label">页面管理</div>
+    <div class="section-manager" id="sectionManager"></div>
+    <button class="add-btn" onclick="addSection()" style="background:var(--c-accent-light);color:var(--c-accent-dark);border:1.5px dashed var(--c-accent);justify-content:center"><span class="icon" style="background:transparent;font-size:16px">➕</span>新增分区</button>
+    <div class="section-label">内容模块</div>
+    <button class="add-btn" onclick="addBlock('header')"><span class="icon">📋</span>报告头部</button>
+    <button class="add-btn" onclick="addBlock('meta')"><span class="icon">ℹ️</span>报告说明</button>
+    <button class="add-btn" onclick="addBlock('text')"><span class="icon">📝</span>文本段落</button>
+    <button class="add-btn" onclick="addBlock('chart')"><span class="icon">📊</span>图表</button>
+    <button class="add-btn" onclick="addBlock('kpi')"><span class="icon">🎯</span>KPI 卡片</button>
+    <button class="add-btn" onclick="addBlock('table')"><span class="icon">📋</span>数据表格</button>
+    <button class="add-btn" onclick="addBlock('image')"><span class="icon">🖼️</span>图片</button>
+    <div class="section-label">分析框架</div>
+    <button class="add-btn" onclick="addBlock('conclusion')"><span class="icon">💡</span>结论框</button>
+    <button class="add-btn" onclick="addBlock('swot')"><span class="icon">🔲</span>SWOT 分析</button>
+    <button class="add-btn" onclick="addBlock('timeline')"><span class="icon">📅</span>时间轴</button>
+    <button class="add-btn" onclick="addBlock('compare')"><span class="icon">⚖️</span>对比卡片</button>
+    <button class="add-btn" onclick="addBlock('progress')"><span class="icon">📈</span>进度条</button>
+    <div class="section-label">分隔</div>
+    <button class="add-btn" onclick="addBlock('divider')"><span class="icon">➖</span>分隔线</button>
+    <div class="section-label">快捷操作</div>
+    <div class="quick-actions">
+      <button class="add-btn" onclick="cloneBlock(selectedBlockId)"><span class="icon">📋</span>复制选中块</button>
+      <button class="add-btn" onclick="deleteBlock(selectedBlockId)"><span class="icon">🗑️</span>删除选中块</button>
+      <button class="add-btn danger" onclick="clearAllBlocks()"><span class="icon">💥</span>清空所有块</button>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="tabs-bar" id="tabsBar"></div>
+    <div class="canvas" id="canvas" ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+      <div class="canvas-empty" id="canvasEmpty">从左侧选择模块开始构建您的报告</div>
+    </div>
+  </div>
+
+  <div class="right-panel" id="rightPanel">
+    <div class="no-select" id="noSelectHint">点击画布中的内容块进行编辑</div>
+    <div class="format-toolbar-section" id="formatToolbarSection" style="display:none;">
+      <div class="section-header">📝 文本格式</div>
+      <div class="format-toolbar" id="formatToolbar" onmousedown="saveSelectionFromToolbar()">
+        <button onmousedown="event.preventDefault();formatCmd('bold')" title="加粗 (Ctrl+B)"><b>B</b></button>
+        <button onmousedown="event.preventDefault();formatCmd('italic')" title="斜体 (Ctrl+I)"><i>I</i></button>
+        <button onmousedown="event.preventDefault();formatCmd('underline')" title="下划线 (Ctrl+U)"><u>U</u></button>
+        <span class="ft-sep"></span>
+        <select id="ftFontSize" onmousedown="saveSelectionFromToolbar()" onchange="formatCmd('fontSize',this.value)" title="字体大小">
+          <option value="">字号</option>
+          <option value="12px">12px</option>
+          <option value="14px">14px</option>
+          <option value="16px">16px(默认)</option>
+          <option value="20px">20px</option>
+          <option value="24px">24px</option>
+          <option value="32px">32px</option>
+        </select>
+        <input type="color" value="#333333" id="ftColor" onmousedown="saveSelectionFromToolbar()" onchange="formatCmd('foreColor',this.value)" title="文字颜色">
+        <span class="ft-sep"></span>
+        <button onmousedown="event.preventDefault();formatCmd('insertLineBreak')" title="换行">↩</button>
+      </div>
+      <!-- 预设色板 -->
+      <div class="ft-color-row">
+        <span class="ft-clabel">常用色</span>
+        <button class="ft-swatch" style="background:#333333" onmousedown="event.preventDefault();applyQuickColor('#333333')" title="黑色 #333333"></button>
+        <button class="ft-swatch" style="background:#e74c3c" onmousedown="event.preventDefault();applyQuickColor('#e74c3c')" title="红色 #e74c3c"></button>
+        <button class="ft-swatch" style="background:#f39c12" onmousedown="event.preventDefault();applyQuickColor('#f39c12')" title="橙色 #f39c12"></button>
+        <button class="ft-swatch" style="background:#f1c40f" onmousedown="event.preventDefault();applyQuickColor('#f1c40f')" title="黄色 #f1c40f"></button>
+        <button class="ft-swatch" style="background:#27ae60" onmousedown="event.preventDefault();applyQuickColor('#27ae60')" title="绿色 #27ae60"></button>
+        <button class="ft-swatch" style="background:#3498db" onmousedown="event.preventDefault();applyQuickColor('#3498db')" title="蓝色 #3498db"></button>
+        <button class="ft-swatch" style="background:#9b59b6" onmousedown="event.preventDefault();applyQuickColor('#9b59b6')" title="紫色 #9b59b6"></button>
+        <button class="ft-swatch" style="background:#e91e63" onmousedown="event.preventDefault();applyQuickColor('#e91e63')" title="粉色 #e91e63"></button>
+        <button class="ft-swatch" style="background:#1abc9c" onmousedown="event.preventDefault();applyQuickColor('#1abc9c')" title="青色 #1abc9c"></button>
+        <button class="ft-swatch" style="background:#7f8c8d" onmousedown="event.preventDefault();applyQuickColor('#7f8c8d')" title="灰色 #7f8c8d"></button>
+      </div>
+      <!-- 最近使用 -->
+      <div class="ft-color-row ft-recent-wrap">
+        <span class="ft-clabel">最近用</span>
+        <div id="ftRecent"></div>
+      </div>
+      <div class="ft-hint">选中画布中文本后点击上方按钮或色块应用格式</div>
+    </div>
+    <div id="propertyContent" style="display:none;"></div>
+  </div>
+</div>
+</div>
+
+<!-- 图表数据编辑器弹窗 -->
+<div class="modal-overlay" id="chartDataModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeChartDataModal()">×</button>
+    <h3>📊 编辑图表数据</h3>
+    <div class="prop-group">
+      <label>图表类型</label>
+      <select id="chartTypeSelect" onchange="updateChartPreview()">
+        <option value="bar">柱状图 (Bar)</option>
+        <option value="line">折线图 (Line)</option>
+        <option value="combo">组合图 (Bar+Line 双Y轴)</option>
+        <option value="pie">饼图 (Pie)</option>
+        <option value="doughnut">环形图 (Doughnut)</option>
+        <option value="radar">雷达图 (Radar)</option>
+        <option value="polarArea">极地图 (Polar Area)</option>
+      </select>
+    </div>
+    <div class="prop-group">
+      <label>图表标题</label>
+      <input type="text" id="chartTitleInput" placeholder="输入图表标题..." oninput="updateChartPreview()">
+    </div>
+    <div class="prop-group">
+      <label>图表说明（可选）</label>
+      <textarea id="chartDiagInput" placeholder="输入图表说明..." rows="2" oninput="updateChartPreview()"></textarea>
+    </div>
+    <div class="prop-group" id="excelImportGroup" style="display:none">
+      <label>从 Excel 导入</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-secondary" onclick="document.getElementById('excelFileInput').click()" style="white-space:nowrap">📂 导入 Excel/CSV</button>
+        <span style="font-size:12px;color:#888">支持 .xlsx .xls .csv，第一行作为表头</span>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcelData(this)">
+      </div>
+    </div>
+    <div class="prop-group">
+      <label>数据编辑（双击单元格修改数值；拖拽列头排序）</label>
+      <div class="data-table-wrap">
+        <table class="data-table" id="dataTable">
+          <thead id="dataTableHead"></thead>
+          <tbody id="dataTableBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-secondary" onclick="addDataSeries()" style="flex:1">+ 添加数据系列</button>
+        <button class="btn-secondary" onclick="addDataLabel()" style="flex:1">+ 添加数据行</button>
+      </div>
+    </div>
+    <!-- 表格标记工具栏（仅在表格模式下显示） -->
+    <div id="tableMarkToolbar" style="display:none">
+      <div class="prop-group" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px">
+        <label style="color:#9a3412;font-weight:700">🎨 单元格标记（点击下方表格中的单元格/行号/列头选择区域，再点下方按钮标记）</label>
+        <div style="font-size:12px;color:#7c2d12;margin:6px 0 10px;padding:6px 10px;background:#fff;border-radius:6px;border:1px dashed #fdba74">
+          当前选区：<span id="tableSelectionStatus" style="font-weight:700">未选择</span>
+          <span style="margin-left:8px;color:#9a3412">·</span>
+          <span style="margin-left:4px;font-size:11px;color:#888">点 # 列=选行 · 点 表头=选列 · 点 单元格=选单格</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;color:#666">样式：</span>
+          <select id="tableMarkStyle" style="flex:1;padding:5px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+            <option value="leader">▲ 重点（红）</option>
+            <option value="lowest">▼ 最低（绿）</option>
+            <option value="warning">⚠ 警示（黄）</option>
+            <option value="critical">🔥 关键（深红）</option>
+            <option value="info">ℹ 信息（蓝）</option>
+            <option value="success">✓ 完成（浅绿）</option>
+            <option value="muted">· 淡化（灰）</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px">
+          <button class="btn-secondary" onclick="markTableSelection('selected')" style="font-size:11px">📍 标记选中</button>
+          <button class="btn-secondary" onclick="markTableSelection('row')" style="font-size:11px">↔ 标记整行</button>
+          <button class="btn-secondary" onclick="markTableSelection('col')" style="font-size:11px">↕ 标记整列</button>
+          <button class="btn-secondary" onclick="markTableSelection('all')" style="font-size:11px">⊞ 全部</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <button class="btn-secondary" onclick="clearMarksInSelection()" style="font-size:11px">🧹 清除选区标记</button>
+          <button class="btn-secondary" onclick="clearAllMarks()" style="font-size:11px">🗑 清除全部标记</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-secondary" onclick="closeChartDataModal()">取消</button>
+      <button class="btn-primary" onclick="saveChartData()">✅ 保存图表</button>
+    </div>
+  </div>
+</div>
+
+<!-- 富文本格式工具栏已移至右侧面板 #formatToolbarSection 内 -->
+
+<script>
+try{if(typeof ChartDataLabels!=='undefined'){Chart.register(ChartDataLabels);Chart.defaults.plugins.datalabels={display:false};}}catch(e){console.warn('ChartDataLabels不可用',e);}
+Chart.defaults.font.family='-apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+Chart.defaults.font.size=13;
+
+let blocks=[];
+let selectedBlockId=null;
+let editingChartBlockId=null;
+let previewMode=false;
+let blockCounter=0;
+const chartInstances={};
+
+// ===== 分区(Section)/多页导航 =====
+let sections=[{id:'sec_default',name:'首页'}];
+let currentSectionId='sec_default';
+let sectionCounter=1;
+function genSectionId(){sectionCounter++;return'sec_'+Date.now()+'_'+sectionCounter;}
+
+const BLOCK_DEFAULTS={
+  header:{title:'品牌复盘规划报告',sub:'副标题 · 品牌描述',range:'数据周期：2025年1月 — 2026年7月'},
+  meta:{title:'报告说明',sections:['<h4>品牌背景</h4><p>品牌描述内容...</p>','<h4>方法说明</h4><ul><li>数据来源说明</li><li>分析框架</li></ul>']},
+  text:{html:'<strong>核心结论：</strong>双击此处编辑文本内容...',style:'insight'},
+  conclusion:{html:'<strong>诊断总结：</strong>双击此处编辑诊断结论...'},
+  chart:{title:'图表标题',diag:'图表说明文字',labels:['类别1','类别2','类别3','类别4'],datasets:[{label:'系列1',data:[30,50,40,60],backgroundColor:'#1565c0',borderRadius:6}]},
+  kpi:{title:'关键指标',items:[{label:'指标A',value:'12,345'},{label:'指标B',value:'98.7%'},{label:'指标C',value:'¥567'},{label:'指标D',value:'89'}]},
+  table:{title:'数据表格',headers:['列1','列2','列3','列4'],rows:[['数据','数据','数据','数据'],['数据','数据','数据','数据'],['数据','数据','数据','数据']]},
+  image:{src:'',width:'600',caption:'图片说明'},
+  swot:{title:'SWOT 分析',strengths:'品牌优势描述...',weaknesses:'品牌劣势描述...',opportunities:'市场机会描述...',threats:'潜在威胁描述...'},
+  timeline:{title:'发展历程',direction:'vertical',events:[{date:'2025.01',title:'里程碑一',desc:'事件描述...'},{date:'2025.06',title:'里程碑二',desc:'事件描述...'},{date:'2026.01',title:'里程碑三',desc:'事件描述...'}]},
+  compare:{title:'对比分析',leftTitle:'品牌A',rightTitle:'品牌B',rows:[{label:'指标1',left:'100',right:'85'},{label:'指标2',left:'¥500',right:'¥420'},{label:'指标3',left:'95%',right:'88%'}]},
+  progress:{title:'目标进度',items:[{label:'目标一',value:75,color:'#1565c0'},{label:'目标二',value:60,color:'#e85300'},{label:'目标三',value:90,color:'#2e7d32'}]}
+};
+
+function genId(){return'blk_'+Date.now()+'_'+(blockCounter++);}
+
+function addBlock(type,afterId){
+  try{
+  const id=genId();
+  const def=Object.assign({},BLOCK_DEFAULTS[type]||{});
+  if(type==='chart'){def.id=id;def.type_chart='bar';def.title='新图表';def.diag='';def.labels=['类别1','类别2','类别3'];def.datasets=[{label:'数据',data:[30,50,40],backgroundColor:'#1565c0',borderRadius:6,seriesType:'bar',yAxisID:'y'}];}
+  else if(type==='image'){def.id=id;def.type='image';def.src='';def.width='600';def.caption='';}
+  else{def.id=id;def.type=type||'text';}
+  const block={id,type,sectionId:currentSectionId,...def};
+  if(afterId){
+    const idx=blocks.findIndex(b=>b.id===afterId);
+    if(idx>=0)blocks.splice(idx+1,0,block);else blocks.push(block);
+  }else{blocks.push(block);}
+  selectedBlockId=id;
+  renderAll();
+  autoSave();
+  }catch(e){console.error('addBlock error:',e);toast('添加失败: '+e.message);}
+}
+
+function cloneBlock(id){
+  if(!id)return toast('请先选中要复制的内容块');
+  const orig=blocks.find(b=>b.id===id);
+  if(!orig)return;
+  const copy=JSON.parse(JSON.stringify(orig));
+  copy.id=genId();
+  if(copy.type==='chart')copy.id=copy.id;
+  const origIdx=blocks.findIndex(b=>b.id===id);
+  blocks.splice(origIdx+1,0,copy);
+  selectBlock(copy.id);
+  renderAll();
+  autoSave();
+  toast('已复制');
+}
+
+function deleteBlock(id){
+  if(!id)return;
+  if(!confirm('确认删除此内容块？'))return;
+  if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];}
+  blocks=blocks.filter(b=>b.id!==id);
+  if(selectedBlockId===id)selectedBlockId=null;
+  renderAll();
+  autoSave();
+  toast('已删除');
+}
+
+function clearAllBlocks(){
+  if(blocks.length===0){toast('画布已为空');return;}
+  if(!confirm('确认清空画布上所有 '+blocks.length+' 个内容块？此操作不可撤销。'))return;
+  Object.keys(chartInstances).forEach(id=>{chartInstances[id].destroy();delete chartInstances[id];});
+  blocks=[];
+  selectedBlockId=null;
+  renderAll();
+  autoSave();
+  toast('画布已清空');
+}
+
+function selectBlock(id){
+  if(selectedBlockId===id){updateRightPanel();return;}
+  // 切换模块时清除格式编辑目标
+  clearFormatTarget();
+  // 移除旧选中样式
+  if(selectedBlockId){
+    const old=document.querySelector('.block.selected');
+    if(old)old.classList.remove('selected');
+  }
+  selectedBlockId=id;
+  // 添加新选中样式
+  if(id){
+    const el=document.querySelector('.block[data-block-id="'+id+'"]');
+    if(el)el.classList.add('selected');
+    else{renderAll();return;}
+  }
+  updateRightPanel();
+}
+
+function renderAll(){
+  try{
+  renderTabs();
+  renderSectionManager();
+  const canvas=document.getElementById('canvas');
+  let empty=document.getElementById('canvasEmpty');
+  const sectionBlocks=blocks.filter(b=>b.sectionId===currentSectionId||(!b.sectionId&&currentSectionId==='sec_default'));
+  canvas.innerHTML='';
+  if(sectionBlocks.length===0){
+    if(!empty){
+      empty=document.createElement('div');
+      empty.id='canvasEmpty';
+      empty.className='canvas-empty';
+      empty.textContent='从左侧选择模块开始构建您的报告';
+    }
+    canvas.appendChild(empty);
+    empty.style.display='flex';
+  }else{
+    if(empty)empty.remove();
+    canvas.innerHTML=sectionBlocks.map(b=>renderBlock(b)).join('');
+  }
+  updateRightPanel();
+  setTimeout(()=>{
+    sectionBlocks.forEach(b=>{if(b.type==='chart')renderChartBlock(b);});
+  },50);
+  }catch(e){console.error('renderAll error:',e);toast('渲染失败: '+e.message);}
+}
+
+// ===== Tabs 渲染 =====
+function renderTabs(){
+  const bar=document.getElementById('tabsBar');
+  if(!bar)return;
+  let html='';
+  sections.forEach((s,i)=>{
+    const count=blocks.filter(b=>b.sectionId===s.id||(!b.sectionId&&s.id==='sec_default')).length;
+    const active=s.id===currentSectionId?' active':'';
+    html+='<button class="tab-item'+active+'" onclick="switchSection(\''+s.id+'\')" title="'+escAttr(s.name)+'">'+
+      '<span>'+escHtml(s.name)+'</span>'+
+      '<span class="tab-badge">'+count+'</span>'+
+      '</button>';
+  });
+  html+='<button class="tab-add" onclick="addSection()" title="新增分区">+ 新分区</button>';
+  bar.innerHTML=html;
+}
+
+// ===== Section 管理器（左侧面板） =====
+function renderSectionManager(){
+  const sm=document.getElementById('sectionManager');
+  if(!sm)return;
+  let html='';
+  sections.forEach((s,i)=>{
+    const count=blocks.filter(b=>b.sectionId===s.id||(!b.sectionId&&s.id==='sec_default')).length;
+    const active=s.id===currentSectionId?' active':'';
+    html+='<div class="section-row'+active+'" ondblclick="renameSection(\''+s.id+'\')" onclick="switchSection(\''+s.id+'\')">'+
+      '<span class="sname">'+escHtml(s.name)+'</span>'+
+      '<span class="scount">'+count+'</span>'+
+      '<span class="srow-actions">'+
+      '<button title="重命名" onclick="event.stopPropagation();renameSection(\''+s.id+'\')">✎</button>'+
+      '<button class="srow-del" title="删除分区" onclick="event.stopPropagation();deleteSection(\''+s.id+'\')">🗑</button>'+
+      '</span>'+
+      '</div>';
+  });
+  sm.innerHTML=html;
+}
+
+function addSection(){
+  const newId=genSectionId();
+  const idx=sections.length+1;
+  const name='分区 '+idx;
+  sections.push({id:newId,name:name});
+  currentSectionId=newId;
+  renderAll();
+  autoSave();
+  toast('已新增分区：'+name);
+}
+
+function renameSection(id){
+  const sec=sections.find(s=>s.id===id);
+  if(!sec)return;
+  const nn=prompt('修改分区名称：',sec.name);
+  if(!nn||nn.trim()==='')return;
+  sec.name=nn.trim().substring(0,30);
+  renderAll();
+  autoSave();
+}
+
+function deleteSection(id){
+  const sec=sections.find(s=>s.id===id);
+  if(!sec)return;
+  if(sections.length<=1){toast('至少保留 1 个分区');return;}
+  if(!confirm('确认删除分区「'+sec.name+'」？该分区下的内容块也会一并删除。'))return;
+  // 删除该分区下的所有块
+  blocks=blocks.filter(b=>b.sectionId!==id);
+  sections=sections.filter(s=>s.id!==id);
+  if(currentSectionId===id)currentSectionId=sections[0].id;
+  // 同步销毁图表实例
+  blocks.forEach(b=>{if(b.type==='chart'&&chartInstances[b.id]){chartInstances[b.id].destroy();delete chartInstances[b.id];}});
+  renderAll();
+  autoSave();
+  toast('分区已删除');
+}
+
+function switchSection(id){
+  if(!sections.find(s=>s.id===id))return;
+  currentSectionId=id;
+  selectedBlockId=null;
+  renderAll();
+}
+
+function renderBlock(block){
+  const sel=block.id===selectedBlockId?' selected':'';
+  const type=block.type;
+  let inner='';
+  switch(type){    case 'header':
+      inner='<div class="report-header"><h1>'+escHtml(block.title)+'</h1><div class="sub">'+escHtml(block.sub)+'</div><div class="range">'+escHtml(block.range)+'</div></div>';
+      break;
+    case 'meta':
+      inner='<div class="text-block" style="background:#fff;border-bottom:1px solid #e0e0e0"><details open><summary style="font-size:19px;font-weight:700;color:#e85300;cursor:pointer">📋 '+escHtml(block.title)+'</summary><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">'+block.sections.map((s,i)=>'<div contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'sections.'+i+'\')" oninput="saveMetaSection(\''+block.id+'\','+i+',this.innerHTML)" style="min-height:40px;border:1px solid transparent;border-radius:6px;padding:6px" onfocus="this.style.borderColor=\'#e85300\';this.style.background=\'#fffbf5\'" onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">'+s+'</div>').join('')+'</div></details></div>';
+      break;
+    case 'text':
+      const cls=block.style==='insight'?'insight-box':(block.style==='conclusion'?'conclusion-box':'text-block');
+      inner='<div class="'+cls+'" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this)" onblur="saveTextBlock(\''+block.id+'\',this.innerHTML)" data-block-id="'+block.id+'">'+block.html+'</div>';
+      break;
+    case 'conclusion':
+      inner='<div class="conclusion-box" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this)" onblur="saveTextBlock(\''+block.id+'\',this.innerHTML)" data-block-id="'+block.id+'">'+block.html+'</div>';
+      break;
+    case 'chart':
+      const chartH=block.blockHeight&&block.blockHeight!=='auto'&&block.blockHeight!==0?block.blockHeight:400;
+      inner='<div class="chart-box"><h4>'+escHtml(block.title)+'</h4><div class="chart-canvas-wrap" style="height:'+chartH+'px"><canvas id="'+block.id+'"></canvas></div>'+(block.diag?'<div class="chart-diag" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'diag\')" onblur="saveChartDiag(\''+block.id+'\',this.innerHTML)" data-block-id="'+block.id+'-diag">'+block.diag+'</div>':'')+'</div>';
+      break;
+    case 'kpi':
+      inner='<div><h3 style="margin-bottom:12px">'+escHtml(block.title||'')+'</h3><div class="kpi-grid">'+block.items.map(item=>'<div class="kpi-card"><div class="kpi-label">'+escHtml(item.label)+'</div><div class="kpi-value">'+escHtml(item.value)+'</div>'+(item.change?'<div class="kpi-change">'+escHtml(item.change)+'</div>':'')+'</div>').join('')+'</div></div>';
+      break;
+    case 'table':
+      inner=renderTableBlock(block);
+      break;
+    case 'image':
+      inner='<div class="image-block">'+(block.src?'<img src="'+block.src+'" style="width:'+(block.width||'600')+'px;max-width:100%">':'<div style="padding:40px;background:#fafafa;border:2px dashed #ddd;border-radius:8px;color:#999">🖼 请上传图片</div>')+(block.caption?'<div class="image-caption">'+escHtml(block.caption)+'</div>':'')+'</div>';
+      break;
+    case 'divider':
+      inner='<hr style="border:none;border-top:2px dashed #1565c0;margin:18px 0">';
+      break;
+    case 'swot':
+      inner='<h3 style="margin-bottom:12px">'+escHtml(block.title||'SWOT分析')+'</h3><div class="swot-grid">'+
+        '<div class="swot-card swot-str"><h5>💪 优势 (Strengths)</h5><div class="swot-body" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'strengths\')" onblur="saveSwotCell(\''+block.id+'\',\'strengths\',this.innerHTML)" data-block-id="'+block.id+'-str">'+block.strengths+'</div></div>'+
+        '<div class="swot-card swot-weak"><h5>⚠ 劣势 (Weaknesses)</h5><div class="swot-body" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'weaknesses\')" onblur="saveSwotCell(\''+block.id+'\',\'weaknesses\',this.innerHTML)" data-block-id="'+block.id+'-wk">'+block.weaknesses+'</div></div>'+
+        '<div class="swot-card swot-opp"><h5>🚀 机会 (Opportunities)</h5><div class="swot-body" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'opportunities\')" onblur="saveSwotCell(\''+block.id+'\',\'opportunities\',this.innerHTML)" data-block-id="'+block.id+'-op">'+block.opportunities+'</div></div>'+
+        '<div class="swot-card swot-thr"><h5>🔥 威胁 (Threats)</h5><div class="swot-body" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'threats\')" onblur="saveSwotCell(\''+block.id+'\',\'threats\',this.innerHTML)" data-block-id="'+block.id+'-th">'+block.threats+'</div></div>'+
+        '</div>';
+      break;
+    case 'timeline':
+      const tlDir=block.direction||'vertical';
+      inner='<h3 style="margin-bottom:12px">'+escHtml(block.title||'发展历程')+'</h3><div class="timeline-'+(tlDir==='horizontal'?'horiz':'vert')+'">'+
+        block.events.map((ev,i)=>'<div class="timeline-item"><div class="tl-date">'+escHtml(ev.date)+'</div><div class="tl-title" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'events.'+i+'.title\')" onblur="saveTimelineField(\''+block.id+'\','+i+',\'title\',this.innerHTML)">'+ev.title+'</div><div class="tl-desc" contenteditable="true" onclick="event.stopPropagation();selectBlock(\''+block.id+'\');showFormatToolbar(\''+block.id+'\',this,\'events.'+i+'.desc\')" onblur="saveTimelineField(\''+block.id+'\','+i+',\'desc\',this.innerHTML)">'+ev.desc+'</div></div>').join('')+
+        '</div>';
+      break;
+    case 'compare':
+      inner='<h3 style="margin-bottom:12px">'+escHtml(block.title||'对比分析')+'</h3><div class="compare-wrap">'+
+        '<div class="compare-card"><div class="cc-head left">'+escHtml(block.leftTitle||'品牌A')+'</div>'+block.rows.map(r=>'<div class="cc-row"><span class="cc-label">'+escHtml(r.label)+'</span><span class="cc-val">'+escHtml(r.left)+'</span></div>').join('')+'</div>'+
+        '<div class="compare-card"><div class="cc-head right">'+escHtml(block.rightTitle||'品牌B')+'</div>'+block.rows.map(r=>'<div class="cc-row"><span class="cc-label">'+escHtml(r.label)+'</span><span class="cc-val">'+escHtml(r.right)+'</span></div>').join('')+'</div>'+
+        '</div>';
+      break;
+    case 'progress':
+      inner='<h3 style="margin-bottom:12px">'+escHtml(block.title||'目标进度')+'</h3><div class="progress-list">'+
+        block.items.map(p=>'<div class="progress-item"><div class="prog-label"><span>'+escHtml(p.label)+'</span><span>'+p.value+'%</span></div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:'+p.value+'%;background:'+(p.color||'#1565c0')+'"><span>'+(p.value>=15?p.value+'%':'')+'</span></div></div></div>').join('')+
+        '</div>';
+      break;
+    default:
+      inner='<div class="text-block">未知类型: '+type+'</div>';
+  }
+  const w=block.blockWidth||100;
+  const h=block.blockHeight||'auto';
+  let blockStyle='width:'+(w===100?w+'%':'calc('+w+'% - 6px)')+';margin-left:auto;margin-right:auto;';
+  if(h!=='auto'&&h!==0&&h!=='0')blockStyle+='max-height:'+h+'px;overflow-y:auto;';
+  return '<div class="block'+sel+'" data-block-id="'+block.id+'" style="'+blockStyle+'" draggable="true" ondragstart="handleDragStart(event,\''+block.id+'\')" ondragend="handleDragEnd(event)" onclick="selectBlock(\''+block.id+'\')">'+
+    '<div class="block-toolbar"><button class="drag-handle" title="拖拽排序">⠿</button><button title="复制" onclick="event.stopPropagation();cloneBlock(\''+block.id+'\')">📋</button><button class="btn-del" title="删除" onclick="event.stopPropagation();deleteBlock(\''+block.id+'\')">×</button></div>'+
+    '<div class="block-content">'+inner+'</div></div>';
+}
+
+// 渲染表格块（支持多层表头 + 单元格合并 + 手动标记）
+function renderTableBlock(block){
+  const title=escHtml(block.title||'');
+  const headers=block.headers||[];
+  const rows=block.rows||[];
+  // 表头行数（1-3）
+  const headerRows=block.headerRows||1;
+  // 多层表头数据（如果定义了 headerLevels，则按其渲染；否则回退到单一表头）
+  const headerLevels=block.headerLevels||null;
+  // 合并单元格映射：{ "r,c": {rowspan,colspan} }
+  const merges=block.merges||{};
+  // 手动标记：cellMarks["ri,ci"] / rowMarks["ri"] / colMarks["ci"] → 'leader'|'lowest'|'warning'|'critical'|'info'|'success'|'muted'
+  const cellMarks=block.cellMarks||{};
+  const rowMarks=block.rowMarks||{};
+  const colMarks=block.colMarks||{};
+  // 渲染表头
+  let headHtml='';
+  if(headerLevels&&headerLevels.length>0){
+    // 多层表头模式
+    for(let hr=0;hr<headerLevels.length;hr++){
+      headHtml+='<tr>';
+      headerLevels[hr].forEach((cell,ci)=>{
+        const key=hr+','+ci;
+        const m=merges[key];
+        let attrs='';
+        let txt=cell;
+        if(typeof cell==='object'&&cell!==null){
+          txt=cell.text||'';
+          if(cell.rowspan)attrs+=' rowspan="'+cell.rowspan+'"';
+          if(cell.colspan)attrs+=' colspan="'+cell.colspan+'"';
+        }else{
+          if(m){
+            if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';
+            if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';
+          }
+        }
+        headHtml+='<th class="merged-cell"'+attrs+'>'+escHtml(txt)+'</th>';
+      });
+      headHtml+='</tr>';
+    }
+  }else{
+    // 单层表头（兼容老数据）
+    headHtml+='<tr>'+headers.map((h,i)=>{
+      const m=merges['0,'+i];
+      let attrs='';
+      if(m){
+        if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';
+        if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';
+      }
+      return '<th class="merged-cell"'+attrs+'>'+escHtml(h)+'</th>';
+    }).join('')+'</tr>';
+  }
+  // 渲染表格体（含手动标记）
+  let bodyHtml='';
+  rows.forEach((row,ri)=>{
+    bodyHtml+='<tr>';
+    for(let ci=0;ci<headers.length;ci++){
+      const mkey=ri+headerRows+','+ci; // 表头行偏移
+      const m=merges[mkey];
+      let attrs='';
+      if(m){
+        if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';
+        if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';
+        // 被合并的格子需要 skip
+        if(m.skip)continue;
+      }
+      // 手动标记优先级：cell > row > col
+      const mark=cellMarks[ri+','+ci]||rowMarks[ri]||colMarks[ci]||'';
+      let cellContent=escHtml(row[ci]!==undefined?row[ci]:'');
+      if(mark){
+        cellContent='<span class="cell-mark-'+mark+'">'+cellContent+'</span>';
+      }
+      // 若当前单元格被某条 rowMarks / colMarks / cellMarks 标记，给 td 加同 class（覆盖整格背景）
+      let tdClass='';
+      if(cellMarks[ri+','+ci])tdClass=' cell-mark cell-mark-'+cellMarks[ri+','+ci];
+      else if(rowMarks[ri])tdClass=' cell-mark cell-mark-row-'+rowMarks[ri];
+      else if(colMarks[ci])tdClass=' cell-mark cell-mark-col-'+colMarks[ci];
+      bodyHtml+='<td'+attrs+tdClass+'>'+cellContent+'</td>';
+    }
+    bodyHtml+='</tr>';
+  });
+  return '<h3 style="margin-bottom:8px">'+title+'</h3><div class="table-wrap"><table><thead>'+headHtml+'</thead><tbody>'+bodyHtml+'</tbody></table></div>';
+}
+
+function renderChartBlock(block){
+  const canvas=document.getElementById(block.id);
+  if(!canvas)return;
+  if(chartInstances[block.id])chartInstances[block.id].destroy();
+  const type=block.type_chart||(block.type!=='chart'?block.type:'bar')||'bar';
+  const labels=block.labels||[];
+  // 判断是否为组合图（任一系列指定了 seriesType=line 而 type=bar，或任意 dataset 有自己的 seriesType 与全局不同）
+  const isCombo=type==='combo'||(type==='bar'&&(block.datasets||[]).some(ds=>ds.seriesType==='line'));
+  const effectiveType=isCombo?'bar':type;
+  const datasets=(block.datasets||[]).map((ds,i)=>{
+    const bg=ds.backgroundColor||getColor(i);
+    const seriesType=(isCombo?(ds.seriesType||'bar'):type);
+    return {
+      type:seriesType,
+      label:ds.label||'系列'+(i+1),
+      data:ds.data||[],
+      backgroundColor:(seriesType==='pie'||seriesType==='doughnut'||seriesType==='polarArea')?getColorPalette((ds.data||[]).length):bg,
+      borderColor:seriesType==='line'?bg:undefined,
+      borderWidth:seriesType==='line'?(ds.borderWidth||2.5):(seriesType==='bar'?(ds.borderWidth||0):undefined),
+      borderRadius:seriesType==='bar'?(ds.borderRadius!==undefined?ds.borderRadius:6):undefined,
+      tension:seriesType==='line'?(ds.tension!==undefined?ds.tension:0.3):undefined,
+      fill:seriesType==='line'?(ds.fill!==undefined?ds.fill:false):undefined,
+      pointRadius:seriesType==='line'?(ds.pointRadius!==undefined?ds.pointRadius:4):undefined,
+      pointHoverRadius:seriesType==='line'?6:undefined,
+      yAxisID:ds.yAxisID||'y',
+      borderDash:ds.borderDash||undefined,
+      datalabels:seriesType==='line'?{display:false}:undefined
+    };
+  });
+  // 是否存在第二 Y 轴系列
+  const hasY2=(block.datasets||[]).some(ds=>(ds.yAxisID||'y')==='y2');
+  const cfg={type:effectiveType,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{padding:16,usePointStyle:true,font:{size:13}}}}}};
+  if(effectiveType==='bar'||effectiveType==='line'||effectiveType==='radar'){
+    cfg.options.scales={
+      x:{ticks:{font:{size:11}},grid:{display:false}},
+      y:{ticks:{font:{size:11}},position:'left',title:{display:hasY2,text:'主Y轴',font:{size:11}}}
+    };
+    if(hasY2){
+      cfg.options.scales.y2={
+        type:'linear',position:'right',
+        ticks:{font:{size:11},color:'#e65100'},
+        title:{display:true,text:'副Y轴',font:{size:11,color:'#e65100'}},
+        grid:{drawOnChartArea:false}
+      };
+    }
+  }
+  if(type==='pie'||type==='doughnut'||type==='polarArea'){
+    cfg.options.plugins.datalabels={display:true,color:'#fff',font:{size:12,weight:'bold'},formatter:function(v,c){var t=c.chart.data.datasets[0].data.reduce(function(a,b){return a+b;},0);return t>0?(v/t*100).toFixed(1)+'%':'';}};
+  }
+  chartInstances[block.id]=new Chart(canvas,cfg);
+}
+
+const PALETTE=['#1565c0','#e65100','#2e7d32','#7b1fa2','#00838f','#c62828','#ef6c00','#4527a0','#00695c','#558b2f'];
+function getColor(i){return PALETTE[i%PALETTE.length];}
+function getColorPalette(n){const p=[];for(let i=0;i<n;i++)p.push(PALETTE[i%PALETTE.length]);return p;}
+
+function updateRightPanel(){
+  const panel=document.getElementById('rightPanel');
+  const hint=document.getElementById('noSelectHint');
+  const content=document.getElementById('propertyContent');
+  const ftSection=document.getElementById('formatToolbarSection');
+  const block=blocks.find(b=>b.id===selectedBlockId);
+  if(!block){
+    panel.classList.remove('active');
+    if(ftSection)ftSection.style.display='none';
+    return;
+  }
+  panel.classList.add('active');
+  hint.style.display='none';
+  content.style.display='block';
+  // 格式工具栏仅对含 contenteditable 文本的模块显示
+  const textTypes=['text','conclusion','swot','meta','chart','timeline'];
+  if(ftSection){
+    if(textTypes.indexOf(block.type)>-1){
+      ftSection.style.display='block';
+    }else{
+      ftSection.style.display='none';
+    }
+  }
+  let html='<h3>✏️ '+getBlockTypeLabel(block.type)+'</h3>';
+  switch(block.type){
+    case 'header':
+      html+='<div class="prop-group"><label>报告标题</label><input type="text" value="'+escAttr(block.title)+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>副标题</label><input type="text" value="'+escAttr(block.sub)+'" onchange="updateBlockProp(\''+block.id+'\',\'sub\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>数据周期</label><input type="text" value="'+escAttr(block.range)+'" onchange="updateBlockProp(\''+block.id+'\',\'range\',this.value);renderAll()"></div>';
+      break;
+    case 'meta':
+      html+='<div class="prop-group"><label>说明标题</label><input type="text" value="'+escAttr(block.title)+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>段落内容（双击画布中段落直接编辑，或下方文本框修改）</label></div>';
+      block.sections.forEach((s,i)=>{
+        html+='<div class="prop-group" style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px"><label>段落 '+(i+1)+'</label><textarea rows="4" onchange="updateMetaSection(\''+block.id+'\','+i+',this.value)">'+escHtml(s)+'</textarea></div>';
+      });
+      html+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-secondary" style="flex:1" onclick="addMetaSection(\''+block.id+'\')">+ 添加段落</button>';
+      if(block.sections.length>1)html+='<button class="btn-danger" style="flex:1" onclick="removeMetaSection(\''+block.id+'\')">- 移除最后一段</button>';
+      html+='</div>';
+      break;
+    case 'text':
+      html+='<div class="prop-group"><label>文本样式</label><select onchange="updateBlockProp(\''+block.id+'\',\'style\',this.value);renderAll()"><option value="plain"'+(block.style==='plain'||!block.style?' selected':'')+'>普通文本</option><option value="insight"'+(block.style==='insight'?' selected':'')+'>洞察框 (橙色)</option><option value="conclusion"'+(block.style==='conclusion'?' selected':'')+'>结论框 (蓝色)</option></select></div>';
+      html+='<div class="prop-group"><label>内容（画布中也可直接编辑）</label><textarea rows="6" onchange="saveTextBlock(\''+block.id+'\',this.value);renderAll()">'+escHtml(block.html||'')+'</textarea></div>';
+      break;
+    case 'chart':
+      html+='<div class="prop-group"><label>图表标题</label><input type="text" value="'+escAttr(block.title)+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>图表类型</label><select onchange="updateBlockProp(\''+block.id+'\',\'type_chart\',this.value);renderAll()">'+
+        '<option value="bar"'+(block.type_chart==='bar'||!block.type_chart?' selected':'')+'>柱状图</option>'+
+        '<option value="line"'+(block.type_chart==='line'?' selected':'')+'>折线图</option>'+
+        '<option value="combo"'+(block.type_chart==='combo'?' selected':'')+'>组合图 (bar+line)</option>'+
+        '<option value="pie"'+(block.type_chart==='pie'?' selected':'')+'>饼图</option>'+
+        '<option value="doughnut"'+(block.type_chart==='doughnut'?' selected':'')+'>环形图</option>'+
+        '<option value="radar"'+(block.type_chart==='radar'?' selected':'')+'>雷达图</option>'+
+        '<option value="polarArea"'+(block.type_chart==='polarArea'?' selected':'')+'>极地图</option>'+
+      '</select></div>';
+      if(block.type_chart==='combo'||(block.type_chart==='bar'&&(block.datasets||[]).some(ds=>ds.seriesType==='line'))){
+        html+='<div style="font-size:11px;color:#888;background:var(--c-accent-light);padding:6px 8px;border-radius:6px;margin-top:4px">💡 组合图：点击下方"编辑图表数据"，在底部面板为每个系列独立选择 bar/line，并配置主/副 Y 轴。</div>';
+      }
+      html+='<button class="btn-primary" style="width:100%;margin-top:8px" onclick="openChartDataEditor(\''+block.id+'\')">📊 编辑图表数据</button>';
+      break;
+    case 'kpi':
+      html+='<div class="prop-group"><label>标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>KPI数量</label><select onchange="changeKpiCount(\''+block.id+'\',parseInt(this.value))">'+[1,2,3,4,5,6].map(n=>'<option value="'+n+'"'+(block.items.length===n?' selected':'')+'>'+n+' 个</option>').join('')+'</select></div>';
+      html+='<div style="max-height:300px;overflow-y:auto">'+block.items.map((item,i)=>'<div class="prop-group" style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px"><label>KPI '+(i+1)+' 名称</label><input type="text" value="'+escAttr(item.label)+'" onchange="updateKpiItem(\''+block.id+'\','+i+',\'label\',this.value)"><label>KPI '+(i+1)+' 数值</label><input type="text" value="'+escAttr(item.value)+'" onchange="updateKpiItem(\''+block.id+'\','+i+',\'value\',this.value)"></div>').join('')+'</div>';
+      break;
+    case 'table':
+      html+='<div class="prop-group"><label>表格标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      // 表头行数
+      const hr=block.headerRows||1;
+      html+='<div class="prop-group"><label>表头行数（1-3）</label><select onchange="updateTableHeaderRows(\''+block.id+'\',parseInt(this.value))">'+
+        '<option value="1"'+(hr===1?' selected':'')+'>1 行（单层表头）</option>'+
+        '<option value="2"'+(hr===2?' selected':'')+'>2 行（双层表头）</option>'+
+        '<option value="3"'+(hr===3?' selected':'')+'>3 行（三层表头）</option>'+
+        '</select></div>';
+      // 提示：单元格标记功能已迁移到「编辑表格数据」弹窗中
+      html+='<div style="font-size:12px;color:var(--c-text-muted);background:var(--c-accent-light);padding:8px 10px;border-radius:6px;margin:6px 0">💡 单元格着色 → 点右下方「📋 编辑表格数据」，在弹窗内选中单元格/行/列后标记</div>';
+      // 合并单元格
+      const labels=block.headers||[];
+      const hasHeaderLevels=block.headerLevels&&block.headerLevels.length>0;
+      html+='<div class="prop-group"><label>表头合并单元格</label>'+
+        '<div style="font-size:11px;color:#888;margin-bottom:4px">为每个表头单元格设置 rowspan（向下合并行数）和 colspan（向右合并列数）</div>';
+      const currentLevels=hasHeaderLevels?block.headerLevels:[labels.map(h=>({text:h||'',rowspan:1,colspan:1}))];
+      // 显示每行每列
+      const hRows=block.headerRows||1;
+      for(let hri=0;hri<hRows;hri++){
+        if(!currentLevels[hri])currentLevels[hri]=labels.map(()=>({text:'',rowspan:1,colspan:1}));
+        html+='<div style="font-size:11px;font-weight:600;color:var(--c-text-muted);margin:6px 0 3px">表头第 '+(hri+1)+' 行</div>';
+        for(let ci=0;ci<labels.length;ci++){
+          const cell=currentLevels[hri][ci]||{text:'',rowspan:1,colspan:1};
+          html+='<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">'+
+            '<input type="text" placeholder="表头'+(hri+1)+'-列'+(ci+1)+'" value="'+escAttr(cell.text||'')+'" style="flex:1;font-size:12px" onchange="updateTableMergeCell(\''+block.id+'\','+hri+','+ci+',\'text\',this.value)">'+
+            '<input type="number" min="1" max="3" value="'+(cell.rowspan||1)+'" style="width:42px;font-size:12px" title="向下合并行数" onchange="updateTableMergeCell(\''+block.id+'\','+hri+','+ci+',\'rowspan\',parseInt(this.value))">'+
+            '<input type="number" min="1" max="'+(labels.length-ci)+'" value="'+(cell.colspan||1)+'" style="width:42px;font-size:12px" title="向右合并列数" onchange="updateTableMergeCell(\''+block.id+'\','+hri+','+ci+',\'colspan\',parseInt(this.value))">'+
+            '</div>';
+        }
+      }
+      html+='<button class="btn-secondary" style="width:100%;margin-top:6px;font-size:12px" onclick="applyTableMerges(\''+block.id+'\')">✅ 应用合并设置</button>';
+      html+='</div>';
+      html+='<button class="btn-primary" style="width:100%;margin-top:8px" onclick="openTableEditor(\''+block.id+'\')">📋 编辑表格数据</button>';
+      break;
+    case 'image':
+      if(block.src){
+        html+='<div class="prop-group"><label>已上传图片</label><div style="margin-bottom:6px"><img src="'+block.src+'" style="max-width:100%;max-height:120px;border-radius:6px;border:1px solid #ddd"></div><button class="btn-secondary" style="width:100%;font-size:12px" onclick="document.getElementById(\'fu_'+block.id+'\').click()">🖼 更换图片</button><input type="file" id="fu_'+block.id+'" accept="image/*" onchange="uploadImage(\''+block.id+'\',this)" style="display:none"></div>';
+      }else{
+        html+='<div class="prop-group"><label>上传图片</label><label class="upload-label">🖼 选择图片文件<input type="file" accept="image/*" onchange="uploadImage(\''+block.id+'\',this)" style="display:none"></label></div>';
+      }
+      html+='<div class="prop-group"><label>宽度 (px)</label><input type="number" value="'+(block.width||'600')+'" onchange="updateBlockProp(\''+block.id+'\',\'width\',this.value);renderAll()" min="100" max="1200" step="50"></div>';
+      html+='<div class="prop-group"><label>图片说明</label><input type="text" value="'+escAttr(block.caption||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'caption\',this.value);renderAll()"></div>';
+      break;
+    case 'conclusion':
+      html+='<div class="prop-group"><label>内容（画布中可直接编辑，也可在此修改）</label><textarea rows="6" onchange="saveTextBlock(\''+block.id+'\',this.value);renderAll()">'+escHtml(block.html||'')+'</textarea></div>';
+      break;
+    case 'divider':
+      html+='<div style="font-size:14px;color:#999">分隔线（无额外设置）</div>';
+      break;
+    case 'swot':
+      html+='<div class="prop-group"><label>SWOT 标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>💪 优势</label><textarea rows="3" onchange="updateBlockProp(\''+block.id+'\',\'strengths\',this.value);renderAll()">'+escHtml(block.strengths||'')+'</textarea></div>';
+      html+='<div class="prop-group"><label>⚠ 劣势</label><textarea rows="3" onchange="updateBlockProp(\''+block.id+'\',\'weaknesses\',this.value);renderAll()">'+escHtml(block.weaknesses||'')+'</textarea></div>';
+      html+='<div class="prop-group"><label>🚀 机会</label><textarea rows="3" onchange="updateBlockProp(\''+block.id+'\',\'opportunities\',this.value);renderAll()">'+escHtml(block.opportunities||'')+'</textarea></div>';
+      html+='<div class="prop-group"><label>🔥 威胁</label><textarea rows="3" onchange="updateBlockProp(\''+block.id+'\',\'threats\',this.value);renderAll()">'+escHtml(block.threats||'')+'</textarea></div>';
+      html+='<div style="font-size:12px;color:#999">💡 也可以在画布中双击四象限卡片直接编辑</div>';
+      break;
+    case 'timeline':
+      html+='<div class="prop-group"><label>时间轴标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>排列方向</label><select onchange="updateBlockProp(\''+block.id+'\',\'direction\',this.value);renderAll()"><option value="vertical"'+(block.direction!=='horizontal'?' selected':'')+'>纵向</option><option value="horizontal"'+(block.direction==='horizontal'?' selected':'')+'>横向</option></select></div>';
+      html+='<div class="prop-group"><label>事件列表（点击画布中标题/描述直接编辑）</label></div>';
+      html+='<div style="max-height:300px;overflow-y:auto">';
+      block.events.forEach((ev,i)=>{
+        html+='<div class="prop-group" style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px"><label>事件 '+(i+1)+' 日期</label><input type="text" value="'+escAttr(ev.date)+'" onchange="updateTimelineEvent(\''+block.id+'\','+i+',\'date\',this.value);renderAll()"><label>标题</label><input type="text" value="'+escAttr(ev.title)+'" onchange="updateTimelineEvent(\''+block.id+'\','+i+',\'title\',this.value);renderAll()"><label>描述</label><input type="text" value="'+escAttr(ev.desc)+'" onchange="updateTimelineEvent(\''+block.id+'\','+i+',\'desc\',this.value);renderAll()"></div>';
+      });
+      html+='</div>';
+      html+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-secondary" style="flex:1" onclick="addTimelineEvent(\''+block.id+'\')">+ 添加事件</button>';
+      if(block.events.length>1)html+='<button class="btn-danger" style="flex:1" onclick="removeTimelineEvent(\''+block.id+'\')">- 移除最后事件</button>';
+      html+='</div>';
+      break;
+    case 'compare':
+      html+='<div class="prop-group"><label>对比标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>左侧标题</label><input type="text" value="'+escAttr(block.leftTitle||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'leftTitle\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>右侧标题</label><input type="text" value="'+escAttr(block.rightTitle||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'rightTitle\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>对比行</label></div><div style="max-height:260px;overflow-y:auto">';
+      block.rows.forEach((r,i)=>{
+        html+='<div class="prop-group" style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px"><label>指标</label><input type="text" value="'+escAttr(r.label)+'" onchange="updateCompareRow(\''+block.id+'\','+i+',\'label\',this.value);renderAll()"><div style="display:flex;gap:6px"><div style="flex:1"><label>左值</label><input type="text" value="'+escAttr(r.left)+'" onchange="updateCompareRow(\''+block.id+'\','+i+',\'left\',this.value);renderAll()"></div><div style="flex:1"><label>右值</label><input type="text" value="'+escAttr(r.right)+'" onchange="updateCompareRow(\''+block.id+'\','+i+',\'right\',this.value);renderAll()"></div></div></div>';
+      });
+      html+='</div>';
+      html+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-secondary" style="flex:1" onclick="addCompareRow(\''+block.id+'\')">+ 添加行</button>';
+      if(block.rows.length>1)html+='<button class="btn-danger" style="flex:1" onclick="removeCompareRow(\''+block.id+'\')">- 移除最后行</button>';
+      html+='</div>';
+      break;
+    case 'progress':
+      html+='<div class="prop-group"><label>进度标题</label><input type="text" value="'+escAttr(block.title||'')+'" onchange="updateBlockProp(\''+block.id+'\',\'title\',this.value);renderAll()"></div>';
+      html+='<div class="prop-group"><label>进度条</label></div><div style="max-height:280px;overflow-y:auto">';
+      block.items.forEach((p,i)=>{
+        html+='<div class="prop-group" style="border:1px solid #eee;border-radius:6px;padding:8px;margin-bottom:6px"><label>名称</label><input type="text" value="'+escAttr(p.label)+'" onchange="updateProgressItem(\''+block.id+'\','+i+',\'label\',this.value);renderAll()"><div style="display:flex;gap:6px"><div style="flex:1"><label>进度 (%)</label><input type="number" value="'+p.value+'" min="0" max="100" onchange="updateProgressItem(\''+block.id+'\','+i+',\'value\',Math.min(100,Math.max(0,parseInt(this.value)||0)));renderAll()"></div><div style="flex:1"><label>颜色</label><input type="color" value="'+(p.color||'#1565c0')+'" onchange="updateProgressItem(\''+block.id+'\','+i+',\'color\',this.value);renderAll()" style="height:34px;padding:2px"></div></div></div>';
+      });
+      html+='</div>';
+      html+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn-secondary" style="flex:1" onclick="addProgressItem(\''+block.id+'\')">+ 添加进度条</button>';
+      if(block.items.length>1)html+='<button class="btn-danger" style="flex:1" onclick="removeProgressItem(\''+block.id+'\')">- 移除最后条</button>';
+      html+='</div>';
+      break;
+  }
+  // 通用尺寸设置
+  html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid #eee">';
+  html+='<div style="font-size:12px;color:#888;margin-bottom:6px;font-weight:600">📐 尺寸设置</div>';
+  const bw=(block.blockWidth!==undefined)?block.blockWidth:'100';
+  const bh=(block.blockHeight!==undefined&&block.blockHeight!=='auto')?block.blockHeight:0;
+  const locked=block.lockAspect&&bh>0;
+  html+='<div class="prop-group"><label>宽度 (%)</label><input type="range" id="rs_w_'+block.id+'" min="25" max="100" step="5" value="'+bw+'" oninput="liveResizeBlock(\''+block.id+'\',\'blockWidth\',this.value);document.getElementById(\'sw_'+block.id+'\').textContent=this.value+\'%\'" onchange="updateBlockSize(\''+block.id+'\',\'blockWidth\',this.value)" style="width:100%"><span id="sw_'+block.id+'" style="font-size:12px;color:#888">'+bw+'%</span></div>';
+  html+='<div class="prop-group"><label>高度 (px，0=自动)</label><input type="range" id="rs_h_'+block.id+'" min="0" max="1200" step="20" value="'+bh+'" oninput="liveResizeBlock(\''+block.id+'\',\'blockHeight\',this.value);var s=this.value==\'0\'||this.value===\'0\'?\'自动\':this.value+\'px\';document.getElementById(\'sh_'+block.id+'\').textContent=s" onchange="updateBlockSize(\''+block.id+'\',\'blockHeight\',this.value)" style="width:100%"><span id="sh_'+block.id+'" style="font-size:12px;color:#888">'+(bh===0||bh==='0'?'自动':bh+'px')+'</span></div>';
+  html+='<div class="prop-group"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox"'+(locked?' checked':'')+' onchange="toggleLockAspect(\''+block.id+'\',this.checked)" onclick="event.stopPropagation()" style="width:auto;margin:0"> 锁定宽高比例</label></div>';
+  html+='</div>';
+  content.innerHTML=html;
+}
+
+function liveResizeBlock(id,prop,value){
+  const el=document.querySelector('.block[data-block-id="'+id+'"]');
+  if(!el)return;
+  const v=parseInt(value)||0;
+  const block=blocks.find(b=>b.id===id);
+  if(prop==='blockWidth'){
+    el.style.width=v===100?'100%':'calc('+v+'% - 6px)';
+  }else{
+    if(v===0){el.style.maxHeight='';el.style.overflowY='';}
+    else{el.style.maxHeight=v+'px';el.style.overflowY='auto';}
+    if(block&&block.type==='chart'){
+      const wrap=el.querySelector('.chart-canvas-wrap');
+      if(wrap)wrap.style.height=v>0?v+'px':'400px';
+      if(chartInstances[id])setTimeout(function(){if(chartInstances[id])chartInstances[id].resize();},10);
+    }
+  }
+  // 锁定比例联动
+  const otherProp=syncLockedDimension(id,prop,value);
+  if(otherProp&&block){
+    if(otherProp==='blockWidth'){
+      el.style.width=(block.blockWidth||100)===100?'100%':'calc('+(block.blockWidth||100)+'% - 6px)';
+    }else{
+      const oh=block.blockHeight;
+      if(oh&&oh!==0&&oh!=='0'&&oh!=='auto'){el.style.maxHeight=oh+'px';el.style.overflowY='auto';}
+      else{el.style.maxHeight='';el.style.overflowY='';}
+    }
+    // 锁定联动时同步滑块标签
+    const oh=block.blockHeight;
+    if(otherProp==='blockHeight'){
+      const sr=document.getElementById('rs_h_'+id);
+      if(sr)sr.value=oh;
+      const sl=document.getElementById('sh_'+id);
+      if(sl)sl.textContent=(oh&&oh!=='auto'&&oh!==0)?oh+'px':'自动';
+    }else if(otherProp==='blockWidth'){
+      const sr=document.getElementById('rs_w_'+id);
+      if(sr)sr.value=block.blockWidth||100;
+      const sl=document.getElementById('sw_'+id);
+      if(sl)sl.textContent=(block.blockWidth||100)+'%';
+    }
+    // 锁定联动时图表也需要实时 resize
+    if(block.type==='chart'){
+      const wrap=el.querySelector('.chart-canvas-wrap');
+      if(wrap){
+        const ch=block.blockHeight||0;
+        if(ch&&ch!==0&&ch!=='0'&&ch!=='auto'){wrap.style.height=ch+'px';}
+        else{wrap.style.height='400px';}
+      }
+      if(chartInstances[id])chartInstances[id].resize();
+    }
+  }
+}
+
+function updateBlockSize(id,prop,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block[prop]=prop==='blockWidth'?parseInt(value):(parseInt(value)||'auto');
+  // 锁定比例联动 — 同步另一维度数据和DOM
+  const otherProp=syncLockedDimension(id,prop,value);
+  // 同步另一滑块标签
+  if(otherProp==='blockHeight'){
+    const sr=document.getElementById('rs_h_'+id);
+    const oh=block.blockHeight;
+    if(sr)sr.value=(oh&&oh!=='auto'&&oh!==0)?oh:0;
+    const sl=document.getElementById('sh_'+id);
+    if(sl)sl.textContent=(oh&&oh!=='auto'&&oh!==0)?oh+'px':'自动';
+  }else if(otherProp==='blockWidth'){
+    const sr=document.getElementById('rs_w_'+id);
+    if(sr)sr.value=block.blockWidth||100;
+    const sl=document.getElementById('sw_'+id);
+    if(sl)sl.textContent=(block.blockWidth||100)+'%';
+  }
+  const el=document.querySelector('.block[data-block-id="'+id+'"]');
+  if(el){
+    const w=block.blockWidth||100;
+    el.style.width=w===100?w+'%':'calc('+w+'% - 6px)';
+    const h=block.blockHeight;
+    if(h&&h!==0&&h!=='0'&&h!=='auto'){el.style.maxHeight=h+'px';el.style.overflowY='auto';}
+    else{el.style.maxHeight='';el.style.overflowY='';}
+    // 图表高度同步 + resize
+    if(block.type==='chart'){
+      const wrap=el.querySelector('.chart-canvas-wrap');
+      if(wrap&&h&&h!==0&&h!=='0'&&h!=='auto'){wrap.style.height=(h-80)+'px';}
+      else if(wrap){wrap.style.height='';}
+      if(chartInstances[id]){chartInstances[id].resize();}
+    }
+  }
+  autoSave();
+}
+
+function toggleLockAspect(id,checked){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(checked){
+    const w=block.blockWidth||100;
+    let h=block.blockHeight;
+    // 自动设置默认高度
+    if(!h||h==='auto'||h===0||h==='0'){
+      h=Math.round((w/100)*400/20)*20; // 按比例默认400px基准
+      if(h<40)h=40;
+      block.blockHeight=h;
+      // 更新高度滑块DOM
+      const hs=document.getElementById('rs_h_'+id);
+      if(hs)hs.value=h;
+      const hl=document.getElementById('sh_'+id);
+      if(hl)hl.textContent=h+'px';
+    }
+    block.lockAspect=true;
+    block.aspectRatio=w/parseInt(h);
+    toast('已锁定宽高比 '+w+'% : '+h+'px');
+  }else{
+    block.lockAspect=false;
+    delete block.aspectRatio;
+    toast('已取消锁定');
+  }
+  autoSave();
+}
+
+function syncLockedDimension(id,changedProp,newValue){
+  const block=blocks.find(b=>b.id===id);
+  if(!block||!block.lockAspect||!block.aspectRatio)return;
+  const ratio=block.aspectRatio;
+  let otherProp,otherValue;
+  if(changedProp==='blockWidth'){
+    otherProp='blockHeight';
+    otherValue=Math.round(parseInt(newValue)/ratio/20)*20;
+    if(otherValue<20)otherValue=20;
+    if(otherValue>1200)otherValue=1200;
+  }else{
+    otherProp='blockWidth';
+    otherValue=Math.round(parseInt(newValue)*ratio/5)*5;
+    if(otherValue<25)otherValue=25;
+    if(otherValue>100)otherValue=100;
+  }
+  block[otherProp]=otherValue;
+  // Sync the UI slider and label
+  const otherSlider=document.getElementById(otherProp==='blockWidth'?'rs_w_'+id:'rs_h_'+id);
+  const otherLabel=document.getElementById(otherProp==='blockWidth'?'sw_'+id:'sh_'+id);
+  if(otherSlider)otherSlider.value=otherValue;
+  if(otherLabel){
+    if(otherProp==='blockWidth')otherLabel.textContent=otherValue+'%';
+    else otherLabel.textContent=otherValue===0?'自动':otherValue+'px';
+  }
+  return otherProp;
+}
+
+function getBlockTypeLabel(type){
+  const map={header:'报告头部',meta:'报告说明',text:'文本段落',chart:'图表',kpi:'KPI卡片',table:'数据表格',image:'图片',conclusion:'结论框',divider:'分隔线',swot:'SWOT分析',timeline:'时间轴',compare:'对比卡片',progress:'进度条'};
+  return map[type]||type;
+}
+
+function updateBlockProp(id,prop,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block[prop]=value;
+  autoSave();
+}
+
+function updateKpiItem(id,idx,prop,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.items[idx][prop]=value;
+  renderAll();
+  autoSave();
+}
+
+function changeKpiCount(id,count){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  while(block.items.length<count)block.items.push({label:'新指标',value:'0'});
+  while(block.items.length>count)block.items.pop();
+  renderAll();
+  autoSave();
+}
+
+function saveTextBlock(id,html){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.html=html;
+  autoSave();
+}
+
+// ===== 富文本格式工具栏（右侧面板内嵌，常驻显示） =====
+let formatTargetBlockId=null;
+let formatTargetField=null;  // 当前编辑字段路径（支持点号嵌套：strengths / diag / sections.0 / events.0.desc）
+let formatTargetEl=null;     // 当前编辑的 contenteditable 元素
+let savedRange=null;
+
+function saveSelectionFromToolbar(){
+  const sel=window.getSelection();
+  if(sel&&sel.rangeCount>0){
+    savedRange=sel.getRangeAt(0).cloneRange();
+  }
+}
+
+// 嵌套字段路径辅助：支持 "sections.0" / "events.0.desc" 等点号路径
+function setNestedValue(obj,path,value){
+  const keys=path.split('.');
+  const last=keys.pop();
+  let target=obj;
+  for(const k of keys){target=target[k];}
+  target[last]=value;
+}
+
+// 设置当前格式编辑目标（点击 contenteditable 时调用）
+function showFormatToolbar(id,el,field){
+  formatTargetBlockId=id;
+  formatTargetField=field||null;
+  formatTargetEl=el;
+}
+
+// 清除当前格式编辑目标（切换模块时调用）
+function clearFormatTarget(){
+  formatTargetBlockId=null;
+  formatTargetField=null;
+  formatTargetEl=null;
+  savedRange=null;
+}
+
+// 检测当前选区的样式激活状态（用于 toggle 判断）
+// 关键：找到选区第一个文本节点的"直接父元素"，检查其 getComputedStyle
+// getComputedStyle 已解析完整 CSS 层叠（含继承），直接父元素的值即为文本的生效样式
+// 不能沿祖先链向上遍历——否则会被已覆盖的外层样式误导（如外层 bold + 内层 normal）
+function isStyleActive(prop,activeValue){
+  const sel=window.getSelection();
+  if(!sel||sel.rangeCount===0)return false;
+  const range=sel.getRangeAt(0);
+  if(!range)return false;
+  // 从 range.startContainer 开始，若不是文本节点就找其内的第一个文本节点
+  let node=range.startContainer;
+  if(node.nodeType===1){
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null);
+    const firstText=walker.nextNode();
+    if(firstText)node=firstText;
+  }
+  if(!node)return false;
+  if(node.nodeType===3)node=node.parentElement;
+  if(!node)return false;
+  // 只检查直接父元素的 computed style（已包含 CSS 继承和层叠）
+  const cs=window.getComputedStyle(node);
+  if(prop==='font-weight'){
+    const fw=cs.fontWeight;
+    if(fw==='bold'||fw==='bolder'||fw==='800'||fw==='900')return true;
+    const num=parseInt(fw);
+    if(!isNaN(num)&&num>=600)return true;
+  }else if(prop==='text-decoration'){
+    const v1=cs.textDecorationLine||'';
+    const v2=cs.textDecoration||'';
+    if(v1&&v1!=='none'&&v1.indexOf('underline')>=0)return true;
+    if(v2&&v2!=='none'&&v2.indexOf('underline')>=0)return true;
+  }else if(prop==='font-style'){
+    const fs=cs.fontStyle;
+    if(fs==='italic'||fs==='oblique')return true;
+  }else{
+    if(cs[prop]===activeValue)return true;
+  }
+  return false;
+}
+
+function formatCmd(cmd,val){
+  // 立即保存当前选区（按钮 mousedown 先于父容器触发，不能等冒泡）
+  saveSelectionFromToolbar();
+  // 恢复选区
+  if(savedRange){
+    const sel=window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+  // 加粗/斜体/下划线/字号/颜色 —— 全部用 CSS 内联 span 替代 execCommand
+  // execCommand 在跨 span 元素（Ctrl+A 全选含已着色文字）时无法正确 toggle
+  if(cmd==='bold'){
+    const isBold=isStyleActive('font-weight','bold');
+    applySpanStyle('font-weight',isBold?'normal':'bold');
+  }else if(cmd==='italic'){
+    const isItalic=isStyleActive('font-style','italic');
+    applySpanStyle('font-style',isItalic?'normal':'italic');
+  }else if(cmd==='underline'){
+    const isUnderline=isStyleActive('text-decoration','underline');
+    applySpanStyle('text-decoration',isUnderline?'none':'underline');
+  }else if(cmd==='fontSize'){
+    applySpanStyle('font-size',val);
+  }else if(cmd==='foreColor'){
+    applySpanStyle('color',val);
+    addColorToHistory(val);  // 色谱选色也记录历史
+  }else if(cmd==='insertLineBreak'){
+    // 在选区末尾插入换行
+    const sel=window.getSelection();
+    if(sel.rangeCount>0){
+      const r=sel.getRangeAt(0);
+      r.collapse(false);
+      const br=document.createElement('br');
+      r.insertNode(br);
+      // 移动光标到 br 后面
+      r.setStartAfter(br);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  }else{
+    // 其他命令的兜底
+    document.execCommand(cmd,false,val||null);
+  }
+  // 保存到数据 + 更新 savedRange
+  if(formatTargetBlockId&&formatTargetEl&&document.contains(formatTargetEl)){
+    const block=blocks.find(b=>b.id===formatTargetBlockId);
+    if(block){
+      if(formatTargetField){
+        // 支持嵌套路径：sections.0 / events.0.desc / strengths / diag 等
+        if(formatTargetField.indexOf('.')>-1){
+          setNestedValue(block,formatTargetField,formatTargetEl.innerHTML);
+        }else{
+          block[formatTargetField]=formatTargetEl.innerHTML;
+        }
+      }else{
+        block.html=formatTargetEl.innerHTML;
+      }
+      autoSave();
+    }
+  }
+  // 更新保存的选区
+  const sel=window.getSelection();
+  if(sel&&sel.rangeCount>0){
+    savedRange=sel.getRangeAt(0).cloneRange();
+  }
+}
+function applySpanStyle(prop,value){
+  const sel=window.getSelection();
+  if(!sel||sel.rangeCount===0)return;
+  const range=sel.getRangeAt(0);
+  if(range.collapsed)return;
+  // 核心算法：逐文本节点包裹
+  // 关键：不能产生 <span><ul></ul></span> 这种 inline 包 block 的非法 HTML 结构
+  // 浏览器会自动修复非法结构，强行闭合 span、插入零碎的空 block 元素/空行
+  // 用户会看到"加粗后自动加了空行"——所以必须避免 inline span 跨越 block 元素边界
+  //
+  // 算法：手动递归收集 range 内所有文本节点 → 切割每个文本节点到 range 边界
+  //       → 清除祖先链上已有的同属性 span（同属性的样式 + 解包空 span）
+  //       → 包一个新的 inline span
+  // 优点：保证每个 span 都只在 inline 文本节点上，不会跨 block 元素
+
+  // 1. 收集 range 内的所有文本节点
+  const textNodes=[];
+  function visit(node){
+    if(!node)return;
+    if(node.nodeType===3){
+      if(range.intersectsNode(node))textNodes.push(node);
+      return;
+    }
+    for(let i=0;i<node.childNodes.length;i++)visit(node.childNodes[i]);
+  }
+  let startFrom=range.commonAncestorContainer;
+  if(startFrom.nodeType!==1)startFrom=startFrom.parentNode;
+  if(startFrom)visit(startFrom);
+  if(textNodes.length===0)return;
+
+  // 2. 对每个文本节点：切割 + 清除祖先链同属性 + 包新 span
+  let firstTarget=null,lastTarget=null;
+  textNodes.forEach(function(textNode){
+    let startOffset=0;
+    let endOffset=textNode.length;
+    if(textNode===range.startContainer)startOffset=range.startOffset;
+    if(textNode===range.endContainer)endOffset=range.endOffset;
+    if(startOffset>=endOffset)return;
+
+    let target=textNode;
+    // 切割起点之前
+    if(startOffset>0)target=target.splitText(startOffset);
+    // 切割终点之后（只切 target 内的，不影响 textNode 整体）
+    const newEnd=endOffset-startOffset;
+    if(newEnd<target.length)target.splitText(newEnd);
+
+    // 清除祖先链上同属性的 span（但不解包仍带其他样式的 span）
+    let p=target.parentElement;
+    while(p){
+      if(p.tagName==='SPAN'&&p.style[prop]){
+        p.style[prop]='';
+        if(p.style.length===0){
+          const pp=p.parentNode;
+          if(pp){
+            while(p.firstChild)pp.insertBefore(p.firstChild,p);
+            pp.removeChild(p);
+          }
+        }
+      }
+      p=p.parentElement;
+    }
+
+    // 包新 span（仅当 value 不是"清除"语义时）
+    if(value&&value!=='normal'&&value!=='none'){
+      const span=document.createElement('span');
+      span.style[prop]=value;
+      target.parentNode.insertBefore(span,target);
+      span.appendChild(target);
+      if(!firstTarget)firstTarget=span;
+      lastTarget=span;
+    }else{
+      // 清除值：仅记录位置用于恢复选区
+      if(!firstTarget)firstTarget=target;
+      lastTarget=target;
+    }
+  });
+
+  // 3. 恢复选区
+  if(firstTarget&&lastTarget){
+    sel.removeAllRanges();
+    const newRange=document.createRange();
+    newRange.selectNodeContents(firstTarget);
+    sel.addRange(newRange);
+  }
+}
+// ===== 颜色快捷应用 + 历史记录 =====
+const COLOR_HISTORY_KEY='bre_color_history';
+const COLOR_HISTORY_MAX=8;
+function getColorHistory(){
+  try{
+    const raw=localStorage.getItem(COLOR_HISTORY_KEY);
+    return raw?JSON.parse(raw):[];
+  }catch(e){return[];}
+}
+function addColorToHistory(color){
+  if(!color)return;
+  let hist=getColorHistory();
+  // 去重：移除已存在的同名颜色
+  hist=hist.filter(c=>c.toLowerCase()!==color.toLowerCase());
+  // 加到最前
+  hist.unshift(color);
+  // 限制数量
+  if(hist.length>COLOR_HISTORY_MAX)hist=hist.slice(0,COLOR_HISTORY_MAX);
+  try{localStorage.setItem(COLOR_HISTORY_KEY,JSON.stringify(hist));}catch(e){}
+  renderColorHistory();
+}
+function renderColorHistory(){
+  const wrap=document.getElementById('ftRecent');
+  if(!wrap)return;
+  const hist=getColorHistory();
+  if(hist.length===0){
+    wrap.innerHTML='<span class="ft-clabel" style="color:#bbb">暂无</span>';
+    return;
+  }
+  wrap.innerHTML=hist.map(c=>
+    '<button class="ft-swatch" style="background:'+c+'" onmousedown="event.preventDefault();applyQuickColor(\''+c+'\')" title="'+c+'"></button>'
+  ).join('');
+}
+function applyQuickColor(color){
+  // 与 formatCmd('foreColor',color) 等效，但额外记录历史
+  saveSelectionFromToolbar();
+  if(savedRange){
+    const sel=window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+  applySpanStyle('color',color);
+  addColorToHistory(color);
+  // 保存到数据
+  if(formatTargetBlockId&&formatTargetEl&&document.contains(formatTargetEl)){
+    const block=blocks.find(b=>b.id===formatTargetBlockId);
+    if(block){
+      if(formatTargetField){
+        if(formatTargetField.indexOf('.')>-1){
+          setNestedValue(block,formatTargetField,formatTargetEl.innerHTML);
+        }else{
+          block[formatTargetField]=formatTargetEl.innerHTML;
+        }
+      }else{
+        block.html=formatTargetEl.innerHTML;
+      }
+      autoSave();
+    }
+  }
+  // 更新 savedRange
+  const sel=window.getSelection();
+  if(sel.rangeCount>0)savedRange=sel.getRangeAt(0).cloneRange();
+}
+// 键盘快捷键支持
+document.addEventListener('keydown',function(e){
+  if(!formatTargetBlockId)return;
+  if(e.ctrlKey||e.metaKey){
+    if(e.key==='b'){e.preventDefault();formatCmd('bold');}
+    else if(e.key==='i'){e.preventDefault();formatCmd('italic');}
+    else if(e.key==='u'){e.preventDefault();formatCmd('underline');}
+  }
+});
+
+function saveMetaSection(id,idx,html){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.sections)block.sections=[];
+  block.sections[idx]=html;
+  autoSave();
+}
+
+function updateMetaSection(id,idx,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.sections)block.sections=[];
+  block.sections[idx]=value;
+  renderAll();
+  autoSave();
+}
+
+function addMetaSection(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.sections)block.sections=[];
+  block.sections.push('<h4>新段落</h4><p>双击此处编辑内容...</p>');
+  renderAll();
+  autoSave();
+}
+
+function removeMetaSection(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.sections||block.sections.length<=1)return;
+  block.sections.pop();
+  renderAll();
+  autoSave();
+}
+
+function saveChartDiag(id,html){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.diag=html;
+  autoSave();
+}
+
+function uploadImage(id,fileInput){
+  const file=fileInput.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const block=blocks.find(b=>b.id===id);
+    if(!block)return;
+    block.src=e.target.result;
+    // 直接更新画布中的图片块 DOM，不触发 renderAll 避免销毁 file input
+    const el=document.querySelector('[data-block-id="'+id+'"] .image-block');
+    if(el){
+      el.innerHTML='<img src="'+block.src+'" style="width:'+(block.width||'600')+'px;max-width:100%">'+(block.caption?'<div class="image-caption">'+escHtml(block.caption)+'</div>':'');
+    }
+    // 刷新右侧面板显示宽度和说明输入
+    updateRightPanel();
+    autoSave();
+    toast('图片已上传');
+  };
+  reader.readAsDataURL(file);
+}
+
+// ===== SWOT 辅助 =====
+function saveSwotCell(id,field,html){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block[field]=html;
+  autoSave();
+}
+
+// ===== 时间轴辅助 =====
+function saveTimelineField(id,idx,field,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.events[idx])return;
+  block.events[idx][field]=value;
+  autoSave();
+}
+function updateTimelineEvent(id,idx,field,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.events[idx])return;
+  block.events[idx][field]=value;
+  autoSave();
+}
+function addTimelineEvent(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.events.push({date:'新日期',title:'新事件',desc:'事件描述...'});
+  renderAll();
+  autoSave();
+}
+function removeTimelineEvent(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block||!block.events||block.events.length<=1)return;
+  block.events.pop();
+  renderAll();
+  autoSave();
+}
+
+// ===== 对比卡片辅助 =====
+function updateCompareRow(id,idx,field,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.rows[idx])return;
+  block.rows[idx][field]=value;
+  autoSave();
+}
+function addCompareRow(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.rows.push({label:'新指标',left:'0',right:'0'});
+  renderAll();
+  autoSave();
+}
+function removeCompareRow(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block||!block.rows||block.rows.length<=1)return;
+  block.rows.pop();
+  renderAll();
+  autoSave();
+}
+
+// ===== 进度条辅助 =====
+function updateProgressItem(id,idx,field,value){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.items[idx])return;
+  block.items[idx][field]=value;
+  autoSave();
+}
+function addProgressItem(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  block.items.push({label:'新目标',value:50,color:'#1565c0'});
+  renderAll();
+  autoSave();
+}
+function removeProgressItem(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block||!block.items||block.items.length<=1)return;
+  block.items.pop();
+  renderAll();
+  autoSave();
+}
+
+// ===== 图表数据编辑器 =====
+function openChartDataEditor(id){
+  editingChartBlockId=id;
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  // 重置模态
+  resetModalForChart();
+  document.getElementById('chartTypeSelect').value=block.type_chart||'bar';
+  document.getElementById('chartTitleInput').value=block.title||'';
+  document.getElementById('chartDiagInput').value=block.diag||'';
+  renderDataTable(block);
+  renderComboDatasetEditor(block);
+  document.getElementById('chartDataModal').classList.add('active');
+}
+
+function resetModalForChart(){
+  document.getElementById('chartTypeSelect').parentElement.style.display='';
+  document.getElementById('chartDiagInput').parentElement.style.display='';
+  var eig=document.getElementById('excelImportGroup');
+  if(eig)eig.style.display='none';
+  // 表格标记工具栏仅在表格模式下显示
+  var tmt=document.getElementById('tableMarkToolbar');
+  if(tmt)tmt.style.display='none';
+  // 恢复"添加数据系列/添加数据行"按钮
+  var addBtns=document.querySelector('#chartDataModal .data-table-wrap + div');
+  if(addBtns){
+    addBtns.innerHTML='<button class="btn-secondary" onclick="addDataSeries()" style="flex:1">+ 添加数据系列</button><button class="btn-secondary" onclick="addDataLabel()" style="flex:1">+ 添加数据行</button>';
+  }
+  document.querySelector('#chartDataModal h3').textContent='📊 编辑图表数据';
+  var titleInput=document.getElementById('chartTitleInput');
+  if(titleInput&&titleInput.previousElementSibling){
+    titleInput.previousElementSibling.textContent='图表标题';
+  }
+  // 移除旧的组合图编辑器
+  const oldCombo=document.getElementById('comboEditor');
+  if(oldCombo)oldCombo.remove();
+  // 恢复 chart 标题和说明
+  const labels=document.querySelectorAll('#chartDataModal .prop-group label');
+  labels.forEach(l=>{
+    if(l.textContent.includes('数据编辑'))l.textContent='数据编辑（双击单元格修改数值；拖拽列头排序）';
+  });
+}
+
+function renderComboDatasetEditor(block){
+  const modal=document.querySelector('#chartDataModal .modal-content');
+  if(!modal)return;
+  // 创建组合图系列编辑器
+  const type=block.type_chart||'bar';
+  const isCombo=type==='combo'||(type==='bar'&&(block.datasets||[]).some(ds=>ds.seriesType==='line'));
+  if(!isCombo){
+    // 非组合图时也清理旧编辑器
+    const old=modal.querySelector('#comboEditor');
+    if(old)old.remove();
+    return;
+  }
+  // 先移除旧的组合图编辑器，避免重复创建（updateComboSeries/updateChartPreview 会重复调用此函数）
+  const existing=modal.querySelector('#comboEditor');
+  if(existing)existing.remove();
+  let html='<div class="combo-section" id="comboEditor">'+
+    '<h5>📈 组合图设置（每个系列可独立选择类型 + 配置第二Y轴）</h5>';
+  (block.datasets||[]).forEach((ds,i)=>{
+    const sType=ds.seriesType||'bar';
+    html+='<div class="combo-dataset-bar">'+
+      '<span class="ds-label">📊 '+escHtml(ds.label||('系列'+(i+1)))+'</span>'+
+      '<select onchange="updateComboSeries('+i+',\'seriesType\',this.value)">'+
+      '<option value="bar"'+(sType==='bar'?' selected':'')+'>柱状图 (Bar)</option>'+
+      '<option value="line"'+(sType==='line'?' selected':'')+'>折线图 (Line)</option>'+
+      '</select>'+
+      '<select onchange="updateComboSeries('+i+',\'yAxisID\',this.value)">'+
+      '<option value="y"'+((ds.yAxisID||'y')==='y'?' selected':'')+'>主Y轴</option>'+
+      '<option value="y2"'+((ds.yAxisID||'y')==='y2'?' selected':'')+'>副Y轴</option>'+
+      '</select>'+
+      '<input type="color" value="'+(ds.backgroundColor||getColor(i))+'" onchange="updateComboSeries('+i+',\'backgroundColor\',this.value)" title="颜色">'+
+      '</div>';
+  });
+  html+='<div style="font-size:11px;color:#888;margin-top:6px">💡 提示：折线图系列建议配置到副Y轴以避免数据被柱状图系列压缩。</div>';
+  html+='</div>';
+  // 插入到数据编辑按钮之前
+  const addRow=modal.querySelector('div[style*="margin-top:8px"]');
+  if(addRow){
+    const wrap=document.createElement('div');
+    wrap.innerHTML=html;
+    while(wrap.firstChild)addRow.parentNode.insertBefore(wrap.firstChild,addRow);
+  }else{
+    modal.insertAdjacentHTML('beforeend',html);
+  }
+}
+
+function updateComboSeries(idx,prop,value){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block||!block.datasets||!block.datasets[idx])return;
+  block.datasets[idx][prop]=value;
+  // 同步刷新预览
+  renderComboDatasetEditor(block);
+}
+
+function renderDataTable(block){
+  const labels=block.labels||[];
+  const datasets=block.datasets||[];
+  let headHtml='<tr><th>标签\系列</th>';
+  datasets.forEach((ds,i)=>{
+    headHtml+='<th>'+escHtml(ds.label||'系列'+(i+1));
+    if(datasets.length>1)headHtml+=' <span class="del-col" title="删除此系列" onclick="event.stopPropagation();deleteDataSeries('+i+')" style="cursor:pointer;color:#c62828;font-size:13px;margin-left:4px">×</span>';
+    headHtml+='</th>';
+  });
+  headHtml+='<th class="add-col" title="添加系列" onclick="addDataSeries()">+</th></tr>';
+  document.getElementById('dataTableHead').innerHTML=headHtml;
+  let bodyHtml='';
+  const maxRows=Math.max(labels.length,...datasets.map(ds=>(ds.data||[]).length));
+  for(let r=0;r<maxRows;r++){
+    bodyHtml+='<tr><td><input value="'+escAttr(labels[r]||'')+'" onchange="updateDataCell('+r+',-1,this.value)" placeholder="标签'+(r+1)+'"></td>';
+    datasets.forEach((ds,i)=>{
+      bodyHtml+='<td><input type="number" value="'+(ds.data[r]!==undefined?ds.data[r]:'')+'" onchange="updateDataCell('+r+','+i+',parseFloat(this.value)||0)" placeholder="0"></td>';
+    });
+    bodyHtml+='<td class="del-row" title="删除此行" onclick="deleteDataRow('+r+')">×</td></tr>';
+  }
+  document.getElementById('dataTableBody').innerHTML=bodyHtml;
+}
+
+function deleteDataSeries(idx){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block||!block.datasets||block.datasets.length<=1)return;
+  block.datasets.splice(idx,1);
+  renderDataTable(block);
+}
+
+function updateDataCell(row,col,value){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(col===-1){block.labels[row]=value;}
+  else{block.datasets[col].data[row]=value;}
+}
+
+function addDataSeries(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  const label='系列'+(block.datasets.length+1);
+  const len=block.labels.length||1;
+  block.datasets.push({label,data:Array(len).fill(0),backgroundColor:getColor(block.datasets.length)});
+  renderDataTable(block);
+}
+
+function addDataLabel(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  block.labels.push('新标签'+(block.labels.length+1));
+  block.datasets.forEach(ds=>{(ds.data||(ds.data=[])).push(0);});
+  renderDataTable(block);
+}
+
+function deleteDataRow(idx){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  block.labels.splice(idx,1);
+  block.datasets.forEach(ds=>{if(ds.data)ds.data.splice(idx,1);});
+  renderDataTable(block);
+}
+
+function saveChartData(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  block.title=document.getElementById('chartTitleInput').value||'图表';
+  block.type_chart=document.getElementById('chartTypeSelect').value;
+  block.diag=document.getElementById('chartDiagInput').value||'';
+  renderAll();
+  autoSave();
+  closeChartDataModal();
+  toast('图表已更新');
+}
+
+function updateChartPreview(){
+  // 类型切换时重新渲染组合图编辑器
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  block.type_chart=document.getElementById('chartTypeSelect').value;
+  renderDataTable(block);
+  renderComboDatasetEditor(block);
+}
+function closeChartDataModal(){
+  document.getElementById('chartDataModal').classList.remove('active');
+  editingChartBlockId=null;
+  document.getElementById('chartTypeSelect').parentElement.style.display='';
+  document.getElementById('chartDiagInput').parentElement.style.display='';
+  var eig=document.getElementById('excelImportGroup');
+  if(eig)eig.style.display='none';
+  var tmt=document.getElementById('tableMarkToolbar');
+  if(tmt)tmt.style.display='none';
+  // 恢复"添加数据系列/添加数据行"按钮
+  var addBtns=document.querySelector('#chartDataModal .data-table-wrap + div');
+  if(addBtns){
+    addBtns.innerHTML='<button class="btn-secondary" onclick="addDataSeries()" style="flex:1">+ 添加数据系列</button><button class="btn-secondary" onclick="addDataLabel()" style="flex:1">+ 添加数据行</button>';
+  }
+  document.querySelector('#chartDataModal h3').textContent='📊 编辑图表数据';
+  // 恢复图表标题的 label 文字
+  var titleInput=document.getElementById('chartTitleInput');
+  if(titleInput&&titleInput.previousElementSibling){
+    titleInput.previousElementSibling.textContent='图表标题';
+  }
+  const oldCombo=document.getElementById('comboEditor');
+  if(oldCombo)oldCombo.remove();
+}
+
+// ===== 表格编辑器 =====
+function openTableEditor(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.tableData){block.tableData={headers:block.headers||[],rows:block.rows||[]};}
+  editingChartBlockId=id;
+  document.getElementById('chartTypeSelect').style.display='none';
+  document.getElementById('chartTitleInput').value=block.title||'';
+  document.getElementById('chartDiagInput').style.display='none';
+  var eig=document.getElementById('excelImportGroup');
+  if(eig)eig.style.display='block';
+  // 显示表格标记工具栏
+  var tmt=document.getElementById('tableMarkToolbar');
+  if(tmt)tmt.style.display='block';
+  // 把"添加系列/行"按钮替换为"添加列/行"
+  var addBtns=document.querySelector('#chartDataModal .data-table-wrap + div');
+  if(addBtns){
+    addBtns.innerHTML='<button class="btn-secondary" onclick="addTableColumn()" style="flex:1">+ 添加列</button><button class="btn-secondary" onclick="addTableRow()" style="flex:1">+ 添加行</button>';
+  }
+  // 初始化选区
+  tableSel.selection='none';
+  tableSel.rows={};
+  tableSel.cells={};
+  updateTableSelectionStatus();
+  const labels=block.tableData.headers||block.headers||[];
+  const rows=block.tableData.rows||block.rows||[];
+  let headHtml='<tr><th class="row-num">#</th>';
+  labels.forEach((h,i)=>{headHtml+='<th class="col-head" data-ci="'+i+'" onclick="onTableColHeadClick('+i+',event)"><input value="'+escAttr(h||'')+'" onchange="updateTableHeader('+i+',this.value)" placeholder="列名"></th>';});
+  headHtml+='<th class="add-col" onclick="addTableColumn()">+</th></tr>';
+  document.getElementById('dataTableHead').innerHTML=headHtml;
+  // 收集已存在的 marks 用来在编辑器中高亮显示
+  const cellMarks=block.cellMarks||{};
+  const rowMarks=block.rowMarks||{};
+  const colMarks=block.colMarks||{};
+  let bodyHtml='';
+  rows.forEach((row,ri)=>{
+    // 行号 cell 点击 = 选/取消该整行
+    bodyHtml+='<tr><td class="row-num" data-ri="'+ri+'" onclick="onTableRowNumClick('+ri+',event)">'+(ri+1)+'</td>';
+    row.forEach((cell,ci)=>{
+      const mark=cellMarks[ri+','+ci]||rowMarks[ri]||colMarks[ci]||'';
+      const cls=mark?' cell-mark-preview cell-mark-preview-'+mark:'';
+      bodyHtml+='<td class="data-cell'+(mark?' cell-mark-'+mark:'')+cls+'" data-ri="'+ri+'" data-ci="'+ci+'" onclick="onTableCellClick('+ri+','+ci+',event)"><input value="'+escAttr(cell||'')+'" onchange="updateTableCell('+ri+','+ci+',this.value)"></td>';
+    });
+    for(let i=row.length;i<labels.length;i++)bodyHtml+='<td class="data-cell" data-ri="'+ri+'" data-ci="'+i+'" onclick="onTableCellClick('+ri+','+i+',event)"><input value="" onchange="updateTableCell('+ri+','+i+',this.value)"></td>';
+    bodyHtml+='<td class="del-row" onclick="deleteTableRow('+ri+')">×</td></tr>';
+  });
+  bodyHtml+='<tr><td class="add-row" colspan="'+(labels.length+2)+'" onclick="addTableRow()" style="text-align:center;color:#1565c0;cursor:pointer;font-weight:700;font-size:16px;padding:8px">+ 添加行</td></tr>';
+  document.getElementById('dataTableBody').innerHTML=bodyHtml;
+  // 应用行/列 选中样式
+  paintTableSelection();
+  document.getElementById('chartTypeSelect').parentElement.style.display='none';
+  var ti=document.getElementById('chartTitleInput');
+  if(ti&&ti.previousElementSibling)ti.previousElementSibling.textContent='表格标题';
+  document.getElementById('chartDataModal').classList.add('active');
+  document.querySelector('#chartDataModal h3').textContent='📋 编辑表格数据';
+}
+
+// 表格选区状态：{selection:'none'|'row'|'col'|'cell', rows:{r:true}, cols:{c:true}, cells:{"r,c":true}}
+const tableSel={selection:'none',rows:{},cols:{},cells:{}};
+
+function onTableRowNumClick(ri,ev){
+  ev.preventDefault();ev.stopPropagation();
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  const nRows=((block&&block.tableData&&block.tableData.rows)||(block&&block.rows)||[]).length;
+  // 切换：未选 → 选该行；已选 → 取消
+  if(tableSel.selection==='row'&&Object.keys(tableSel.rows).length===1&&tableSel.rows[ri]){
+    tableSel.selection='none';tableSel.rows={};
+  }else{
+    tableSel.selection='row';
+    tableSel.rows={};tableSel.rows[ri]=true;
+    tableSel.cells={};tableSel.cols={};
+  }
+  paintTableSelection();
+  updateTableSelectionStatus();
+}
+function onTableColHeadClick(ci,ev){
+  ev.preventDefault();ev.stopPropagation();
+  if(tableSel.selection==='col'&&Object.keys(tableSel.cols).length===1&&tableSel.cols[ci]){
+    tableSel.selection='none';tableSel.cols={};
+  }else{
+    tableSel.selection='col';
+    tableSel.cols={};tableSel.cols[ci]=true;
+    tableSel.rows={};tableSel.cells={};
+  }
+  paintTableSelection();
+  updateTableSelectionStatus();
+}
+function onTableCellClick(ri,ci,ev){
+  ev.preventDefault();ev.stopPropagation();
+  const key=ri+','+ci;
+  if(tableSel.selection==='cell'&&tableSel.cells[key]){
+    delete tableSel.cells[key];
+    if(Object.keys(tableSel.cells).length===0)tableSel.selection='none';
+  }else{
+    tableSel.selection='cell';
+    tableSel.cells={};tableSel.cells[key]=true;
+    tableSel.rows={};tableSel.cols={};
+  }
+  paintTableSelection();
+  updateTableSelectionStatus();
+}
+function paintTableSelection(){
+  // 清除所有 selected 样式
+  document.querySelectorAll('#dataTable .cell-selected,#dataTable .row-selected,#dataTable .col-selected').forEach(el=>{
+    el.classList.remove('cell-selected','row-selected','col-selected');
+  });
+  // 行高亮（变更背景）
+  if(tableSel.selection==='row'){
+    Object.keys(tableSel.rows).forEach(ri=>{
+      const tr=document.querySelector('#dataTableBody tr:nth-child('+(parseInt(ri)+1)+')');
+      if(tr){
+        tr.querySelectorAll('.data-cell').forEach(td=>td.classList.add('cell-selected'));
+        const rn=tr.querySelector('.row-num');if(rn)rn.classList.add('row-selected');
+      }
+    });
+  }else if(tableSel.selection==='col'){
+    Object.keys(tableSel.cols).forEach(ci=>{
+      const idx=parseInt(ci)+1; // +1 for # column (querySelectorAll returns 0-based NodeList)
+      document.querySelectorAll('#dataTable tr').forEach(tr=>{
+        const tdList=tr.querySelectorAll('th,td');
+        const cellTd=tdList[idx];
+        if(cellTd){
+          if(cellTd.tagName==='TH')cellTd.classList.add('col-selected');
+          else if(cellTd.classList.contains('data-cell'))cellTd.classList.add('cell-selected');
+        }
+      });
+    });
+  }else if(tableSel.selection==='cell'){
+    Object.keys(tableSel.cells).forEach(key=>{
+      const [ri,ci]=key.split(',');
+      const tr=document.querySelector('#dataTableBody tr:nth-child('+(parseInt(ri)+1)+')');
+      if(tr){
+        const tdList=tr.querySelectorAll('td');
+        const cellTd=tdList[parseInt(ci)+1]; // +1 for # column
+        if(cellTd)cellTd.classList.add('cell-selected');
+      }
+    });
+  }
+}
+function updateTableSelectionStatus(){
+  const el=document.getElementById('tableSelectionStatus');
+  if(!el)return;
+  if(tableSel.selection==='row'){
+    el.textContent='已选整行（'+(Object.keys(tableSel.rows).map(r=>parseInt(r)+1).join('、'))+'）';
+  }else if(tableSel.selection==='col'){
+    el.textContent='已选整列（第 '+(Object.keys(tableSel.cols).map(c=>parseInt(c)+1).join('、'))+' 列）';
+  }else if(tableSel.selection==='cell'){
+    el.textContent='已选 '+Object.keys(tableSel.cells).length+' 个单元格';
+  }else{
+    el.textContent='未选择（点击下方表格单元格/行号/列头）';
+  }
+}
+
+function markTableSelection(mode){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  const style=document.getElementById('tableMarkStyle').value;
+  if(!block.cellMarks)block.cellMarks={};
+  if(!block.rowMarks)block.rowMarks={};
+  if(!block.colMarks)block.colMarks={};
+  const rowsArr=block.tableData.rows||block.rows||[];
+  const nCols=(block.tableData.headers||block.headers||[]).length;
+  if(mode==='selected'){
+    if(tableSel.selection==='row'){
+      Object.keys(tableSel.rows).forEach(r=>block.rowMarks[r]=style);
+    }else if(tableSel.selection==='col'){
+      Object.keys(tableSel.cols).forEach(c=>block.colMarks[c]=style);
+    }else if(tableSel.selection==='cell'){
+      Object.keys(tableSel.cells).forEach(k=>block.cellMarks[k]=style);
+    }else{
+      toast('请先选择单元格、整行或整列');
+      return;
+    }
+  }else if(mode==='row'){
+    // 标记 selected 中所有行的整行（cells 里多行也算）
+    const targetRows={};
+    if(tableSel.selection==='row')Object.assign(targetRows,tableSel.rows);
+    else if(tableSel.selection==='cell'){
+      Object.keys(tableSel.cells).forEach(k=>{targetRows[k.split(',')[0]]=true;});
+    }else if(tableSel.selection==='col'){
+      // 整列模式 → 把列对应的所有行标记
+      for(let r=0;r<rowsArr.length;r++)targetRows[r]=true;
+    }else{
+      for(let r=0;r<rowsArr.length;r++)targetRows[r]=true;
+    }
+    Object.keys(targetRows).forEach(r=>block.rowMarks[r]=style);
+  }else if(mode==='col'){
+    const targetCols={};
+    if(tableSel.selection==='col')Object.assign(targetCols,tableSel.cols);
+    else if(tableSel.selection==='cell'){
+      Object.keys(tableSel.cells).forEach(k=>{targetCols[k.split(',')[1]]=true;});
+    }else if(tableSel.selection==='row'){
+      for(let c=0;c<nCols;c++)targetCols[c]=true;
+    }else{
+      for(let c=0;c<nCols;c++)targetCols[c]=true;
+    }
+    Object.keys(targetCols).forEach(c=>block.colMarks[c]=style);
+  }else if(mode==='all'){
+    for(let r=0;r<rowsArr.length;r++)block.rowMarks[r]=style;
+    for(let c=0;c<nCols;c++)block.colMarks[c]=style;
+  }
+  // 重新渲染表格编辑器 DOM 来应用 class
+  setTimeout(()=>openTableEditor(editingChartBlockId),30);
+  // 同步刷新画布预览
+  renderAll();
+  autoSave();
+}
+function clearMarksInSelection(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.cellMarks)block.cellMarks={};
+  if(!block.rowMarks)block.rowMarks={};
+  if(!block.colMarks)block.colMarks={};
+  if(tableSel.selection==='row'){
+    Object.keys(tableSel.rows).forEach(r=>{delete block.rowMarks[r];});
+  }else if(tableSel.selection==='col'){
+    Object.keys(tableSel.cols).forEach(c=>{delete block.colMarks[c];});
+  }else if(tableSel.selection==='cell'){
+    Object.keys(tableSel.cells).forEach(k=>{delete block.cellMarks[k];});
+  }else{
+    toast('请先选择单元格、整行或整列');
+    return;
+  }
+  setTimeout(()=>openTableEditor(editingChartBlockId),30);
+  renderAll();
+  autoSave();
+}
+function clearAllMarks(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.cellMarks)block.cellMarks={};
+  block.cellMarks={};
+  block.rowMarks={};
+  block.colMarks={};
+  setTimeout(()=>openTableEditor(editingChartBlockId),30);
+  renderAll();
+  autoSave();
+}
+
+function updateTableHeader(idx,value){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  block.tableData.headers[idx]=value;
+}
+function updateTableCell(ri,ci,value){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  if(!block.tableData.rows[ri])block.tableData.rows[ri]=[];
+  block.tableData.rows[ri][ci]=value;
+}
+function addTableColumn(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  block.tableData.headers.push('新列');
+  setTimeout(()=>openTableEditor(editingChartBlockId),50);
+}
+function addTableRow(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  const n=block.tableData.headers.length||3;
+  block.tableData.rows.push(Array(n).fill(''));
+  setTimeout(()=>openTableEditor(editingChartBlockId),50);
+}
+function deleteTableRow(idx){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(!block.tableData)block.tableData={headers:block.headers||[],rows:block.rows||[]};
+  block.tableData.rows.splice(idx,1);
+  setTimeout(()=>openTableEditor(editingChartBlockId),50);
+}
+
+// ===== Excel 导入 =====
+function importExcelData(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block){input.value='';return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      if(!ws){alert('Excel 文件中没有工作表');input.value='';return;}
+      // 不设 defval，让合并单元格的非左上角位置保留为 undefined
+      const aoaRaw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+      if(aoaRaw.length===0){alert('Excel 工作表为空');input.value='';return;}
+      // 跳过开头的完全空行
+      let headerIdx=0;
+      while(headerIdx<aoaRaw.length){
+        const row=aoaRaw[headerIdx];
+        if(row&&row.some(v=>v!==null&&v!==undefined&&String(v).trim()!==''))break;
+        headerIdx++;
+      }
+      if(headerIdx>=aoaRaw.length){alert('Excel 中没有有效数据');input.value='';return;}
+      // 智能识别表头：若第一行有合并单元格（含 undefined/null）且下一行非空值更多，则跳过第一行
+      const firstRow=aoaRaw[headerIdx]||[];
+      const secondRow=aoaRaw[headerIdx+1]||[];
+      const firstHasMerges=firstRow.some(v=>v===null||v===undefined);
+      const secondNonEmpty=secondRow.filter(v=>v!==null&&v!==undefined&&String(v).trim()!=='').length;
+      if(firstHasMerges && secondNonEmpty>=2){
+        headerIdx++;
+      }
+      // 计算最大列数（取所有非空行中最右非空位置+1）
+      let maxCols=0;
+      for(let i=headerIdx;i<aoaRaw.length;i++){
+        const row=aoaRaw[i]||[];
+        let lastIdx=-1;
+        for(let j=row.length-1;j>=0;j--){
+          if(row[j]!==null&&row[j]!==undefined&&String(row[j]).trim()!==''){
+            lastIdx=j;break;
+          }
+        }
+        if(lastIdx>=0)maxCols=Math.max(maxCols,lastIdx+1);
+      }
+      if(maxCols===0){alert('Excel 中未检测到数据');input.value='';return;}
+      // 提取表头（按 maxCols 截取/补空）
+      const headerRow=aoaRaw[headerIdx]||[];
+      const headers=[];
+      for(let c=0;c<maxCols;c++){
+        const v=headerRow[c];
+        if(v===null||v===undefined)headers.push('');
+        else headers.push(String(v).trim());
+      }
+      // 提取数据行（表头之后的所有非空行，按 maxCols 对齐）
+      const dataRows=[];
+      for(let i=headerIdx+1;i<aoaRaw.length;i++){
+        const row=aoaRaw[i]||[];
+        // 跳过完全空行
+        let hasAny=false;
+        for(let j=0;j<row.length;j++){
+          if(row[j]!==null&&row[j]!==undefined&&String(row[j]).trim()!==''){hasAny=true;break;}
+        }
+        if(!hasAny)continue;
+        const r=[];
+        for(let c=0;c<maxCols;c++){
+          const v=row[c];
+          r.push(v!==null&&v!==undefined?String(v):'');
+        }
+        dataRows.push(r);
+      }
+      block.tableData={headers:headers,rows:dataRows};
+      block.headers=headers;
+      block.rows=dataRows;
+      // 同步 headerLevels
+      if(block.headerRows&&block.headerRows>1){
+        const levels=[];
+        for(let i=0;i<block.headerRows;i++){
+          levels.push(headers.map(h=>({text:i===0?h:'',rowspan:1,colspan:1})));
+        }
+        block.headerLevels=levels;
+      }
+      // 刷新表格编辑器
+      openTableEditor(editingChartBlockId);
+      // 显示成功提示
+      var tip=document.createElement('div');
+      tip.textContent='✅ 已导入 '+dataRows.length+' 行 × '+maxCols+' 列';
+      tip.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+      document.body.appendChild(tip);
+      setTimeout(()=>{tip.style.transition='opacity .4s';tip.style.opacity='0';setTimeout(()=>tip.remove(),400);},2500);
+    }catch(err){
+      alert('导入失败：'+err.message);
+    }
+    input.value='';
+  };
+  reader.onerror=function(){alert('文件读取失败');input.value='';};
+  reader.readAsArrayBuffer(file);
+}
+
+// ===== 表格条件格式 / 多层表头 / 合并单元格辅助 =====
+function updateTableHeaderRows(id,n){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  n=Math.max(1,Math.min(3,n||1));
+  block.headerRows=n;
+  // 同步初始化 headerLevels
+  const labels=block.headers||[];
+  if(!block.headerLevels||block.headerLevels.length!==n){
+    const newLevels=[];
+    for(let i=0;i<n;i++){
+      newLevels.push(labels.map(h=>({text:i===0?(h||''):'',rowspan:1,colspan:1})));
+    }
+    block.headerLevels=newLevels;
+  }
+  renderAll();
+  updateRightPanel();
+  autoSave();
+}
+
+function updateTableCF(id,colIdx,rule){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.conditionalFormat)block.conditionalFormat={};
+  if(!rule||rule===''){
+    delete block.conditionalFormat[colIdx];
+  }else{
+    block.conditionalFormat[colIdx]=rule;
+  }
+  renderAll();
+  autoSave();
+}
+
+function updateTableMergeCell(id,rowIdx,colIdx,prop,val){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  if(!block.headerLevels)updateTableHeaderRows(id,block.headerRows||1);
+  if(!block.headerLevels[rowIdx])block.headerLevels[rowIdx]=[];
+  if(!block.headerLevels[rowIdx][colIdx])block.headerLevels[rowIdx][colIdx]={text:'',rowspan:1,colspan:1};
+  block.headerLevels[rowIdx][colIdx][prop]=val;
+  // 仅记录，不立即 render（用户可能连续编辑多格）
+  if(prop==='text'){
+    // 文本变化只更新画布，不重绘右侧面板
+    renderAll();
+  }
+  autoSave();
+}
+
+function applyTableMerges(id){
+  const block=blocks.find(b=>b.id===id);
+  if(!block)return;
+  // headerLevels 已是数据源
+  // 也把第一层表头同步到 headers（兼容老逻辑）
+  if(block.headerLevels&&block.headerLevels[0]){
+    block.headers=block.headerLevels[0].map(c=>typeof c==='object'?(c.text||''):c);
+  }
+  renderAll();
+  updateRightPanel();
+  autoSave();
+  toast('表头合并已应用');
+}
+
+// 重写 saveChartData 处理表格
+const origSaveChartData=saveChartData;
+saveChartData=function(){
+  const block=blocks.find(b=>b.id===editingChartBlockId);
+  if(!block)return;
+  if(block.type==='table'){
+    block.title=document.getElementById('chartTitleInput').value||'';
+    if(block.tableData){
+      block.headers=block.tableData.headers;
+      block.rows=block.tableData.rows;
+    }
+    renderAll();
+    autoSave();
+    closeChartDataModal();
+    toast('表格已更新');
+    return;
+  }
+  return origSaveChartData();
+};
+
+// 重置模态窗口状态
+document.getElementById('chartDataModal').addEventListener('click',function(e){
+  if(e.target===this)closeChartDataModal();
+});
+
+// ===== 拖拽排序 =====
+let draggedBlockId=null;
+function handleDragStart(e,id){
+  draggedBlockId=id;
+  e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',id);
+}
+function handleDragEnd(e){
+  e.target.classList.remove('dragging');
+  document.querySelectorAll('.block.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  draggedBlockId=null;
+}
+function handleDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+}
+function handleDrop(e){
+  e.preventDefault();
+  const dropTarget=e.target.closest('.block');
+  if(!dropTarget||!draggedBlockId||draggedBlockId===dropTarget.dataset.blockId)return;
+  const fromIdx=blocks.findIndex(b=>b.id===draggedBlockId);
+  const toIdx=blocks.findIndex(b=>b.id===dropTarget.dataset.blockId);
+  if(fromIdx<0||toIdx<0)return;
+  const [item]=blocks.splice(fromIdx,1);
+  blocks.splice(toIdx,0,item);
+  renderAll();
+  autoSave();
+  toast('已调整顺序');
+}
+
+// ===== 切换模式 =====
+function toggleMode(){
+  previewMode=!previewMode;
+  const main=document.getElementById('mainArea');
+  const btn=document.getElementById('modeBtn');
+  const leftPanel=document.getElementById('leftPanel');
+  const rightPanel=document.getElementById('rightPanel');
+  if(previewMode){
+    main.classList.add('preview-mode');
+    leftPanel.style.display='none';
+    rightPanel.style.display='none';
+    document.getElementById('canvasWrap').style.padding='10px';
+    btn.textContent='✏️ 编辑';
+    btn.className='btn-primary';
+    selectedBlockId=null;
+    renderAll();
+  }else{
+    main.classList.remove('preview-mode');
+    leftPanel.style.display='';
+    rightPanel.style.display='';
+    document.getElementById('canvasWrap').style.padding='20px';
+    btn.textContent='👁 预览';
+    btn.className='btn-secondary';
+    renderAll();
+  }
+}
+
+// ===== 导出报告 =====
+function exportReport(){
+  // CSS（注意：content 必须用双引号以避免在 JS 单引号字符串内破坏语法）
+  const exportCSS='*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:18px;background:#f5f5f5;color:#1a1a1a;line-height:1.6}.report-header{background:linear-gradient(135deg,#e85300,#ff6a00,#ffb300);color:#fff;padding:40px 48px;box-shadow:0 4px 16px rgba(232,83,0,.25)}.report-header h1{font-size:38px;font-weight:700;letter-spacing:1px}.report-header .sub{font-size:17px;opacity:.9;margin-top:8px}.report-header .range{font-size:14px;opacity:.75;margin-top:8px}.insight-box{background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:12px;padding:22px 26px;margin-bottom:16px;font-size:17px;line-height:1.8;border-left:4px solid #e85300}.conclusion-box{background:linear-gradient(135deg,#e8eaf6,#f3e5f5);border-radius:12px;padding:22px 26px;margin-bottom:16px;border-left:4px solid #1565c0;font-size:16px;line-height:2.1}.text-block{background:#fff;border-radius:12px;padding:22px 26px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;line-height:1.8;font-size:17px}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}.kpi-card{background:#fff;border-radius:12px;padding:20px 16px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06)}.kpi-card .kpi-label{font-size:13px;color:#888;margin-bottom:6px}.kpi-card .kpi-value{font-size:30px;font-weight:700;color:#e85300}.chart-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;margin-bottom:16px}.chart-box{background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.06)}.chart-box h4{font-size:19px;font-weight:600;color:#333;margin-bottom:14px}.chart-canvas-wrap{height:400px;position:relative}.chart-canvas-wrap canvas{width:100%!important;height:100%!important}.chart-diag{font-size:16px;color:#555;margin-top:12px;padding:10px 14px;background:#fafafa;border-radius:8px;line-height:1.7}.table-wrap{overflow-x:auto;margin-bottom:16px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);background:#fff}.table-wrap table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}.table-wrap thead th{background:linear-gradient(135deg,#e85300,#ff6a00);color:#fff;padding:12px;font-weight:600;font-size:14px}.table-wrap tbody td{padding:10px 12px;text-align:center;border-bottom:1px solid #f0f0f0}.table-wrap tbody tr:hover{background:#fff7ed}.table-wrap tbody tr:last-child td{border-bottom:none}.cell-mark{position:relative;padding-left:14px !important}.cell-mark::before{position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700}.cell-mark-leader{background:#fee2e2 !important;color:#dc2626 !important;font-weight:700}.cell-mark-leader::before{content:"▲";color:#dc2626}.cell-mark-lowest{background:#d1fae5 !important;color:#059669 !important;font-weight:700}.cell-mark-lowest::before{content:"▼";color:#059669}.cell-mark-warning{background:#fef3c7 !important;color:#d97706 !important;font-weight:700}.cell-mark-warning::before{content:"⚠";color:#d97706}.cell-mark-critical{background:#fecaca !important;color:#991b1b !important;font-weight:700}.cell-mark-critical::before{content:"🔥";color:#991b1b}.cell-mark-info{background:#dbeafe !important;color:#1d4ed8 !important;font-weight:600}.cell-mark-info::before{content:"ℹ";color:#1d4ed8}.cell-mark-success{background:#dcfce7 !important;color:#15803d !important;font-weight:600}.cell-mark-success::before{content:"✓";color:#15803d}.cell-mark-muted{background:#f3f4f6 !important;color:#6b7280 !important;font-weight:400}.cell-mark-muted::before{content:"·";color:#6b7280}.image-block{text-align:center;margin-bottom:16px}.image-block img{border-radius:8px;max-width:100%}.image-block .image-caption{font-size:13px;color:#888;margin-top:8px;font-style:italic}.section-divider{margin:30px 0 24px;padding:14px 22px;background:linear-gradient(135deg,#e85300,#ff6a00);color:#fff;font-size:22px;font-weight:700;border-radius:10px;box-shadow:0 2px 8px rgba(232,83,0,.2)}.cell-leader{background:#fef2f2!important;color:#c62828!important;font-weight:700}.cell-leader::before{content:"\u25b2";font-size:9px;margin-right:3px;opacity:.7}.cell-lowest{background:#ecfdf5!important;color:#059669!important;font-weight:600}.cell-lowest::before{content:"\u25bc";font-size:9px;margin-right:3px;opacity:.7}.cell-pos{color:#059669;font-weight:600}.cell-neg{color:#c62828;font-weight:600}.cell-zero{color:#888}.merged-cell{text-align:center;vertical-align:middle}.swot-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}.swot-card{border-radius:10px;padding:18px}.swot-card h5{font-size:16px;margin-bottom:8px;font-weight:600}.swot-str{background:#ecfdf5;border-left:4px solid #10b981}.swot-weak{background:#fff7ed;border-left:4px solid #e85300}.swot-opp{background:#eef2ff;border-left:4px solid #6366f1}.swot-thr{background:#fef2f2;border-left:4px solid #ef4444}.timeline-vert{position:relative;padding-left:34px;margin-bottom:16px}.timeline-vert::before{content:"";position:absolute;left:13px;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#e85300,#6366f1)}.timeline-item{position:relative;margin-bottom:20px}.timeline-item::before{content:"";position:absolute;left:-26px;top:4px;width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid #e85300}.timeline-item .tl-date{font-size:13px;color:#e85300;font-weight:700;margin-bottom:4px}.timeline-item .tl-title{font-size:17px;font-weight:700;margin-bottom:4px}.timeline-item .tl-desc{font-size:15px;color:#555;line-height:1.6}.timeline-horiz{display:flex;gap:16px;overflow-x:auto;padding:10px 0}.timeline-horiz .timeline-item{flex:0 0 200px;padding-top:32px;border-top:3px solid #e85300;margin-bottom:0}.compare-wrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}.compare-card{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden}.compare-card .cc-head{padding:14px 20px;font-size:16px;font-weight:700;color:#fff;text-align:center}.compare-card .cc-head.left{background:linear-gradient(135deg,#6366f1,#4f46e5)}.compare-card .cc-head.right{background:linear-gradient(135deg,#e85300,#ff6a00)}.compare-card .cc-row{display:flex;justify-content:space-between;padding:12px 20px;border-bottom:1px solid #f0f0f0;font-size:14px}.compare-card .cc-row:last-child{border-bottom:none}.compare-card .cc-row .cc-label{color:#666}.compare-card .cc-row .cc-val{font-weight:700}.progress-list{padding:8px 0;margin-bottom:16px}.progress-item{margin-bottom:18px}.progress-item .prog-label{display:flex;justify-content:space-between;margin-bottom:6px;font-size:15px}.progress-item .prog-label span:first-child{font-weight:600}.progress-item .prog-label span:last-child{color:#888;font-weight:700}.progress-bar-wrap{height:18px;background:#f0f0f0;border-radius:9px;overflow:hidden}.progress-bar-fill{height:100%;border-radius:9px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:12px;font-weight:700}.container{max-width:1200px;margin:0 auto;background:#fff;padding:30px 40px;box-shadow:0 4px 20px rgba(0,0,0,.06);min-height:100vh}.tab-nav{position:sticky;top:0;z-index:100;background:#fff;padding:12px 20px;border-bottom:2px solid #e85300;display:flex;gap:6px;overflow-x:auto;box-shadow:0 2px 8px rgba(0,0,0,.08)}.tab-item{padding:8px 18px;border-radius:20px;background:#f0f0f0;color:#555;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;border:none;transition:.2s}.tab-item:hover{background:#ffe0b2;color:#e85300}.tab-item.active{background:linear-gradient(135deg,#e85300,#ff6a00);color:#fff;box-shadow:0 2px 6px rgba(232,83,0,.3)}.section-content{display:none;animation:fadeIn .3s ease}@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.section-content.active{display:block}';
+  const html='<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>品牌复盘规划报告</title><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script><script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"><\/script><style>'+exportCSS+'</style><\/head><body>';
+  let bodyHtml='';
+  const activeSections=sections.filter(function(s){return blocks.some(function(b){return b.sectionId===s.id||(!b.sectionId&&s.id==='sec_default');});});
+  if(activeSections.length>1){
+    bodyHtml+='<div class="tab-nav">';
+    activeSections.forEach(function(s){
+      bodyHtml+='<button class="tab-item'+(s.id===activeSections[0].id?' active':'')+'" data-tab="'+s.id+'" onclick="switchSection(\''+s.id+'\')">'+escHtml(s.name)+'</button>';
+    });
+    bodyHtml+='</div>';
+  }
+  activeSections.forEach(function(sec,secIdx){
+    const secBlocks=blocks.filter(function(b){return b.sectionId===sec.id||(!b.sectionId&&sec.id==='sec_default');});
+    bodyHtml+='<div class="section-content'+(secIdx===0?' active':'')+'" id="section-'+sec.id+'">';
+    secBlocks.forEach(function(b){
+      const w=b.blockWidth||100;
+      const wrapStyle=w===100?'width:100%':'width:calc('+w+'% - 6px)';
+      let content='';
+      switch(b.type){
+        case 'header':content='<div class="report-header"><h1>'+escHtml(b.title)+'</h1><div class="sub">'+escHtml(b.sub)+'</div><div class="range">'+escHtml(b.range)+'</div></div>';break;
+        case 'meta':content='<div class="text-block" style="border-bottom:1px solid #e0e0e0"><details open><summary style="font-size:19px;font-weight:700;color:#e85300;cursor:pointer">📋 '+escHtml(b.title)+'</summary><div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">'+(b.sections||[]).map(function(s){return '<div>'+s+'</div>';}).join('')+'</div></details></div>';break;
+        case 'text':content='<div class="'+(b.style==='insight'?'insight-box':b.style==='conclusion'?'conclusion-box':'text-block')+'">'+b.html+'</div>';break;
+        case 'conclusion':content='<div class="conclusion-box">'+b.html+'</div>';break;
+        case 'chart':content='<div class="chart-box"><h4>'+escHtml(b.title)+'</h4><div class="chart-canvas-wrap"><canvas id="'+b.id+'"></canvas></div>'+(b.diag?'<div class="chart-diag">'+b.diag+'</div>':'')+'</div>';break;
+        case 'kpi':content='<div class="kpi-grid">'+(b.items||[]).map(function(i){return '<div class="kpi-card"><div class="kpi-label">'+escHtml(i.label)+'</div><div class="kpi-value">'+escHtml(i.value)+'</div></div>';}).join('')+'</div>';break;
+        case 'table':content=renderTableBlockForExport(b);break;
+        case 'image':content='<div class="image-block">'+(b.src?'<img src="'+b.src+'" style="width:'+(b.width||'600')+'px;max-width:100%">':'')+(b.caption?'<div class="image-caption">'+escHtml(b.caption)+'</div>':'')+'</div>';break;
+        case 'divider':content='<hr style="border:none;border-top:2px dashed #1565c0;margin:18px 0">';break;
+        case 'swot':content='<div class="swot-grid"><div class="swot-card swot-str"><h5>💪 优势</h5><div>'+(b.strengths||'')+'</div></div><div class="swot-card swot-weak"><h5>⚠ 劣势</h5><div>'+(b.weaknesses||'')+'</div></div><div class="swot-card swot-opp"><h5>🚀 机会</h5><div>'+(b.opportunities||'')+'</div></div><div class="swot-card swot-thr"><h5>🔥 威胁</h5><div>'+(b.threats||'')+'</div></div></div>';break;
+        case 'timeline':content='<div class="timeline-'+(b.direction||'vertical')+'">'+(b.events||[]).map(function(ev){return '<div class="timeline-item"><div class="tl-date">'+escHtml(ev.date)+'</div><div class="tl-title">'+ev.title+'</div><div class="tl-desc">'+ev.desc+'</div></div>';}).join('')+'</div>';break;
+        case 'compare':content='<div class="compare-wrap"><div class="compare-card"><div class="cc-head left">'+escHtml(b.leftTitle||'A')+'</div>'+(b.rows||[]).map(function(r){return '<div class="cc-row"><span class="cc-label">'+escHtml(r.label)+'</span><span class="cc-val">'+escHtml(r.left)+'</span></div>';}).join('')+'</div><div class="compare-card"><div class="cc-head right">'+escHtml(b.rightTitle||'B')+'</div>'+(b.rows||[]).map(function(r){return '<div class="cc-row"><span class="cc-label">'+escHtml(r.label)+'</span><span class="cc-val">'+escHtml(r.right)+'</span></div>';}).join('')+'</div></div>';break;
+        case 'progress':content='<div class="progress-list">'+(b.items||[]).map(function(p){return '<div class="progress-item"><div class="prog-label"><span>'+escHtml(p.label)+'</span><span>'+p.value+'%</span></div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:'+p.value+'%;background:'+(p.color||'#1565c0')+'"><span>'+(p.value>=15?p.value+'%':'')+'</span></div></div></div>';}).join('')+'</div>';break;
+        default:content='';
+      }
+      bodyHtml+='<div style="'+wrapStyle+'">'+content+'</div>\n';
+    });
+    bodyHtml+='</div>';
+  });
+  const chartBlocks=blocks.filter(function(b){return b.type==='chart';});
+  const chartsJs=chartBlocks.map(function(b){
+    const type=b.type_chart||'bar';
+    const isCombo=type==='combo'||(type==='bar'&&(b.datasets||[]).some(function(ds){return ds.seriesType==='line';}));
+    const effectiveType=isCombo?'bar':type;
+    const datasets=(b.datasets||[]).map(function(ds,i){
+      const bg=ds.backgroundColor||getColor(i);
+      const seriesType=(isCombo?(ds.seriesType||'bar'):type);
+      return {type:seriesType,label:ds.label||('系列'+(i+1)),data:ds.data||[],backgroundColor:(seriesType==='pie'||seriesType==='doughnut'||seriesType==='polarArea')?getColorPalette((ds.data||[]).length):bg,borderColor:seriesType==='line'?bg:undefined,borderWidth:seriesType==='line'?2.5:undefined,borderRadius:seriesType==='bar'?6:undefined,tension:seriesType==='line'?0.3:undefined,fill:seriesType==='line'?false:undefined,pointRadius:seriesType==='line'?4:undefined,yAxisID:ds.yAxisID||'y'};
+    });
+    const hasY2=(b.datasets||[]).some(function(ds){return (ds.yAxisID||'y')==='y2';});
+    let scales={};
+    if(effectiveType==='bar'||effectiveType==='line'||effectiveType==='radar'){
+      scales={x:{ticks:{font:{size:13}}},y:{ticks:{font:{size:13}},position:'left',title:{display:hasY2,text:'主Y轴'}}};
+      if(hasY2){scales.y2={type:'linear',position:'right',ticks:{font:{size:13},color:'#e65100'},title:{display:true,text:'副Y轴',color:'#e65100'},grid:{drawOnChartArea:false}};}
+    }
+    return 'new Chart(document.getElementById("'+b.id+'"),{type:"'+effectiveType+'",data:{labels:'+JSON.stringify(b.labels||[])+',datasets:'+JSON.stringify(datasets)+'},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:'+JSON.stringify(scales)+'}});';
+  }).join('\n');
+  const tabJs='function switchSection(id){document.querySelectorAll(".section-content").forEach(function(el){el.classList.remove("active");el.style.display="none";});document.querySelectorAll(".tab-item").forEach(function(el){el.classList.remove("active");});var el=document.getElementById("section-"+id);if(el){el.classList.add("active");el.style.display="block";}var tab=document.querySelector(\'[data-tab="\'+id+\'"]\');if(tab)tab.classList.add("active");window.scrollTo({top:0,behavior:"smooth"});}';
+  const initJs='document.addEventListener("DOMContentLoaded",function(){var sc=document.querySelectorAll(".section-content");if(sc.length>0){sc.forEach(function(el,i){if(i>0){el.style.display="none";el.classList.remove("active");}else{el.style.display="block";el.classList.add("active");}});}});';
+  const full=html+'\n<div class="container">\n'+bodyHtml+'\n</div>\n<script>Chart.register(ChartDataLabels);'+tabJs+initJs+chartsJs+'<\/script>\n</body></html>';
+  downloadFile('品牌复盘报告.html',full);
+  toast('报告已导出');
+}
+
+function renderTableBlockForExport(block){
+  const title=escHtml(block.title||'');
+  const headers=block.headers||[];
+  const rows=block.rows||[];
+  const headerRows=block.headerRows||1;
+  const headerLevels=block.headerLevels||null;
+  const merges=block.merges||{};
+  // 手动标记：cellMarks / rowMarks / colMarks
+  const cellMarks=block.cellMarks||{};
+  const rowMarks=block.rowMarks||{};
+  const colMarks=block.colMarks||{};
+  let headHtml='';
+  if(headerLevels&&headerLevels.length>0){
+    for(let hr=0;hr<headerLevels.length;hr++){
+      headHtml+='<tr>';
+      headerLevels[hr].forEach(function(cell,ci){
+        const m=merges[hr+','+ci];
+        let attrs='';
+        let txt=cell;
+        if(typeof cell==='object'&&cell!==null){
+          txt=cell.text||'';
+          if(cell.rowspan>1)attrs+=' rowspan="'+cell.rowspan+'"';
+          if(cell.colspan>1)attrs+=' colspan="'+cell.colspan+'"';
+        }else{if(m){if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';}}
+        headHtml+='<th class="merged-cell"'+attrs+'>'+escHtml(txt)+'</th>';
+      });
+      headHtml+='</tr>';
+    }
+  }else{
+    headHtml+='<tr>'+headers.map(function(h,i){
+      const m=merges['0,'+i];
+      let attrs='';
+      if(m){if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';}
+      return '<th class="merged-cell"'+attrs+'>'+escHtml(h)+'</th>';
+    }).join('')+'</tr>';
+  }
+  let bodyHtml='';
+  rows.forEach(function(row,ri){
+    bodyHtml+='<tr>';
+    for(let ci=0;ci<headers.length;ci++){
+      const mkey=(ri+headerRows)+','+ci;
+      const m=merges[mkey];
+      let attrs='';
+      if(m){if(m.rowspan>1)attrs+=' rowspan="'+m.rowspan+'"';if(m.colspan>1)attrs+=' colspan="'+m.colspan+'"';if(m.skip)continue;}
+      // 手动标记：cell > row > col
+      const mark=cellMarks[ri+','+ci]||rowMarks[ri]||colMarks[ci]||'';
+      let cellContent=escHtml(row[ci]!==undefined?row[ci]:'');
+      if(mark){cellContent='<span class="cell-mark-'+mark+'">'+cellContent+'</span>';}
+      let tdClass='';
+      if(cellMarks[ri+','+ci])tdClass=' cell-mark cell-mark-'+cellMarks[ri+','+ci];
+      else if(rowMarks[ri])tdClass=' cell-mark cell-mark-row-'+rowMarks[ri];
+      else if(colMarks[ci])tdClass=' cell-mark cell-mark-col-'+colMarks[ci];
+      bodyHtml+='<td'+attrs+tdClass+'>'+cellContent+'</td>';
+    }
+    bodyHtml+='</tr>';
+  });
+  return '<h3 style="margin-bottom:8px">'+title+'</h3><div class="table-wrap"><table><thead>'+headHtml+'</thead><tbody>'+bodyHtml+'</tbody></table></div>';
+}
+
+// ===== 保存/加载工程 =====
+function saveProject(){
+  const data=JSON.stringify({sections:sections,blocks:blocks,currentSectionId:currentSectionId},null,2);
+  const name=prompt('工程名称：','品牌复盘项目');
+  if(!name)return;
+  localStorage.setItem('report_project_'+name,data);
+  localStorage.setItem('report_project_last',name);
+  toast('工程已保存: '+name);
+}
+
+function loadProject(){
+  const last=localStorage.getItem('report_project_last')||'';
+  const name=prompt('工程名称（输入已保存的名称）：',last);
+  if(!name)return;
+  const raw=localStorage.getItem('report_project_'+name);
+  if(!raw){alert('未找到工程: '+name);return;}
+  try{
+    const data=JSON.parse(raw);
+    // 兼容老格式（直接是 blocks 数组）
+    if(Array.isArray(data)){
+      blocks=data;
+      sections=[{id:'sec_default',name:'首页'}];
+      currentSectionId='sec_default';
+    }else{
+      blocks=data.blocks||[];
+      sections=data.sections&&data.sections.length>0?data.sections:[{id:'sec_default',name:'首页'}];
+      currentSectionId=data.currentSectionId||(sections[0]&&sections[0].id)||'sec_default';
+    }
+    Object.values(chartInstances).forEach(c=>c.destroy());
+    Object.keys(chartInstances).forEach(k=>delete chartInstances[k]);
+    selectedBlockId=null;
+    renderAll();
+    localStorage.setItem('report_project_last',name);
+    toast('工程已加载: '+name);
+  }catch(e){alert('工程数据损坏');}
+}
+
+function autoSave(){
+  parent.postMessage({type:'stable-report-dirty'},'*');
+}
+
+function resetAll(){
+  if(!confirm('确认重置？所有未保存的内容将丢失。'))return;
+  Object.values(chartInstances).forEach(c=>c.destroy());
+  Object.keys(chartInstances).forEach(k=>delete chartInstances[k]);
+  blocks=[];
+  sections=[{id:'sec_default',name:'首页'}];
+  currentSectionId='sec_default';
+  selectedBlockId=null;
+  renderAll();
+  toast('已重置');
+}
+
+function downloadFile(filename,content){
+  const blob=new Blob([content],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ===== 工具函数 =====
+function escHtml(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function escAttr(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toast(msg){
+  const el=document.createElement('div');
+  el.className='toast';el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2200);
+}
+
+// ===== 初始化 =====
+const standaloneExport=exportReport;
+function projectSnapshot(){return {sections:sections,blocks:blocks,currentSectionId:currentSectionId};}
+function loadStableProject(data){
+  const project=data&&typeof data==='object'?data:{};
+  blocks=Array.isArray(project.blocks)?project.blocks:[];
+  sections=Array.isArray(project.sections)&&project.sections.length?project.sections:[{id:'sec_default',name:'首页'}];
+  currentSectionId=project.currentSectionId||sections[0].id;
+  selectedBlockId=null;
+  Object.values(chartInstances).forEach(function(chart){chart.destroy();});
+  Object.keys(chartInstances).forEach(function(key){delete chartInstances[key];});
+  renderAll();
+}
+function standaloneHtml(){
+  let result='';
+  const originalDownload=downloadFile;
+  downloadFile=function(_name,content){result=content;};
+  try{standaloneExport();}finally{downloadFile=originalDownload;}
+  return result;
+}
+window.addEventListener('message',function(event){
+  const message=event.data||{};
+  if(message.type==='stable-report-load')loadStableProject(message.project);
+  if(message.type==='stable-report-snapshot')parent.postMessage({type:'stable-report-snapshot-result',requestId:message.requestId,project:projectSnapshot(),html:standaloneHtml()},'*');
+});
+saveProject=function(){parent.postMessage({type:'stable-report-command',command:'save'},'*');};
+loadProject=function(){parent.postMessage({type:'stable-report-command',command:'library'},'*');};
+exportReport=function(){parent.postMessage({type:'stable-report-command',command:'export'},'*');};
+window.addEventListener('DOMContentLoaded',function(){
+  renderColorHistory();
+  renderTabs();
+  parent.postMessage({type:'stable-report-ready'},'*');
+});
+</script>
+</body>
+</html>

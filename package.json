@@ -1,0 +1,89 @@
+{
+  "name": "stable-desktop",
+  "version": "0.9.26",
+  "description": "Stable local agent workbench powered by DeepSeek Harness",
+  "main": "desktop/main.cjs",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "start": "electron .",
+    "start:team-dev": "node scripts/start-team-dev.cjs",
+    "build": "vite build --configLoader runner",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs",
+    "test:integration": "node tests/harness-integration.cjs",
+    "dist:dir": "npm run build && electron-builder --win --x64 --dir",
+    "dist": "npm run build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.2.8",
+    "@fontsource-variable/space-grotesk": "^5.2.8",
+    "@xyflow/react": "^12.8.6",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "mammoth": "^1.9.1",
+    "pdf-parse": "1.1.1",
+    "pptxgenjs": "4.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.3",
+    "xlsx": "^0.18.5",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "com.stable.agent",
+    "productName": "Stable",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "build/stable_logo.png",
+      "build/stable_logo_transparent.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "runtime",
+        "to": "runtime"
+      }
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release-0.9.26-team-conversation"
+    },
+    "win": {
+      "icon": "build/stable_logo_transparent.png",
+      "artifactName": "Stable-Setup-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Stable",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
