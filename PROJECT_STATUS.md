@@ -270,7 +270,7 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 1. [x] 将 `LLucas88/Stable` 设为公开更新源并验证匿名访问。
 2. [x] 首次上传 `runtime-v1/stable-runtime-win-x64.zip`，供 GitHub Actions 后续复用。
 3. 提交源码并创建 `v0.9.27` Git 标签。
-4. 推送标签触发 Release Stable，确认安装包、blockmap、`latest.yml` 均上传。
+4. 推送标签触发 Release Stable；工作流用 GitHub CLI 显式上传并复核安装包、blockmap、`latest.yml`，避免 Electron Builder 异步上传提前退出。
 5. 用一台已安装 `v0.9.26` 的设备完成真实在线升级、重启安装和用户数据保留验证。
 
 ## 14. 关键文件地图

@@ -30,7 +30,30 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Build and publish GitHub Release
-        run: npx electron-builder --win --x64 --publish always
+      - name: Build Windows installer
+        run: npx electron-builder --win --x64 --publish never
+      - name: Publish GitHub Release assets
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "v$version"
+          $output = "release-$version"
+          $assets = @(
+            "$output/Stable-Setup-$version-x64.exe",
+            "$output/Stable-Setup-$version-x64.exe.blockmap",
+            "$output/latest.yml"
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset)) { throw "Missing release asset: $asset" }
+          }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --generate-notes --target $env:GITHUB_SHA
+          }
+          gh release upload $tag $assets --repo $env:GITHUB_REPOSITORY --clobber
+          $uploaded = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name'
+          foreach ($asset in $assets) {
+            if ($uploaded -notcontains (Split-Path -Leaf $asset)) { throw "Release asset was not uploaded: $asset" }
+          }
