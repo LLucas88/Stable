@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Database, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
+  Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
+  CircleStop, Clock3, Copy, Database, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
   Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Play, Plus, Save,
-  SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
+  RotateCw, SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import launchLogoUrl from '../build/stable_launch_logo.png'
@@ -11,11 +11,12 @@ import sidebarLogoDarkUrl from '../build/stable_logo_sidebar_dark.png'
 import sidebarLogoLightUrl from '../build/stable_logo_sidebar_light.png'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelSettings, Page, SkillItem, TeamState, ThemeMode } from './types'
+import { formatElapsedTime } from './duration'
+import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelSettings, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
 
 const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
-  { id: 'home', label: '总览', icon: Home },
   { id: 'agent', label: '对话', icon: MessageSquareText },
+  { id: 'automations', label: '定时', icon: Clock3 },
   { id: 'team', label: 'Team', icon: UsersRound },
   { id: 'data', label: '数据', icon: Database },
   { id: 'reports', label: '报告', icon: FileText },
@@ -51,7 +52,8 @@ function DropTarget({ label, onPaths, className = '', children }: { label: strin
 
 export function App() {
   const requestedPage = new URLSearchParams(window.location.search).get('page') as Page | null
-  const [page, setPage] = useState<Page>(requestedPage && NAV.some((item) => item.id === requestedPage) ? requestedPage : 'home')
+  const [page, setPage] = useState<Page>(requestedPage && NAV.some((item) => item.id === requestedPage) ? requestedPage : 'agent')
+  const [agentPrefill, setAgentPrefill] = useState('')
   const [state, setState] = useState<BootstrapData | null>(null)
   const [showLaunch, setShowLaunch] = useState(true)
   const [launchRunning, setLaunchRunning] = useState(false)
@@ -75,6 +77,16 @@ export function App() {
       })
     }
   }), [])
+
+  useEffect(() => window.stable.agent.onState((agent) => setState((current) => {
+    if (!current) return current
+    return current.activeConversationId === agent.activeConversationId
+      ? { ...current, ...agent }
+      : { ...current, conversations: agent.conversations }
+  })), [])
+
+  useEffect(() => window.stable.automations.onEvent((automations) => setState((current) => current ? { ...current, automations } : current)), [])
+  useEffect(() => window.stable.updater.onEvent((update) => setState((current) => current ? { ...current, update } : current)), [])
 
   useEffect(() => {
     if (!launchRunning || !showLaunch) return
@@ -136,7 +148,7 @@ export function App() {
       <WindowTitlebar />
       <div className="app-shell">
       <aside className="side-rail" aria-label="主导航">
-        <button className="brand-mark" onClick={() => setPage('home')} aria-label="打开总览">
+        <button className="brand-mark" onClick={() => setPage('agent')} aria-label="打开对话">
           <img src={state.theme === 'light' ? sidebarLogoLightUrl : sidebarLogoDarkUrl} alt="Stable" width="48" height="48" />
         </button>
         <nav className="rail-nav">
@@ -152,13 +164,13 @@ export function App() {
 
       <main className="main-frame">
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage state={state} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateTeam={(team) => update('team', team)} action={action} reportError={(reason) => { setError(errorMessage(reason)); setStatus('操作未完成') }} />
+          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} reportError={(reason) => { setError(errorMessage(reason)); setStatus('操作未完成') }} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
         </div>
         {page !== 'agent' && page !== 'workflows' && <div className="page-stage" data-page={page} key={page}>
-          {page === 'home' && <HomePage state={state} go={setPage} />}
+          {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
           {page === 'data' && <DataPage dataItems={state.data} libraryItems={state.library} updateData={(items) => update('data', items)} updateLibrary={(items) => update('library', items)} action={action} />}
           {page === 'reports' && <ReportPage items={state.reports} update={(items) => update('reports', items)} action={action} />}
@@ -168,6 +180,8 @@ export function App() {
         </div>}
 
       </main>
+
+        {state.update.status === 'downloaded' && <section className="update-notice" role="status"><div><strong>Stable {state.update.availableVersion} 已准备好</strong><span>更新已在后台下载完成，重启即可自动安装。</span></div><button className="button primary" type="button" onClick={() => void window.stable.updater.install()}>重启并更新</button></section>}
 
         {confirmation && <ConfirmModal value={confirmation} onCancel={() => resolveConfirmation(false)} onConfirm={() => resolveConfirmation(true)} />}
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
@@ -318,18 +332,50 @@ const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; detail
   { id: 'full', label: '完全访问权限', detail: '普通操作直接执行；删除、覆盖和未知程序仍需你确认。' },
 ]
 
-function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { state: BootstrapData; updateAgent: (value: AgentState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; reportError: (reason: unknown) => void }) {
+interface AgentTraceRun {
+  runId: string
+  items: AgentTraceItem[]
+  status: AgentTraceStatus
+  startedAt: number
+  endedAt?: number
+}
+
+interface CopyUndoState {
+  copiedPrompt: string
+  prompt: string
+  attachments: AgentAttachment[]
+  references: AgentReference[]
+}
+
+type ConversationPreviewTarget =
+  | { requestId: number; kind: 'web'; value: string; title: string }
+  | { requestId: number; kind: 'markdown'; value: string; title: string }
+
+function previewBounds(element: HTMLElement): PreviewBounds {
+  const rect = element.getBoundingClientRect()
+  return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) }
+}
+
+function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, reportError }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; reportError: (reason: unknown) => void }) {
   const [prompt, setPrompt] = useState('')
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
   const [contextOpen, setContextOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [teamCollapsed, setTeamCollapsed] = useState(false)
+  const [previewTarget, setPreviewTarget] = useState<ConversationPreviewTarget>()
+  const [previewWidth, setPreviewWidth] = useState(0)
+  const [previewState, setPreviewState] = useState<PreviewState>({ url: '', title: '', loading: false, canGoBack: false, canGoForward: false })
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
-  const [traceMap, setTraceMap] = useState<Record<string, { runId: string; items: AgentTraceItem[]; status: AgentTraceStatus } | undefined>>({})
+  const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+  const conversationWorkspaceRef = useRef<HTMLDivElement>(null)
+  const previewViewportRef = useRef<HTMLDivElement>(null)
+  const promptRef = useRef<HTMLTextAreaElement>(null)
+  const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
   const attachmentInputRef = useRef<HTMLInputElement>(null)
   const dataMenuRef = useRef<HTMLDetailsElement>(null)
   const skillMenuRef = useRef<HTMLDetailsElement>(null)
@@ -356,6 +402,12 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
   activeConversationIdRef.current = state.activeConversationId
   stateRef.current = state
 
+  useEffect(() => {
+    if (!active || !prefill || running) return
+    setPrompt(prefill); consumePrefill()
+    window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(prefill.length, prefill.length) })
+  }, [active, prefill, running])
+
   function setAttachments(next: AgentAttachment[] | ((current: AgentAttachment[]) => AgentAttachment[])) {
     setAttachmentMap((current) => {
       const currentItems = current[state.activeConversationId] || []
@@ -380,13 +432,22 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
     if (!event.conversationId) return
     setTraceMap((all) => {
       const current = all[event.conversationId!]
-      const items = current?.runId === event.runId ? [...current.items] : []
+      const sameRun = current?.runId === event.runId
+      const awaitingFirstEvent = current?.runId === ''
+      const items = sameRun ? [...current.items] : []
       const index = items.findIndex((item) => item.id === event.id)
       if (index >= 0) items[index] = event; else items.push(event)
-      let status: AgentTraceStatus = current?.runId === event.runId ? current.status : 'running'
+      let status: AgentTraceStatus = sameRun ? current.status : 'running'
       if (event.id === 'complete') status = 'completed'
       if (event.id === 'runtime' && (event.status === 'failed' || event.status === 'cancelled')) status = event.status
-      return { ...all, [event.conversationId!]: { runId: event.runId, items, status } }
+      const terminal = status !== 'running'
+      return { ...all, [event.conversationId!]: {
+        runId: event.runId,
+        items,
+        status,
+        startedAt: sameRun || awaitingFirstEvent ? current.startedAt : event.time,
+        ...(terminal ? { endedAt: event.time } : {}),
+      } }
     })
   }), [])
 
@@ -405,6 +466,81 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
     document.addEventListener('pointerdown', closeOutside, true)
     return () => document.removeEventListener('pointerdown', closeOutside, true)
   }, [])
+
+  useEffect(() => window.stable.preview.onEvent((next) => setPreviewState((current) => ({ ...current, ...next }))), [])
+
+  useEffect(() => () => { void window.stable.preview.close() }, [])
+
+  useEffect(() => {
+    if (active || !previewTarget) return
+    setPreviewTarget(undefined); setPreviewWidth(0); void window.stable.preview.close()
+  }, [active, previewTarget])
+
+  useEffect(() => {
+    if (!previewTarget) return
+    let cancelled = false
+    let frame = window.requestAnimationFrame(() => {
+      const workspace = conversationWorkspaceRef.current
+      if (!workspace) return
+      if (!previewWidth) {
+        setPreviewWidth(Math.max(320, Math.round(workspace.clientWidth / 2)))
+        frame = window.requestAnimationFrame(open)
+      } else open()
+    })
+    async function open() {
+      const viewport = previewViewportRef.current
+      if (!viewport || !previewTarget || cancelled) return
+      const bounds = previewBounds(viewport)
+      try {
+        const next = previewTarget.kind === 'web'
+          ? await window.stable.preview.openWeb(previewTarget.value, bounds)
+          : await window.stable.preview.openMarkdown(previewTarget.value, bounds, activeConversation.id)
+        if (!cancelled) setPreviewState(next)
+      } catch (reason) {
+        if (!cancelled) setPreviewState((current) => ({ ...current, loading: false, error: errorMessage(reason) }))
+      }
+    }
+    return () => { cancelled = true; window.cancelAnimationFrame(frame) }
+  }, [previewTarget?.requestId])
+
+  useEffect(() => {
+    if (!previewTarget || !previewViewportRef.current) return
+    const viewport = previewViewportRef.current
+    const observer = new ResizeObserver(() => { void window.stable.preview.setBounds(previewBounds(viewport)) })
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [previewTarget])
+
+  function openConversationPreview(target: Omit<ConversationPreviewTarget, 'requestId'>) {
+    setContextOpen(false)
+    setPreviewWidth(0)
+    setPreviewState({ url: target.kind === 'web' ? target.value : '', title: target.title, loading: true, canGoBack: false, canGoForward: false })
+    setPreviewTarget({ ...target, requestId: Date.now() })
+  }
+
+  function closeConversationPreview() {
+    setPreviewTarget(undefined)
+    setPreviewWidth(0)
+    void window.stable.preview.close()
+  }
+
+  function resizePreviewBy(delta: number) {
+    const width = conversationWorkspaceRef.current?.clientWidth || 0
+    if (!width) return
+    setPreviewWidth((current) => Math.max(320, Math.min(width - 360, (current || Math.round(width / 2)) + delta)))
+  }
+
+  function startPreviewResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!previewTarget) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = previewWidth
+    const available = conversationWorkspaceRef.current?.clientWidth || 0
+    const move = (next: PointerEvent) => setPreviewWidth(Math.max(320, Math.min(available - 360, startWidth + startX - next.clientX)))
+    const finish = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', finish) }
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', finish, { once: true })
+  }
 
   function replaceConversation(run: () => Promise<AgentState>, label: string) {
     setPrompt(''); setSidebarOpen(false)
@@ -466,6 +602,61 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
     })
   }
 
+  function referenceFromMessage(item: NonNullable<MessageItem['attachments']>[number]) {
+    if (item.kind === 'attachment') return undefined
+    if (item.kind === 'data') {
+      const value = state.data.find((entry) => entry.id === item.id) || state.data.find((entry) => entry.name === item.name)
+      return value ? { id: value.id, kind: item.kind, name: value.name, size: value.size, type: value.type } : undefined
+    }
+    if (item.kind === 'skill') {
+      const value = state.skills.find((entry) => entry.id === item.id) || state.skills.find((entry) => entry.name === item.name)
+      return value ? { id: value.id, kind: item.kind, name: value.name, size: new Blob([value.content || '']).size, type: 'skill' } : undefined
+    }
+    if (item.kind === 'script') {
+      const value = state.library.find((entry) => entry.kind === 'script' && (entry.id === item.id || entry.name === item.name))
+      return value ? { id: value.id, kind: item.kind, name: value.name, size: new Blob([value.content || '']).size, type: value.extension || 'script' } : undefined
+    }
+    const value = state.knowledge.find((entry) => entry.id === item.id) || state.knowledge.find((entry) => entry.name === item.name)
+    return value ? { id: value.id, kind: item.kind, name: value.name, size: value.size, type: 'markdown' } : undefined
+  }
+
+  function markdownPathFromMessage(item: NonNullable<MessageItem['attachments']>[number]) {
+    const markdown = /\.(?:md|markdown)$/i.test(item.name) || /^(?:md|markdown)$/i.test(item.type)
+    if (!markdown) return ''
+    if (item.path) return item.path
+    if (item.kind === 'knowledge') return (state.knowledge.find((entry) => entry.id === item.id) || state.knowledge.find((entry) => entry.name === item.name))?.path || ''
+    if (item.kind === 'data') return (state.data.find((entry) => entry.id === item.id) || state.data.find((entry) => entry.name === item.name))?.path || ''
+    return ''
+  }
+
+  function previewMessageAttachment(item: NonNullable<MessageItem['attachments']>[number]) {
+    const filePath = markdownPathFromMessage(item)
+    if (filePath) openConversationPreview({ kind: 'markdown', value: filePath, title: item.name })
+  }
+
+  async function copyUserMessage(message: MessageItem) {
+    const restoredReferences = (message.attachments || []).map(referenceFromMessage).filter((item): item is AgentReference => Boolean(item))
+    const restoredAttachments: AgentAttachment[] = []
+    for (const item of message.attachments || []) {
+      if (item.kind !== 'attachment' || !item.path) continue
+      try { restoredAttachments.push(...await window.stable.agent.inspectAttachments([item.path])) } catch { /* missing legacy attachment stays omitted */ }
+    }
+    copyUndoRef.current[state.activeConversationId] = { copiedPrompt: message.content, prompt, attachments: [...attachments], references: [...selectedReferences] }
+    setPrompt(message.content)
+    setAttachments(restoredAttachments)
+    setReferences(restoredReferences)
+    window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(message.content.length, message.content.length) })
+  }
+
+  function undoCopiedDraft() {
+    const undo = copyUndoRef.current[state.activeConversationId]
+    if (!undo || prompt !== undo.copiedPrompt) return false
+    setPrompt(undo.prompt); setAttachments(undo.attachments); setReferences(undo.references)
+    copyUndoRef.current[state.activeConversationId] = undefined
+    window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(undo.prompt.length, undo.prompt.length) })
+    return true
+  }
+
   function ConversationRow({ item }: { item: ConversationItem }) {
     return <article className="conversation-list-item" data-active={item.id === activeConversation.id || undefined} key={item.id}>
       {editingId === item.id
@@ -487,23 +678,26 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
     const currentAttachments = [...attachments]
     const currentReferences = [...selectedReferences]
     const messageAttachments: NonNullable<MessageItem['attachments']> = [
-      ...currentReferences.map(({ kind, name, size, type }) => ({ kind, name, size, type })),
-      ...currentAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' as const : 'attachment' as const, name: item.name, size: item.size, type: item.type })),
+      ...currentReferences.map(({ id, kind, name, size, type }) => ({ id, kind, name, size, type })),
+      ...currentAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' as const : 'attachment' as const, name: item.name, size: item.size, type: item.type, path: item.path })),
     ]
+    copyUndoRef.current[conversationId] = undefined
     setPrompt(''); setAttachments([]); setReferences([])
     setPendingMap((current) => ({ ...current, [conversationId]: { content: value, attachments: messageAttachments } }))
-    setTraceMap((current) => ({ ...current, [conversationId]: undefined }))
+    setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', items: [], status: 'running', startedAt: Date.now() } }))
     setRunningMap((current) => ({ ...current, [conversationId]: true }))
+    let completed = false
     try {
       await window.stable.agent.configure(conversationId, activeConversation.capability, [])
       const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences)
       updateAgentForConversation(result, conversationId)
+      completed = true
     } catch (error) {
       reportError(error)
       try { updateAgentForConversation(await window.stable.agent.state(conversationId), conversationId) } catch { /* keep the active task usable */ }
     } finally {
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
-      setTraceMap((current) => ({ ...current, [conversationId]: undefined }))
+      setTraceMap((current) => ({ ...current, [conversationId]: completed ? undefined : current[conversationId] }))
       setRunningMap((current) => ({ ...current, [conversationId]: false }))
     }
   }
@@ -520,20 +714,30 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
       <div className="conversation-new-zone">
         <button className="conversation-new" type="button" onClick={() => replaceConversation(() => window.stable.agent.create(), '正在新建对话')}><Plus size={17} />新建对话</button>
       </div>
-      <div className="conversation-history-head"><span>任务记录</span></div>
-      <div className="conversation-list">
-        {localConversations.map((item) => <ConversationRow item={item} key={item.id} />)}
-      </div>
-      <section className="team-conversation-zone" aria-label="Team 对话">
-        <div className="team-conversation-head"><span>TEAM</span><small>{state.team.conversationOffers.length ? `${state.team.conversationOffers.length} 待确认` : '对话快照'}</small></div>
-        {state.team.conversationOffers.map((offer) => <article className="team-offer-card" key={offer.id}>
-          <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
-          <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
-        </article>)}
-        <div className="team-conversation-list">{teamConversations.map((item) => <ConversationRow item={item} key={item.id} />)}</div>
-        {!state.team.conversationOffers.length && !teamConversations.length && <p className="team-conversation-empty">接收的 Team 对话会显示在这里</p>}
+      <section className="conversation-history-card" aria-label="本机对话记录">
+        <div className="conversation-history-head"><span>任务记录</span></div>
+        <div className="conversation-list">
+          {localConversations.map((item) => <ConversationRow item={item} key={item.id} />)}
+        </div>
+      </section>
+      <section className="team-conversation-zone" data-collapsed={teamCollapsed || undefined} aria-label="Team 对话">
+        <div className="team-conversation-head">
+          {!teamCollapsed && <div className="team-conversation-title"><span>TEAM</span><small>{state.team.conversationOffers.length ? `${state.team.conversationOffers.length} 待确认` : '对话快照'}</small></div>}
+          <button className="team-collapse-button" type="button" onClick={() => setTeamCollapsed((value) => !value)} aria-expanded={!teamCollapsed} aria-label={teamCollapsed ? '展开 Team 对话' : '收起 Team 对话'}>
+            {teamCollapsed ? <UsersRound size={18} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+          </button>
+        </div>
+        {!teamCollapsed && <>
+          {state.team.conversationOffers.map((offer) => <article className="team-offer-card" key={offer.id}>
+            <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
+            <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
+          </article>)}
+          <div className="team-conversation-list">{teamConversations.map((item) => <ConversationRow item={item} key={item.id} />)}</div>
+          {!state.team.conversationOffers.length && !teamConversations.length && <p className="team-conversation-empty">接收的 Team 对话会显示在这里</p>}
+        </>}
       </section>
     </aside>
+    <div className="conversation-workspace" data-preview-open={Boolean(previewTarget) || undefined} ref={conversationWorkspaceRef} style={previewTarget ? { '--preview-width': `${previewWidth || 320}px` } as CSSProperties : undefined}>
     <div className="conversation">
       <header className="conversation-topbar">
         <button className="conversation-sidebar-toggle" type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="打开对话列表"><PanelLeftOpen size={18} /></button>
@@ -545,9 +749,9 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} key={message.id} />)}
+          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} pending />}
-          {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} />}
+          {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} />}
           {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
             if (!item.requestId) return
             await window.stable.agent.answerApproval(activeConversation.id, item.requestId, allowed)
@@ -563,7 +767,10 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
               {attachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => setAttachments((current) => current.filter((entry) => entry.path !== item.path))} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
             </div>}
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
-            <textarea id="agent-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder="给 Stable 一个任务，或拖入本次需要分析的文件" disabled={running} />
+            <textarea ref={promptRef} id="agent-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
+              if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() }
+            }} placeholder="给 Stable 一个任务，或拖入本次需要分析的文件" disabled={running} />
             <div className="composer-actions">
               <div className="composer-tools">
                 <input ref={attachmentInputRef} type="file" multiple hidden accept=".txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
@@ -627,6 +834,23 @@ function AgentPage({ state, updateAgent, updateTeam, action, reportError }: { st
         </DropTarget>
       </div>
     </div>
+    {previewTarget && <aside className="conversation-preview" aria-label="对话文件预览">
+      <div className="preview-resizer" role="separator" aria-label="调整预览面板宽度" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, (conversationWorkspaceRef.current?.clientWidth || 680) - 360)} aria-valuenow={previewWidth || 320} tabIndex={0} onPointerDown={startPreviewResize} onKeyDown={(event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); resizePreviewBy(32) } else if (event.key === 'ArrowRight') { event.preventDefault(); resizePreviewBy(-32) } }} />
+      <header className="conversation-preview-head">
+        <div className="preview-navigation">
+          <button type="button" disabled={!previewState.canGoBack} onClick={() => void window.stable.preview.navigate('back')} aria-label="预览后退"><ArrowLeft size={16} /></button>
+          <button type="button" disabled={!previewState.canGoForward} onClick={() => void window.stable.preview.navigate('forward')} aria-label="预览前进"><ArrowRight size={16} /></button>
+          <button type="button" onClick={() => void window.stable.preview.navigate('reload')} aria-label="重新加载预览"><RotateCw className={previewState.loading ? 'spin' : undefined} size={16} /></button>
+        </div>
+        <div className="preview-location"><strong>{previewState.title || previewTarget.title}</strong><span>{previewTarget.kind === 'web' ? (previewState.url || previewTarget.value) : previewTarget.value}</span></div>
+        <button className="preview-close" type="button" onClick={closeConversationPreview} aria-label="关闭预览面板"><X size={17} /></button>
+      </header>
+      <div className="preview-viewport" ref={previewViewportRef}>
+        {previewState.loading && <div className="preview-loading"><LoaderCircle className="spin" size={20} /><span>正在加载预览</span></div>}
+        {previewState.error && <div className="preview-error" role="alert"><CircleAlert size={20} /><strong>无法打开预览</strong><span>{previewState.error}</span></div>}
+      </div>
+    </aside>}
+    </div>
     {contextOpen && <aside className="context-panel" id="agent-context">
       <div className="context-panel-head"><div className="context-heading"><span>CONTEXT</span><h2>本次上下文</h2></div><button className="icon-button" type="button" onClick={() => setContextOpen(false)} aria-label="收起本次上下文"><X size={17} /></button></div>
       <ContextLine icon={Database} label="已启用数据" value={state.data.filter((item) => item.enabled).length} />
@@ -666,23 +890,44 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ message }: { message: MessageItem }) {
-  if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} />
+function MessageTurn({ message, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewLink }: { message: MessageItem; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+  if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} />
   return <article className="assistant-turn">
     {message.trace?.length ? <RunTrace items={message.trace} status="completed" /> : null}
     <div className="assistant-answer">
       <div className="assistant-mark" aria-hidden="true">S</div>
-      <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} /></div>
+      <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} onPreview={onPreviewLink} /></div>
     </div>
+    {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
+      <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
+      <div><small>定时任务</small><h3>{message.automationProposal.title}</h3><p>{message.automationProposal.prompt}</p><strong>{formatAutomationSchedule(message.automationProposal.schedule)}</strong></div>
+      {message.automationProposal.status === 'pending'
+        ? <div className="automation-proposal-actions"><button className="button" type="button" onClick={() => onAutomationDecision?.(false)}>忽略</button><button className="button primary" type="button" onClick={() => onAutomationDecision?.(true)}>确认创建</button></div>
+        : <span className="automation-decision"><Check size={15} />{message.automationProposal.status === 'accepted' ? '已创建' : '已忽略'}</span>}
+    </section>}
   </article>
 }
 
-function UserTurn({ content, attachments = [], pending = false }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean }) {
+function formatAutomationSchedule(schedule: AutomationSchedule) {
+  if (schedule.type === 'once') return `${schedule.date} ${schedule.time}`
+  if (schedule.type === 'daily') return `每天 ${schedule.time}`
+  if (schedule.type === 'weekly') return `每周 ${schedule.weekdays.map((day) => '日一二三四五六'[day]).join('、')} ${schedule.time}`
+  return `每月 ${schedule.day} 日 ${schedule.time}`
+}
+
+function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void }) {
   return <article className="user-turn" data-pending={pending || undefined}>
     <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p>
       {attachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的附件">
-        {attachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
+        {attachments.map((item, index) => {
+          const previewable = Boolean(onPreviewAttachment && (/\.(?:md|markdown)$/i.test(item.name) || /^(?:md|markdown)$/i.test(item.type)))
+          const chipContent = <>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></>
+          return previewable
+            ? <button className="selection-chip message-file-chip" type="button" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`} onClick={() => onPreviewAttachment?.(item)}>{chipContent}</button>
+            : <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{chipContent}</div>
+        })}
       </div>}
+      {onCopy && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息到主输入框"><Copy size={15} aria-hidden="true" /></button></div>}
     </div>
   </article>
 }
@@ -746,18 +991,86 @@ function TraceModuleCard({ kind, items }: { kind: AgentTraceKind; items: AgentTr
   </article>
 }
 
-function RunTrace({ items, status, active = false }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean }) {
+interface SubagentTraceView {
+  id: string
+  name: string
+  status: AgentTraceStatus
+  currentTask: string
+  latestAction: string
+}
+
+function buildSubagentTraceViews(items: AgentTraceItem[]): SubagentTraceView[] {
+  const childSessions = new Set(items
+    .filter((item) => item.entity === 'agent' && item.sessionId && item.parentSessionId)
+    .map((item) => item.sessionId!))
+
+  return Array.from(childSessions).map((sessionId) => {
+    const sessionItems = items.filter((item) => item.sessionId === sessionId).sort((a, b) => a.time - b.time)
+    const descriptor = sessionItems.find((item) => item.eventType === 'agent/descriptor')
+    const start = [...sessionItems].reverse().find((item) => item.eventType === 'agent/start')
+    const lifecycle = [...sessionItems].reverse().find((item) => item.eventType === 'agent/end' || item.eventType === 'agent/start')
+    const latestActionItem = [...sessionItems].reverse().find((item) => item.entity === 'tool' || item.kind === 'reasoning') || sessionItems[sessionItems.length - 1]
+    const status = lifecycle?.status || traceModuleStatus(sessionItems)
+    return {
+      id: sessionId,
+      name: descriptor?.title || start?.title || '子 Agent',
+      status,
+      currentTask: status === 'running'
+        ? (start?.detail || descriptor?.detail || '正在执行委派任务')
+        : (lifecycle?.detail || (status === 'completed' ? '已完成委派任务' : '委派任务未完成')),
+      latestAction: latestActionItem
+        ? `${latestActionItem.title}${latestActionItem.detail ? ` · ${latestActionItem.detail}` : ''}`
+        : '尚未记录动作',
+    }
+  })
+}
+
+function SubagentTraceCard({ agent }: { agent: SubagentTraceView }) {
+  const statusLabel = agent.status === 'running' ? '运行中' : agent.status === 'completed' ? '已完成' : agent.status === 'cancelled' ? '已取消' : '执行失败'
+  return <article className="trace-module-card trace-subagent-card" data-status={agent.status}>
+    <header className="trace-card-head">
+      <span className="trace-card-icon"><Bot size={15} aria-hidden="true" /></span>
+      <strong>{agent.name}</strong>
+      <small>{statusLabel}</small>
+      <span className="trace-card-state" aria-label={statusLabel}>
+        {agent.status === 'running' ? <LoaderCircle className="spin" size={14} /> : agent.status === 'completed' ? <Check size={14} /> : <CircleAlert size={14} />}
+      </span>
+    </header>
+    <div className="trace-subagent-body trace-card-frame" key={`${agent.id}-${agent.status}-${agent.latestAction}`}>
+      <div><small>当前任务</small><strong>{agent.currentTask}</strong></div>
+      <div><small>最新动作</small><span>{agent.latestAction}</span></div>
+    </div>
+  </article>
+}
+
+function RunTrace({ items, status, active = false, startedAt, endedAt }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number }) {
   const [expanded, setExpanded] = useState(active)
+  const firstEventAt = useMemo(() => Math.min(...items.map((item) => item.time)), [items])
+  const lastEventAt = useMemo(() => Math.max(...items.map((item) => item.time)), [items])
+  const timerStartedAt = startedAt ?? firstEventAt
+  const timerEndedAt = endedAt ?? (status === 'running' ? undefined : lastEventAt)
+  const [now, setNow] = useState(() => Date.now())
+  const subagents = useMemo(() => buildSubagentTraceViews(items), [items])
   const modules = useMemo(() => {
+    const subagentSessionIds = new Set(subagents.map((agent) => agent.id))
     const grouped = new Map<AgentTraceKind, AgentTraceItem[]>()
-    items.forEach((item) => grouped.set(item.kind, [...(grouped.get(item.kind) || []), item]))
+    items.filter((item) => !item.sessionId || !subagentSessionIds.has(item.sessionId))
+      .forEach((item) => grouped.set(item.kind, [...(grouped.get(item.kind) || []), item]))
     return Array.from(grouped.entries())
-  }, [items])
+  }, [items, subagents])
   useEffect(() => {
     if (active) { setExpanded(true); return }
     if (status === 'completed') setExpanded(false)
   }, [active, status])
+  useEffect(() => {
+    setNow(Date.now())
+    if (status !== 'running') return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [status, timerStartedAt])
+  const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
+    <div className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}><span>已执行</span><strong>{elapsed}</strong></div>
     <button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={`执行过程，${expanded ? '已展开' : '已折叠'}`}>
       <span className="trace-summary-icon">{status === 'running' ? <LoaderCircle className="spin" size={16} /> : status === 'completed' ? <Check size={16} /> : <CircleAlert size={16} />}</span>
       <strong>执行过程</strong>
@@ -765,6 +1078,7 @@ function RunTrace({ items, status, active = false }: { items: AgentTraceItem[]; 
     </button>
     {expanded && <div className="trace-card-grid">
       {modules.map(([kind, moduleItems]) => <TraceModuleCard kind={kind} items={moduleItems} key={kind} />)}
+      {subagents.map((agent) => <SubagentTraceCard agent={agent} key={agent.id} />)}
     </div>}
   </section>
 }
@@ -779,7 +1093,28 @@ function isMarkdownTableStart(lines: string[], index: number) {
   return separators.length > 1 && separators.every((cell) => /^:?-{3,}:?$/.test(cell))
 }
 
-function MarkdownContent({ content }: { content: string }) {
+type PreviewOpener = (target: Omit<ConversationPreviewTarget, 'requestId'>) => void
+
+function markdownTableSource(headers: string[], separators: string[], rows: string[][]) {
+  const cell = (value: string) => value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+  const line = (values: string[]) => `| ${values.map(cell).join(' | ')} |`
+  return [line(headers), line(separators), ...rows.map((row) => line(headers.map((_, index) => row[index] || '')))].join('\n')
+}
+
+function MarkdownTable({ headers, separators, alignments, rows, tableIndex, onPreview }: { headers: string[]; separators: string[]; alignments: Array<'left' | 'center' | 'right'>; rows: string[][]; tableIndex: number; onPreview?: PreviewOpener }) {
+  const [copied, setCopied] = useState(false)
+  async function copyTable() {
+    await window.stable.clipboard.writeText(markdownTableSource(headers, separators, rows))
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1_500)
+  }
+  return <div className="markdown-table-shell">
+    <button className="markdown-table-copy" type="button" onClick={() => void copyTable()} aria-label={copied ? '表格已复制' : '复制表格'} title={copied ? '已复制' : '复制表格'}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+    <div className="markdown-table-wrap"><table><thead><tr>{headers.map((cell, cellIndex) => <th style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(cell, `table-head-${tableIndex}-${cellIndex}`, onPreview)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(row[cellIndex] || '', `table-${tableIndex}-${rowIndex}-${cellIndex}`, onPreview)}</td>)}</tr>)}</tbody></table></div>
+  </div>
+}
+
+function MarkdownContent({ content, onPreview }: { content: string; onPreview?: PreviewOpener }) {
   const lines = content.replace(/\r/g, '').split('\n')
   const blocks: ReactNode[] = []
   let index = 0
@@ -802,13 +1137,13 @@ function MarkdownContent({ content }: { content: string }) {
       const rows: string[][] = []
       index += 2
       while (index < lines.length && lines[index].trim() && lines[index].includes('|')) { rows.push(markdownTableCells(lines[index])); index += 1 }
-      blocks.push(<div className="markdown-table-wrap" key={`table-${index}`}><table><thead><tr>{headers.map((cell, cellIndex) => <th style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(cell, `table-head-${index}-${cellIndex}`)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(row[cellIndex] || '', `table-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table></div>)
+      blocks.push(<MarkdownTable headers={headers} separators={separators} alignments={alignments} rows={rows} tableIndex={index} onPreview={onPreview} key={`table-${index}`} />)
       continue
     }
     const heading = line.match(/^(#{1,3})\s+(.+)$/)
     if (heading) {
       const level = heading[1].length
-      const children = renderInline(heading[2], `heading-${index}`)
+      const children = renderInline(heading[2], `heading-${index}`, onPreview)
       blocks.push(level === 1 ? <h2 key={`h-${index}`}>{children}</h2> : level === 2 ? <h3 key={`h-${index}`}>{children}</h3> : <h4 key={`h-${index}`}>{children}</h4>)
       index += 1; continue
     }
@@ -822,30 +1157,39 @@ function MarkdownContent({ content }: { content: string }) {
         entries.push(match[2]); index += 1
       }
       const List = ordered ? 'ol' : 'ul'
-      blocks.push(<List key={`list-${index}`}>{entries.map((entry, itemIndex) => <li key={itemIndex}>{renderInline(entry, `list-${index}-${itemIndex}`)}</li>)}</List>)
+      blocks.push(<List key={`list-${index}`}>{entries.map((entry, itemIndex) => <li key={itemIndex}>{renderInline(entry, `list-${index}-${itemIndex}`, onPreview)}</li>)}</List>)
       continue
     }
     if (line.trimStart().startsWith('> ')) {
       const quote: string[] = []
       while (index < lines.length && lines[index].trimStart().startsWith('> ')) { quote.push(lines[index].trimStart().slice(2)); index += 1 }
-      blocks.push(<blockquote key={`quote-${index}`}>{renderInline(quote.join(' '), `quote-${index}`)}</blockquote>)
+      blocks.push(<blockquote key={`quote-${index}`}>{renderInline(quote.join(' '), `quote-${index}`, onPreview)}</blockquote>)
       continue
     }
     const paragraph: string[] = [line.trim()]
     index += 1
     while (index < lines.length && lines[index].trim() && !isMarkdownTableStart(lines, index) && !/^(#{1,3})\s+|^\s*([-*]|\d+\.)\s+|^\s*>\s+|^\s*```/.test(lines[index])) { paragraph.push(lines[index].trim()); index += 1 }
-    blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(' '), `p-${index}`)}</p>)
+    blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(' '), `p-${index}`, onPreview)}</p>)
   }
   return <div className="markdown-body">{blocks}</div>
 }
 
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g
+function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener): ReactNode[] {
+  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^)\s]+|[A-Za-z]:\\[^)]+\.(?:md|markdown))\)|https?:\/\/[^\s<]+|[A-Za-z]:\\[^\n<>|?*"]+?\.(?:md|markdown)\b)/g
   return text.split(token).filter(Boolean).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) return <strong key={`${keyPrefix}-${index}`}>{part.slice(2, -2)}</strong>
     if (part.startsWith('`') && part.endsWith('`')) return <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
-    const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/)
-    if (link) return <a href={link[2]} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{link[1]}</a>
+    const link = part.match(/^\[([^\]]+)\]\((.+)\)$/)
+    if (link && /^https?:\/\//i.test(link[2])) return onPreview
+      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
+      : <a href={link[2]} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{link[1]}</a>
+    if (link && /^[A-Za-z]:\\.*\.(?:md|markdown)$/i.test(link[2])) return onPreview
+      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'markdown', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
+      : <Fragment key={`${keyPrefix}-${index}`}>{link[1]}</Fragment>
+    if (/^https?:\/\//i.test(part)) return onPreview
+      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: part, title: new URL(part).hostname })} key={`${keyPrefix}-${index}`}>{part}</button>
+      : <a href={part} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{part}</a>
+    if (/^[A-Za-z]:\\.*\.(?:md|markdown)$/i.test(part) && onPreview) return <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'markdown', value: part, title: part.split(/[/\\]/).pop() || 'Markdown' })} key={`${keyPrefix}-${index}`}>{part}</button>
     return <Fragment key={`${keyPrefix}-${index}`}>{part}</Fragment>
   })
 }
@@ -1226,6 +1570,58 @@ function SkillsPage({ items, update, action }: { items: SkillItem[]; update: (it
   </section>
 }
 
+function AutomationsPage({ state, update, goChat, action }: { state: AutomationState; update: (value: AutomationState) => void; goChat: () => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const [tab, setTab] = useState<'configured' | 'history' | 'templates'>('configured')
+  const [draft, setDraft] = useState<AutomationDraft>()
+  const tomorrow = () => { const date = new Date(); date.setDate(date.getDate() + 1); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
+  const newDraft = (): AutomationDraft => ({ title: '', prompt: '', schedule: { type: 'once', date: tomorrow(), time: '09:00' } })
+  function changeType(type: AutomationSchedule['type']) {
+    if (!draft) return
+    const time = draft.schedule.time || '09:00'
+    const schedule: AutomationSchedule = type === 'once' ? { type, date: tomorrow(), time }
+      : type === 'daily' ? { type, time }
+        : type === 'weekly' ? { type, time, weekdays: [1] }
+          : { type, time, day: 1 }
+    setDraft({ ...draft, schedule })
+  }
+  function saveDraft() {
+    if (!draft) return
+    void action('正在保存定时任务', async () => { update(await window.stable.automations.save(draft)); setDraft(undefined); setTab('configured') })
+  }
+  function edit(item: AutomationItem) { setDraft({ id: item.id, title: item.title, prompt: item.prompt, schedule: { ...item.schedule } as AutomationSchedule }) }
+  return <section className="automations-page reveal">
+    <header className="automations-head">
+      <div><span>AUTOMATION</span><h1>定时</h1><p>Stable 开启期间按计划运行任务。退出软件后不在后台执行。</p></div>
+      <div className="button-row"><button className="button" type="button" onClick={() => setDraft(newDraft())}><Plus size={16} />手动新建</button><button className="button primary" type="button" onClick={goChat}><MessageSquareText size={16} />在对话中创建</button></div>
+    </header>
+    <nav className="automation-tabs" aria-label="定时任务视图">
+      <button data-active={tab === 'configured' || undefined} onClick={() => setTab('configured')}>已配置 <span>{state.items.length}</span></button>
+      <button data-active={tab === 'history' || undefined} onClick={() => setTab('history')}>执行历史</button>
+      <button data-active={tab === 'templates' || undefined} onClick={() => setTab('templates')}>任务模板</button>
+    </nav>
+    {tab === 'configured' && (state.items.length ? <div className="automation-grid">{state.items.map((item) => <article className="automation-card" key={item.id} data-enabled={item.enabled || undefined}>
+      <header><span className="automation-card-icon"><Clock3 size={17} /></span><div><h2>{item.title}</h2><p>{formatAutomationSchedule(item.schedule)}</p></div><label className="switch"><input type="checkbox" checked={item.enabled} onChange={(event) => void action('正在更新定时任务', async () => update(await window.stable.automations.setEnabled(item.id, event.target.checked)))} /><span aria-hidden="true" /><em>{item.enabled ? '已启用' : '已暂停'}</em></label></header>
+      <p className="automation-prompt">{item.prompt}</p>
+      <div className="automation-meta"><span>下次运行</span><strong>{item.nextRunAt ? formatLocalTime(item.nextRunAt) : '暂无'}</strong><small data-status={item.lastStatus}>{item.lastStatus === 'running' ? '运行中' : item.lastStatus === 'completed' ? '上次成功' : item.lastStatus === 'failed' ? '上次失败' : item.source === 'chat' ? '由对话创建' : '手动创建'}</small></div>
+      <footer><button className="text-button" type="button" disabled={item.lastStatus === 'running'} onClick={() => void action('正在运行定时任务', async () => update(await window.stable.automations.run(item.id)))}><Play size={15} />立即运行</button><span /><button className="icon-button" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title}`}><Pencil size={15} /></button><button className="icon-button" type="button" disabled={item.lastStatus === 'running'} onClick={() => void action('正在删除定时任务', async () => update(await window.stable.automations.remove(item.id)))} aria-label={`删除 ${item.title}`}><Trash2 size={15} /></button></footer>
+    </article>)}</div> : <div className="automation-empty"><Clock3 size={24} /><h2>尚未配置定时任务</h2><p>手动设置日期时间，或直接告诉 Stable 何时执行什么任务。</p><button className="button primary" onClick={() => setDraft(newDraft())}>手动新建</button></div>)}
+    {tab === 'history' && (state.runs.length ? <div className="automation-history">{state.runs.map((run) => <article key={run.id}><span className="run-dot" data-status={run.status} /><div><strong>{run.title}</strong><p>{run.error || (run.result ? run.result.slice(0, 180) : '任务正在执行')}</p></div><div><span>{run.status === 'completed' ? '已完成' : run.status === 'running' ? '运行中' : run.status === 'cancelled' ? '已取消' : '失败'}</span><time>{formatLocalTime(run.startedAt)}</time></div></article>)}</div> : <div className="automation-empty"><Activity size={24} /><h2>还没有执行记录</h2><p>任务首次运行后，结果与错误会显示在这里。</p></div>)}
+    {tab === 'templates' && <div className="automation-grid">{state.templates.map((template) => <article className="automation-card template" key={template.id}><header><span className="automation-card-icon"><Sparkles size={17} /></span><div><h2>{template.title}</h2><p>{formatAutomationSchedule(template.schedule)}</p></div></header><p className="automation-prompt">{template.description}</p><footer><span /><button className="button" type="button" onClick={() => setDraft({ title: template.title, prompt: template.prompt, schedule: { ...template.schedule } as AutomationSchedule })}>使用模板</button></footer></article>)}</div>}
+    {draft && <div className="automation-editor-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setDraft(undefined) }}><section className="automation-editor" role="dialog" aria-modal="true" aria-labelledby="automation-editor-title">
+      <header><div><span>AUTOMATION</span><h2 id="automation-editor-title">{draft.id ? '编辑定时任务' : '新建定时任务'}</h2></div><button className="icon-button" onClick={() => setDraft(undefined)} aria-label="关闭"><X size={17} /></button></header>
+      <div className="field"><label htmlFor="automation-title">任务名称</label><input id="automation-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="例如：每日工作摘要" /></div>
+      <div className="field"><label htmlFor="automation-prompt">指定任务</label><textarea id="automation-prompt" rows={6} value={draft.prompt} onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} placeholder="到点后让 Stable 执行什么？" /></div>
+      <div className="automation-schedule-fields"><div className="field"><label htmlFor="automation-type">重复方式</label><select id="automation-type" value={draft.schedule.type} onChange={(event) => changeType(event.target.value as AutomationSchedule['type'])}><option value="once">仅一次</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option></select></div>
+        {draft.schedule.type === 'once' && <div className="field"><label htmlFor="automation-date">执行日期</label><input id="automation-date" type="date" value={draft.schedule.date} onChange={(event) => setDraft({ ...draft, schedule: { type: 'once', time: draft.schedule.time, date: event.target.value } })} /></div>}
+        {draft.schedule.type === 'monthly' && <div className="field"><label htmlFor="automation-day">每月日期</label><input id="automation-day" type="number" min="1" max="31" value={draft.schedule.day} onChange={(event) => setDraft({ ...draft, schedule: { type: 'monthly', time: draft.schedule.time, day: Number(event.target.value) } })} /></div>}
+        <div className="field"><label htmlFor="automation-time">执行时间</label><input id="automation-time" type="time" value={draft.schedule.time} onChange={(event) => setDraft({ ...draft, schedule: { ...draft.schedule, time: event.target.value } as AutomationSchedule })} /></div>
+      </div>
+      {draft.schedule.type === 'weekly' && <fieldset className="weekday-picker"><legend>每周执行日</legend>{['日','一','二','三','四','五','六'].map((label, day) => { const selected = draft.schedule.type === 'weekly' && draft.schedule.weekdays.includes(day); return <button type="button" data-active={selected || undefined} aria-pressed={selected} key={label} onClick={() => { if (draft.schedule.type !== 'weekly') return; const weekdays = selected ? draft.schedule.weekdays.filter((item) => item !== day) : [...draft.schedule.weekdays, day].sort(); setDraft({ ...draft, schedule: { ...draft.schedule, weekdays } }) }}>{label}</button> })}</fieldset>}
+      <footer><button className="button" type="button" onClick={() => setDraft(undefined)}>取消</button><button className="button primary" type="button" disabled={!draft.title.trim() || !draft.prompt.trim()} onClick={saveDraft}><Save size={16} />保存任务</button></footer>
+    </section></div>}
+  </section>
+}
+
 function PageLead({ title, copy, action }: { title: string; copy: string; action: React.ReactNode }) {
   return <div className="page-lead"><div><h2>{title}</h2><p>{copy}</p></div>{action}</div>
 }
@@ -1240,8 +1636,19 @@ function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: st
 
 function SettingsPage({ state, updateModel, updateTheme, action }: { state: BootstrapData; updateModel: (model: ModelSettings) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
   const [form, setForm] = useState({ ...state.model, apiKey: '' })
+  const [globalFile, setGlobalFile] = useState<GlobalInstructionsFile>({ path: `${state.paths.userData}\\AGENTS.md`, content: '', exists: false })
+  const [globalDraft, setGlobalDraft] = useState('')
+  const [globalStatus, setGlobalStatus] = useState('正在读取本机设置…')
   const patch = (value: Partial<typeof form>) => setForm((current) => ({ ...current, ...value }))
   function deepSeekPreset() { patch({ providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }) }
+  useEffect(() => {
+    let active = true
+    window.stable.settings.globalInstructions().then((value) => {
+      if (!active) return
+      setGlobalFile(value); setGlobalDraft(value.content); setGlobalStatus(value.exists ? '已读取当前全局提醒' : '文件尚未创建，保存时会自动创建')
+    }).catch((reason) => { if (active) setGlobalStatus(errorMessage(reason)) })
+    return () => { active = false }
+  }, [])
   function setTheme(theme: ThemeMode) {
     void action('正在切换主题', async () => {
       const saved = await window.stable.appearance.setTheme(theme)
@@ -1273,6 +1680,16 @@ function SettingsPage({ state, updateModel, updateTheme, action }: { state: Boot
         <div className="field"><label htmlFor="api-key">API Key</label><input id="api-key" type="password" value={form.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder={form.hasApiKey ? '已安全保存；留空则保持不变' : '输入 API Key'} /></div>
       </div>
       <button className="button primary" onClick={() => void action('正在保存模型设置', async () => { const model = await window.stable.model.save(form); updateModel(model); patch({ ...model, apiKey: '' }) })}><Save size={17} />保存模型设置</button>
+      <section className="update-settings" aria-labelledby="update-settings-title">
+        <div className="settings-section-head"><span>UPDATE</span><h2 id="update-settings-title">软件更新</h2><p>安装版会从 GitHub Releases 后台检查并下载更新，下载完成后由你决定何时重启安装。</p></div>
+        <div className="update-settings-row"><div><strong>当前版本 v{state.update.currentVersion}</strong><span>{state.update.status === 'development' ? '开发模式不连接更新服务' : state.update.status === 'checking' ? '正在检查更新…' : state.update.status === 'downloading' ? `正在下载 ${state.update.progress}%` : state.update.status === 'downloaded' ? `v${state.update.availableVersion} 已下载` : state.update.status === 'error' ? state.update.error : '已启用自动更新'}</span></div><button className="button" type="button" disabled={state.update.status === 'checking' || state.update.status === 'downloading'} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{state.update.status === 'downloaded' ? '已准备好' : '检查更新'}</button></div>
+      </section>
+      <section className="global-instructions-settings" aria-labelledby="global-instructions-title">
+        <div className="settings-section-head"><span>GLOBAL CONTEXT</span><h2 id="global-instructions-title">全局 Agent 对话提醒</h2><p>保存到本机 AGENTS.md，仅在之后启动的新任务中读取；不会改变正在执行的任务，也不属于当前对话的临时提示。</p></div>
+        <div className="field"><label htmlFor="global-instructions">本机全局说明</label><textarea id="global-instructions" rows={10} value={globalDraft} onChange={(event) => { setGlobalDraft(event.target.value); setGlobalStatus('有尚未保存的更改') }} placeholder="例如：默认使用简体中文；交付文件保存到工作区并返回完整路径。" /></div>
+        <div className="global-instructions-meta"><code>{globalFile.path}</code><span role="status">{globalStatus}</span></div>
+        <button className="button primary" type="button" onClick={() => void action('正在保存全局 Agent 对话提醒', async () => { const saved = await window.stable.settings.saveGlobalInstructions(globalDraft); setGlobalFile(saved); setGlobalDraft(saved.content); setGlobalStatus('已保存，只影响之后启动的新任务') })}><Save size={17} />保存全局提醒</button>
+      </section>
     </div>
     <aside className="local-sheet">
       <h2>本地目录</h2>

@@ -1,7 +1,8 @@
 'use strict'
 
-const { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } = require('electron')
-const { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } = require('node:fs')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage } = require('electron')
+const { autoUpdater } = require('electron-updater')
+const { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const path = require('node:path')
 const { StableStore } = require('./services/store.cjs')
@@ -20,6 +21,9 @@ const { renderReportHtml } = require('./services/reports.cjs')
 const { layoutWorkflowGraph, scheduleWorkflowTasks, topologicalOrder, validateWorkflowGraph } = require('./services/workflow-graph.cjs')
 const { writeWorkflowOutput } = require('./services/workflow-output.cjs')
 const { asksForWorkbenchInventory, buildWorkbenchInventory, requestedWorkbenchAction, workbenchInventoryAnswer } = require('./services/inventory.cjs')
+const { normalizeWebUrl, renderMarkdownDocument, resolveMarkdownFile } = require('./services/preview.cjs')
+const { automationIntent, automationTemplates, parseProposalOutput, proposalPrompt } = require('./services/automation.cjs')
+const { createUpdateController } = require('./services/updater.cjs')
 const {
   SCRIPT_EXTENSIONS,
   cleanupPackage,
@@ -39,10 +43,16 @@ const WINDOW_CHROME = {
   light: { backgroundColor: '#f8f5ee', symbolColor: '#172030', height: 40 },
 }
 let mainWindow
+let previewView
+let previewTemporaryPath
+let previewSessionConfigured = false
 let store
 let secrets
 let runner
 const agentRunners = new Map()
+const automationRunners = new Map()
+let automationTimer
+let updateController
 let scriptRunner
 let activeWorkflowRun
 let paths
@@ -104,6 +114,147 @@ function applyWindowTheme(window, theme) {
   }
 }
 
+function globalInstructionsPath() { return path.join(app.getPath('userData'), 'AGENTS.md') }
+
+function readGlobalInstructions() {
+  const filePath = globalInstructionsPath()
+  if (!existsSync(filePath)) return { path: filePath, content: '', exists: false }
+  const content = readFileSync(filePath, 'utf8')
+  if (Buffer.byteLength(content, 'utf8') > 200_000) throw new Error('全局 AGENTS.md 不能超过 200 KB。')
+  return { path: filePath, content, exists: true }
+}
+
+function saveGlobalInstructions(value) {
+  if (typeof value !== 'string') throw new Error('全局 Agent 对话提醒内容无效。')
+  if (Buffer.byteLength(value, 'utf8') > 200_000) throw new Error('全局 AGENTS.md 不能超过 200 KB。')
+  const filePath = globalInstructionsPath()
+  mkdirSync(path.dirname(filePath), { recursive: true })
+  writeFileSync(filePath, value.replace(/^\uFEFF/, ''), 'utf8')
+  return { path: filePath, content: value.replace(/^\uFEFF/, ''), exists: true }
+}
+
+function configurePreviewSession(webContents) {
+  webContents.setWindowOpenHandler(({ url }) => {
+    try { void webContents.loadURL(normalizeWebUrl(url)) } catch {}
+    return { action: 'deny' }
+  })
+  webContents.on('will-attach-webview', (event) => event.preventDefault())
+  if (previewSessionConfigured) return
+  const session = webContents.session
+  session.setPermissionCheckHandler(() => false)
+  session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  session.on('will-download', (event) => event.preventDefault())
+  previewSessionConfigured = true
+}
+
+function cleanupPreviewTemporaryFile() {
+  if (!previewTemporaryPath) return
+  try { if (existsSync(previewTemporaryPath)) unlinkSync(previewTemporaryPath) } catch {}
+  previewTemporaryPath = undefined
+}
+
+function closePreviewView() {
+  cleanupPreviewTemporaryFile()
+  if (!previewView) return true
+  try { mainWindow?.contentView.removeChildView(previewView) } catch {}
+  try { if (!previewView.webContents.isDestroyed()) previewView.webContents.close() } catch {}
+  previewView = undefined
+  return true
+}
+
+function normalizedPreviewBounds(value) {
+  if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Stable 主窗口尚未准备完成。')
+  const content = mainWindow.getContentBounds()
+  const x = Math.max(0, Math.min(content.width - 1, Math.round(Number(value?.x) || 0)))
+  const y = Math.max(0, Math.min(content.height - 1, Math.round(Number(value?.y) || 0)))
+  const width = Math.max(1, Math.min(content.width - x, Math.round(Number(value?.width) || 1)))
+  const height = Math.max(1, Math.min(content.height - y, Math.round(Number(value?.height) || 1)))
+  return { x, y, width, height }
+}
+
+function sendPreviewEvent(patch = {}) {
+  if (!mainWindow || mainWindow.isDestroyed() || !previewView || previewView.webContents.isDestroyed()) return
+  const contents = previewView.webContents
+  mainWindow.webContents.send('stable:preview:event', {
+    url: contents.getURL(), title: contents.getTitle(), loading: contents.isLoading(),
+    canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward(),
+    ...patch,
+  })
+}
+
+function createPreviewView(kind, bounds) {
+  closePreviewView()
+  const view = new WebContentsView({
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, partition: 'stable-preview' },
+  })
+  previewView = view
+  mainWindow.contentView.addChildView(view)
+  view.setBackgroundColor(normalizeTheme(store.getSetting('theme')) === 'light' ? '#f8f5ee' : '#070b12')
+  view.setBounds(normalizedPreviewBounds(bounds))
+  configurePreviewSession(view.webContents)
+  const guardNavigation = (event, targetUrl) => {
+    try {
+      const protocol = new URL(targetUrl).protocol
+      if (kind === 'web') { normalizeWebUrl(targetUrl); return }
+      if (kind === 'markdown' && protocol === 'file:') return
+    } catch {}
+    event.preventDefault()
+  }
+  view.webContents.on('will-navigate', guardNavigation)
+  view.webContents.on('will-redirect', guardNavigation)
+  view.webContents.on('did-start-loading', () => { view.setVisible(true); sendPreviewEvent({ loading: true, error: '' }) })
+  view.webContents.on('did-stop-loading', () => sendPreviewEvent({ loading: false }))
+  view.webContents.on('page-title-updated', () => sendPreviewEvent())
+  view.webContents.on('did-navigate', () => sendPreviewEvent())
+  view.webContents.on('did-navigate-in-page', () => sendPreviewEvent())
+  view.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => {
+    if (isMainFrame && code !== -3) { view.setVisible(false); sendPreviewEvent({ loading: false, url: validatedURL, error: description || '页面加载失败。' }) }
+  })
+  return view
+}
+
+async function openWebPreview(value, bounds) {
+  const url = normalizeWebUrl(value)
+  const view = createPreviewView('web', bounds)
+  try { await view.webContents.loadURL(url) } catch (error) { if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }); throw error }
+  const result = { url, title: view.webContents.getTitle() || new URL(url).hostname, loading: false, canGoBack: false, canGoForward: false }
+  sendPreviewEvent(result)
+  return result
+}
+
+async function openMarkdownPreview(value, bounds, explicit = false) {
+  const resolved = resolveMarkdownFile(value, [paths.workspace], explicit)
+  const title = path.basename(resolved.path)
+  const html = renderMarkdownDocument(resolved.content, title, normalizeTheme(store.getSetting('theme')))
+  const view = createPreviewView('markdown', bounds)
+  const previewDirectory = path.join(paths.userData, 'preview')
+  const previewPath = path.join(previewDirectory, `markdown-preview-${randomUUID()}.html`)
+  mkdirSync(previewDirectory, { recursive: true })
+  writeFileSync(previewPath, html, 'utf8')
+  previewTemporaryPath = previewPath
+  try { await view.webContents.loadFile(previewPath) } catch (error) { if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }); throw error }
+  const result = { path: resolved.path, url: `file://${resolved.path}`, title, loading: false, canGoBack: false, canGoForward: false }
+  sendPreviewEvent(result)
+  return result
+}
+
+function updatePreviewBounds(value) {
+  if (!previewView || previewView.webContents.isDestroyed()) return false
+  previewView.setBounds(normalizedPreviewBounds(value))
+  return true
+}
+
+function isConversationPreviewPath(conversationId, value) {
+  const requested = path.resolve(String(value || ''))
+  if (isInside(paths.workspace, requested) || isInside(paths.userData, requested)) return true
+  const key = process.platform === 'win32' ? requested.toLowerCase() : requested
+  return store.listMessages(String(conversationId || '')).some((message) => (message.attachments || []).some((item) => {
+    if (!item.path) return false
+    const candidate = path.resolve(item.path)
+    return (process.platform === 'win32' ? candidate.toLowerCase() : candidate) === key
+  }))
+}
+
 function bootstrap() {
   const model = store.getSetting('model')
   const messages = process.env.STABLE_QA_FIXTURE ? qaMessages() : store.listMessages()
@@ -114,9 +265,59 @@ function bootstrap() {
     conversations: store.listConversations(), activeConversationId: store.activeConversationId(), messages,
     model: { ...model, hasApiKey: secrets.has('apiKey') },
     team: teamState(),
+    automations: automationState(),
+    update: updateController?.state() || { status: app.isPackaged ? 'idle' : 'development', currentVersion: app.getVersion(), progress: 0 },
     recentRuns: store.recentRuns(),
     paths, runtimeReady: runner.ready(),
   }
+}
+
+function automationState() {
+  return { items: store.listAutomations(), runs: store.listAutomationRuns(), templates: automationTemplates() }
+}
+
+function publishAgentState(conversationId) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:state', agentState(conversationId))
+}
+
+function publishAutomationState() {
+  const state = automationState()
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:automations:event', state)
+  return state
+}
+
+async function executeAutomation(id, force = false) {
+  const claimed = store.startAutomationRun(id, force)
+  if (!claimed) return publishAutomationState()
+  const { item, runId } = claimed
+  const executionRunner = createHarnessRunner()
+  automationRunners.set(id, executionRunner)
+  publishAutomationState()
+  try {
+    store.addMessage(item.conversationId, 'user', item.prompt)
+    publishAgentState(item.conversationId)
+    const result = await runAgent(item.prompt, item.conversationId, [], undefined, undefined, true, [], executionRunner, 'full')
+    store.addMessage(item.conversationId, 'assistant', result.answer, result.trace)
+    store.finishAutomationRun(id, runId, 'completed', result.answer, null)
+    publishAgentState(item.conversationId)
+  } catch (error) {
+    store.finishAutomationRun(id, runId, error.message === '任务已停止。' ? 'cancelled' : 'failed', null, error.message)
+  } finally {
+    automationRunners.delete(id)
+    publishAutomationState()
+  }
+  return automationState()
+}
+
+function checkDueAutomations() {
+  for (const item of store.dueAutomations()) if (!automationRunners.has(item.id)) void executeAutomation(item.id)
+}
+
+function scheduleLabel(schedule) {
+  if (schedule.type === 'once') return `${schedule.date} ${schedule.time}`
+  if (schedule.type === 'daily') return `每天 ${schedule.time}`
+  if (schedule.type === 'weekly') return `每周 ${schedule.weekdays.join('、')} · ${schedule.time}`
+  return `每月 ${schedule.day} 日 ${schedule.time}`
 }
 
 function deviceIdentity() {
@@ -840,6 +1041,10 @@ async function importScriptAsset(category) {
 }
 
 function qaMessages() {
+  const previewPath = paths ? path.join(paths.workspace, 'qa-preview.md') : ''
+  if (previewPath && (process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_CONVERSATION_FIXTURE)) {
+    writeFileSync(previewPath, '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
+  }
   const trace = [
     { id: 'context', runId: 'qa-run', kind: 'context', title: '准备本次上下文', detail: '2 条相关数据 · 1 个 Skill · deepseek-v4-flash', status: 'completed', time: 1 },
     { id: 'root:agent', runId: 'qa-run', kind: 'status', entity: 'agent', eventType: 'agent/end', sessionId: 'root', depth: 0, title: 'Stable 总控', detail: '已完成任务', status: 'completed', time: 4100 },
@@ -854,7 +1059,7 @@ function qaMessages() {
   ]
   const answer = '# 本周行动建议\n\n已结合本地资料完成整理，建议优先处理以下事项：\n\n- **第一优先级**：核对会员第二单转化，定位最近 30 天的流失节点。\n- **第二优先级**：把高意向未复购用户拆成可执行名单。\n- **第三优先级**：用小范围对照测试验证触达策略。\n\n```text\n目标：先验证，再扩大。\n```\n\n> 所有结论均来自当前已启用的数据，未检索到的部分会明确标记为缺口。'
   return Array.from({ length: 4 }, (_, index) => [
-    { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', createdAt: new Date(index * 2).toISOString() },
+    { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === 3 && previewPath ? { attachments: [{ kind: 'attachment', name: 'qa-preview.md', path: previewPath, size: 142, type: 'md' }] } : {}), createdAt: new Date(index * 2).toISOString() },
     { id: `qa-assistant-${index}`, role: 'assistant', content: answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
   ]).flat()
 }
@@ -1095,7 +1300,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     ? `${query}\n\nStable 已完成 Skill 的全局安装与识别：${installedSkills.join('、')}。请用简体中文简要确认安装结果，并说明现在可以在对话中选择调用。不要再次扫描、移动或删除 Stable 内部目录。\n\n${permissionInstruction}`
     : `${query}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
-  const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
+  const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
   publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${capability} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
@@ -1310,6 +1515,41 @@ async function generateWorkflow(goal) {
 
 function registerIpc() {
   ipcMain.handle('stable:bootstrap', () => bootstrap())
+  ipcMain.handle('stable:automations:state', () => automationState())
+  ipcMain.handle('stable:automations:save', (_event, payload) => {
+    if (payload?.id) store.updateAutomation(requireText(payload.id, '定时任务 ID', 100), payload)
+    else store.createAutomation(payload, 'manual')
+    return publishAutomationState()
+  })
+  ipcMain.handle('stable:automations:enabled', (_event, payload) => {
+    store.setAutomationEnabled(requireText(payload?.id, '定时任务 ID', 100), Boolean(payload?.enabled))
+    return publishAutomationState()
+  })
+  ipcMain.handle('stable:automations:remove', (_event, payload) => {
+    const id = requireText(payload?.id, '定时任务 ID', 100)
+    if (automationRunners.has(id)) throw new Error('这个定时任务正在运行，请完成后再删除。')
+    store.removeAutomation(id)
+    return publishAutomationState()
+  })
+  ipcMain.handle('stable:automations:run', (_event, payload) => executeAutomation(requireText(payload?.id, '定时任务 ID', 100), true))
+  ipcMain.handle('stable:automations:proposal', (_event, payload) => {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    const messageId = requireText(payload?.messageId, '消息 ID', 100)
+    const message = store.listMessages(conversationId).find((item) => item.id === messageId)
+    if (!message?.automationProposal || message.automationProposal.status !== 'pending') throw new Error('这条自动化建议已经处理或不存在。')
+    if (!payload?.accepted) {
+      store.updateAutomationProposal(messageId, 'rejected')
+      publishAgentState(conversationId)
+      return { agent: agentState(conversationId), automations: publishAutomationState() }
+    }
+    const item = store.createAutomation(message.automationProposal, 'chat')
+    store.updateAutomationProposal(messageId, 'accepted', item.id)
+    publishAgentState(conversationId)
+    return { agent: agentState(conversationId), automations: publishAutomationState() }
+  })
+  ipcMain.handle('stable:update:state', () => updateController.state())
+  ipcMain.handle('stable:update:check', () => updateController.check(true))
+  ipcMain.handle('stable:update:install', () => updateController.install())
   ipcMain.handle('stable:data:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '导入本地数据', properties: ['openFile', 'multiSelections'], filters: [
       { name: '支持的文件', extensions: ['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'html', 'log', 'xml', 'pdf', 'docx', 'xlsx', 'xls'] }, { name: '所有文件', extensions: ['*'] },
@@ -1516,20 +1756,35 @@ function registerIpc() {
     const selectedReferences = requestedReferences.flatMap((item) => {
       const kind = String(item?.kind || '')
       const metadata = resourceMetadata.get(`${kind}:${String(item?.id || '')}`)
-      return metadata ? [{ kind, ...metadata }] : []
+      return metadata ? [{ kind, id: String(item.id), ...metadata }] : []
     })
     const messageAttachments = [
       ...selectedReferences,
-      ...attachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type })),
+      ...attachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type, path: item.path })),
     ]
     store.updateConversationContext(conversationId, conversation.capability, [])
     store.addMessage(conversationId, 'user', query, undefined, messageAttachments)
+    publishAgentState(conversationId)
     const executionRunner = createHarnessRunner()
     const control = { runner: executionRunner, reviewers: new Set() }
     agentRunners.set(conversationId, control)
     try {
+      if (automationIntent(query) && !attachments.length && !selectedReferences.length) {
+        try {
+          const rawProposal = await executionRunner.run(proposalPrompt(query), store.getSetting('model'), secrets.get('apiKey'), 90_000, () => {}, 'read-only')
+          const proposal = parseProposalOutput(rawProposal)
+          if (proposal) {
+            const automationProposal = { ...proposal, status: 'pending' }
+            const answer = `我已整理好定时任务“${proposal.title}”。执行时间：${scheduleLabel(proposal.schedule)}。确认后才会保存并开始生效。`
+            store.addMessage(conversationId, 'assistant', answer, undefined, undefined, automationProposal)
+            publishAgentState(conversationId)
+            return { answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
+          }
+        } catch { /* 解析不明确时交回普通对话，让模型继续询问 */ }
+      }
       const result = await runAgent(query, conversationId, attachments, undefined, { data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner)
       store.addMessage(conversationId, 'assistant', result.answer, result.trace)
+      publishAgentState(conversationId)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
       throw new Error(error.message)
@@ -1701,6 +1956,25 @@ function registerIpc() {
     store.setSetting('model', model)
     return model
   })
+  ipcMain.handle('stable:settings:globalInstructions', () => readGlobalInstructions())
+  ipcMain.handle('stable:settings:saveGlobalInstructions', (_event, payload) => saveGlobalInstructions(payload?.content))
+  ipcMain.handle('stable:preview:openWeb', (_event, payload) => openWebPreview(payload?.url, payload?.bounds))
+  ipcMain.handle('stable:preview:openMarkdown', (_event, payload) => {
+    if (!isConversationPreviewPath(payload?.conversationId, payload?.path)) throw new Error('只能预览当前对话中附带或 Stable 工作区内的 Markdown 文件。')
+    return openMarkdownPreview(payload?.path, payload?.bounds, true)
+  })
+  ipcMain.handle('stable:preview:setBounds', (_event, payload) => updatePreviewBounds(payload?.bounds))
+  ipcMain.handle('stable:preview:navigate', (_event, payload) => {
+    if (!previewView || previewView.webContents.isDestroyed()) return false
+    const history = previewView.webContents.navigationHistory
+    if (payload?.action === 'back' && history.canGoBack()) history.goBack()
+    else if (payload?.action === 'forward' && history.canGoForward()) history.goForward()
+    else if (payload?.action === 'reload') previewView.webContents.reload()
+    else return false
+    return true
+  })
+  ipcMain.handle('stable:preview:close', () => closePreviewView())
+  ipcMain.handle('stable:clipboard:writeText', (_event, payload) => { clipboard.writeText(requireText(payload?.text, '复制内容', 2_000_000)); return true })
   ipcMain.handle('stable:appearance:theme', (_event, payload) => {
     if (!['dark', 'light'].includes(payload?.theme)) throw new Error('未知的主题颜色。')
     const theme = normalizeTheme(payload.theme)
@@ -1755,7 +2029,7 @@ function createWindow() {
   window.setMenuBarVisibility(false)
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('file:')) event.preventDefault() })
-  window.on('closed', () => { mainWindow = undefined })
+  window.on('closed', () => { closePreviewView(); mainWindow = undefined })
   return window
 }
 
@@ -1814,8 +2088,16 @@ async function boot() {
       { id: 'qa-e5', source: 'qa-ai', target: 'qa-output' },
     ] })
   }
+  if (process.env.STABLE_QA_AUTOMATION_FIXTURE && store.listAutomations().length === 0) {
+    store.createAutomation({ title: '每日经营摘要', prompt: '汇总今天的经营进展、风险和下一步行动。', schedule: { type: 'daily', time: '18:00' } }, 'manual')
+    store.createAutomation({ title: '每周资料检查', prompt: '检查工作区资料是否完整，列出缺失和需要更新的内容。', schedule: { type: 'weekly', time: '09:00', weekdays: [1] } }, 'chat')
+  }
   secrets = new SecretStore(paths.userData, safeStorage)
   runner = createHarnessRunner()
+  updateController = createUpdateController({
+    autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
+    publish: (value) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:update:event', value) },
+  })
   scriptRunner = new ScriptRunner({ workspace: paths.workspace })
   teamNetwork = new TeamNetwork({ onEvent: (event) => { void handleTeamNetworkEvent(event) }, capabilities: teamCapabilities })
   if (store.teamProfile()) {
@@ -1825,6 +2107,9 @@ async function boot() {
   registerIpc()
   mainWindow = createWindow()
   await mainWindow.loadFile(resourcePath('dist', 'index.html'), { query: process.env.STABLE_QA_PAGE ? { page: process.env.STABLE_QA_PAGE } : undefined })
+  updateController.start()
+  automationTimer = setInterval(checkDueAutomations, 15_000)
+  setTimeout(checkDueAutomations, 1_500)
   if (process.env.STABLE_QA_CAPTURE) {
     if (process.env.STABLE_QA_REPORT_EDITOR) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.report-index-open')?.click()") }, 450)
@@ -1842,6 +2127,9 @@ async function boot() {
     }
     if (process.env.STABLE_QA_AGENT_TRACE) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("Array.from(document.querySelectorAll('.trace-summary[aria-expanded=\"false\"]')).at(-1)?.click()") }, 900)
+    }
+    if (process.env.STABLE_QA_PREVIEW) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.message-file-chip')?.click()") }, 900)
     }
     if (process.env.STABLE_QA_CONFIRM) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item button[aria-label^=\"删除 \"]')?.click()") }, 850)
@@ -1909,6 +2197,7 @@ async function boot() {
             stage: stage ? { clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, clientHeight: stage.clientHeight, scrollHeight: stage.scrollHeight, overflowY: getComputedStyle(stage).overflowY } : null,
             messages: messages ? { clientWidth: messages.clientWidth, scrollWidth: messages.scrollWidth, clientHeight: messages.clientHeight, scrollHeight: messages.scrollHeight, overflowY: getComputedStyle(messages).overflowY } : null,
             context: context ? { clientWidth: context.clientWidth, scrollWidth: context.scrollWidth, clientHeight: context.clientHeight, scrollHeight: context.scrollHeight, overflowY: getComputedStyle(context).overflowY } : null,
+            preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
             workflowName: document.querySelector('input[aria-label="工作流名称"]')?.value || null,
             workflowInstruction: document.querySelector('textarea[aria-label="模块 AI 输入"]')?.value || null,
             workflowEditorVisible: Boolean(document.querySelector('.workflow-node-editor')),
@@ -1927,6 +2216,19 @@ async function boot() {
             componentBorders: Array.from(document.querySelectorAll('.button, .library-card, input, select')).slice(0, 20).map((element) => getComputedStyle(element).borderWidth),
           }
         })()`)
+        if (previewView && !previewView.webContents.isDestroyed()) {
+          try {
+            metrics.previewContents = await previewView.webContents.executeJavaScript(`(() => ({
+              title: document.title,
+              text: document.body?.innerText?.trim().slice(0, 240) || '',
+              tableCount: document.querySelectorAll('table').length,
+              readyState: document.readyState,
+              url: location.href,
+            }))()`)
+          } catch (error) {
+            metrics.previewContents = { error: error.message }
+          }
+        }
         const image = await mainWindow.webContents.capturePage()
         const fs = require('node:fs').promises
         await fs.writeFile(process.env.STABLE_QA_CAPTURE, image.toPNG())
@@ -1939,4 +2241,4 @@ async function boot() {
 app.whenReady().then(boot)
 app.on('activate', () => { if (!mainWindow) void boot() })
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => { cancelWorkflow(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })
+app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

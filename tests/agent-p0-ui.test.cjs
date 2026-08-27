@@ -1,0 +1,53 @@
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const path = require('node:path')
+
+const root = path.resolve(__dirname, '..')
+const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
+const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
+const store = readFileSync(path.join(root, 'desktop', 'services', 'store.cjs'), 'utf8')
+
+test('user messages overwrite the main draft with recoverable resources and Ctrl+Z restores the prior draft', () => {
+  assert.match(app, /function copyUserMessage\(message: MessageItem\)/)
+  assert.match(app, /setPrompt\(message\.content\)/)
+  assert.match(app, /setAttachments\(restoredAttachments\)/)
+  assert.match(app, /setReferences\(restoredReferences\)/)
+  assert.match(app, /copyUndoRef\.current\[state\.activeConversationId\]/)
+  assert.match(app, /event\.key\.toLowerCase\(\) === 'z' && undoCopiedDraft\(\)/)
+  assert.match(app, /复制这条消息到主输入框/)
+  assert.doesNotMatch(app, />复制到输入框</)
+  assert.match(app, /<Copy size=\{15\} aria-hidden="true" \/>/)
+  assert.match(css, /\.user-turn-actions/)
+  assert.match(css, /\.user-turn-actions \{ position: absolute;[^}]*inset-inline-end: 0;[^}]*inset-block-end: -2\.1rem/)
+  assert.match(main, /\{ kind, id: String\(item\.id\), \.\.\.metadata \}/)
+  assert.match(main, /path: item\.path/)
+  assert.match(store, /kind !== 'attachment' && item\.id/)
+  assert.match(store, /kind === 'attachment' && item\.path/)
+})
+
+test('conversation links and Markdown files open a resizable in-window preview without a composer eye button', () => {
+  const composer = app.slice(app.indexOf('<div className="composer">'), app.indexOf('{contextOpen &&'))
+  assert.doesNotMatch(composer, /<Eye|打开快捷预览|PreviewDialog/)
+  assert.match(app, /className="conversation-preview"/)
+  assert.match(app, /className="preview-resizer" role="separator"/)
+  assert.match(app, /window\.stable\.preview\.openWeb\(previewTarget\.value, bounds\)/)
+  assert.match(app, /window\.stable\.preview\.openMarkdown\(previewTarget\.value, bounds, activeConversation\.id\)/)
+  assert.match(app, /className="selection-chip message-file-chip"/)
+  assert.match(app, /className="markdown-preview-link"/)
+  assert.match(css, /\.conversation-workspace\[data-preview-open="true"\]/)
+  assert.match(css, /\.conversation-preview/)
+})
+
+test('settings exposes the global AGENTS.md editor and explains its future-task scope', () => {
+  assert.match(app, /全局 Agent 对话提醒/)
+  assert.match(app, /仅在之后启动的新任务中读取/)
+  assert.match(app, /window\.stable\.settings\.globalInstructions\(\)/)
+  assert.match(app, /window\.stable\.settings\.saveGlobalInstructions\(globalDraft\)/)
+  assert.match(main, /path\.join\(app\.getPath\('userData'\), 'AGENTS\.md'\)/)
+  assert.match(main, /globalInstructions: readGlobalInstructions\(\)\.content/)
+  assert.match(css, /\.global-instructions-settings/)
+})

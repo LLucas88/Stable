@@ -63,6 +63,16 @@ test('artifact delivery prompt requires a real workspace file while text prompts
   assert.match(artifactPrompt, /计划、待办、实现思路/)
 })
 
+test('new runs receive saved global instructions without a preview CLI', () => {
+  const prompt = composeAgentPrompt({
+    identity: 'Stable identity', globalInstructions: '所有表格使用中文表头。',
+    query: '打开参考页面', history: [], data: [], knowledge: [], skills: [],
+  })
+  assert.match(prompt, /本机全局 Agent 对话提醒\n所有表格使用中文表头。/)
+  assert.doesNotMatch(prompt, /Stable 本地预览 CLI|stable-preview/)
+  assert.match(prompt, /当前请求\n打开参考页面/)
+})
+
 test('unsupported temporary attachment format receives a clear error', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-attachment-'))
   try {

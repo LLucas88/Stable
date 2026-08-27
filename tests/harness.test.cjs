@@ -27,6 +27,8 @@ test('conversation harness has no default execution deadline while explicit safe
   assert.match(source, /run\(prompt, model, apiKey, timeoutMs = 0, onEvent/)
   assert.match(source, /const timer = timeoutMs > 0/)
   assert.match(source, /if \(timer\) clearTimeout\(timer\)/)
+  assert.match(source, /DEEPSEEK_API_KEY: apiKey/)
+  assert.match(source, /STABLE_API_KEY: apiKey/)
 })
 
 test('source harness discovers the runtime bundled beside the source tree', () => {
@@ -46,9 +48,9 @@ test('harness config stores only an environment reference, never the API key', (
     const value = YAML.parse(raw)
     assert.equal(value['agent-default-model'].provider, 'private-gateway')
     assert.equal(value['llm-pi-ai'].providers['private-gateway'].apiKeyEnv, 'STABLE_API_KEY')
-    assert.equal(value['tool-subagent'].maxDepth, 0)
+    assert.equal(value['tool-subagent'].maxDepth, 3)
     assert.doesNotMatch(raw, /secret-value/)
-    assert.equal(value['tool-subagent-fork'].maxDepth, 0)
+    assert.equal(value['tool-subagent-fork'].maxDepth, 3)
     assert.equal(value['agent-loop'], undefined)
   } finally {
     rmSync(root, { recursive: true, force: true })

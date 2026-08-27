@@ -65,7 +65,9 @@ test('agent conversations run independently and keep a persisted permission mode
   assert.match(main, /stable:agent:answerApproval/)
   assert.match(preload, /stable:agent:configurePermission/)
   assert.match(preload, /stable:agent:answerApproval/)
-  assert.match(store, /permission_mode TEXT NOT NULL DEFAULT 'request'/)
+  assert.match(store, /permission_mode TEXT NOT NULL DEFAULT 'full'/)
+  assert.match(main, /publishAgentState\(conversationId\)/)
+  assert.match(preload, /stable:agent:state/)
   assert.match(store, /updateConversationPermission/)
 })
 
@@ -237,14 +239,20 @@ test('agent runs refresh Stable native resource status in the shared app state',
   assert.match(main, /library: store\.listLibrary\(\), skills: store\.listSkills\(\), workflows: store\.listWorkflows\(\)/)
 })
 
-test('assistant Markdown renders standard tables with local horizontal scrolling', () => {
+test('assistant Markdown tables keep stable hover geometry and expose Markdown-only copy', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.match(app, /function isMarkdownTableStart/)
   assert.match(app, /className="markdown-table-wrap"/)
+  assert.match(app, /className="markdown-table-copy"/)
+  assert.match(app, /window\.stable\.clipboard\.writeText\(markdownTableSource\(headers, separators, rows\)\)/)
   assert.match(app, /<table><thead><tr>/)
   assert.match(css, /\.markdown-table-wrap[^}]*overflow-x: auto/)
+  assert.match(css, /\.markdown-table-shell:hover \.markdown-table-copy/)
+  const hoverLift = css.slice(css.indexOf('@media (hover: hover) and (pointer: fine)', css.indexOf('.markdown-table-shell')), css.indexOf('#root :where(', css.indexOf('.markdown-table-shell')))
+  assert.doesNotMatch(hoverLift, /\.markdown-table-wrap/)
   assert.match(css, /\.markdown-body table/)
+  assert.match(css, /\.markdown-body \{[^}]*width: 100%;[^}]*max-width: none/)
   assert.match(css, /\.assistant-answer \.markdown-body \{[^}]*font-family: "Microsoft YaHei", "微软雅黑", sans-serif;[^}]*font-size: var\(--text-sm\)/)
   assert.match(css, /\.assistant-answer \.markdown-body h2 \{[^}]*font-family: inherit;[^}]*font-size: var\(--text-md\)/)
 })

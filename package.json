@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.9.26",
+  "version": "0.9.27",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
+    "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "dist:dir": "npm run build && electron-builder --win --x64 --dir",
     "dist": "npm run build && electron-builder --win --x64"
   },
@@ -20,6 +21,7 @@
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.8",
     "@xyflow/react": "^12.8.6",
+    "electron-updater": "^6.8.9",
     "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.9.1",
@@ -63,7 +65,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.9.26-team-conversation"
+      "output": "release-0.9.27"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",
@@ -84,6 +86,12 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Stable",
       "deleteAppDataOnUninstall": false
-    }
+    },
+    "publish": [{
+      "provider": "github",
+      "owner": "LLucas88",
+      "repo": "Stable",
+      "releaseType": "release"
+    }]
   }
 }

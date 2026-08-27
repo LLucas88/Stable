@@ -1,4 +1,4 @@
-export type Page = 'home' | 'agent' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'settings'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'settings'
 export type ThemeMode = 'dark' | 'light'
 
 export interface DataItem {
@@ -147,7 +147,29 @@ export interface MessageItem {
   content: string
   createdAt: string
   trace?: AgentTraceItem[]
-  attachments?: Array<Pick<AgentAttachment, 'name' | 'size' | 'type'> & { kind: AgentReferenceKind | 'attachment' }>
+  attachments?: Array<Pick<AgentAttachment, 'name' | 'size' | 'type'> & { kind: AgentReferenceKind | 'attachment'; id?: string; path?: string }>
+  automationProposal?: AutomationProposal
+}
+
+export type AutomationSchedule =
+  | { type: 'once'; date: string; time: string }
+  | { type: 'daily'; time: string }
+  | { type: 'weekly'; time: string; weekdays: number[] }
+  | { type: 'monthly'; time: string; day: number }
+
+export interface AutomationDraft { id?: string; title: string; prompt: string; schedule: AutomationSchedule }
+export interface AutomationProposal extends AutomationDraft { nextRunAt: string; status: 'pending' | 'accepted' | 'rejected'; automationId?: string }
+export interface AutomationItem extends AutomationDraft {
+  id: string; nextRunAt?: string; enabled: boolean; source: 'manual' | 'chat'; conversationId?: string
+  lastStatus: string; lastRunAt?: string; createdAt: string; updatedAt: string
+}
+export interface AutomationRun { id: string; automationId: string; title: string; status: string; startedAt: string; endedAt?: string; result: string; error: string }
+export interface AutomationTemplate { id: string; title: string; description: string; prompt: string; schedule: AutomationSchedule }
+export interface AutomationState { items: AutomationItem[]; runs: AutomationRun[]; templates: AutomationTemplate[] }
+
+export interface UpdateState {
+  status: 'development' | 'idle' | 'checking' | 'current' | 'downloading' | 'downloaded' | 'error'
+  currentVersion: string; availableVersion?: string; releaseName?: string; progress: number; error?: string
 }
 
 export type AgentReferenceKind = 'data' | 'skill' | 'script' | 'knowledge'
@@ -203,6 +225,12 @@ export interface AgentTraceItem {
   time: number
   conversationId?: string
   eventType?: string
+  entity?: 'agent' | 'tool'
+  sessionId?: string
+  parentSessionId?: string
+  depth?: number
+  mode?: 'one-shot' | 'continuable'
+  provider?: string
   requestId?: string
   toolName?: string
   reason?: string
@@ -215,6 +243,29 @@ export interface ModelSettings {
   baseURL: string
   model: string
   hasApiKey: boolean
+}
+
+export interface GlobalInstructionsFile {
+  path: string
+  content: string
+  exists: boolean
+}
+
+export interface PreviewBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface PreviewState {
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  error?: string
+  path?: string
 }
 
 export type TeamConnectionStatus = 'offline' | 'connecting' | 'online'
@@ -315,6 +366,8 @@ export interface BootstrapData {
   messages: MessageItem[]
   model: ModelSettings
   team: TeamState
+  automations: AutomationState
+  update: UpdateState
   paths: { userData: string; workspace: string }
   runtimeReady: boolean
 }
@@ -381,6 +434,22 @@ export interface StableBridge {
     answerApproval(conversationId: string, requestId: string, allowed: boolean): Promise<boolean>
     clear(conversationId: string): Promise<AgentState>
     onEvent(handler: (event: AgentTraceItem) => void): () => void
+    onState(handler: (state: AgentState) => void): () => void
+  }
+  automations: {
+    state(): Promise<AutomationState>
+    save(value: AutomationDraft): Promise<AutomationState>
+    setEnabled(id: string, enabled: boolean): Promise<AutomationState>
+    remove(id: string): Promise<AutomationState>
+    run(id: string): Promise<AutomationState>
+    decideProposal(conversationId: string, messageId: string, accepted: boolean): Promise<{ agent: AgentState; automations: AutomationState }>
+    onEvent(handler: (state: AutomationState) => void): () => void
+  }
+  updater: {
+    state(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    install(): Promise<boolean>
+    onEvent(handler: (state: UpdateState) => void): () => void
   }
   team: {
     state(): Promise<TeamState>
@@ -399,6 +468,21 @@ export interface StableBridge {
   }
   model: {
     save(settings: ModelSettings & { apiKey?: string }): Promise<ModelSettings>
+  }
+  settings: {
+    globalInstructions(): Promise<GlobalInstructionsFile>
+    saveGlobalInstructions(content: string): Promise<GlobalInstructionsFile>
+  }
+  preview: {
+    openWeb(url: string, bounds: PreviewBounds): Promise<PreviewState>
+    openMarkdown(path: string, bounds: PreviewBounds, conversationId: string): Promise<PreviewState>
+    setBounds(bounds: PreviewBounds): Promise<boolean>
+    navigate(action: 'back' | 'forward' | 'reload'): Promise<boolean>
+    close(): Promise<boolean>
+    onEvent(handler: (state: PreviewState) => void): () => void
+  }
+  clipboard: {
+    writeText(text: string): Promise<boolean>
   }
   appearance: {
     setTheme(theme: ThemeMode): Promise<ThemeMode>

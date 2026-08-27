@@ -12,8 +12,9 @@ const CAPABILITY_GUIDANCE = {
   analysis: '优先使用本次显式引用的数据，区分事实、计算、推断与缺口，并给出可复核的分析结论。',
 }
 
-function composeAgentPrompt({ identity, query, history, data, knowledge, skills, scripts = [], attachments = [], capability = 'auto', delivery }) {
+function composeAgentPrompt({ identity, globalInstructions = '', query, history, data, knowledge, skills, scripts = [], attachments = [], capability = 'auto', delivery }) {
   return `${identity}
+${globalInstructions.trim() ? `\n## 本机全局 Agent 对话提醒\n${globalInstructions.trim()}\n` : ''}
 
 ## 本次能力模式
 ${CAPABILITY_GUIDANCE[capability] || CAPABILITY_GUIDANCE.auto}

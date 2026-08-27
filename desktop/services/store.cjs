@@ -5,6 +5,7 @@ const { mkdirSync } = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { normalizeWorkflowGraph } = require('./workflow-graph.cjs')
+const { computeNextRun, normalizeAutomationInput } = require('./automation.cjs')
 
 const DEFAULT_IDENTITY = 'Stable 是你的本地智能工作助理，擅长数据分析、知识管理、Skills 调用和自动化工作流。它优先保护本地数据，执行涉及文件修改、脚本运行或外部请求的操作前会明确说明，并保留可追溯的运行记录。'
 
@@ -57,13 +58,13 @@ class StableStore {
       );
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, capability TEXT NOT NULL DEFAULT 'auto',
-        collaboration INTEGER NOT NULL DEFAULT 0, permission_mode TEXT NOT NULL DEFAULT 'request', data_ids_json TEXT NOT NULL DEFAULT '[]',
+        collaboration INTEGER NOT NULL DEFAULT 0, permission_mode TEXT NOT NULL DEFAULT 'full', data_ids_json TEXT NOT NULL DEFAULT '[]',
         source_type TEXT NOT NULL DEFAULT 'local', source_device_id TEXT NOT NULL DEFAULT '', source_device_name TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL,
-        trace_json TEXT, attachments_json TEXT, created_at TEXT NOT NULL
+        trace_json TEXT, attachments_json TEXT, automation_json TEXT, created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS run_logs (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT, status TEXT NOT NULL,
@@ -103,6 +104,16 @@ class StableStore {
         id TEXT PRIMARY KEY, source_device_id TEXT NOT NULL, source_device_name TEXT NOT NULL,
         title TEXT NOT NULL, snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS automations (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, prompt TEXT NOT NULL, schedule_json TEXT NOT NULL,
+        next_run_at TEXT, enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual',
+        conversation_id TEXT, last_status TEXT NOT NULL DEFAULT 'idle', last_run_at TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS automation_runs (
+        id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, status TEXT NOT NULL,
+        started_at TEXT NOT NULL, ended_at TEXT, result TEXT, error TEXT
+      );
     `)
     const conversationColumns = this.db.prepare('PRAGMA table_info(conversations)').all()
     if (!conversationColumns.some((column) => column.name === 'collaboration')) this.db.exec('ALTER TABLE conversations ADD COLUMN collaboration INTEGER NOT NULL DEFAULT 0')
@@ -114,7 +125,12 @@ class StableStore {
     if (!messageColumns.some((column) => column.name === 'trace_json')) this.db.exec('ALTER TABLE messages ADD COLUMN trace_json TEXT')
     if (!messageColumns.some((column) => column.name === 'conversation_id')) this.db.exec('ALTER TABLE messages ADD COLUMN conversation_id TEXT')
     if (!messageColumns.some((column) => column.name === 'attachments_json')) this.db.exec('ALTER TABLE messages ADD COLUMN attachments_json TEXT')
+    if (!messageColumns.some((column) => column.name === 'automation_json')) this.db.exec('ALTER TABLE messages ADD COLUMN automation_json TEXT')
     this.initializeConversations()
+    if (this.getSetting('codingPermissionsV0927') === undefined) {
+      this.db.prepare("UPDATE conversations SET permission_mode='full' WHERE permission_mode='request'").run()
+      this.setSetting('codingPermissionsV0927', true)
+    }
     if (this.getSetting('identity') === undefined) this.setSetting('identity', DEFAULT_IDENTITY)
     if (this.getSetting('theme') === undefined) this.setSetting('theme', 'dark')
     if (this.getSetting('model') === undefined) {
@@ -165,11 +181,13 @@ class StableStore {
   conversation(id) { return this.listConversations().find((item) => item.id === id) }
   activeConversationId() { return this.getSetting('activeConversationId') }
 
-  createConversation() {
+  createConversation(options = {}) {
     const id = randomUUID(); const now = new Date().toISOString()
-    this.db.prepare('INSERT INTO conversations(id,title,capability,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?)')
-      .run(id, '新对话', 'auto', '[]', now, now)
-    this.setSetting('activeConversationId', id)
+    const title = String(options.title || '新对话').slice(0, 80)
+    const permissionMode = ['request', 'auto', 'full'].includes(options.permissionMode) ? options.permissionMode : 'full'
+    this.db.prepare('INSERT INTO conversations(id,title,capability,permission_mode,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
+      .run(id, title, 'auto', permissionMode, '[]', now, now)
+    if (options.select !== false) this.setSetting('activeConversationId', id)
     return id
   }
 
@@ -539,19 +557,28 @@ class StableStore {
   setWorkflowResult(id, status, result) { this.db.prepare('UPDATE workflows SET last_status=?,last_result=?,updated_at=? WHERE id=?').run(status, result, new Date().toISOString(), id) }
 
   listMessages(conversationId = this.activeConversationId()) {
-    return this.db.prepare('SELECT id,role,content,trace_json,attachments_json,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 200').all(conversationId).map((row) => ({
+    return this.db.prepare('SELECT id,role,content,trace_json,attachments_json,automation_json,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 200').all(conversationId).map((row) => ({
       id: row.id, role: row.role, content: row.content, createdAt: row.created_at,
       ...(row.trace_json ? { trace: JSON.parse(row.trace_json) } : {}),
       ...(row.attachments_json ? { attachments: JSON.parse(row.attachments_json) } : {}),
+      ...(row.automation_json ? { automationProposal: JSON.parse(row.automation_json) } : {}),
     }))
   }
-  addMessage(conversationId, role, content, trace, attachments) {
+  addMessage(conversationId, role, content, trace, attachments, automationProposal) {
     if (!this.conversation(conversationId)) throw new Error('找不到这个对话。')
     const allowedKinds = new Set(['data', 'skill', 'script', 'knowledge'])
-    const messageAttachments = Array.isArray(attachments) ? attachments.slice(0, 24).map((item) => ({ kind: allowedKinds.has(item.kind) ? item.kind : 'attachment', name: String(item.name), size: Number(item.size) || 0, type: String(item.type || '') })) : []
-    const item = { id: randomUUID(), role, content, createdAt: new Date().toISOString(), ...(trace?.length ? { trace } : {}), ...(messageAttachments.length ? { attachments: messageAttachments } : {}) }
-    this.db.prepare('INSERT INTO messages(id,conversation_id,role,content,trace_json,attachments_json,created_at) VALUES(?,?,?,?,?,?,?)')
-      .run(item.id, conversationId, role, content, trace?.length ? JSON.stringify(trace) : null, messageAttachments.length ? JSON.stringify(messageAttachments) : null, item.createdAt)
+    const messageAttachments = Array.isArray(attachments) ? attachments.slice(0, 24).map((item) => {
+      const kind = allowedKinds.has(item.kind) ? item.kind : 'attachment'
+      return {
+        kind, name: String(item.name), size: Number(item.size) || 0, type: String(item.type || ''),
+        ...(kind !== 'attachment' && item.id ? { id: String(item.id).slice(0, 160) } : {}),
+        ...(kind === 'attachment' && item.path ? { path: String(item.path).slice(0, 2_000) } : {}),
+      }
+    }) : []
+    const proposal = automationProposal && typeof automationProposal === 'object' ? automationProposal : undefined
+    const item = { id: randomUUID(), role, content, createdAt: new Date().toISOString(), ...(trace?.length ? { trace } : {}), ...(messageAttachments.length ? { attachments: messageAttachments } : {}), ...(proposal ? { automationProposal: proposal } : {}) }
+    this.db.prepare('INSERT INTO messages(id,conversation_id,role,content,trace_json,attachments_json,automation_json,created_at) VALUES(?,?,?,?,?,?,?,?)')
+      .run(item.id, conversationId, role, content, trace?.length ? JSON.stringify(trace) : null, messageAttachments.length ? JSON.stringify(messageAttachments) : null, proposal ? JSON.stringify(proposal) : null, item.createdAt)
     const conversation = this.conversation(conversationId)
     const priorUserMessages = role === 'user' ? Number(this.db.prepare("SELECT COUNT(*) AS total FROM messages WHERE conversation_id=? AND role='user' AND id<>?").get(conversationId, item.id)?.total || 0) : 1
     const generatedTitle = role === 'user' && priorUserMessages === 0
@@ -561,6 +588,76 @@ class StableStore {
     return item
   }
   clearMessages(conversationId = this.activeConversationId()) { this.db.prepare('DELETE FROM messages WHERE conversation_id=?').run(conversationId) }
+  updateAutomationProposal(messageId, status, automationId) {
+    const row = this.db.prepare('SELECT automation_json FROM messages WHERE id=?').get(messageId)
+    if (!row?.automation_json) throw new Error('找不到这条自动化建议。')
+    const proposal = { ...JSON.parse(row.automation_json), status, ...(automationId ? { automationId } : {}) }
+    this.db.prepare('UPDATE messages SET automation_json=? WHERE id=?').run(JSON.stringify(proposal), messageId)
+    return proposal
+  }
+  listAutomations() {
+    return this.db.prepare('SELECT * FROM automations ORDER BY enabled DESC,updated_at DESC').all().map((row) => ({
+      id: row.id, title: row.title, prompt: row.prompt, schedule: JSON.parse(row.schedule_json),
+      nextRunAt: row.next_run_at || undefined, enabled: Boolean(row.enabled), source: row.source,
+      conversationId: row.conversation_id || undefined, lastStatus: row.last_status,
+      lastRunAt: row.last_run_at || undefined, createdAt: row.created_at, updatedAt: row.updated_at,
+    }))
+  }
+  automation(id) { return this.listAutomations().find((item) => item.id === id) }
+  listAutomationRuns(limit = 100) {
+    return this.db.prepare(`SELECT r.*,a.title FROM automation_runs r LEFT JOIN automations a ON a.id=r.automation_id
+      ORDER BY r.started_at DESC LIMIT ?`).all(limit).map((row) => ({
+      id: row.id, automationId: row.automation_id, title: row.title || '已删除的任务', status: row.status,
+      startedAt: row.started_at, endedAt: row.ended_at || undefined, result: row.result || '', error: row.error || '',
+    }))
+  }
+  createAutomation(value, source = 'manual') {
+    const normalized = normalizeAutomationInput(value)
+    const id = randomUUID(); const now = new Date().toISOString()
+    const conversationId = this.createConversation({ title: `[定时] ${normalized.title}`, select: false, permissionMode: 'full' })
+    this.db.prepare(`INSERT INTO automations(id,title,prompt,schedule_json,next_run_at,enabled,source,conversation_id,last_status,created_at,updated_at)
+      VALUES(?,?,?,?,?,1,?,?, 'idle',?,?)`).run(id, normalized.title, normalized.prompt, JSON.stringify(normalized.schedule), normalized.nextRunAt, source === 'chat' ? 'chat' : 'manual', conversationId, now, now)
+    return this.automation(id)
+  }
+  updateAutomation(id, value) {
+    if (!this.automation(id)) throw new Error('找不到这个定时任务。')
+    const normalized = normalizeAutomationInput(value)
+    this.db.prepare(`UPDATE automations SET title=?,prompt=?,schedule_json=?,next_run_at=?,enabled=1,last_status='idle',updated_at=? WHERE id=?`)
+      .run(normalized.title, normalized.prompt, JSON.stringify(normalized.schedule), normalized.nextRunAt, new Date().toISOString(), id)
+    return this.automation(id)
+  }
+  setAutomationEnabled(id, enabled) {
+    const item = this.automation(id)
+    if (!item) throw new Error('找不到这个定时任务。')
+    const nextRunAt = enabled ? computeNextRun(item.schedule, new Date()) : undefined
+    if (enabled && !nextRunAt) throw new Error('一次性任务的执行时间已经过去，请先编辑执行时间。')
+    this.db.prepare("UPDATE automations SET enabled=?,next_run_at=?,last_status=?,updated_at=? WHERE id=?")
+      .run(enabled ? 1 : 0, nextRunAt || null, enabled ? 'idle' : 'paused', new Date().toISOString(), id)
+    return this.automation(id)
+  }
+  removeAutomation(id) { this.db.prepare('DELETE FROM automations WHERE id=?').run(id) }
+  startAutomationRun(id, force = false, now = new Date()) {
+    const item = this.automation(id)
+    if (!item) throw new Error('找不到这个定时任务。')
+    if (item.lastStatus === 'running') return undefined
+    if (!force && (!item.enabled || !item.nextRunAt || new Date(item.nextRunAt) > now)) return undefined
+    const nextRunAt = item.schedule.type === 'once' ? undefined : computeNextRun(item.schedule, now)
+    const runId = randomUUID(); const startedAt = now.toISOString()
+    this.db.exec('BEGIN')
+    try {
+      this.db.prepare(`UPDATE automations SET enabled=?,next_run_at=?,last_status='running',last_run_at=?,updated_at=? WHERE id=?`)
+        .run(item.schedule.type === 'once' ? 0 : 1, nextRunAt || null, startedAt, startedAt, id)
+      this.db.prepare("INSERT INTO automation_runs(id,automation_id,status,started_at) VALUES(?,?, 'running',?)").run(runId, id, startedAt)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    return { item: this.automation(id), runId }
+  }
+  dueAutomations(now = new Date()) { return this.listAutomations().filter((item) => item.enabled && item.nextRunAt && new Date(item.nextRunAt) <= now && item.lastStatus !== 'running') }
+  finishAutomationRun(id, runId, status, result, error) {
+    const endedAt = new Date().toISOString()
+    this.db.prepare('UPDATE automation_runs SET status=?,ended_at=?,result=?,error=? WHERE id=?').run(status, endedAt, result || null, error || null, runId)
+    this.db.prepare('UPDATE automations SET last_status=?,updated_at=? WHERE id=?').run(status, endedAt, id)
+  }
   startRun(kind, targetId, input) {
     const id = randomUUID(); const startedAt = new Date().toISOString()
     this.db.prepare('INSERT INTO run_logs(id,kind,target_id,status,input,started_at) VALUES(?,?,?,?,?,?)').run(id, kind, targetId || null, 'running', input, startedAt)
@@ -575,6 +672,8 @@ class StableStore {
     this.db.prepare("UPDATE data_library SET last_status='cancelled',last_output=?,updated_at=? WHERE last_status='running'").run(message, now)
     this.db.prepare("UPDATE workflows SET last_status='cancelled',last_result=?,updated_at=? WHERE last_status='running'").run(message, now)
     this.db.prepare("UPDATE run_logs SET status='cancelled',error=?,ended_at=? WHERE status='running'").run(message, now)
+    this.db.prepare("UPDATE automation_runs SET status='cancelled',error=?,ended_at=? WHERE status='running'").run(message, now)
+    this.db.prepare("UPDATE automations SET last_status='cancelled',updated_at=? WHERE last_status='running'").run(now)
   }
   recentRuns(limit = 12) {
     return this.db.prepare('SELECT id,kind,target_id,status,started_at,ended_at,error FROM run_logs ORDER BY started_at DESC LIMIT ?').all(limit)

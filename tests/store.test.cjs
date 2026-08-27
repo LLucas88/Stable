@@ -63,10 +63,16 @@ test('store persists resources, retrieval, workflow and messages', () => {
     assert.equal(store.workflow(workflowId).nodes[0].instruction, '写周报')
     assert.equal(store.workflow(workflowId).edges[0].target, 'out-1')
     const firstConversationId = store.activeConversationId()
-    store.addMessage(firstConversationId, 'user', '开始', undefined, [{ kind: 'attachment', name: '经营数据.xlsx', size: 2048, type: 'xlsx', text: '不应保存' }])
+    store.addMessage(firstConversationId, 'user', '开始', undefined, [
+      { kind: 'attachment', name: '经营数据.xlsx', size: 2048, type: 'xlsx', path: 'C:\\source\\经营数据.xlsx', text: '不应保存' },
+      { kind: 'data', id: 'data-1', name: '会员数据', size: 1024, type: 'xlsx', path: 'C:\\secret\\会员.xlsx', text: '不应保存' },
+    ])
     store.addMessage(firstConversationId, 'assistant', '已开始', [{ id: 'context', runId: 'run-1', kind: 'context', title: '准备上下文', status: 'completed', time: 1 }])
     assert.deepEqual(store.listMessages().map((item) => item.role), ['user', 'assistant'])
-    assert.deepEqual(store.listMessages()[0].attachments, [{ kind: 'attachment', name: '经营数据.xlsx', size: 2048, type: 'xlsx' }])
+    assert.deepEqual(store.listMessages()[0].attachments, [
+      { kind: 'attachment', name: '经营数据.xlsx', size: 2048, type: 'xlsx', path: 'C:\\source\\经营数据.xlsx' },
+      { kind: 'data', name: '会员数据', size: 1024, type: 'xlsx', id: 'data-1' },
+    ])
     assert.equal(store.listMessages()[1].trace[0].title, '准备上下文')
     assert.equal(store.conversation(firstConversationId).title, '开始')
 

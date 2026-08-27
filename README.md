@@ -1,21 +1,24 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前版本为 **v0.9.26**，包含对话、数据与知识资源、Skills、模块化工作流，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前开发版本为 **v0.9.27**，包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
 
-## v0.9.26 主要能力
+## v0.9.27 主要能力
 
 - 多任务 Agent 对话与可折叠执行过程卡片。
 - 数据、脚本、知识库和 Skill 的按需引用。
 - 可视化模块化工作流、并行分支执行和结果文件出口。
 - Team 在线设备发现、对话快照发送，以及接收端接受或拒绝。
 - Windows 深色/浅色主题与本地持久化数据。
+- 应用开启期间运行的一次、每天、每周和每月定时任务，可手动创建或在对话中确认创建。
+- 安装版从 GitHub Releases 后台检查并下载更新，下载完成后提示重启安装。
+- Coding 默认开放工作区读写、命令、依赖安装、联网搜索与子 Agent；删除、覆盖和未知程序仍需人工确认。
 
 ## 安装
 
 在仓库的 **Releases** 页面下载：
 
 ```text
-Stable-Setup-0.9.26-x64.exe
+Stable-Setup-0.9.27-x64.exe
 ```
 
 安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
@@ -54,6 +57,26 @@ npm run dist
 
 默认生成 NSIS x64 安装包。版本号以 `package.json` 为准，发布标签采用 `vMAJOR.MINOR.PATCH`。
 
+## 发布与自动更新
+
+首次启用自动发布时，先把本机已验证的 `runtime/` 作为固定 Release 资产上传一次（以后版本复用，无需重复上传）：
+
+```powershell
+npm run runtime:archive
+gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime v1" --notes "Stable Windows x64 bundled runtime"
+```
+
+推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布安装包、`latest.yml` 和 blockmap：
+
+```powershell
+git tag v0.9.27
+git push origin v0.9.27
+```
+
+已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“重启并更新”。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签，或在 GitHub Actions 手动运行 Release Stable。
+
+面向普通用户的更新 Release 必须允许匿名读取。当前 `LLucas88/Stable` 仓库及 Release 已公开，客户端无需 GitHub 访问令牌即可检查和下载更新；禁止把任何发布凭据打进客户端。
+
 ## 数据与安全
 
 - 用户数据保存在 Electron 用户数据目录，不纳入 Git 版本管理。
@@ -65,4 +88,3 @@ npm run dist
 - 版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 - Git 标签与 GitHub Release 使用相同版本号。
 - 每个 Release 同时提供安装包和 SHA-256 校验文件。
-

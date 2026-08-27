@@ -21,3 +21,16 @@ test('Team conversation sharing replaces the old remote task modules', () => {
   assert.match(css, /\.team-conversation-zone\s*\{/)
   assert.match(css, /\.team-device-option:disabled\s*\{/)
 })
+
+test('agent workbench keeps persistent selection, compact Team and subagent execution cards', () => {
+  assert.match(app, /className="conversation-history-card"/)
+  assert.match(app, /data-collapsed=\{teamCollapsed \|\| undefined\}/)
+  assert.match(app, /aria-label=\{teamCollapsed \? '展开 Team 对话' : '收起 Team 对话'\}/)
+  assert.match(app, /function SubagentTraceCard/)
+  assert.match(app, /<small>当前任务<\/small>/)
+  assert.match(app, /<small>最新动作<\/small>/)
+  assert.match(css, /#root \.trace-summary[\s\S]*box-shadow: inset 0 -1px 0 var\(--color-rule\)/)
+  assert.match(css, /#root \.composer-box,[\s\S]*#root \.composer-box:focus-within[\s\S]*box-shadow: var\(--shadow-hover\)/)
+  assert.match(css, /\.team-conversation-zone\[data-collapsed="true"\]/)
+  assert.match(css, /\.trace-subagent-card\s*\{/)
+})

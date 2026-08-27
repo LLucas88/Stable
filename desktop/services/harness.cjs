@@ -93,14 +93,14 @@ class HarnessRunner {
         displayName: model.displayName, apiKeyEnv: 'STABLE_API_KEY', api: 'openai-completions', baseURL: model.baseURL,
         models: [{ id: model.model, name: model.model }],
       } } },
-      'tool-subagent': { maxDepth: 0 },
-      'tool-subagent-fork': { maxDepth: 0 },
+      'tool-subagent': { maxDepth: 3 },
+      'tool-subagent-fork': { maxDepth: 3 },
     }
     writeFileSync(path.join(dshHome, 'settings.yaml'), YAML.stringify(config), 'utf8')
     return dshHome
   }
 
-  run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}) {
+  run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write') {
     if (this.child) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先在“设置”中保存 API Key。')
     const paths = this.runtimePaths()
@@ -110,7 +110,18 @@ class HarnessRunner {
     mkdirSync(this.approvalDir, { recursive: true })
     this.cancelled = false
     mkdirSync(this.options.workspace, { recursive: true })
-    const environment = { ...process.env, STABLE_API_KEY: apiKey, STABLE_APPROVAL_DIR: this.approvalDir, DSH_HOME: dshHome, DSH_AGENTS_HOME: path.join(this.options.userData, 'agents') }
+    const environment = {
+      ...process.env,
+      STABLE_API_KEY: apiKey,
+      // DeepSeek Harness uses a separate credential reference for web search and
+      // other provider-backed tools. Keep one user-managed key while exposing the
+      // aliases only inside this short-lived child process.
+      DEEPSEEK_API_KEY: apiKey,
+      STABLE_APPROVAL_DIR: this.approvalDir,
+      DSH_HOME: dshHome,
+      DSH_AGENTS_HOME: path.join(this.options.userData, 'agents'),
+      DSH_PERMISSION_MODE: sandboxMode === 'read-only' ? 'read-only' : 'workspace-write',
+    }
     delete environment.NODE_OPTIONS; delete environment.NODE_PATH
     return new Promise((resolve, reject) => {
       let stdout = ''; let stderr = ''; let eventBuffer = ''; let settled = false; let runtimeFailure = ''

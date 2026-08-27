@@ -78,6 +78,34 @@ contextBridge.exposeInMainWorld('stable', {
       ipcRenderer.on('stable:agent:event', listener)
       return () => ipcRenderer.removeListener('stable:agent:event', listener)
     },
+    onState: (handler) => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('stable:agent:state', listener)
+      return () => ipcRenderer.removeListener('stable:agent:state', listener)
+    },
+  },
+  automations: {
+    state: () => invoke('stable:automations:state'),
+    save: (value) => invoke('stable:automations:save', value),
+    setEnabled: (id, enabled) => invoke('stable:automations:enabled', { id, enabled }),
+    remove: (id) => invoke('stable:automations:remove', { id }),
+    run: (id) => invoke('stable:automations:run', { id }),
+    decideProposal: (conversationId, messageId, accepted) => invoke('stable:automations:proposal', { conversationId, messageId, accepted }),
+    onEvent: (handler) => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('stable:automations:event', listener)
+      return () => ipcRenderer.removeListener('stable:automations:event', listener)
+    },
+  },
+  updater: {
+    state: () => invoke('stable:update:state'),
+    check: () => invoke('stable:update:check'),
+    install: () => invoke('stable:update:install'),
+    onEvent: (handler) => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('stable:update:event', listener)
+      return () => ipcRenderer.removeListener('stable:update:event', listener)
+    },
   },
   team: {
     state: () => invoke('stable:team:state'),
@@ -100,6 +128,25 @@ contextBridge.exposeInMainWorld('stable', {
   },
   model: {
     save: (settings) => invoke('stable:model:save', settings),
+  },
+  settings: {
+    globalInstructions: () => invoke('stable:settings:globalInstructions'),
+    saveGlobalInstructions: (content) => invoke('stable:settings:saveGlobalInstructions', { content }),
+  },
+  preview: {
+    openWeb: (url, bounds) => invoke('stable:preview:openWeb', { url, bounds }),
+    openMarkdown: (path, bounds, conversationId) => invoke('stable:preview:openMarkdown', { path, bounds, conversationId }),
+    setBounds: (bounds) => invoke('stable:preview:setBounds', { bounds }),
+    navigate: (action) => invoke('stable:preview:navigate', { action }),
+    close: () => invoke('stable:preview:close'),
+    onEvent: (handler) => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('stable:preview:event', listener)
+      return () => ipcRenderer.removeListener('stable:preview:event', listener)
+    },
+  },
+  clipboard: {
+    writeText: (text) => invoke('stable:clipboard:writeText', { text }),
   },
   appearance: {
     setTheme: (theme) => invoke('stable:appearance:theme', { theme }),
