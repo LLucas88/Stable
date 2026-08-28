@@ -1,7 +1,7 @@
 # Stable 项目状态与开发交接
 
 > 最后更新：2026-08-28
-> 文档版本：`2026-08-28.3`
+> 文档版本：`2026-08-28.4`
 > 项目目录：`D:\Codex\2026-08-19\Stable-0.9.1`  
 > 当前发布基线：`v0.9.30`
 > 当前开发版本：`v0.9.30`
@@ -159,8 +159,8 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 | Electron 隔离界面验收 | QA 环境变量 + Electron 源码版/打包版 | 通过；任务操作区与输入框无选中背景、阴影和动画 |
 | Windows NSIS x64 | `npm run dist -- --publish never` | 通过；安装包、blockmap、`latest.yml` 均已生成 |
 | 隔离全新安装与启动 | 安装器静默安装 + 打包应用离屏启动 | 通过；安装、v0.9.30 版本、Runtime、Harness、启动与卸载均通过 |
-| GitHub Actions 发布 | `Release Stable` | 标签 `v0.9.30` 触发；远程完成后以 Actions 结果为准 |
-| 更新资产匿名访问 | GitHub Release 直链 | 远程完成后复核安装包、blockmap、`latest.yml` |
+| GitHub Actions 发布 | `Release Stable` | 第 2 次执行通过；运行时恢复、108 项测试、构建、打包、上传和资产复核全部完成 |
+| 更新资产匿名访问 | GitHub Release 直链 | 安装包、blockmap、`latest.yml` 均返回 HTTP 200 |
 | 本地升级测试基线 | 隔离构建 `0.9.26` 测试包 | 类型检查、101 项测试和构建通过；内部版本与更新源已核对 |
 | Electron 人工交互验收 | `npm start` | 尚待用户本地手动测试拖拽、联网和剪贴板体验 |
 | Team 双设备实测 | `npm run start:team-dev` | 本轮未执行 |
@@ -171,11 +171,13 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 
 - GitHub Release：`https://github.com/LLucas88/Stable/releases/tag/v0.9.30`
 - 安装包：`Stable-Setup-0.9.30-x64.exe`
+- 远程安装包大小：`283,895,200` bytes
+- 远程安装包 SHA-256：`72C0F9A410218C85B0FAED7EEED8C45C8F96C169E74B480348324F54E12ED5C6`
 - 本地验证安装包大小：`283,894,295` bytes
 - 本地验证安装包 SHA-256：`A8033D12299DDE257F09A8E6A49E7AC0ED12198A24E21EFFC901DB8626956365`
 - 更新资产：`Stable-Setup-0.9.30-x64.exe.blockmap`、`latest.yml`
 - 打包输出配置：`release-0.9.30`
-- 发布工作流：GitHub Actions `Release Stable`
+- 发布工作流：`https://github.com/LLucas88/Stable/actions/runs/33149788939`
 - 运行时预发布：`runtime-v1/stable-runtime-win-x64.zip`
 - 运行时压缩包大小：`230,630,438` bytes
 - 运行时 SHA-256：`84FA5C25470A23BE21AB3027E0471E0185D1E4E673A12B173157EEA74A5C64F0`
@@ -395,7 +397,7 @@ npm run dist
 - [ ] 先阅读本文件，再查看 `git status --short` 和 `git diff`。
 - [x] 当前界面与 P0 功能已提交，不回退已发布能力。
 - [x] `v0.9.30` 本地安装包、blockmap 和 `latest.yml` 已生成并完成一致性验证。
-- [ ] `v0.9.30` 远程安装包、blockmap 和 `latest.yml` 发布后需完成匿名访问复核。
+- [x] `v0.9.30` 远程安装包、blockmap 和 `latest.yml` 已发布并完成匿名访问复核。
 - [x] 已生成仅供测试设备使用的 `0.9.26` 更新基线安装包、测试说明和 SHA-256。
 - [ ] 尚未完成真实旧版设备到 `v0.9.30` 的下载、静默升级、重启和数据保留验收。
 - [ ] 不把旧 `release-0.9.*` 当作当前源码运行结果。
