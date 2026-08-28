@@ -37,7 +37,7 @@ ${block('可调用的本地 Skills', skills, (item) => `### ${item.name}\n${item
 ${block('本次显式引用的脚本', scripts, (item) => `### ${item.name}\n${item.description || 'Stable 本地脚本'}\n需要运行时按名称调用 Stable 工作台中的这个脚本。`)}
 ${block('检索到的本地数据', data, (item) => `### ${item.name}\n${item.text_content.slice(0, 80_000)}`)}
 ${block('检索到的本地知识库', knowledge, (item) => `### ${item.name}\n${item.excerpt.slice(0, 20_000)}`)}
-${block('本次临时附件', attachments, (item) => `### ${item.name}\n${item.text.slice(0, 100_000)}`)}
+${block('本次临时附件', attachments, (item) => `### ${item.name}\n可访问路径：${item.path || '未提供可操作路径'}\n这是用户主动选择并由 Stable 安全复制到当前工作区的附件。任务要求安装、解压或运行时，直接使用上面的路径，不要再次声称工作区中缺少该附件。\n\n内容预览：\n${item.text.slice(0, 100_000)}`)}
 ${block('最近对话', history, (item) => `${item.role === 'user' ? '用户' : 'Stable'}：${item.content}`)}
 
 ## 当前请求

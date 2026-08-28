@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('stable', {
   },
   agent: {
     inspectAttachments: (paths) => invoke('stable:agent:inspectAttachments', { paths }),
+    selectAttachmentFolder: () => invoke('stable:agent:selectAttachmentFolder'),
     selectSkillFolder: () => invoke('stable:agent:selectSkillFolder'),
     create: () => invoke('stable:agent:create'),
     state: (id) => invoke('stable:agent:state', { id }),

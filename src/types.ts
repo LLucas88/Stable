@@ -421,6 +421,7 @@ export interface StableBridge {
   }
   agent: {
     inspectAttachments(paths: string[]): Promise<AgentAttachment[]>
+    selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>
     state(id: string): Promise<AgentState>

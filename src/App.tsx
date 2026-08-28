@@ -377,6 +377,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
   const attachmentInputRef = useRef<HTMLInputElement>(null)
+  const attachmentMenuRef = useRef<HTMLDetailsElement>(null)
   const dataMenuRef = useRef<HTMLDetailsElement>(null)
   const skillMenuRef = useRef<HTMLDetailsElement>(null)
   const teamMenuRef = useRef<HTMLDetailsElement>(null)
@@ -459,7 +460,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
-      for (const menu of [dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current]) {
+      for (const menu of [attachmentMenuRef.current, dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current]) {
         if (menu?.open && !menu.contains(event.target as Node)) menu.open = false
       }
     }
@@ -572,6 +573,18 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
       if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
       setAttachments(merged)
+    })
+  }
+
+  function addAttachmentFolder() {
+    void action('正在读取附件文件夹', async () => {
+      const inspected = await window.stable.agent.selectAttachmentFolder()
+      if (!inspected.length) return
+      const merged = [...attachments]
+      for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
+      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
+      setAttachments(merged)
+      if (attachmentMenuRef.current) attachmentMenuRef.current.open = false
     })
   }
 
@@ -773,8 +786,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             }} placeholder="给 Stable 一个任务，或拖入本次需要分析的文件" disabled={running} />
             <div className="composer-actions">
               <div className="composer-tools">
-                <input ref={attachmentInputRef} type="file" multiple hidden accept=".txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
-                <button className="composer-tool" type="button" onClick={() => attachmentInputRef.current?.click()} disabled={running} aria-label="添加本次任务附件"><Paperclip size={18} aria-hidden="true" /></button>
+                <input ref={attachmentInputRef} type="file" multiple hidden accept=".txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = ''; if (attachmentMenuRef.current) attachmentMenuRef.current.open = false }} />
+                <details className="composer-menu attachment-menu" ref={attachmentMenuRef}>
+                  <summary className="composer-tool" aria-label="添加本次任务附件"><Paperclip size={18} aria-hidden="true" /></summary>
+                  <div className="composer-popover attachment-popover">
+                    <div className="composer-popover-head"><strong>添加附件</strong><span>本次任务临时使用</span></div>
+                    <button className="composer-attachment-option" type="button" onClick={() => attachmentInputRef.current?.click()}><FilePlus2 size={16} aria-hidden="true" /><span><strong>文件或压缩包</strong><small>支持常用文档与 ZIP</small></span></button>
+                    <button className="composer-attachment-option" type="button" onClick={addAttachmentFolder}><FolderInput size={16} aria-hidden="true" /><span><strong>普通文件夹</strong><small>不按 Skill 校验</small></span></button>
+                  </div>
+                </details>
                 <details className="composer-menu skill-menu" ref={skillMenuRef}>
                   <summary className="composer-tool" aria-label="选择 Skill"><Braces size={18} aria-hidden="true" /></summary>
                   <div className="composer-popover">

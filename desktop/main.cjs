@@ -7,6 +7,7 @@ const { randomUUID } = require('node:crypto')
 const path = require('node:path')
 const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
+const { extractAttachmentText, inspectAttachmentPath, materializeAttachment } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/harness.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
@@ -838,20 +839,26 @@ function importKnowledgePaths(inputPaths) {
 }
 
 function inspectAgentAttachments(inputPaths) {
-  const files = requirePaths(inputPaths, '临时附件', 8).map((sourcePath) => statSync(sourcePath).isDirectory() ? inspectSkillFolder(sourcePath) : inspectDataFile(sourcePath))
+  const files = requirePaths(inputPaths, '临时附件', 8).map(inspectAttachmentPath)
   const totalSize = files.reduce((sum, item) => sum + item.size, 0)
   if (totalSize > 100 * 1024 * 1024) throw new Error('本次临时附件总大小不能超过 100 MB。')
   return files.map(({ content: _content, description: _description, ...item }) => item)
 }
 
-async function extractAgentAttachments(rawAttachments) {
+async function extractAgentAttachments(rawAttachments, conversationId) {
   if (!Array.isArray(rawAttachments) || rawAttachments.length === 0) return { items: [], installedSkills: [] }
   const inspected = inspectAgentAttachments(rawAttachments.map((item) => item?.path))
+  const skillPaths = new Set(rawAttachments.filter((item) => item?.type === 'skill').map((item) => item?.path))
+  for (let index = 0; index < inspected.length; index += 1) {
+    if (skillPaths.has(inspected[index].path)) inspected[index] = inspectSkillFolder(inspected[index].path)
+  }
   const attachments = []
   const installedSkills = []
+  const attachmentRoot = path.join(paths.workspace, '.stable', 'attachments', String(conversationId || 'conversation').replace(/[^a-z0-9_-]/gi, '_'))
   let totalText = 0
   for (const item of inspected) {
-    const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractText(item.path)
+    const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot)
+    const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractAttachmentText(accessibleItem.path)
     totalText += source.content !== undefined ? source.content.length : source.text.length
     if (totalText > 300_000) throw new Error('本次临时附件正文合计超过 30 万字，请减少文件后重试。')
     if (item.type === 'skill') {
@@ -859,7 +866,7 @@ async function extractAgentAttachments(rawAttachments) {
       store.upsertSkill(installed)
       installedSkills.push(installed.name)
       attachments.push({ name: item.name, size: item.size, type: item.type, text: installed.content })
-    } else attachments.push({ name: item.name, size: item.size, type: item.type, text: source.text })
+    } else attachments.push({ name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text })
   }
   return { items: attachments, installedSkills }
 }
@@ -1677,9 +1684,15 @@ function registerIpc() {
   ipcMain.handle('stable:workflows:generate', (_event, payload) => generateWorkflow(requireText(payload?.goal, '工作流目标', 2_000)))
 
   ipcMain.handle('stable:agent:inspectAttachments', (_event, payload) => inspectAgentAttachments(payload?.paths))
+  ipcMain.handle('stable:agent:selectAttachmentFolder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { title: '选择本次任务文件夹', properties: ['openDirectory'] })
+    return result.canceled ? [] : inspectAgentAttachments(result.filePaths)
+  })
   ipcMain.handle('stable:agent:selectSkillFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '发送 Skill 文件夹给 Agent', properties: ['openDirectory'] })
-    return result.canceled ? [] : inspectAgentAttachments(result.filePaths)
+    if (result.canceled) return []
+    const { content: _content, description: _description, ...item } = inspectSkillFolder(result.filePaths[0])
+    return [item]
   })
   ipcMain.handle('stable:agent:create', () => {
     const id = store.createConversation()
@@ -1732,7 +1745,7 @@ function registerIpc() {
     if (!conversation) throw new Error('找不到这个对话。')
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
-    const extractedAttachments = await extractAgentAttachments(payload?.attachments)
+    const extractedAttachments = await extractAgentAttachments(payload?.attachments, conversationId)
     const attachments = extractedAttachments.items
     const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
     const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
@@ -2119,7 +2132,9 @@ async function boot() {
         ? '.data-menu > summary'
         : process.env.STABLE_QA_AGENT_MENU === 'skill'
           ? '.skill-menu > summary'
-          : '.capability-menu > summary'
+          : process.env.STABLE_QA_AGENT_MENU === 'attachment'
+            ? '.attachment-menu > summary'
+            : '.capability-menu > summary'
       setTimeout(() => { void mainWindow.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)})?.click()`) }, 650)
     }
     if (process.env.STABLE_QA_AGENT_SIDEBAR) {
@@ -2127,6 +2142,17 @@ async function boot() {
     }
     if (process.env.STABLE_QA_AGENT_TRACE) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("Array.from(document.querySelectorAll('.trace-summary[aria-expanded=\"false\"]')).at(-1)?.click()") }, 900)
+    }
+    if (process.env.STABLE_QA_AGENT_NEUTRAL_STATES) {
+      setTimeout(async () => {
+        const point = await mainWindow.webContents.executeJavaScript(`(() => {
+          document.querySelector('.composer textarea')?.focus()
+          const target = document.querySelector('.conversation-list-item')
+          const rect = target?.getBoundingClientRect()
+          return rect ? { x: Math.round(rect.right - 18), y: Math.round(rect.top + rect.height / 2) } : null
+        })()`)
+        if (point) mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y })
+      }, 800)
     }
     if (process.env.STABLE_QA_PREVIEW) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.message-file-chip')?.click()") }, 900)
