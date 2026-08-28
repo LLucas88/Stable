@@ -168,7 +168,7 @@ export interface AutomationTemplate { id: string; title: string; description: st
 export interface AutomationState { items: AutomationItem[]; runs: AutomationRun[]; templates: AutomationTemplate[] }
 
 export interface UpdateState {
-  status: 'development' | 'idle' | 'checking' | 'current' | 'downloading' | 'downloaded' | 'error'
+  status: 'development' | 'idle' | 'checking' | 'current' | 'downloading' | 'downloaded' | 'installing' | 'error'
   currentVersion: string; availableVersion?: string; releaseName?: string; progress: number; error?: string
 }
 

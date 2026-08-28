@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.9.27",
+  "version": "0.9.28",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -46,6 +46,7 @@
     "appId": "com.stable.agent",
     "productName": "Stable",
     "asar": true,
+    "compression": "normal",
     "files": [
       "dist/**/*",
       "desktop/**/*",
@@ -65,7 +66,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.9.27"
+      "output": "release-0.9.28"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",
@@ -82,6 +83,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "useZip": true,
+      "differentialPackage": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Stable",

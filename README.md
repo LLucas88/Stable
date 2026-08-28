@@ -1,6 +1,13 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前开发版本为 **v0.9.27**，包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.28**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+
+## v0.9.28 主要改进
+
+- 点击“重启并更新”后全程静默安装，不再进入需要手动操作的 Windows 安装向导。
+- 安装器兼容 `v0.9.27` 的旧更新调用：检测到 `--updated` 时会自行切换为静默模式。
+- 安装包使用普通压缩 ZIP 内部包，以适度增加文件体积和更新下载量换取更快的 Runtime 解压和安装速度。
+- `v0.9.28` 不生成 blockmap 差分包；首次安装仍可选择安装目录。
 
 ## v0.9.27 主要能力
 
@@ -18,7 +25,7 @@ Stable 是一个 Windows 本地 Agent 工作台。当前开发版本为 **v0.9.2
 在仓库的 **Releases** 页面下载：
 
 ```text
-Stable-Setup-0.9.27-x64.exe
+Stable-Setup-0.9.28-x64.exe
 ```
 
 安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
@@ -66,11 +73,11 @@ npm run runtime:archive
 gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime v1" --notes "Stable Windows x64 bundled runtime"
 ```
 
-推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布安装包、`latest.yml` 和 blockmap：
+推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布安装包和 `latest.yml`：
 
 ```powershell
-git tag v0.9.27
-git push origin v0.9.27
+git tag v0.9.28
+git push origin v0.9.28
 ```
 
 已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“重启并更新”。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签，或在 GitHub Actions 手动运行 Release Stable。

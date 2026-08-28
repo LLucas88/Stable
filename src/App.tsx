@@ -181,7 +181,7 @@ export function App() {
 
       </main>
 
-        {state.update.status === 'downloaded' && <section className="update-notice" role="status"><div><strong>Stable {state.update.availableVersion} 已准备好</strong><span>更新已在后台下载完成，重启即可自动安装。</span></div><button className="button primary" type="button" onClick={() => void window.stable.updater.install()}>重启并更新</button></section>}
+        {(state.update.status === 'downloaded' || state.update.status === 'installing') && <section className="update-notice" role="status"><div><strong>Stable {state.update.availableVersion} {state.update.status === 'installing' ? '正在更新' : '已准备好'}</strong><span>{state.update.status === 'installing' ? 'Stable 正在关闭并静默安装，完成后会自动重新启动。' : '点击后将自动关闭 Stable、静默安装并重新启动，无需操作安装程序。'}</span></div>{state.update.status === 'downloaded' && <button className="button primary" type="button" onClick={() => void window.stable.updater.install()}>重启并更新</button>}</section>}
 
         {confirmation && <ConfirmModal value={confirmation} onCancel={() => resolveConfirmation(false)} onConfirm={() => resolveConfirmation(true)} />}
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
@@ -1681,8 +1681,8 @@ function SettingsPage({ state, updateModel, updateTheme, action }: { state: Boot
       </div>
       <button className="button primary" onClick={() => void action('正在保存模型设置', async () => { const model = await window.stable.model.save(form); updateModel(model); patch({ ...model, apiKey: '' }) })}><Save size={17} />保存模型设置</button>
       <section className="update-settings" aria-labelledby="update-settings-title">
-        <div className="settings-section-head"><span>UPDATE</span><h2 id="update-settings-title">软件更新</h2><p>安装版会从 GitHub Releases 后台检查并下载更新，下载完成后由你决定何时重启安装。</p></div>
-        <div className="update-settings-row"><div><strong>当前版本 v{state.update.currentVersion}</strong><span>{state.update.status === 'development' ? '开发模式不连接更新服务' : state.update.status === 'checking' ? '正在检查更新…' : state.update.status === 'downloading' ? `正在下载 ${state.update.progress}%` : state.update.status === 'downloaded' ? `v${state.update.availableVersion} 已下载` : state.update.status === 'error' ? state.update.error : '已启用自动更新'}</span></div><button className="button" type="button" disabled={state.update.status === 'checking' || state.update.status === 'downloading'} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{state.update.status === 'downloaded' ? '已准备好' : '检查更新'}</button></div>
+        <div className="settings-section-head"><span>UPDATE</span><h2 id="update-settings-title">软件更新</h2><p>安装版会从 GitHub Releases 后台下载安装包；确认重启后全程静默安装。</p></div>
+        <div className="update-settings-row"><div><strong>当前版本 v{state.update.currentVersion}</strong><span>{state.update.status === 'development' ? '开发模式不连接更新服务' : state.update.status === 'checking' ? '正在检查更新…' : state.update.status === 'downloading' ? `正在下载 ${state.update.progress}%` : state.update.status === 'downloaded' ? `v${state.update.availableVersion} 已下载，等待重启更新` : state.update.status === 'installing' ? `正在静默安装 v${state.update.availableVersion}` : state.update.status === 'error' ? state.update.error : '已启用自动更新'}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'downloaded', 'installing'].includes(state.update.status)} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{state.update.status === 'downloaded' ? '已准备好' : state.update.status === 'installing' ? '正在安装' : '检查更新'}</button></div>
       </section>
       <section className="global-instructions-settings" aria-labelledby="global-instructions-title">
         <div className="settings-section-head"><span>GLOBAL CONTEXT</span><h2 id="global-instructions-title">全局 Agent 对话提醒</h2><p>保存到本机 AGENTS.md，仅在之后启动的新任务中读取；不会改变正在执行的任务，也不属于当前对话的临时提示。</p></div>

@@ -10,9 +10,19 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
   let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0 }
   const emit = (patch) => { state = { ...state, ...patch }; publish({ ...state }); return { ...state } }
 
+  function install() {
+    if (!isPackaged || !autoUpdater || state.status !== 'downloaded') throw new Error('更新尚未下载完成。')
+    emit({ status: 'installing', progress: 100, error: undefined })
+    autoUpdater.quitAndInstall(true, true)
+    return true
+  }
+
   if (isPackaged && autoUpdater) {
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.autoRunAppAfterInstall = true
+    autoUpdater.disableDifferentialDownload = true
+    autoUpdater.disableWebInstaller = true
     autoUpdater.on('checking-for-update', () => emit({ status: 'checking', error: undefined }))
     autoUpdater.on('update-available', (info) => emit({ status: 'downloading', availableVersion: info.version, releaseName: info.releaseName || '', error: undefined }))
     autoUpdater.on('update-not-available', (info) => emit({ status: 'current', availableVersion: info?.version || currentVersion, progress: 0, error: undefined }))
@@ -32,12 +42,6 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     if (!isPackaged || !autoUpdater) return
     timer = setTimeout(() => { void check(false) }, checkDelayMs)
     interval = setInterval(() => { void check(false) }, checkIntervalMs)
-  }
-
-  function install() {
-    if (!isPackaged || !autoUpdater || state.status !== 'downloaded') throw new Error('更新尚未下载完成。')
-    autoUpdater.quitAndInstall(false, true)
-    return true
   }
 
   function dispose() { clearTimeout(timer); clearInterval(interval) }

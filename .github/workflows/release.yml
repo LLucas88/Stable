@@ -42,7 +42,6 @@ jobs:
           $output = "release-$version"
           $assets = @(
             "$output/Stable-Setup-$version-x64.exe",
-            "$output/Stable-Setup-$version-x64.exe.blockmap",
             "$output/latest.yml"
           )
           foreach ($asset in $assets) {
