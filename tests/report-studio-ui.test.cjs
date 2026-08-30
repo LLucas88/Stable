@@ -29,7 +29,7 @@ test('version is visible in the left rail and the direct launcher accepts isolat
   const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-  assert.equal(pkg.version, '0.9.33')
+  assert.equal(pkg.version, '0.9.34')
   assert.match(app, /className="rail-version"/)
   assert.match(app, />v\{state\.appVersion\}</)
   assert.match(main, /--stable-user-data=/)

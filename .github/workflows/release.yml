@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -51,15 +52,18 @@ jobs:
         run: |
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller ./release-0.9.33-update/Stable-Update-0.9.33-x64.exe
+            -UpdateInstaller ./release-0.9.34-update/Stable-Update-0.9.34-x64.exe `
+            -ExpectedVersion 0.9.34
       - name: Upload installer QA evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stable-update-installer-qa
-          path: ${{ runner.temp }}/stable-update-installer-qa
+          path: ${{ runner.temp }}/stable-update-installer-evidence
           if-no-files-found: warn
+          retention-days: 7
       - name: Publish GitHub Release assets
+        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

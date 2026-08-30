@@ -1,6 +1,5 @@
 InitPluginsDir
 
-ReadEnvStr $stableProgressFile "STABLE_UPDATE_PROGRESS_FILE"
 ${if} ${isUpdated}
   StrCpy $stableUpdateCanClose "false"
   !insertmacro stableReportProgress "4" "preparing" "running" "0"

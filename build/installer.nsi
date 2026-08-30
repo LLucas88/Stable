@@ -98,6 +98,8 @@ Function stableWriteUpdateProgress
       StrCpy $R9 "$stableProgressPercent% · 更新失败，请保留安装目录（错误码 $stableProgressCode）"
     ${elseif} $stableProgressStage == "preparing"
       StrCpy $R9 "$stableProgressPercent% · 正在等待 Stable 安全退出…"
+    ${elseif} $stableProgressStage == "launching"
+      StrCpy $R9 "$stableProgressPercent% · 正在启动更新安装器…"
     ${elseif} $stableProgressStage == "staging"
       StrCpy $R9 "$stableProgressPercent% · 正在解压并校验新版文件…"
     ${elseif} $stableProgressStage == "runtime"

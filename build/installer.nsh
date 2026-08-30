@@ -1,3 +1,11 @@
+!macro preInit
+  ReadEnvStr $stableProgressFile "STABLE_UPDATE_PROGRESS_FILE"
+  ${If} ${isUpdated}
+    StrCpy $stableUpdateCanClose "false"
+    !insertmacro stableReportProgress "1" "launching" "running" "0"
+  ${EndIf}
+!macroend
+
 !macro customInit
   ClearErrors
   ${GetParameters} $R0

@@ -22,6 +22,7 @@ test('update installer overrides legacy silent parameters and uses one progress 
 })
 
 test('installation progress is stage-based, percentage-labelled, and cannot be closed mid-update', () => {
+  assert.match(customInstaller, /preInit[\s\S]+STABLE_UPDATE_PROGRESS_FILE[\s\S]+"1" "launching"/)
   for (const marker of [
     '"4" "preparing"',
     '"10" "staging"',

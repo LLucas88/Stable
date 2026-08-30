@@ -3,7 +3,10 @@ param(
   [string]$PreviousInstaller,
 
   [Parameter(Mandatory = $true)]
-  [string]$UpdateInstaller
+  [string]$UpdateInstaller,
+
+  [Parameter(Mandatory = $true)]
+  [string]$ExpectedVersion
 )
 
 Set-StrictMode -Version Latest
@@ -34,6 +37,7 @@ public static class StableUpdateQaNative {
 '@
 
 $qaRoot = Join-Path $env:RUNNER_TEMP 'stable-update-installer-qa'
+$evidenceRoot = Join-Path $env:RUNNER_TEMP 'stable-update-installer-evidence'
 $installDir = Join-Path $qaRoot 'Stable'
 $baselineDir = Join-Path $qaRoot 'Stable-v0.9.31-baseline'
 $dataDir = Join-Path $env:APPDATA 'stable-desktop'
@@ -45,6 +49,15 @@ $uninstallRegistry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\
 
 $PreviousInstaller = (Resolve-Path -LiteralPath $PreviousInstaller).Path
 $UpdateInstaller = (Resolve-Path -LiteralPath $UpdateInstaller).Path
+
+if ($ExpectedVersion -notmatch '^\d+\.\d+\.\d+$') {
+  throw "ExpectedVersion '$ExpectedVersion' is invalid."
+}
+
+if (Test-Path -LiteralPath $evidenceRoot) {
+  Remove-Item -LiteralPath $evidenceRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 
 function Stop-QaProcesses {
   Get-Process -Name Stable -ErrorAction SilentlyContinue | ForEach-Object {
@@ -226,7 +239,7 @@ function Assert-VisibleInstallerWindow($process) {
   if ($mainWindow -eq [IntPtr]::Zero -or -not [StableUpdateQaNative]::IsWindowVisible($mainWindow)) {
     throw 'The update installer process has no visible main window.'
   }
-  if ($process.MainWindowTitle -notlike 'Stable v0.9.33*') {
+  if ($process.MainWindowTitle -notlike "Stable v$ExpectedVersion*") {
     throw "Unexpected installer window title '$($process.MainWindowTitle)'."
   }
 
@@ -256,20 +269,112 @@ function Assert-VisibleInstallerWindow($process) {
   }
 }
 
-function Wait-ForVisibleProgress($process, [string]$progressFile) {
+function Get-UpdateInstallerProcesses($context) {
+  $candidates = @()
+  foreach ($candidate in @(Get-Process -ErrorAction SilentlyContinue)) {
+    try {
+      if ($candidate.HasExited -or $context.ExistingPids -contains $candidate.Id) {
+        continue
+      }
+      $sameExecutable = $candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -eq [IO.Path]::GetFullPath($UpdateInstaller)
+      $expectedWindow = $candidate.MainWindowTitle -like "Stable v$ExpectedVersion*"
+      if (($sameExecutable -or $expectedWindow) -and $candidate.StartTime.ToUniversalTime() -ge $context.StartedAt.AddSeconds(-2)) {
+        $candidates += $candidate
+      }
+    } catch {
+      # Process metadata can become unavailable while the process exits.
+    }
+  }
+  return @($candidates | Sort-Object StartTime)
+}
+
+function Get-QaProcessExitCode($process) {
+  try {
+    $process.Refresh()
+    if (-not $process.HasExited) {
+      return $null
+    }
+    $process.WaitForExit()
+    $process.Refresh()
+    return $process.ExitCode
+  } catch {
+    return $null
+  }
+}
+
+function Wait-ForVisibleProgress($context, [string]$progressFile) {
   $deadline = [DateTime]::UtcNow.AddMinutes(2)
+  $exitObservedAt = $null
+  $launcherExitCode = $null
   do {
     Start-Sleep -Milliseconds 100
-    $process.Refresh()
-    if ($process.HasExited) {
-      throw 'The visible installer exited before its progress UI could be inspected.'
+    $lastProgress = Get-TerminalProgress $progressFile
+    $candidates = @(Get-UpdateInstallerProcesses $context)
+    $replacement = @($candidates | Where-Object {
+      try { $_.MainWindowTitle -like "Stable v$ExpectedVersion*" } catch { $false }
+    } | Select-Object -First 1)
+    if ($replacement.Count -gt 0) {
+      $context.Process = $replacement[0]
+      $exitObservedAt = $null
+    } elseif ((Get-QaProcessExitCode $context.Process) -ne $null -and $candidates.Count -gt 0) {
+      $context.Process = $candidates[-1]
+      $exitObservedAt = $null
     }
-    if (Get-TerminalProgress $progressFile) {
-      Assert-VisibleInstallerWindow $process
-      return
+
+    $process = $context.Process
+    $processExitCode = Get-QaProcessExitCode $process
+    if ($null -eq $processExitCode) {
+      if ($lastProgress -and $process.MainWindowTitle -like "Stable v$ExpectedVersion*") {
+        Assert-VisibleInstallerWindow $process
+        Write-Host "Observed visible update progress: $lastProgress (PID $($process.Id))."
+        return $context
+      }
+    } else {
+      if ($null -eq $launcherExitCode) {
+        $launcherExitCode = $processExitCode
+      }
+      if ($null -eq $exitObservedAt) {
+        $exitObservedAt = [DateTime]::UtcNow
+      }
+      if ([DateTime]::UtcNow -ge $exitObservedAt.AddSeconds(5)) {
+        throw "The visible installer exited before its progress UI could be inspected; exitCode='$launcherExitCode', lastProgress='$lastProgress'."
+      }
     }
   } until ([DateTime]::UtcNow -ge $deadline)
-  throw 'The visible installer did not report progress within two minutes.'
+  throw "The visible installer did not expose progress within two minutes; exitCode='$launcherExitCode', lastProgress='$lastProgress'."
+}
+
+function Wait-ForExpectedTerminal($context, [string]$progressFile, [string]$expectedTerminal, [int]$timeoutMs) {
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+  $exitObservedAt = $null
+  $launcherExitCode = $null
+  do {
+    Start-Sleep -Milliseconds 100
+    $lastProgress = Get-TerminalProgress $progressFile
+    if ($lastProgress -eq $expectedTerminal) {
+      Write-Host "Observed terminal update progress: $lastProgress."
+      return $context
+    }
+
+    $replacement = @(Get-UpdateInstallerProcesses $context | Select-Object -Last 1)
+    if ($replacement.Count -gt 0) {
+      $context.Process = $replacement[0]
+      $exitObservedAt = $null
+    }
+    $processExitCode = Get-QaProcessExitCode $context.Process
+    if ($null -ne $processExitCode) {
+      if ($null -eq $launcherExitCode) {
+        $launcherExitCode = $processExitCode
+      }
+      if ($null -eq $exitObservedAt) {
+        $exitObservedAt = [DateTime]::UtcNow
+      }
+      if ([DateTime]::UtcNow -ge $exitObservedAt.AddSeconds(5)) {
+        throw "The update installer exited before terminal progress; exitCode='$launcherExitCode', lastProgress='$lastProgress'."
+      }
+    }
+  } until ([DateTime]::UtcNow -ge $deadline)
+  throw "The update installer did not reach '$expectedTerminal' within $timeoutMs ms; lastProgress='$lastProgress'."
 }
 
 function Assert-MonotonicProgress([string]$progressFile, [string]$expectedTerminal) {
@@ -321,19 +426,79 @@ function Invoke-Update([string]$progressFile, [bool]$quiet, [bool]$forceFailure)
     Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyContinue
   }
 
-  $arguments = @('--updated', '/S', '--force-run')
+  $arguments = @('--updated', '/S', '--force-run', '/currentuser')
   if ($quiet) {
     $arguments += '--stable-update-quiet'
   }
-  return Start-Process -FilePath $UpdateInstaller -ArgumentList $arguments -PassThru
+  $existingPids = @()
+  foreach ($candidate in @(Get-Process -ErrorAction SilentlyContinue)) {
+    try {
+      if ($candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -eq [IO.Path]::GetFullPath($UpdateInstaller)) {
+        $existingPids += $candidate.Id
+      }
+    } catch {
+      # Process metadata can become unavailable while the process exits.
+    }
+  }
+  $startedAt = [DateTime]::UtcNow
+  $process = Start-Process -FilePath $UpdateInstaller -ArgumentList $arguments -PassThru
+  return [pscustomobject]@{
+    Process = $process
+    StartedAt = $startedAt
+    ExistingPids = $existingPids
+    Quiet = $quiet
+  }
+}
+
+trap {
+  $qaError = $_
+  try {
+    $progressLogs = @{}
+    foreach ($logFile in @(Get-ChildItem -LiteralPath $evidenceRoot -Filter '*.log' -File -ErrorAction SilentlyContinue)) {
+      $progressLogs[$logFile.Name] = @(Get-Content -LiteralPath $logFile.FullName -ErrorAction SilentlyContinue)
+    }
+    $installerProcesses = @()
+    foreach ($candidate in @(Get-Process -ErrorAction SilentlyContinue)) {
+      try {
+        $sameExecutable = $candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -eq [IO.Path]::GetFullPath($UpdateInstaller)
+        $expectedWindow = $candidate.MainWindowTitle -like "Stable v$ExpectedVersion*"
+        if ($sameExecutable -or $expectedWindow) {
+          $installerProcesses += [pscustomobject]@{
+            Id = $candidate.Id
+            Path = $candidate.Path
+            MainWindowTitle = $candidate.MainWindowTitle
+            HasExited = $candidate.HasExited
+            StartTimeUtc = $candidate.StartTime.ToUniversalTime().ToString('o')
+          }
+        }
+      } catch {
+        # Best-effort diagnostics only.
+      }
+    }
+    [pscustomobject]@{
+      Error = $qaError.Exception.Message
+      Position = $qaError.InvocationInfo.PositionMessage
+      ExpectedVersion = $ExpectedVersion
+      ProgressLogs = $progressLogs
+      InstallerProcesses = $installerProcesses
+      InstallExists = Test-Path -LiteralPath (Join-Path $installDir 'Stable.exe')
+      BaselineExists = Test-Path -LiteralPath (Join-Path $baselineDir 'Stable.exe')
+      PersistentRuntimeExists = Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe')
+      EmbeddedRuntimeExists = Test-Path -LiteralPath (Join-Path $installDir 'resources\runtime\node\node.exe')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidenceRoot 'failure-diagnostics.json') -Encoding utf8
+  } catch {
+    Write-Warning "Could not write complete QA diagnostics: $($_.Exception.Message)"
+  }
+  Write-Host "Installer QA failed: $($qaError.Exception.Message)"
+  break
 }
 
 Reset-QaState
 $successBaseline = Install-PreviousVersion
-$successProgress = Join-Path $qaRoot 'success.status'
-$successProcess = Invoke-Update $successProgress $false $false
-Wait-ForVisibleProgress $successProcess $successProgress
-$successExitCode = Wait-QaProcess $successProcess 300000 'Visible success update'
+$successProgress = Join-Path $evidenceRoot 'success.status'
+$successContext = Invoke-Update $successProgress $false $false
+$successContext = Wait-ForVisibleProgress $successContext $successProgress
+$successExitCode = Wait-QaProcess $successContext.Process 300000 'Visible success update'
 if ($successExitCode -ne 0) {
   throw "Visible success update exited with $successExitCode."
 }
@@ -347,7 +512,7 @@ if (Test-Path -LiteralPath $successEmbeddedRuntime) {
 }
 
 $successVersion = Get-StableProductVersion $successBaseline.Exe
-if ($successVersion -ne '0.9.33') {
+if ($successVersion -ne $ExpectedVersion) {
   throw "Success update produced unexpected version $successVersion."
 }
 if (-not (Test-Path -LiteralPath $desktopShortcut)) {
@@ -365,8 +530,10 @@ if ($healthcheckExitCode -ne 0) {
 }
 
 $failureBaseline = Restore-PreviousVersion $successBaseline
-$failureProgress = Join-Path $qaRoot 'failure-visible.status'
-$failureProcess = Invoke-Update $failureProgress $false $true
+$failureProgress = Join-Path $evidenceRoot 'failure-visible.status'
+$failureContext = Invoke-Update $failureProgress $false $true
+$failureContext = Wait-ForVisibleProgress $failureContext $failureProgress
+$failureProcess = $failureContext.Process
 $deadline = [DateTime]::UtcNow.AddMinutes(5)
 do {
   Start-Sleep -Milliseconds 250
@@ -404,11 +571,16 @@ if ($rollbackHealthcheckExitCode -ne 0) {
   throw "The restored executable failed its healthcheck with $rollbackHealthcheckExitCode."
 }
 
-$quietFailureProgress = Join-Path $qaRoot 'failure-quiet.status'
-$quietFailureProcess = Invoke-Update $quietFailureProgress $true $true
-$quietFailureExitCode = Wait-QaProcess $quietFailureProcess 300000 'Quiet rollback update'
+$quietFailureProgress = Join-Path $evidenceRoot 'failure-quiet.status'
+$quietFailureContext = Invoke-Update $quietFailureProgress $true $true
+$quietFailureContext = Wait-ForExpectedTerminal $quietFailureContext $quietFailureProgress '92|healthcheck_rollback|failed_rolled_back|12' 300000
+$quietFailureProcessExitCode = Get-QaProcessExitCode $quietFailureContext.Process
+if ($null -eq $quietFailureProcessExitCode) {
+  $quietFailureProcessExitCode = Wait-QaProcess $quietFailureContext.Process 300000 'Quiet rollback update'
+}
+$quietFailureExitCode = [int]((Get-TerminalProgress $quietFailureProgress) -split '\|')[3]
 if ($quietFailureExitCode -ne 12) {
-  throw "Quiet rollback update exited with $quietFailureExitCode, expected 12."
+  throw "Quiet rollback update reported $quietFailureExitCode, expected 12; observed process exit='$quietFailureProcessExitCode'."
 }
 Assert-MonotonicProgress $quietFailureProgress '92|healthcheck_rollback|failed_rolled_back|12'
 Assert-NoAutomaticRestart
@@ -438,9 +610,10 @@ Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyCon
   VisibleFailureStayedOpen = $true
   RollbackTerminal = Get-TerminalProgress $failureProgress
   QuietFailureExitCode = $quietFailureExitCode
+  QuietFailureProcessExitCode = $quietFailureProcessExitCode
   UserDataRetained = $true
   RuntimeReady = Test-Path -LiteralPath (Get-EmbeddedRuntimeNode $failureBaseline)
   RuntimeLocation = 'embedded after rollback'
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $qaRoot 'result.json') -Encoding utf8
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidenceRoot 'result.json') -Encoding utf8
 
-Get-Content -LiteralPath (Join-Path $qaRoot 'result.json')
+Get-Content -LiteralPath (Join-Path $evidenceRoot 'result.json')
