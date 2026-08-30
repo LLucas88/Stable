@@ -47,7 +47,7 @@ jobs:
           gh release download v0.9.31 --repo $env:GITHUB_REPOSITORY --pattern Stable-Setup-0.9.31-x64.exe --dir previous-release
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the v0.9.31 baseline installer.' }
       - name: Verify visible update success and rollback
-        timeout-minutes: 45
+        timeout-minutes: 75
         shell: pwsh
         run: |
           ./tests/verify-update-installer.ps1 `

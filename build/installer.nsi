@@ -114,6 +114,7 @@ Function stableWriteUpdateProgress
     ClearErrors
     FileOpen $R8 "$stableProgressFile.log" a
     IfErrors stableProgressWriteDone
+    FileSeek $R8 0 END
     FileWrite $R8 "$stableProgressPercent|$stableProgressStage|$stableProgressStatus|$stableProgressCode$\r$\n"
     FileClose $R8
   ${endif}

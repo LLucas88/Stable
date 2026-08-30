@@ -42,6 +42,7 @@ test('installation progress is stage-based, percentage-labelled, and cannot be c
   assert.match(installer, /GetDlgItem \$stableProgressBar \$R9 1004/)
   assert.match(installer, /ShowWindow \$stableProgressBar \$\{SW_SHOW\}/)
   assert.doesNotMatch(installer, /CreateWindowEx|System::Alloc|MapWindowPoints|SendMessage \$stableProgressBar/)
+  assert.match(installer, /FileOpen \$R8 "\$stableProgressFile\.log" a[\s\S]+FileSeek \$R8 0 END[\s\S]+FileWrite \$R8/)
   assert.match(installer, /Function stableAbortGuard[\s\S]+\$stableUpdateCanClose != "true"[\s\S]+Abort/)
   assert.match(installer, /!define MUI_CUSTOMFUNCTION_ABORT stableAbortGuard/)
 })

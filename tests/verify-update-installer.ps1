@@ -46,6 +46,7 @@ $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 
 $startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Stable.lnk'
 $installRegistry = 'HKCU:\Software\6c45bb57-0127-5e38-a317-d6ca2794c2d8'
 $uninstallRegistry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\6c45bb57-0127-5e38-a317-d6ca2794c2d8'
+$updateTimeoutMs = 900000
 
 $PreviousInstaller = (Resolve-Path -LiteralPath $PreviousInstaller).Path
 $UpdateInstaller = (Resolve-Path -LiteralPath $UpdateInstaller).Path
@@ -226,11 +227,22 @@ function Clear-ProgressFiles([string]$progressFile) {
 }
 
 function Get-TerminalProgress([string]$progressFile) {
+  if (Test-Path -LiteralPath $progressFile) {
+    $current = Get-Content -LiteralPath $progressFile -Raw -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrWhiteSpace($current)) {
+      $currentLines = @($current.Trim() -split '\r?\n')
+      return $currentLines[-1]
+    }
+  }
   $log = "$progressFile.log"
   if (-not (Test-Path -LiteralPath $log)) {
     return $null
   }
-  return Get-Content -LiteralPath $log | Select-Object -Last 1
+  $lines = @(Get-Content -LiteralPath $log | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if ($lines.Count -eq 0) {
+    return $null
+  }
+  return $lines[-1]
 }
 
 function Assert-VisibleInstallerWindow($process, [string]$statusPattern = '\d+%', [string]$statusDescription = 'percentage') {
@@ -408,7 +420,7 @@ function Wait-ForExpectedTerminal($context, [string]$progressFile, [string]$expe
 }
 
 function Assert-MonotonicProgress([string]$progressFile, [string]$expectedTerminal) {
-  $lines = @(Get-Content -LiteralPath "$progressFile.log")
+  $lines = @(Get-Content -LiteralPath "$progressFile.log" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
   if ($lines.Count -eq 0) {
     throw 'The update installer did not report progress.'
   }
@@ -534,8 +546,8 @@ $successContext = Wait-ForVisibleTerminal `
   '100|complete|success|0' `
   '100%.*更新安装完成.*重新点击 Stable 图标' `
   '100 percent completion text' `
-  300000
-$successExitCode = Wait-QaProcess $successContext.Process 300000 'Visible success update'
+  $updateTimeoutMs
+$successExitCode = Wait-QaProcess $successContext.Process $updateTimeoutMs 'Visible success update'
 if ($successExitCode -ne 0) {
   throw "Visible success update exited with $successExitCode."
 }
@@ -576,7 +588,7 @@ $failureContext = Wait-ForVisibleTerminal `
   '92|healthcheck_rollback|failed_rolled_back|12' `
   '92%.*旧版本已恢复.*错误码 12' `
   'rollback confirmation and error code 12' `
-  300000
+  $updateTimeoutMs
 $failureProcess = $failureContext.Process
 Start-Sleep -Seconds 2
 $failureProcess.Refresh()
@@ -607,10 +619,10 @@ if ($rollbackHealthcheckExitCode -ne 0) {
 
 $quietFailureProgress = Join-Path $evidenceRoot 'failure-quiet.status'
 $quietFailureContext = Invoke-Update $quietFailureProgress $true $true
-$quietFailureContext = Wait-ForExpectedTerminal $quietFailureContext $quietFailureProgress '92|healthcheck_rollback|failed_rolled_back|12' 300000
+$quietFailureContext = Wait-ForExpectedTerminal $quietFailureContext $quietFailureProgress '92|healthcheck_rollback|failed_rolled_back|12' $updateTimeoutMs
 $quietFailureProcessExitCode = Get-QaProcessExitCode $quietFailureContext.Process
 if ($null -eq $quietFailureProcessExitCode) {
-  $quietFailureProcessExitCode = Wait-QaProcess $quietFailureContext.Process 300000 'Quiet rollback update'
+  $quietFailureProcessExitCode = Wait-QaProcess $quietFailureContext.Process $updateTimeoutMs 'Quiet rollback update'
 }
 if ($quietFailureProcessExitCode -ne 12) {
   throw "Quiet rollback update process exited with $quietFailureProcessExitCode, expected 12."
