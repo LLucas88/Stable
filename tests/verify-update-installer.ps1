@@ -227,6 +227,13 @@ function Clear-ProgressFiles([string]$progressFile) {
 }
 
 function Get-TerminalProgress([string]$progressFile) {
+  $log = "$progressFile.log"
+  if (Test-Path -LiteralPath $log) {
+    $lines = @(Get-Content -LiteralPath $log | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($lines.Count -gt 0) {
+      return $lines[-1]
+    }
+  }
   if (Test-Path -LiteralPath $progressFile) {
     $current = Get-Content -LiteralPath $progressFile -Raw -ErrorAction SilentlyContinue
     if (-not [string]::IsNullOrWhiteSpace($current)) {
@@ -234,15 +241,7 @@ function Get-TerminalProgress([string]$progressFile) {
       return $currentLines[-1]
     }
   }
-  $log = "$progressFile.log"
-  if (-not (Test-Path -LiteralPath $log)) {
-    return $null
-  }
-  $lines = @(Get-Content -LiteralPath $log | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-  if ($lines.Count -eq 0) {
-    return $null
-  }
-  return $lines[-1]
+  return $null
 }
 
 function Assert-VisibleInstallerWindow($process, [string]$statusPattern = '\d+%', [string]$statusDescription = 'percentage') {
