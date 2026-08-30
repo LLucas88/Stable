@@ -243,20 +243,24 @@ function Assert-VisibleInstallerWindow($process) {
     throw "Unexpected installer window title '$($process.MainWindowTitle)'."
   }
 
-  $page = [StableUpdateQaNative]::FindWindowEx($mainWindow, [IntPtr]::Zero, '#32770', $null)
-  if ($page -eq [IntPtr]::Zero) {
-    throw 'The update installer page is missing.'
-  }
-
+  $page = [IntPtr]::Zero
+  $pageAfter = [IntPtr]::Zero
   $visibleProgressBar = [IntPtr]::Zero
-  $after = [IntPtr]::Zero
   do {
-    $after = [StableUpdateQaNative]::FindWindowEx($page, $after, 'msctls_progress32', $null)
-    if ($after -ne [IntPtr]::Zero -and [StableUpdateQaNative]::IsWindowVisible($after)) {
-      $visibleProgressBar = $after
+    $pageAfter = [StableUpdateQaNative]::FindWindowEx($mainWindow, $pageAfter, '#32770', $null)
+    if ($pageAfter -eq [IntPtr]::Zero) {
       break
     }
-  } while ($after -ne [IntPtr]::Zero)
+    $progressAfter = [IntPtr]::Zero
+    do {
+      $progressAfter = [StableUpdateQaNative]::FindWindowEx($pageAfter, $progressAfter, 'msctls_progress32', $null)
+      if ($progressAfter -ne [IntPtr]::Zero -and [StableUpdateQaNative]::IsWindowVisible($progressAfter)) {
+        $page = $pageAfter
+        $visibleProgressBar = $progressAfter
+        break
+      }
+    } while ($progressAfter -ne [IntPtr]::Zero)
+  } while ($visibleProgressBar -eq [IntPtr]::Zero)
   if ($visibleProgressBar -eq [IntPtr]::Zero) {
     throw 'The update installer has no visible progress bar.'
   }

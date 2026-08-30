@@ -33,32 +33,12 @@ Function stableInstFilesShow
   ${andIfNot} ${Silent}
     FindWindow $R9 "#32770" "" $HWNDPARENT
     StrCmp $R9 0 stableProgressPageDone
-    GetDlgItem $R8 $R9 1004
+    GetDlgItem $stableProgressBar $R9 1004
     GetDlgItem $stableProgressText $R9 1006
-    StrCmp $R8 0 stableProgressPageDone
-
-    System::Alloc 16
-    Pop $R7
-    StrCmp $R7 0 stableProgressPageDone
-    System::Call 'user32::GetWindowRect(p r8, p r7) i .r6'
-    StrCmp $R6 0 stableProgressPageFreeRect
-    System::Call 'user32::MapWindowPoints(p 0, p r9, p r7, i 2)'
-    System::Call '*$R7(i .r0, i .r1, i .r2, i .r3)'
-    System::Free $R7
-    IntOp $R2 $R2 - $R0
-    IntOp $R3 $R3 - $R1
-
-    System::Call 'kernel32::GetModuleHandle(p 0) p .r7'
-    System::Call 'user32::CreateWindowEx(i 0, t "msctls_progress32", t "", i ${WS_CHILD}|${WS_VISIBLE}|0x00000001, i r0, i r1, i r2, i r3, p r9, p 0, p r7, p 0) p .r7'
-    StrCmp $R7 0 stableProgressPageDone
-    StrCpy $stableProgressBar $R7
+    StrCmp $stableProgressBar 0 stableProgressPageDone
     SendMessage $stableProgressBar 0x0406 0 100
     SendMessage $stableProgressBar 0x0402 0 0
-    ShowWindow $R8 ${SW_HIDE}
-    Goto stableProgressPageDone
-
-    stableProgressPageFreeRect:
-    System::Free $R7
+    ShowWindow $stableProgressBar ${SW_SHOW}
   ${endif}
   stableProgressPageDone:
   Pop $R9

@@ -39,10 +39,11 @@ test('installation progress is stage-based, percentage-labelled, and cannot be c
     '"100" "complete" "success"',
   ]) assert.ok(installSection.includes(marker), `missing progress marker ${marker}`)
   assert.match(installer, /\$stableProgressPercent%/)
-  assert.match(installer, /CreateWindowEx[\s\S]+msctls_progress32/)
+  assert.match(installer, /GetDlgItem \$stableProgressBar \$R9 1004/)
   assert.match(installer, /SendMessage \$stableProgressBar 0x0406 0 100/)
   assert.match(installer, /SendMessage \$stableProgressBar 0x0402 \$stableProgressPercent 0/)
-  assert.match(installer, /StrCmp \$R7 0 stableProgressPageDone[\s\S]+ShowWindow \$R8 \$\{SW_HIDE\}/)
+  assert.match(installer, /ShowWindow \$stableProgressBar \$\{SW_SHOW\}/)
+  assert.doesNotMatch(installer, /CreateWindowEx|System::Alloc|MapWindowPoints/)
   assert.match(installer, /Function stableAbortGuard[\s\S]+\$stableUpdateCanClose != "true"[\s\S]+Abort/)
   assert.match(installer, /!define MUI_CUSTOMFUNCTION_ABORT stableAbortGuard/)
 })
