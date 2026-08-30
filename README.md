@@ -1,13 +1,14 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.31**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.32**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
 
-## v0.9.31 主要改进
+## v0.9.32 主要改进
 
-- 远程更新改用不包含 Harness Runtime 的轻量更新包，完整安装包只用于首次安装，显著减少升级阶段的解压与复制量。
-- 首次升级会把 Runtime 迁移到持久目录，后续版本直接复用，不再重复展开约 3.8 万个运行时文件。
-- 新版本在旧程序旁完成暂存和健康检查后再原子切换；失败时自动恢复旧程序与 Runtime。
-- 恢复 blockmap 差分下载，同时保留完整轻量更新包回退；用户确认后继续静默安装并自动重启。
+- 用户点击“安装更新”后会看到独立的 Windows 更新窗口，百分比和文案对应解压、Runtime 检查、目录切换、健康检查、快捷方式更新等真实阶段。
+- 更新进行中不能误关窗口；只有新版健康检查、安装记录和快捷方式全部完成，进度才会到 100% 并自动关闭窗口。
+- 安装完成后不再自动重启 Stable，用户重新点击原图标即可打开新版，避免安装器强制拉起应用。
+- 更新失败时窗口保持打开，明确显示回滚结果和错误码；旧程序或 Runtime 未完整恢复时不会误报成功。
+- Release 流水线会在一次性 Windows runner 中从 v0.9.31 执行可见成功更新和强制失败回滚，验证通过后才上传资产。
 
 ## v0.9.27 主要能力
 
@@ -25,7 +26,7 @@ Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.3
 在仓库的 **Releases** 页面下载：
 
 ```text
-Stable-Setup-0.9.31-x64.exe
+Stable-Setup-0.9.32-x64.exe
 ```
 
 安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
@@ -77,11 +78,11 @@ gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime 
 推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布完整安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml`：
 
 ```powershell
-git tag v0.9.31
-git push origin v0.9.31
+git tag v0.9.32
+git push origin v0.9.32
 ```
 
-已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“重启并更新”。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签，或在 GitHub Actions 手动运行 Release Stable。
+已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“安装更新”。安装窗口到达 100% 并关闭后，用户重新点击 Stable 图标打开新版。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签。
 
 面向普通用户的更新 Release 必须允许匿名读取。当前 `LLucas88/Stable` 仓库及 Release 已公开，客户端无需 GitHub 访问令牌即可检查和下载更新；禁止把任何发布凭据打进客户端。
 

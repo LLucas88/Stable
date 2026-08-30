@@ -4,10 +4,169 @@ Var newDesktopLink
 Var oldDesktopLink
 Var oldShortcutName
 Var oldMenuDirectory
+Var stableProgressFile
+Var stableProgressPercent
+Var stableProgressStage
+Var stableProgressStatus
+Var stableProgressCode
+Var stableUpdateCanClose
+Var stableProgressBar
+Var stableProgressText
 
 !include "common.nsh"
 !include "MUI2.nsh"
 !include "multiUser.nsh"
+
+Function stableInstFilesShow
+  Push $R0
+  Push $R1
+  Push $R2
+  Push $R3
+  Push $R6
+  Push $R7
+  Push $R8
+  Push $R9
+
+  StrCpy $stableProgressBar ""
+  StrCpy $stableProgressText ""
+  ${if} ${isUpdated}
+  ${andIfNot} ${Silent}
+    FindWindow $R9 "#32770" "" $HWNDPARENT
+    StrCmp $R9 0 stableProgressPageDone
+    GetDlgItem $R8 $R9 1004
+    GetDlgItem $stableProgressText $R9 1006
+    StrCmp $R8 0 stableProgressPageDone
+
+    System::Alloc 16
+    Pop $R7
+    StrCmp $R7 0 stableProgressPageDone
+    System::Call 'user32::GetWindowRect(p r8, p r7) i .r6'
+    StrCmp $R6 0 stableProgressPageFreeRect
+    System::Call 'user32::MapWindowPoints(p 0, p r9, p r7, i 2)'
+    System::Call '*$R7(i .r0, i .r1, i .r2, i .r3)'
+    System::Free $R7
+    IntOp $R2 $R2 - $R0
+    IntOp $R3 $R3 - $R1
+
+    System::Call 'kernel32::GetModuleHandle(p 0) p .r7'
+    System::Call 'user32::CreateWindowEx(i 0, t "msctls_progress32", t "", i ${WS_CHILD}|${WS_VISIBLE}|0x00000001, i r0, i r1, i r2, i r3, p r9, p 0, p r7, p 0) p .r7'
+    StrCmp $R7 0 stableProgressPageDone
+    StrCpy $stableProgressBar $R7
+    SendMessage $stableProgressBar 0x0406 0 100
+    SendMessage $stableProgressBar 0x0402 0 0
+    ShowWindow $R8 ${SW_HIDE}
+    Goto stableProgressPageDone
+
+    stableProgressPageFreeRect:
+    System::Free $R7
+  ${endif}
+  stableProgressPageDone:
+  Pop $R9
+  Pop $R8
+  Pop $R7
+  Pop $R6
+  Pop $R3
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
+
+!macro customPageAfterChangeDir
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW stableInstFilesShow
+!macroend
+
+Function stableAbortGuard
+  ${if} ${isUpdated}
+  ${andIf} $stableUpdateCanClose != "true"
+    Abort
+  ${endif}
+FunctionEnd
+
+!define MUI_CUSTOMFUNCTION_ABORT stableAbortGuard
+
+Function stableWriteUpdateProgress
+  Push $R7
+  Push $R8
+  Push $R9
+
+  ${if} ${isUpdated}
+  ${andIfNot} ${Silent}
+    StrCpy $R9 "$stableProgressPercent% · 正在安装更新…"
+    ${if} $stableProgressStatus == "failed_rolled_back"
+      StrCpy $R9 "$stableProgressPercent% · 更新未完成，旧版本已恢复（错误码 $stableProgressCode）"
+    ${elseif} $stableProgressStatus == "failed"
+      StrCpy $R9 "$stableProgressPercent% · 更新失败，请保留安装目录（错误码 $stableProgressCode）"
+    ${elseif} $stableProgressStage == "preparing"
+      StrCpy $R9 "$stableProgressPercent% · 正在等待 Stable 安全退出…"
+    ${elseif} $stableProgressStage == "staging"
+      StrCpy $R9 "$stableProgressPercent% · 正在解压并校验新版文件…"
+    ${elseif} $stableProgressStage == "runtime"
+      StrCpy $R9 "$stableProgressPercent% · 正在检查本地运行环境…"
+    ${elseif} $stableProgressStage == "stopping"
+      StrCpy $R9 "$stableProgressPercent% · 正在关闭旧版本…"
+    ${elseif} $stableProgressStage == "switching"
+      StrCpy $R9 "$stableProgressPercent% · 正在切换到新版…"
+    ${elseif} $stableProgressStage == "healthcheck"
+      StrCpy $R9 "$stableProgressPercent% · 正在验证新版可以正常启动…"
+    ${elseif} $stableProgressStage == "rolling_back"
+      StrCpy $R9 "$stableProgressPercent% · 新版验证失败，正在恢复旧版本…"
+    ${elseif} $stableProgressStage == "finalizing"
+      StrCpy $R9 "$stableProgressPercent% · 正在更新快捷方式和安装记录…"
+    ${elseif} $stableProgressStage == "complete"
+      StrCpy $R9 "100% · 更新安装完成，请重新点击 Stable 图标打开新版。"
+    ${endif}
+    SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:Stable v${VERSION} 更新"
+    ${if} $stableProgressBar != ""
+      SendMessage $stableProgressBar 0x0402 $stableProgressPercent 0
+    ${endif}
+    ${if} $stableProgressText != ""
+      SendMessage $stableProgressText ${WM_SETTEXT} 0 "STR:$R9"
+    ${endif}
+  ${endif}
+
+  ${if} $stableProgressFile != ""
+    StrCpy $R7 "$stableProgressFile.tmp"
+    Delete "$R7"
+    ClearErrors
+    FileOpen $R8 "$R7" w
+    IfErrors stableProgressWriteDone
+    FileWrite $R8 "$stableProgressPercent|$stableProgressStage|$stableProgressStatus|$stableProgressCode$\r$\n"
+    FileClose $R8
+    Delete "$stableProgressFile"
+    Rename "$R7" "$stableProgressFile"
+    ClearErrors
+    FileOpen $R8 "$stableProgressFile.log" a
+    IfErrors stableProgressWriteDone
+    FileWrite $R8 "$stableProgressPercent|$stableProgressStage|$stableProgressStatus|$stableProgressCode$\r$\n"
+    FileClose $R8
+  ${endif}
+  stableProgressWriteDone:
+  ReadEnvStr $R7 "STABLE_UPDATE_QA_PROGRESS_DELAY_MS"
+  ${if} $R7 != ""
+    Sleep $R7
+  ${endif}
+  Pop $R9
+  Pop $R8
+  Pop $R7
+FunctionEnd
+
+!macro stableReportProgress percent stage status code
+  StrCpy $stableProgressPercent "${percent}"
+  StrCpy $stableProgressStage "${stage}"
+  StrCpy $stableProgressStatus "${status}"
+  StrCpy $stableProgressCode "${code}"
+  Call stableWriteUpdateProgress
+!macroend
+
+!macro stableStopUpdate code message
+  StrCpy $stableUpdateCanClose "true"
+  SetErrorLevel ${code}
+  ${if} ${isUpdated}
+  ${andIfNot} ${Silent}
+    Abort "$stableProgressPercent% · ${message}（E${code}）"
+  ${endif}
+  Quit
+!macroend
 
 !macro customCheckAppRunning
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
@@ -135,6 +294,17 @@ Function stableCheckAppRunning
       Quit
     ${endif}
 
+    DetailPrint "正在等待 Stable 安全退出…"
+    StrCpy $R1 0
+    stableWaitForProcessExit:
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${if} $R0 != 0
+      Goto stableProcessStopped
+    ${endif}
+    Sleep 250
+    IntOp $R1 $R1 + 1
+    IntCmp $R1 40 stableStopProcess stableWaitForProcessExit stableStopProcess
+
     stableStopProcess:
     DetailPrint "$(appClosing)"
     ${nsProcess::CloseProcess} "${APP_EXECUTABLE_FILENAME}" $R0
@@ -144,6 +314,7 @@ Function stableCheckAppRunning
       ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
       Sleep 300
     ${endif}
+    stableProcessStopped:
   ${endif}
 FunctionEnd
 

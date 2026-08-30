@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.9.31",
+  "version": "0.9.32",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -67,7 +67,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.9.31"
+      "output": "release-0.9.32"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",

@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,6 +23,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release download runtime-v1 --repo $env:GITHUB_REPOSITORY --pattern stable-runtime-win-x64.zip --output stable-runtime-win-x64.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the bundled Harness runtime.' }
           Expand-Archive -LiteralPath stable-runtime-win-x64.zip -DestinationPath runtime
           if (-not (Test-Path -LiteralPath runtime/node/node.exe) -or -not (Test-Path -LiteralPath runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
@@ -34,7 +34,31 @@ jobs:
         shell: pwsh
         run: |
           npx electron-builder --win --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { throw 'Full installer build failed.' }
           npm run dist:update
+          if ($LASTEXITCODE -ne 0) { throw 'Lightweight updater build failed.' }
+      - name: Download previous Stable installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Path previous-release -Force | Out-Null
+          gh release download v0.9.31 --repo $env:GITHUB_REPOSITORY --pattern Stable-Setup-0.9.31-x64.exe --dir previous-release
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the v0.9.31 baseline installer.' }
+      - name: Verify visible update success and rollback
+        timeout-minutes: 45
+        shell: pwsh
+        run: |
+          ./tests/verify-update-installer.ps1 `
+            -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
+            -UpdateInstaller ./release-0.9.32-update/Stable-Update-0.9.32-x64.exe
+      - name: Upload installer QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-update-installer-qa
+          path: ${{ runner.temp }}/stable-update-installer-qa
+          if-no-files-found: warn
       - name: Publish GitHub Release assets
         shell: pwsh
         env:
@@ -42,6 +66,9 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match package version $tag."
+          }
           $output = "release-$version"
           $updateOutput = "release-$version-update"
           $assets = @(
@@ -56,9 +83,12 @@ jobs:
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --generate-notes --target $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release $tag." }
           }
           gh release upload $tag $assets --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload one or more GitHub Release assets for $tag." }
           $uploaded = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw "Failed to inspect GitHub Release assets for $tag." }
           foreach ($asset in $assets) {
             if ($uploaded -notcontains (Split-Path -Leaf $asset)) { throw "Release asset was not uploaded: $asset" }
           }

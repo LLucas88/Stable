@@ -12,15 +12,15 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
 
   function install() {
     if (!isPackaged || !autoUpdater || state.status !== 'downloaded') throw new Error('更新尚未下载完成。')
-    emit({ status: 'installing', progress: 100, error: undefined })
-    autoUpdater.quitAndInstall(true, true)
+    emit({ status: 'installing', progress: 0, error: undefined })
+    autoUpdater.quitAndInstall(false, false)
     return true
   }
 
   if (isPackaged && autoUpdater) {
     autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = true
-    autoUpdater.autoRunAppAfterInstall = true
+    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.autoRunAppAfterInstall = false
     autoUpdater.disableDifferentialDownload = false
     autoUpdater.disableWebInstaller = true
     autoUpdater.on('checking-for-update', () => emit({ status: 'checking', error: undefined }))

@@ -24,15 +24,15 @@ test('packaged updater downloads the fast-install package and waits for restart 
   assert.equal(state.progress, 100)
   assert.equal(installArgs, undefined)
   assert.equal(updater.autoDownload, true)
-  assert.equal(updater.autoInstallOnAppQuit, true)
-  assert.equal(updater.autoRunAppAfterInstall, true)
+  assert.equal(updater.autoInstallOnAppQuit, false)
+  assert.equal(updater.autoRunAppAfterInstall, false)
   assert.equal(updater.disableDifferentialDownload, false)
   assert.equal(updater.disableWebInstaller, true)
   assert.doesNotMatch(publicError(new Error('failed https://secret.example/token')), /secret\.example/)
   controller.dispose()
 })
 
-test('restart confirmation uses silent install and force restart', () => {
+test('install confirmation opens the installer UI and leaves restart to the user', () => {
   const updater = new EventEmitter()
   let installArgs
   updater.checkForUpdates = async () => {}
@@ -40,7 +40,8 @@ test('restart confirmation uses silent install and force restart', () => {
   const controller = createUpdateController({ autoUpdater: updater, isPackaged: true, currentVersion: '0.9.27' })
   updater.emit('update-downloaded', { version: '0.9.28' })
   assert.equal(controller.install(), true)
-  assert.deepEqual(installArgs, [true, true])
+  assert.deepEqual(installArgs, [false, false])
   assert.equal(controller.state().status, 'installing')
+  assert.equal(controller.state().progress, 0)
   controller.dispose()
 })
