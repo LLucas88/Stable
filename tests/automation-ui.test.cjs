@@ -82,6 +82,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(installerQa, /IsWindowVisible[\s\S]+msctls_progress32/)
   assert.match(installerQa, /function Wait-ForVisibleTerminal/)
   assert.match(installerQa, /\$updateTimeoutMs = 900000/)
+  assert.match(installerQa, /function Get-UpdateInstallerProcesses[\s\S]+\[void\]\$candidate\.Handle/)
   assert.match(installerQa, /function Get-TerminalProgress[\s\S]+Get-Content -LiteralPath \$log[\s\S]+return \$lines\[-1\][\s\S]+Get-Content -LiteralPath \$progressFile -Raw/)
   assert.match(installerQa, /100%\.\*更新安装完成\.\*重新点击 Stable 图标/)
   assert.match(installerQa, /92%\.\*旧版本已恢复\.\*错误码 12/)

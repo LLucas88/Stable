@@ -297,6 +297,7 @@ function Get-UpdateInstallerProcesses($context) {
       $sameExecutable = $candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -eq [IO.Path]::GetFullPath($UpdateInstaller)
       $expectedWindow = $candidate.MainWindowTitle -like "Stable v$ExpectedVersion*"
       if (($sameExecutable -or $expectedWindow) -and $candidate.StartTime.ToUniversalTime() -ge $context.StartedAt.AddSeconds(-2)) {
+        [void]$candidate.Handle
         $candidates += $candidate
       }
     } catch {
