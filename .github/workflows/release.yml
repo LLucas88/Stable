@@ -30,8 +30,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Build Windows installer
-        run: npx electron-builder --win --x64 --publish never
+      - name: Build full installer and lightweight updater
+        shell: pwsh
+        run: |
+          npx electron-builder --win --x64 --publish never
+          npm run dist:update
       - name: Publish GitHub Release assets
         shell: pwsh
         env:
@@ -40,10 +43,12 @@ jobs:
           $version = node -p "require('./package.json').version"
           $tag = "v$version"
           $output = "release-$version"
+          $updateOutput = "release-$version-update"
           $assets = @(
             "$output/Stable-Setup-$version-x64.exe",
-            "$output/Stable-Setup-$version-x64.exe.blockmap",
-            "$output/latest.yml"
+            "$updateOutput/Stable-Update-$version-x64.exe",
+            "$updateOutput/Stable-Update-$version-x64.exe.blockmap",
+            "$updateOutput/latest.yml"
           )
           foreach ($asset in $assets) {
             if (-not (Test-Path -LiteralPath $asset)) { throw "Missing release asset: $asset" }

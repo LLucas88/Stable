@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.9.30",
+  "version": "0.9.31",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -15,7 +15,8 @@
     "test:integration": "node tests/harness-integration.cjs",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "dist:dir": "npm run build && electron-builder --win --x64 --dir",
-    "dist": "npm run build && electron-builder --win --x64"
+    "dist": "npm run build && electron-builder --win --x64",
+    "dist:update": "electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
@@ -66,7 +67,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.9.30"
+      "output": "release-0.9.31"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",
@@ -81,6 +82,7 @@
       ]
     },
     "nsis": {
+      "script": "build/installer.nsi",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "useZip": false,

@@ -25,6 +25,7 @@ const { asksForWorkbenchInventory, buildWorkbenchInventory, requestedWorkbenchAc
 const { normalizeWebUrl, renderMarkdownDocument, resolveMarkdownFile } = require('./services/preview.cjs')
 const { automationIntent, automationTemplates, parseProposalOutput, proposalPrompt } = require('./services/automation.cjs')
 const { createUpdateController } = require('./services/updater.cjs')
+const { cleanupStaleInstalls } = require('./services/update-maintenance.cjs')
 const {
   SCRIPT_EXTENSIONS,
   cleanupPackage,
@@ -63,6 +64,7 @@ const teamTaskRunners = new Map()
 const pendingTeamContinuations = new Map()
 const collaborationRunners = new Map()
 const pendingCollaborationChecks = new Map()
+const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
 
 app.setAppUserModelId(APP_ID)
 if (process.platform === 'win32' && app.isPackaged) {
@@ -73,7 +75,7 @@ const userDataArgument = process.argv.find((argument) => argument.startsWith('--
 const userDataPath = process.env.STABLE_QA_USER_DATA || userDataArgument?.slice('--stable-user-data='.length)
 if (userDataPath) app.setPath('userData', path.resolve(userDataPath))
 
-if (!process.env.STABLE_QA_CAPTURE && !userDataPath) {
+if (!process.env.STABLE_QA_CAPTURE && !userDataPath && !updateHealthcheck) {
   if (!app.requestSingleInstanceLock()) app.quit()
   else app.on('second-instance', () => {
     if (!mainWindow) return
@@ -2120,6 +2122,7 @@ async function boot() {
   registerIpc()
   mainWindow = createWindow()
   await mainWindow.loadFile(resourcePath('dist', 'index.html'), { query: process.env.STABLE_QA_PAGE ? { page: process.env.STABLE_QA_PAGE } : undefined })
+  if (app.isPackaged) setTimeout(() => cleanupStaleInstalls(process.execPath), 5_000)
   updateController.start()
   automationTimer = setInterval(checkDueAutomations, 15_000)
   setTimeout(checkDueAutomations, 1_500)
@@ -2264,7 +2267,16 @@ async function boot() {
   }
 }
 
-app.whenReady().then(boot)
-app.on('activate', () => { if (!mainWindow) void boot() })
+if (updateHealthcheck) {
+  app.whenReady().then(() => {
+    if (process.env.STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE === '1') return app.exit(4)
+    const userData = app.getPath('userData')
+    const healthRunner = new HarnessRunner({ userData, workspace: path.join(userData, 'workspace'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
+    app.exit(existsSync(app.getAppPath()) && healthRunner.ready() ? 0 : 2)
+  }).catch(() => app.exit(3))
+} else {
+  app.whenReady().then(boot)
+  app.on('activate', () => { if (!mainWindow) void boot() })
+}
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

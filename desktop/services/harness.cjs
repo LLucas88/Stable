@@ -60,12 +60,6 @@ class HarnessRunner {
   constructor(options) { this.options = options; this.child = undefined; this.cancelled = false; this.approvalDir = undefined }
 
   runtimePaths() {
-    if (this.options.packaged) {
-      return {
-        node: path.join(this.options.resourcesPath, 'runtime', 'node', 'node.exe'),
-        cli: path.join(this.options.resourcesPath, 'runtime', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
-      }
-    }
     const candidates = []
     if (process.env.STABLE_DSH_RUNTIME) {
       const root = process.env.STABLE_DSH_RUNTIME
@@ -73,6 +67,17 @@ class HarnessRunner {
         { node: path.join(root, 'node', 'node.exe'), cli: path.join(root, 'app', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js') },
         { node: path.join(root, 'node', 'node.exe'), cli: path.join(root, 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js') },
       )
+    }
+    if (this.options.packaged) {
+      const persistentRoot = process.env.STABLE_RUNTIME_HOME || path.join(process.env.LOCALAPPDATA || this.options.userData, 'stable-desktop', 'runtime-v1')
+      candidates.push({
+        node: path.join(persistentRoot, 'node', 'node.exe'),
+        cli: path.join(persistentRoot, 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+      }, {
+        node: path.join(this.options.resourcesPath, 'runtime', 'node', 'node.exe'),
+        cli: path.join(this.options.resourcesPath, 'runtime', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+      })
+      return candidates.find((candidate) => existsSync(candidate.node) && existsSync(candidate.cli)) || candidates[0]
     }
     const sourceRoot = path.resolve(__dirname, '..', '..')
     candidates.push({

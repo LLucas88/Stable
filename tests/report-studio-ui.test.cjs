@@ -29,7 +29,7 @@ test('version is visible in the left rail and the direct launcher accepts isolat
   const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-  assert.equal(pkg.version, '0.9.30')
+  assert.equal(pkg.version, '0.9.31')
   assert.match(app, /className="rail-version"/)
   assert.match(app, />v\{state\.appVersion\}</)
   assert.match(main, /--stable-user-data=/)
@@ -39,13 +39,17 @@ test('version is visible in the left rail and the direct launcher accepts isolat
   assert.match(main, /stable:appearance:launchReady[\s\S]*window\.show\(\)[\s\S]*window\.focus\(\)/)
 })
 
-test('installer ships the local runtime without embedding user data or a portable target', () => {
+test('full installer ships the runtime while the lightweight updater reuses it', () => {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const update = require(join(root, 'build', 'update-builder.config.cjs'))
   const resources = pkg.build.extraResources.map((item) => `${item.from}:${item.to}`)
+  const updateResources = update.extraResources.map((item) => `${item.from}:${item.to}`)
   const targets = pkg.build.win.target.map((item) => item.target)
 
   assert.deepEqual(targets, ['nsis'])
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false)
   assert.ok(resources.includes('runtime:runtime'))
+  assert.equal(updateResources.includes('runtime:runtime'), false)
+  assert.equal(update.win.artifactName, 'Stable-Update-${version}-x64.${ext}')
   assert.doesNotMatch(JSON.stringify(pkg.build), /stable-userdata|secrets\.json/)
 })

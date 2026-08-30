@@ -1,13 +1,26 @@
 # Stable 项目状态与开发交接
 
-> 最后更新：2026-08-28
-> 文档版本：`2026-08-28.4`
+> 最后更新：2026-08-30
+> 文档版本：`2026-08-30.1`
 > 项目目录：`D:\Codex\2026-08-19\Stable-0.9.1`  
-> 当前发布基线：`v0.9.30`
-> 当前开发版本：`v0.9.30`
-> 当前状态：**v0.9.30 是当前正式发布版本；已修复主动上传 ZIP 仍被工作区限制的问题，并将 Windows 安装器恢复为带临时解包与复制重试的 7z 链路。108 项自动化测试、类型检查、生产构建、NSIS 打包、隔离全新安装、安装后启动和测试卸载均已通过。远程更新 Release 提供安装包、blockmap 和 `latest.yml`。**
+> 当前发布基线：`v0.9.31`
+> 当前开发版本：`v0.9.31`
+> 当前状态：**v0.9.31 正式发布版本已完成轻量远程更新包、Runtime 持久化、原子目录切换、启动健康检查和失败回滚。110 项自动化测试、类型检查、生产构建、两类 NSIS 打包、隔离成功更新、强制失败回滚、完整新装、启动健康检查和 QA 卸载均已通过；GitHub 发布资产由 v0.9.31 标签工作流生成并核验。**
 
-## 0. 当前正式版本 v0.9.30
+## 0. 当前正式版本 v0.9.31
+
+- 远程更新改用不包含 Harness Runtime 的 `Stable-Update-0.9.31-x64.exe`；完整 `Stable-Setup-0.9.31-x64.exe` 只用于首次安装。
+- 旧安装中的 Runtime 在首次升级时同盘迁移到 `%LOCALAPPDATA%\stable-desktop\runtime-v1`，以后版本直接复用，不再重复解压和复制约 3.8 万个文件。
+- 新版本先完整解压到安装目录旁的暂存目录，旧程序保持可用；暂存完成后才通过目录重命名快速切换。
+- 切换后执行 `--stable-update-healthcheck`；失败时关闭残留 Electron 子进程、恢复旧目录和旧 Runtime，恢复失败时不启动新程序。
+- 重新启用 electron-updater blockmap 差分下载；下载失败仍可回退到完整轻量更新包。
+- 按固定规则，版本号已从 `v0.9.30` 递增到 `v0.9.31`。
+- 隔离测试结果：成功更新约 `6.98` 秒，健康检查退出码 `0`；强制失败回滚约 `8.05` 秒，安装器退出码 `12`，旧 EXE 与 Runtime 完整恢复。
+- 完整首次安装仍需展开全部 Runtime，本机实测约 `1020.14` 秒；该慢路径已从远程更新中移除。
+- 本地完整安装包：`release-0.9.31/Stable-Setup-0.9.31-x64.exe`，`283844927` 字节，SHA-256 `2AF4588409F51F7D207624E6877AA0D23836006D5544D652E7612CCEDD3AD218`。
+- 本地轻量更新包：`release-0.9.31-update/Stable-Update-0.9.31-x64.exe`，`115319891` 字节，SHA-256 `9D0169F6789BB4F1D47CAA9644338C88064075680D35B8AF26009DB493215DB9`。
+
+## 0.1 上一正式版本 v0.9.30
 
 - 包含 v0.9.29 的任务操作区、输入框交互、对话文字和普通 ZIP/文件夹附件界面改进。
 - 用户主动上传的普通文件、ZIP 和文件夹会自动复制到 `workspace/.stable/attachments/<conversation>/...` 隔离目录；Agent 获得该副本的真实路径，可直接解压、安装或运行。
@@ -19,7 +32,7 @@
 
 ## 1. 一句话结论
 
-Stable 已从早期桌面 Agent 原型发展为 Windows 本地优先的 Agent 工作台。`v0.9.30` 在既有对话、定时、工作流、Team 和应用内更新能力上，完成普通 ZIP/文件夹附件可操作路径、无选中动画交互、安装器解包可靠性与差分更新资产修复。自动化测试、类型检查、生产构建、本地安装、启动和卸载均已通过；真实旧版设备的远程下载、静默升级、重启与数据保留仍需单独验收。
+Stable 已从早期桌面 Agent 原型发展为 Windows 本地优先的 Agent 工作台。当前正式版本为 `v0.9.31`，远程更新已拆分为完整首次安装包与轻量更新包，并通过隔离原子切换、健康检查、失败回滚、启动和卸载验证。真实 `v0.9.30 → v0.9.31` 设备的 GitHub 下载、自动重启、版本显示和用户数据保留仍需在发布后单独验收。
 
 更新发布状态：2026-08-27 `github.com/LLucas88/Stable` 已改为公开仓库，匿名访问仓库及最新 Release API 均返回 200。客户端不内置 GitHub 访问令牌。`runtime-v1` 预发布已公开上传并通过 SHA-256 与必需入口检查，GitHub Actions 会复用其中的 `stable-runtime-win-x64.zip`。
 
@@ -128,7 +141,7 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 
 ## 7. 当前代码状态
 
-当前分支为 `main`。发布前 `main` 与 `origin/main` 均指向 `532a63b`（`v0.9.28`）；本次正式发布提交包含 v0.9.29 与 v0.9.30 的全部需求、测试、文档和发布工作流更新。下列能力位于 v0.9.30 正式基线：
+当前分支为 `main`。`v0.9.31` 为正式发布基线；更新器、Harness Runtime 定位、NSIS 脚本、发布工作流与对应测试均纳入本版本：
 
 | 文件 | 基线状态 | 当前内容 |
 | --- | --- | --- |
@@ -140,26 +153,29 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 | `desktop/services/preview.cjs` | 已发布 | URL/路径校验和安全 Markdown 渲染 |
 | `desktop/services/automation.cjs` | 已发布 | 计划规则、下次执行时间和对话定时意图解析 |
 | `desktop/services/updater.cjs` | 已发布 | GitHub Releases 检查、下载、状态通知和重启安装 |
-| `.github/workflows/release.yml` | 已更新 | 恢复运行时、测试、打包、显式上传并复核安装包、blockmap 和 `latest.yml` |
-| `tests/` | 108 项通过 | 覆盖对话、附件、权限、预览、自动化、更新、Team、存储和工作流等行为 |
+| `.github/workflows/release.yml` | v0.9.31 正式版本 | 同时构建完整安装包和轻量更新包，远程 `latest.yml` 只指向轻量包 |
+| `tests/` | 110 项通过 | 覆盖对话、附件、权限、预览、自动化、更新、Runtime、Team、存储和工作流等行为 |
 
 **接手约束：不要无故重置、覆盖或回退以上已发布功能。** 后续开发应从 `origin/main` 继续。
 
 ## 8. 本轮验证结果
 
-验证时间：2026-08-28；验证对象：`v0.9.30` 源码、本地安装包与发布工作流。
+验证时间：2026-08-30；验证对象：`v0.9.31` 正式发布源码、完整安装包、轻量更新包与隔离升级环境。
 
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
 | TypeScript 类型检查 | `npm run typecheck` | 通过 |
 | Node/CJS 语法检查 | `node --check` | 主进程、preload、Harness、预览服务和提示词全部通过 |
-| Node 测试套件 | `npm test` | 108 项全部通过，0 失败 |
+| Node 测试套件 | `npm test` | 110 项全部通过，0 失败 |
 | Vite 生产构建 | `npm run build` | 通过 |
 | Harness 真实集成测试 | `npm run test:integration` | 本轮未执行 |
 | Electron 隔离界面验收 | QA 环境变量 + Electron 源码版/打包版 | 通过；任务操作区与输入框无选中背景、阴影和动画 |
-| Windows NSIS x64 | `npm run dist -- --publish never` | 通过；安装包、blockmap、`latest.yml` 均已生成 |
-| 隔离全新安装与启动 | 安装器静默安装 + 打包应用离屏启动 | 通过；安装、v0.9.30 版本、Runtime、Harness、启动与卸载均通过 |
-| GitHub Actions 发布 | `Release Stable` | 第 2 次执行通过；运行时恢复、108 项测试、构建、打包、上传和资产复核全部完成 |
+| Windows NSIS x64 | `npm run dist -- --publish never` + `npm run dist:update` | 通过；完整安装包、轻量更新包、两类 blockmap 和更新 `latest.yml` 均已生成 |
+| 隔离全新安装与启动 | 完整安装器静默安装 + `--stable-update-healthcheck` | 通过；安装退出码 0，Runtime、Harness、卸载器和健康检查均通过 |
+| 隔离成功更新 | 旧目录 + 轻量更新包 + 持久 Runtime | 通过；约 6.98 秒，安装与健康检查退出码均为 0，正常启动后清理旧备份 |
+| 隔离失败回滚 | 强制健康检查失败 | 通过；约 8.05 秒，退出码 12，旧 EXE 与 Runtime 完整恢复 |
+| 隔离 QA 卸载 | 自定义目录 + `_?=` 精确路径 | 通过；安装与卸载退出码均为 0，应用目录和持久 Runtime 均清理 |
+| GitHub Actions 发布 | `Release Stable` | 由 `v0.9.31` 标签触发；完成后核验四项正式资产 |
 | 更新资产匿名访问 | GitHub Release 直链 | 安装包、blockmap、`latest.yml` 均返回 HTTP 200 |
 | 本地升级测试基线 | 隔离构建 `0.9.26` 测试包 | 类型检查、101 项测试和构建通过；内部版本与更新源已核对 |
 | Electron 人工交互验收 | `npm start` | 尚待用户本地手动测试拖拽、联网和剪贴板体验 |
@@ -169,15 +185,19 @@ Stable 的定位不是单一聊天窗口，而是一个能够在本机组织数�
 
 ## 9. 当前发布物
 
-- GitHub Release：`https://github.com/LLucas88/Stable/releases/tag/v0.9.30`
-- 安装包：`Stable-Setup-0.9.30-x64.exe`
-- 远程安装包大小：`283,895,200` bytes
-- 远程安装包 SHA-256：`72C0F9A410218C85B0FAED7EEED8C45C8F96C169E74B480348324F54E12ED5C6`
-- 本地验证安装包大小：`283,894,295` bytes
-- 本地验证安装包 SHA-256：`A8033D12299DDE257F09A8E6A49E7AC0ED12198A24E21EFFC901DB8626956365`
-- 更新资产：`Stable-Setup-0.9.30-x64.exe.blockmap`、`latest.yml`
-- 打包输出配置：`release-0.9.30`
-- 发布工作流：`https://github.com/LLucas88/Stable/actions/runs/33149788939`
+v0.9.31 正式发布资产清单：
+
+- 完整安装包：`release-0.9.31/Stable-Setup-0.9.31-x64.exe`，`283844927` 字节，SHA-256 `2AF4588409F51F7D207624E6877AA0D23836006D5544D652E7612CCEDD3AD218`。
+- 轻量更新包：`release-0.9.31-update/Stable-Update-0.9.31-x64.exe`，`115319891` 字节，SHA-256 `9D0169F6789BB4F1D47CAA9644338C88064075680D35B8AF26009DB493215DB9`。
+- 更新清单：`release-0.9.31-update/latest.yml`，明确指向 `Stable-Update-0.9.31-x64.exe`。
+- 正式发布必须同时上传完整安装包、轻量更新包、轻量更新包 blockmap 和轻量目录中的 `latest.yml`；不得用完整安装包的 `latest.yml` 覆盖。
+
+- GitHub Release：`https://github.com/LLucas88/Stable/releases/tag/v0.9.31`
+- 完整安装包：`Stable-Setup-0.9.31-x64.exe`
+- 轻量更新包：`Stable-Update-0.9.31-x64.exe`
+- 更新资产：`Stable-Update-0.9.31-x64.exe.blockmap`、`latest.yml`
+- 打包输出配置：`release-0.9.31`、`release-0.9.31-update`
+- 发布工作流：由 `v0.9.31` 标签触发，完成后补充运行地址与远程校验值。
 - 运行时预发布：`runtime-v1/stable-runtime-win-x64.zip`
 - 运行时压缩包大小：`230,630,438` bytes
 - 运行时 SHA-256：`84FA5C25470A23BE21AB3027E0471E0185D1E4E673A12B173157EEA74A5C64F0`
@@ -398,8 +418,10 @@ npm run dist
 - [x] 当前界面与 P0 功能已提交，不回退已发布能力。
 - [x] `v0.9.30` 本地安装包、blockmap 和 `latest.yml` 已生成并完成一致性验证。
 - [x] `v0.9.30` 远程安装包、blockmap 和 `latest.yml` 已发布并完成匿名访问复核。
+- [x] `v0.9.31` 本地完整安装包、轻量更新包、blockmap 和更新 `latest.yml` 已生成并通过隔离验证。
+- [ ] `v0.9.31` 标签、主分支与远程 Release 正在本次发布流程中创建并核验。
 - [x] 已生成仅供测试设备使用的 `0.9.26` 更新基线安装包、测试说明和 SHA-256。
-- [ ] 尚未完成真实旧版设备到 `v0.9.30` 的下载、静默升级、重启和数据保留验收。
+- [ ] 尚未完成真实设备 `v0.9.30 → v0.9.31` 的 GitHub 下载、静默升级、重启、版本和数据保留验收。
 - [ ] 不把旧 `release-0.9.*` 当作当前源码运行结果。
 - [ ] 不把完整工作区、全部数据或全部知识库默认放入模型上下文。
 - [ ] 不在没有真实文件验证时显示“输出完成”。

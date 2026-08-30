@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mkdtempSync, readFileSync, rmSync } = require('node:fs')
+const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { spawnSync } = require('node:child_process')
@@ -37,6 +37,27 @@ test('source harness discovers the runtime bundled beside the source tree', () =
   assert.match(paths.node, /runtime[\\/]node[\\/]node\.exe$/i)
   assert.match(paths.cli, /runtime[\\/]dsh[\\/]node_modules[\\/]@deepseek-ai[\\/]dsh[\\/]lib[\\/]bin\.js$/i)
   assert.equal(runner.ready(), true)
+})
+
+test('packaged harness prefers the persistent runtime used by lightweight updates', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-persistent-runtime-'))
+  const previous = process.env.STABLE_RUNTIME_HOME
+  const cli = path.join(root, 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  const node = path.join(root, 'node', 'node.exe')
+  mkdirSync(path.dirname(cli), { recursive: true })
+  mkdirSync(path.dirname(node), { recursive: true })
+  writeFileSync(cli, '', 'utf8')
+  writeFileSync(node, '', 'utf8')
+  process.env.STABLE_RUNTIME_HOME = root
+  try {
+    const runner = new HarnessRunner({ userData: root, workspace: root, packaged: true, resourcesPath: path.join(root, 'missing-resources') })
+    assert.deepEqual(runner.runtimePaths(), { node, cli })
+    assert.equal(runner.ready(), true)
+  } finally {
+    if (previous === undefined) delete process.env.STABLE_RUNTIME_HOME
+    else process.env.STABLE_RUNTIME_HOME = previous
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('harness config stores only an environment reference, never the API key', () => {

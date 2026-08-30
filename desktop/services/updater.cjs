@@ -21,7 +21,7 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.autoRunAppAfterInstall = true
-    autoUpdater.disableDifferentialDownload = true
+    autoUpdater.disableDifferentialDownload = false
     autoUpdater.disableWebInstaller = true
     autoUpdater.on('checking-for-update', () => emit({ status: 'checking', error: undefined }))
     autoUpdater.on('update-available', (info) => emit({ status: 'downloading', availableVersion: info.version, releaseName: info.releaseName || '', error: undefined }))

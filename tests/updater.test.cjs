@@ -26,7 +26,7 @@ test('packaged updater downloads the fast-install package and waits for restart 
   assert.equal(updater.autoDownload, true)
   assert.equal(updater.autoInstallOnAppQuit, true)
   assert.equal(updater.autoRunAppAfterInstall, true)
-  assert.equal(updater.disableDifferentialDownload, true)
+  assert.equal(updater.disableDifferentialDownload, false)
   assert.equal(updater.disableWebInstaller, true)
   assert.doesNotMatch(publicError(new Error('failed https://secret.example/token')), /secret\.example/)
   controller.dispose()

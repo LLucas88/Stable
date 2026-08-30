@@ -1,13 +1,13 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.30**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.31**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
 
-## v0.9.30 主要改进
+## v0.9.31 主要改进
 
-- 用户主动选择的普通文件、ZIP 或文件夹会复制到工作区隔离附件目录，Agent 可直接使用真实路径解压、安装或运行。
-- 任务操作区与输入框取消选中、悬停和聚焦动画；对话记录采用常规字重，并增加标题显示宽度。
-- Windows 安装器恢复为 7z 临时解包与复制重试链路，修复部分电脑上的 `Failed to decompress files / Error opening output file(5)`。
-- 恢复 blockmap 差分更新资产，并继续支持完整安装包回退；用户确认更新后保持静默安装并自动重启。
+- 远程更新改用不包含 Harness Runtime 的轻量更新包，完整安装包只用于首次安装，显著减少升级阶段的解压与复制量。
+- 首次升级会把 Runtime 迁移到持久目录，后续版本直接复用，不再重复展开约 3.8 万个运行时文件。
+- 新版本在旧程序旁完成暂存和健康检查后再原子切换；失败时自动恢复旧程序与 Runtime。
+- 恢复 blockmap 差分下载，同时保留完整轻量更新包回退；用户确认后继续静默安装并自动重启。
 
 ## v0.9.27 主要能力
 
@@ -25,7 +25,7 @@ Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.3
 在仓库的 **Releases** 页面下载：
 
 ```text
-Stable-Setup-0.9.30-x64.exe
+Stable-Setup-0.9.31-x64.exe
 ```
 
 安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
@@ -60,9 +60,10 @@ npm start
 npm run typecheck
 npm test
 npm run dist
+npm run dist:update
 ```
 
-默认生成 NSIS x64 安装包。版本号以 `package.json` 为准，发布标签采用 `vMAJOR.MINOR.PATCH`。
+`npm run dist` 生成包含 Runtime 的完整 NSIS x64 安装包，供首次安装；`npm run dist:update` 生成复用持久 Runtime 的轻量远程更新包。版本号以 `package.json` 为准，发布标签采用 `vMAJOR.MINOR.PATCH`。
 
 ## 发布与自动更新
 
@@ -73,11 +74,11 @@ npm run runtime:archive
 gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime v1" --notes "Stable Windows x64 bundled runtime"
 ```
 
-推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布安装包、blockmap 和 `latest.yml`：
+推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布完整安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml`：
 
 ```powershell
-git tag v0.9.30
-git push origin v0.9.30
+git tag v0.9.31
+git push origin v0.9.31
 ```
 
 已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“重启并更新”。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签，或在 GitHub Actions 手动运行 Release Stable。
@@ -94,4 +95,4 @@ git push origin v0.9.30
 
 - 版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 - Git 标签与 GitHub Release 使用相同版本号。
-- 每个远程更新 Release 同时提供安装包、对应 blockmap 和 `latest.yml` 更新清单。
+- 每个远程更新 Release 同时提供完整首次安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml` 更新清单。
