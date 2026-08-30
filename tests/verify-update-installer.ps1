@@ -244,13 +244,21 @@ function Get-TerminalProgress([string]$progressFile) {
   return $null
 }
 
-function Assert-VisibleInstallerWindow($process, [string]$statusPattern = '\d+%', [string]$statusDescription = 'percentage') {
+function Assert-VisibleInstallerWindow(
+  $process,
+  [string]$statusPattern = '\d+%',
+  [string]$statusDescription = 'percentage',
+  [bool]$allowDefaultTitle = $false
+) {
   $process.Refresh()
   $mainWindow = $process.MainWindowHandle
   if ($mainWindow -eq [IntPtr]::Zero -or -not [StableUpdateQaNative]::IsWindowVisible($mainWindow)) {
     throw 'The update installer process has no visible main window.'
   }
-  if ($process.MainWindowTitle -notlike "Stable v$ExpectedVersion*") {
+  $installerTitle = $process.MainWindowTitle.Trim()
+  $hasExpectedUpdateTitle = $installerTitle -like "Stable v$ExpectedVersion*"
+  $hasAllowedDefaultTitle = $allowDefaultTitle -and $installerTitle -eq 'Stable Setup'
+  if (-not $hasExpectedUpdateTitle -and -not $hasAllowedDefaultTitle) {
     throw "Unexpected installer window title '$($process.MainWindowTitle)'."
   }
 
@@ -595,7 +603,7 @@ $failureProcess.Refresh()
 if ($failureProcess.HasExited) {
   throw 'Visible failure installer closed automatically instead of keeping the rollback result open.'
 }
-Assert-VisibleInstallerWindow $failureProcess '92%.*旧版本已恢复.*错误码 12' 'rollback confirmation and error code 12'
+Assert-VisibleInstallerWindow $failureProcess '92%.*旧版本已恢复.*错误码 12' 'rollback confirmation and error code 12' $true
 Stop-Process -Id $failureProcess.Id -Force
 if (-not $failureProcess.WaitForExit(10000)) {
   throw 'Visible failure installer did not exit after the QA harness closed it.'

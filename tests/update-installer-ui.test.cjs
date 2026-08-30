@@ -64,7 +64,9 @@ test('failed update paths distinguish successful rollback from rollback failure'
   assert.match(installSection, /stableSwapRollback:[\s\S]+Rename "\$stableRuntimeDir"[\s\S]+IfErrors stableSwapRuntimeRestoreFailed/)
   assert.match(installSection, /stableSwapRuntimeRestoreFailed:[\s\S]+"20"/)
   assert.match(installer, /旧版本已恢复/)
-  assert.match(installer, /Abort "\$stableProgressPercent% · \$\{message\}（E\$\{code\}）"/)
+  assert.match(installer, /\$stableProgressStatus == "failed_rolled_back"[\s\S]+Abort "\$stableProgressPercent% · 更新未完成，旧版本已恢复（错误码 \$stableProgressCode）"/)
+  assert.match(installer, /\$stableProgressStatus == "failed"[\s\S]+Abort "\$stableProgressPercent% · 更新失败，请保留安装目录（错误码 \$stableProgressCode）"/)
+  assert.match(installer, /\$\{else\}[\s\S]+Abort "\$stableProgressPercent% · \$\{message\}（E\$\{code\}）"/)
 })
 
 test('cross-volume runtime copy fallback is removed on every rollback path', () => {

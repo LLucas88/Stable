@@ -84,8 +84,13 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(installerQa, /\$updateTimeoutMs = 900000/)
   assert.match(installerQa, /function Get-UpdateInstallerProcesses[\s\S]+\[void\]\$candidate\.Handle/)
   assert.match(installerQa, /function Get-TerminalProgress[\s\S]+Get-Content -LiteralPath \$log[\s\S]+return \$lines\[-1\][\s\S]+Get-Content -LiteralPath \$progressFile -Raw/)
+  assert.match(installerQa, /function Assert-VisibleInstallerWindow[\s\S]+\[bool\]\$allowDefaultTitle = \$false/)
+  assert.match(installerQa, /\$allowDefaultTitle -and \$installerTitle -eq 'Stable Setup'/)
   assert.match(installerQa, /100%\.\*更新安装完成\.\*重新点击 Stable 图标/)
   assert.match(installerQa, /92%\.\*旧版本已恢复\.\*错误码 12/)
+  const defaultTitleAllowances = installerQa.match(/Assert-VisibleInstallerWindow[^\r\n]*\$true/g) ?? []
+  assert.equal(defaultTitleAllowances.length, 1)
+  assert.match(defaultTitleAllowances[0], /\$failureProcess/)
   assert.match(installerQa, /Stop-Process -Id \$failureProcess\.Id -Force[\s\S]+WaitForExit\(10000\)/)
   assert.match(installerQa, /\$quietFailureProcessExitCode -ne 12/)
   assert.match(installerQa, /DisplayVersion[\s\S]+InstallLocation/)

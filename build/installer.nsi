@@ -141,7 +141,13 @@ FunctionEnd
   SetErrorLevel ${code}
   ${if} ${isUpdated}
   ${andIfNot} ${Silent}
-    Abort "$stableProgressPercent% · ${message}（E${code}）"
+    ${if} $stableProgressStatus == "failed_rolled_back"
+      Abort "$stableProgressPercent% · 更新未完成，旧版本已恢复（错误码 $stableProgressCode）"
+    ${elseif} $stableProgressStatus == "failed"
+      Abort "$stableProgressPercent% · 更新失败，请保留安装目录（错误码 $stableProgressCode）"
+    ${else}
+      Abort "$stableProgressPercent% · ${message}（E${code}）"
+    ${endif}
   ${endif}
   Quit
 !macroend
