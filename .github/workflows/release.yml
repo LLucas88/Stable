@@ -63,14 +63,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Publish GitHub Release assets
-        if: github.ref_type == 'tag'
+        if: success() && github.event_name == 'push' && github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = node -p "require('./package.json').version"
           $tag = "v$version"
-          if ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag) {
+          if ($env:GITHUB_EVENT_NAME -ne 'push' -or $env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag) {
             throw "Release tag $env:GITHUB_REF_NAME does not match package version $tag."
           }
           $output = "release-$version"

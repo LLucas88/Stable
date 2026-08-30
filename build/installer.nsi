@@ -36,8 +36,6 @@ Function stableInstFilesShow
     GetDlgItem $stableProgressBar $R9 1004
     GetDlgItem $stableProgressText $R9 1006
     StrCmp $stableProgressBar 0 stableProgressPageDone
-    SendMessage $stableProgressBar 0x0406 0 100
-    SendMessage $stableProgressBar 0x0402 0 0
     ShowWindow $stableProgressBar ${SW_SHOW}
   ${endif}
   stableProgressPageDone:
@@ -98,9 +96,6 @@ Function stableWriteUpdateProgress
       StrCpy $R9 "100% · 更新安装完成，请重新点击 Stable 图标打开新版。"
     ${endif}
     SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:Stable v${VERSION} 更新"
-    ${if} $stableProgressBar != ""
-      SendMessage $stableProgressBar 0x0402 $stableProgressPercent 0
-    ${endif}
     ${if} $stableProgressText != ""
       SendMessage $stableProgressText ${WM_SETTEXT} 0 "STR:$R9"
     ${endif}

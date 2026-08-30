@@ -233,7 +233,7 @@ function Get-TerminalProgress([string]$progressFile) {
   return Get-Content -LiteralPath $log | Select-Object -Last 1
 }
 
-function Assert-VisibleInstallerWindow($process) {
+function Assert-VisibleInstallerWindow($process, [string]$statusPattern = '\d+%', [string]$statusDescription = 'percentage') {
   $process.Refresh()
   $mainWindow = $process.MainWindowHandle
   if ($mainWindow -eq [IntPtr]::Zero -or -not [StableUpdateQaNative]::IsWindowVisible($mainWindow)) {
@@ -266,10 +266,13 @@ function Assert-VisibleInstallerWindow($process) {
   }
 
   $statusControl = [StableUpdateQaNative]::GetDlgItem($page, 1006)
+  if ($statusControl -eq [IntPtr]::Zero -or -not [StableUpdateQaNative]::IsWindowVisible($statusControl)) {
+    throw 'The update installer has no visible status text.'
+  }
   $statusText = [Text.StringBuilder]::new(512)
   [void][StableUpdateQaNative]::GetWindowText($statusControl, $statusText, $statusText.Capacity)
-  if ($statusText.ToString() -notmatch '\d+%') {
-    throw "The visible installer status has no percentage: '$statusText'."
+  if ($statusText.ToString() -notmatch $statusPattern) {
+    throw "The visible installer status does not show ${statusDescription}: '$statusText'."
   }
 }
 
@@ -328,7 +331,8 @@ function Wait-ForVisibleProgress($context, [string]$progressFile) {
     $process = $context.Process
     $processExitCode = Get-QaProcessExitCode $process
     if ($null -eq $processExitCode) {
-      if ($lastProgress -and $process.MainWindowTitle -like "Stable v$ExpectedVersion*") {
+      $visiblePercent = if ($lastProgress) { [int](($lastProgress -split '\|')[0]) } else { -1 }
+      if ($visiblePercent -ge 4 -and $process.MainWindowTitle -like "Stable v$ExpectedVersion*") {
         Assert-VisibleInstallerWindow $process
         Write-Host "Observed visible update progress: $lastProgress (PID $($process.Id))."
         return $context
@@ -346,6 +350,28 @@ function Wait-ForVisibleProgress($context, [string]$progressFile) {
     }
   } until ([DateTime]::UtcNow -ge $deadline)
   throw "The visible installer did not expose progress within two minutes; exitCode='$launcherExitCode', lastProgress='$lastProgress'."
+}
+
+function Wait-ForVisibleTerminal($context, [string]$progressFile, [string]$expectedTerminal, [string]$statusPattern, [string]$statusDescription, [int]$timeoutMs) {
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+  do {
+    Start-Sleep -Milliseconds 50
+    $lastProgress = Get-TerminalProgress $progressFile
+    if ($lastProgress -eq $expectedTerminal) {
+      $processExitCode = Get-QaProcessExitCode $context.Process
+      if ($null -ne $processExitCode) {
+        throw "The visible installer closed before its terminal UI was verified; exitCode='$processExitCode', terminal='$lastProgress'."
+      }
+      Assert-VisibleInstallerWindow $context.Process $statusPattern $statusDescription
+      Write-Host "Observed visible terminal UI: $lastProgress."
+      return $context
+    }
+    $processExitCode = Get-QaProcessExitCode $context.Process
+    if ($null -ne $processExitCode) {
+      throw "The visible installer exited before terminal progress; exitCode='$processExitCode', lastProgress='$lastProgress'."
+    }
+  } until ([DateTime]::UtcNow -ge $deadline)
+  throw "The visible installer did not reach '$expectedTerminal' within $timeoutMs ms; lastProgress='$lastProgress'."
 }
 
 function Wait-ForExpectedTerminal($context, [string]$progressFile, [string]$expectedTerminal, [int]$timeoutMs) {
@@ -502,6 +528,13 @@ $successBaseline = Install-PreviousVersion
 $successProgress = Join-Path $evidenceRoot 'success.status'
 $successContext = Invoke-Update $successProgress $false $false
 $successContext = Wait-ForVisibleProgress $successContext $successProgress
+$successContext = Wait-ForVisibleTerminal `
+  $successContext `
+  $successProgress `
+  '100|complete|success|0' `
+  '100%.*更新安装完成.*重新点击 Stable 图标' `
+  '100 percent completion text' `
+  300000
 $successExitCode = Wait-QaProcess $successContext.Process 300000 'Visible success update'
 if ($successExitCode -ne 0) {
   throw "Visible success update exited with $successExitCode."
@@ -537,28 +570,25 @@ $failureBaseline = Restore-PreviousVersion $successBaseline
 $failureProgress = Join-Path $evidenceRoot 'failure-visible.status'
 $failureContext = Invoke-Update $failureProgress $false $true
 $failureContext = Wait-ForVisibleProgress $failureContext $failureProgress
+$failureContext = Wait-ForVisibleTerminal `
+  $failureContext `
+  $failureProgress `
+  '92|healthcheck_rollback|failed_rolled_back|12' `
+  '92%.*旧版本已恢复.*错误码 12' `
+  'rollback confirmation and error code 12' `
+  300000
 $failureProcess = $failureContext.Process
-$deadline = [DateTime]::UtcNow.AddMinutes(5)
-do {
-  Start-Sleep -Milliseconds 250
-  $terminal = Get-TerminalProgress $failureProgress
-  $failureProcess.Refresh()
-  if ($failureProcess.HasExited -and $terminal -ne '92|healthcheck_rollback|failed_rolled_back|12') {
-    throw "Visible failure update exited before reporting rollback; terminal='$terminal'."
-  }
-} until ($terminal -eq '92|healthcheck_rollback|failed_rolled_back|12' -or [DateTime]::UtcNow -ge $deadline)
-
-if ($terminal -ne '92|healthcheck_rollback|failed_rolled_back|12') {
-  Stop-Process -Id $failureProcess.Id -Force -ErrorAction SilentlyContinue
-  throw "Visible failure update did not finish rollback; terminal='$terminal'."
-}
 Start-Sleep -Seconds 2
 $failureProcess.Refresh()
 if ($failureProcess.HasExited) {
   throw 'Visible failure installer closed automatically instead of keeping the rollback result open.'
 }
-Assert-VisibleInstallerWindow $failureProcess
+Assert-VisibleInstallerWindow $failureProcess '92%.*旧版本已恢复.*错误码 12' 'rollback confirmation and error code 12'
 Stop-Process -Id $failureProcess.Id -Force
+if (-not $failureProcess.WaitForExit(10000)) {
+  throw 'Visible failure installer did not exit after the QA harness closed it.'
+}
+$failureProcess.Refresh()
 Assert-MonotonicProgress $failureProgress '92|healthcheck_rollback|failed_rolled_back|12'
 Assert-NoAutomaticRestart
 Assert-DataRetained $failureBaseline
@@ -581,6 +611,9 @@ $quietFailureContext = Wait-ForExpectedTerminal $quietFailureContext $quietFailu
 $quietFailureProcessExitCode = Get-QaProcessExitCode $quietFailureContext.Process
 if ($null -eq $quietFailureProcessExitCode) {
   $quietFailureProcessExitCode = Wait-QaProcess $quietFailureContext.Process 300000 'Quiet rollback update'
+}
+if ($quietFailureProcessExitCode -ne 12) {
+  throw "Quiet rollback update process exited with $quietFailureProcessExitCode, expected 12."
 }
 $quietFailureExitCode = [int]((Get-TerminalProgress $quietFailureProgress) -split '\|')[3]
 if ($quietFailureExitCode -ne 12) {
