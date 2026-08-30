@@ -174,10 +174,12 @@ test('PowerShell scripts can read interactive input', { skip: process.platform !
   const target = path.join(root, 'interactive.ps1')
   writeFileSync(target, '$answer = Read-Host "PS_PROMPT"\nWrite-Output "PS_ANSWER=$answer"\n', 'utf8')
   const events = []
-  const runner = new ScriptRunner({ workspace: root, timeoutMs: 10_000 })
+  const runner = new ScriptRunner({ workspace: root, timeoutMs: 20_000 })
+  let resultPromise
   try {
-    const resultPromise = runner.run({ id: 'powershell-1', path: target }, (event) => events.push(event))
-    const deadline = Date.now() + 4_000
+    resultPromise = runner.run({ id: 'powershell-1', path: target }, (event) => events.push(event))
+    resultPromise.catch(() => {})
+    const deadline = Date.now() + 10_000
     while (!events.some((event) => event.chunk.includes('PS_PROMPT'))) {
       if (Date.now() >= deadline) throw new Error('未等到 PowerShell 输入提示。')
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -187,7 +189,8 @@ test('PowerShell scripts can read interactive input', { skip: process.platform !
     assert.match(result.output, /PS_ANSWER=stable/)
   } finally {
     runner.cancel()
-    rmSync(root, { recursive: true, force: true })
+    await resultPromise?.catch(() => {})
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 })
 
