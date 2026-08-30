@@ -1,8 +1,8 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.32**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.33**。项目包含对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
 
-## v0.9.32 主要改进
+## v0.9.33 主要改进
 
 - 用户点击“安装更新”后会看到独立的 Windows 更新窗口，百分比和文案对应解压、Runtime 检查、目录切换、健康检查、快捷方式更新等真实阶段。
 - 更新进行中不能误关窗口；只有新版健康检查、安装记录和快捷方式全部完成，进度才会到 100% 并自动关闭窗口。
@@ -26,7 +26,7 @@ Stable 是一个 Windows 本地 Agent 工作台。当前公开版本为 **v0.9.3
 在仓库的 **Releases** 页面下载：
 
 ```text
-Stable-Setup-0.9.32-x64.exe
+Stable-Setup-0.9.33-x64.exe
 ```
 
 安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
@@ -78,8 +78,8 @@ gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime 
 推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布完整安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml`：
 
 ```powershell
-git tag v0.9.32
-git push origin v0.9.32
+git tag v0.9.33
+git push origin v0.9.33
 ```
 
 已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“安装更新”。安装窗口到达 100% 并关闭后，用户重新点击 Stable 图标打开新版。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签。

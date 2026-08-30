@@ -116,6 +116,26 @@ function Get-StableProductVersion([string]$executable) {
   return "$($parsedVersion.Major).$($parsedVersion.Minor).$($parsedVersion.Build)"
 }
 
+function Get-EmbeddedRuntimeNode($baseline) {
+  return (Join-Path (Split-Path -Parent $baseline.Exe) 'resources\runtime\node\node.exe')
+}
+
+function Assert-EmbeddedRuntimeReady($baseline, [string]$description) {
+  $embeddedRuntimeNode = Get-EmbeddedRuntimeNode $baseline
+  if (-not (Test-Path -LiteralPath $embeddedRuntimeNode)) {
+    throw "$description left the v0.9.31 embedded runtime unavailable."
+  }
+  if (Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe')) {
+    throw "$description unexpectedly left a migrated persistent runtime behind."
+  }
+}
+
+function Assert-PersistentRuntimeReady([string]$description) {
+  if (-not (Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe'))) {
+    throw "$description did not prepare the persistent runtime."
+  }
+}
+
 function Install-PreviousVersion {
   $arguments = @('/S', '/currentuser', "/D=$installDir")
   $process = Start-Process -FilePath $PreviousInstaller -ArgumentList $arguments -PassThru
@@ -132,8 +152,8 @@ function Install-PreviousVersion {
   if ($version -ne '0.9.31') {
     throw "Previous installer produced unexpected version $version."
   }
-  if (-not (Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe'))) {
-    throw 'Previous installer did not prepare the persistent Node runtime.'
+  if (-not (Test-Path -LiteralPath (Join-Path $installDir 'resources\runtime\node\node.exe'))) {
+    throw 'Previous installer did not include its embedded Node runtime.'
   }
 
   Copy-Tree $installDir $baselineDir
@@ -160,6 +180,9 @@ function Restore-PreviousVersion($baseline) {
   if (Test-Path -LiteralPath $installDir) {
     Remove-Item -LiteralPath $installDir -Recurse -Force
   }
+  if (Test-Path -LiteralPath $runtimeDir) {
+    Remove-Item -LiteralPath $runtimeDir -Recurse -Force
+  }
   Copy-Tree $baselineDir $installDir
   foreach ($path in @($installRegistry, $uninstallRegistry)) {
     if (Test-Path -LiteralPath $path) {
@@ -177,6 +200,7 @@ function Restore-PreviousVersion($baseline) {
   if ($displayVersion -ne '0.9.31' -or [IO.Path]::GetFullPath($registeredLocation) -ne [IO.Path]::GetFullPath($installDir)) {
     throw "Restored registry is inconsistent: version='$displayVersion', location='$registeredLocation'."
   }
+  Assert-EmbeddedRuntimeReady $baseline 'Restored baseline'
   return $baseline
 }
 
@@ -202,7 +226,7 @@ function Assert-VisibleInstallerWindow($process) {
   if ($mainWindow -eq [IntPtr]::Zero -or -not [StableUpdateQaNative]::IsWindowVisible($mainWindow)) {
     throw 'The update installer process has no visible main window.'
   }
-  if ($process.MainWindowTitle -notlike 'Stable v0.9.32*') {
+  if ($process.MainWindowTitle -notlike 'Stable v0.9.33*') {
     throw "Unexpected installer window title '$($process.MainWindowTitle)'."
   }
 
@@ -316,9 +340,14 @@ if ($successExitCode -ne 0) {
 Assert-MonotonicProgress $successProgress '100|complete|success|0'
 Assert-NoAutomaticRestart
 Assert-DataRetained $successBaseline
+Assert-PersistentRuntimeReady 'Successful update'
+$successEmbeddedRuntime = Get-EmbeddedRuntimeNode $successBaseline
+if (Test-Path -LiteralPath $successEmbeddedRuntime) {
+  throw 'Successful update left the obsolete embedded runtime in the application directory.'
+}
 
 $successVersion = Get-StableProductVersion $successBaseline.Exe
-if ($successVersion -ne '0.9.32') {
+if ($successVersion -ne '0.9.33') {
   throw "Success update produced unexpected version $successVersion."
 }
 if (-not (Test-Path -LiteralPath $desktopShortcut)) {
@@ -362,6 +391,7 @@ Stop-Process -Id $failureProcess.Id -Force
 Assert-MonotonicProgress $failureProgress '92|healthcheck_rollback|failed_rolled_back|12'
 Assert-NoAutomaticRestart
 Assert-DataRetained $failureBaseline
+Assert-EmbeddedRuntimeReady $failureBaseline 'Visible rollback'
 
 $restoredVersion = Get-StableProductVersion $failureBaseline.Exe
 if ($restoredVersion -ne '0.9.31') {
@@ -387,9 +417,7 @@ $quietRestoredVersion = Get-StableProductVersion $failureBaseline.Exe
 if ($quietRestoredVersion -ne '0.9.31') {
   throw "Quiet rollback restored unexpected version $quietRestoredVersion."
 }
-if (-not (Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe'))) {
-  throw 'Quiet rollback left the persistent runtime unavailable.'
-}
+Assert-EmbeddedRuntimeReady $failureBaseline 'Quiet rollback'
 Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyContinue
 $quietRollbackHealthcheck = Start-Process -FilePath $failureBaseline.Exe -ArgumentList '--stable-update-healthcheck' -PassThru
 $quietRollbackHealthcheckExitCode = Wait-QaProcess $quietRollbackHealthcheck 120000 'Quiet rollback executable healthcheck'
@@ -411,7 +439,8 @@ Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyCon
   RollbackTerminal = Get-TerminalProgress $failureProgress
   QuietFailureExitCode = $quietFailureExitCode
   UserDataRetained = $true
-  RuntimeReady = Test-Path -LiteralPath (Join-Path $runtimeDir 'node\node.exe')
+  RuntimeReady = Test-Path -LiteralPath (Get-EmbeddedRuntimeNode $failureBaseline)
+  RuntimeLocation = 'embedded after rollback'
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $qaRoot 'result.json') -Encoding utf8
 
 Get-Content -LiteralPath (Join-Path $qaRoot 'result.json')

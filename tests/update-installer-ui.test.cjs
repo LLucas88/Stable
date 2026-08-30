@@ -65,3 +65,11 @@ test('failed update paths distinguish successful rollback from rollback failure'
   assert.match(installer, /旧版本已恢复/)
   assert.match(installer, /Abort "\$stableProgressPercent% · \$\{message\}（E\$\{code\}）"/)
 })
+
+test('cross-volume runtime copy fallback is removed on every rollback path', () => {
+  assert.match(installSection, /Var \/GLOBAL stableRuntimeCopied/)
+  assert.match(installSection, /stableCopyOldRuntime:[\s\S]+StrCpy \$stableRuntimeCopied "true"[\s\S]+CopyFiles/)
+  assert.match(installSection, /stableHealthNewMoved:[\s\S]+\$stableRuntimeCopied == "true"[\s\S]+RMDir \/r "\$stableRuntimeDir"[\s\S]+stableHealthRuntimeRestoreFailed/)
+  assert.match(installSection, /stableSwapRollback:[\s\S]+\$stableRuntimeCopied == "true"[\s\S]+RMDir \/r "\$stableRuntimeDir"[\s\S]+stableSwapRuntimeRestoreFailed/)
+  assert.match(installSection, /stableSwapFailedBeforeRename:[\s\S]+\$stableRuntimeCopied == "true"[\s\S]+RMDir \/r "\$stableRuntimeDir"[\s\S]+stableRuntimeRestoreBeforeSwapFailed/)
+})

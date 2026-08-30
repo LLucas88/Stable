@@ -46,6 +46,7 @@ Var /GLOBAL stablePreviousDir
 Var /GLOBAL stableFailedDir
 Var /GLOBAL stableRuntimeDir
 Var /GLOBAL stableRuntimeMigrated
+Var /GLOBAL stableRuntimeCopied
 
 StrCpy $keepShortcuts "false"
 !insertMacro setIsTryToKeepShortcuts
@@ -68,6 +69,7 @@ stableAtomicUpdate:
   StrCpy $stablePreviousDir "$INSTDIR.__stable_previous_${VERSION}"
   StrCpy $stableFailedDir "$INSTDIR.__stable_failed_${VERSION}"
   StrCpy $stableRuntimeMigrated "false"
+  StrCpy $stableRuntimeCopied "false"
   ReadEnvStr $stableRuntimeDir "STABLE_RUNTIME_HOME"
   ${if} $stableRuntimeDir == ""
     StrCpy $stableRuntimeDir "$LOCALAPPDATA\stable-desktop\runtime-v1"
@@ -127,11 +129,15 @@ stableCopyStagedRuntime:
 
 stableCopyOldRuntime:
   CreateDirectory "$stableRuntimeDir"
+  StrCpy $stableRuntimeCopied "true"
   ClearErrors
   CopyFiles /SILENT "$INSTDIR\resources\runtime\*" "$stableRuntimeDir"
   IfErrors stableRuntimeFailed stableRuntimeReady
 
 stableRuntimeFailed:
+  ${if} $stableRuntimeCopied == "true"
+    RMDir /r "$stableRuntimeDir"
+  ${endif}
   RMDir /r "$stableStageDir"
   !insertmacro stableReportProgress "68" "runtime_failed" "failed" "11"
   !insertmacro stableStopUpdate 11 "本地运行环境准备失败，安装未完成。"
@@ -178,6 +184,10 @@ stableRuntimeReady:
       ClearErrors
       Rename "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
       IfErrors stableHealthRuntimeRestoreFailed 0
+    ${elseif} $stableRuntimeCopied == "true"
+      ClearErrors
+      RMDir /r "$stableRuntimeDir"
+      IfErrors stableHealthRuntimeRestoreFailed 0
     ${endif}
     ClearErrors
     Rename "$stablePreviousDir" "$INSTDIR"
@@ -206,6 +216,10 @@ stableSwapRollback:
     ClearErrors
     Rename "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
     IfErrors stableSwapRuntimeRestoreFailed 0
+  ${elseif} $stableRuntimeCopied == "true"
+    ClearErrors
+    RMDir /r "$stableRuntimeDir"
+    IfErrors stableSwapRuntimeRestoreFailed 0
   ${endif}
   ClearErrors
   Rename "$stablePreviousDir" "$INSTDIR"
@@ -229,6 +243,10 @@ stableSwapFailedBeforeRename:
     CreateDirectory "$INSTDIR\resources"
     ClearErrors
     Rename "$stableRuntimeDir" "$INSTDIR\resources\runtime"
+    IfErrors stableRuntimeRestoreBeforeSwapFailed 0
+  ${elseif} $stableRuntimeCopied == "true"
+    ClearErrors
+    RMDir /r "$stableRuntimeDir"
     IfErrors stableRuntimeRestoreBeforeSwapFailed 0
   ${endif}
   !insertmacro stableReportProgress "80" "swap_failed" "failed_rolled_back" "14"
