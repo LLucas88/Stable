@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.9.34",
+  "version": "0.9.39",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -67,7 +67,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.9.34"
+      "output": "release-0.9.39"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",
@@ -92,11 +92,13 @@
       "shortcutName": "Stable",
       "deleteAppDataOnUninstall": false
     },
-    "publish": [{
-      "provider": "github",
-      "owner": "LLucas88",
-      "repo": "Stable",
-      "releaseType": "release"
-    }]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "LLucas88",
+        "repo": "Stable",
+        "releaseType": "release"
+      }
+    ]
   }
 }

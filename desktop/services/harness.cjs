@@ -1,7 +1,7 @@
 'use strict'
 
 const { spawn, spawnSync } = require('node:child_process')
-const { existsSync, mkdirSync, writeFileSync } = require('node:fs')
+const { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
 
@@ -56,6 +56,42 @@ const STDIN_BRIDGE = [
   'await import(pathToFileURL(cli).href);',
 ].join('')
 
+function buildHarnessEnvironment({ baseEnvironment = process.env, model, apiKey, approvalDir, dshHome, agentsHome, sandboxMode = 'workspace-write' }) {
+  const environment = {
+    ...baseEnvironment,
+    STABLE_API_KEY: apiKey,
+    STABLE_APPROVAL_DIR: approvalDir,
+    DSH_HOME: dshHome,
+    DSH_AGENTS_HOME: agentsHome,
+    DSH_PERMISSION_MODE: sandboxMode === 'read-only' ? 'read-only' : 'workspace-write',
+  }
+  if (String(model?.providerId || '').toLowerCase() === 'deepseek') environment.DEEPSEEK_API_KEY = apiKey
+  delete environment.NODE_OPTIONS; delete environment.NODE_PATH
+  return environment
+}
+
+function removeWithoutFollowingLinks(target) {
+  let stats
+  try { stats = lstatSync(target) }
+  catch (error) { if (error?.code === 'ENOENT') return; throw error }
+  if (stats.isSymbolicLink()) { unlinkSync(target); return }
+  if (!stats.isDirectory()) { rmSync(target, { force: true }); return }
+  for (const name of readdirSync(target)) removeWithoutFollowingLinks(path.join(target, name))
+  rmdirSync(target)
+}
+
+function cleanupHarnessRunDirectory(dshHome, expectedRunsRoot) {
+  const resolved = path.resolve(dshHome)
+  const resolvedRunsRoot = path.resolve(expectedRunsRoot)
+  const parentMatches = process.platform === 'win32'
+    ? path.dirname(resolved).toLowerCase() === resolvedRunsRoot.toLowerCase()
+    : path.dirname(resolved) === resolvedRunsRoot
+  if (!parentMatches || !path.basename(resolved).startsWith('run-')) {
+    throw new Error(`拒绝清理非 Harness 临时目录：${resolved}`)
+  }
+  removeWithoutFollowingLinks(resolved)
+}
+
 class HarnessRunner {
   constructor(options) { this.options = options; this.child = undefined; this.cancelled = false; this.approvalDir = undefined }
 
@@ -90,8 +126,9 @@ class HarnessRunner {
   ready() { const paths = this.runtimePaths(); return existsSync(paths.node) && existsSync(paths.cli) }
 
   writeSettings(model) {
-    const dshHome = path.join(this.options.userData, 'harness')
-    mkdirSync(dshHome, { recursive: true })
+    const runsRoot = path.join(this.options.userData, 'harness', 'runs')
+    mkdirSync(runsRoot, { recursive: true })
+    const dshHome = mkdtempSync(path.join(runsRoot, 'run-'))
     const config = {
       'agent-default-model': { provider: model.providerId, model: model.model },
       'llm-pi-ai': { providers: { [model.providerId]: {
@@ -110,29 +147,29 @@ class HarnessRunner {
     if (!apiKey) throw new Error('请先在“设置”中保存 API Key。')
     const paths = this.runtimePaths()
     if (!this.ready()) throw new Error('Stable 的 Harness 运行时不完整，请重新安装。')
+    const runsRoot = path.join(this.options.userData, 'harness', 'runs')
     const dshHome = this.writeSettings(model)
     this.approvalDir = path.join(dshHome, 'approvals', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
     mkdirSync(this.approvalDir, { recursive: true })
     this.cancelled = false
     mkdirSync(this.options.workspace, { recursive: true })
-    const environment = {
-      ...process.env,
-      STABLE_API_KEY: apiKey,
-      // DeepSeek Harness uses a separate credential reference for web search and
-      // other provider-backed tools. Keep one user-managed key while exposing the
-      // aliases only inside this short-lived child process.
-      DEEPSEEK_API_KEY: apiKey,
-      STABLE_APPROVAL_DIR: this.approvalDir,
-      DSH_HOME: dshHome,
-      DSH_AGENTS_HOME: path.join(this.options.userData, 'agents'),
-      DSH_PERMISSION_MODE: sandboxMode === 'read-only' ? 'read-only' : 'workspace-write',
-    }
-    delete environment.NODE_OPTIONS; delete environment.NODE_PATH
+    const environment = buildHarnessEnvironment({
+      baseEnvironment: this.options.environment ?? process.env,
+      model, apiKey, approvalDir: this.approvalDir, dshHome,
+      agentsHome: path.join(this.options.userData, 'agents'), sandboxMode,
+    })
     return new Promise((resolve, reject) => {
       let stdout = ''; let stderr = ''; let eventBuffer = ''; let settled = false; let runtimeFailure = ''
-      const child = spawn(paths.node, ['--input-type=module', '--eval', STDIN_BRIDGE, paths.cli], {
-        cwd: this.options.workspace, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-      })
+      let child
+      try {
+        child = (this.options.spawn || spawn)(paths.node, ['--input-type=module', '--eval', STDIN_BRIDGE, paths.cli], {
+          cwd: this.options.workspace, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+        })
+      } catch (error) {
+        try { cleanupHarnessRunDirectory(dshHome, runsRoot) } catch {}
+        reject(error)
+        return
+      }
       this.child = child
       const timer = timeoutMs > 0
         ? setTimeout(() => { this.cancel(); finish(new Error(`执行超过 ${Math.ceil(timeoutMs / 60_000)} 分钟，已停止。`)) }, timeoutMs)
@@ -157,9 +194,15 @@ class HarnessRunner {
       }
       child.stderr.on('data', (chunk) => { eventBuffer += chunk.toString('utf8'); consumeEventLines() })
       child.stdin.on('error', (error) => { if (!settled && error.code !== 'EPIPE') finish(error) })
-      child.on('error', finish)
-      child.on('exit', (code, signal) => {
+      child.on('error', (error) => {
+        if (!child.pid) {
+          try { cleanupHarnessRunDirectory(dshHome, runsRoot) } catch {}
+        }
+        finish(error)
+      })
+      child.on('close', (code, signal) => {
         if (eventBuffer) { eventBuffer += '\n'; consumeEventLines(true) }
+        try { cleanupHarnessRunDirectory(dshHome, runsRoot) } catch {}
         if (this.cancelled) finish(new Error('任务已停止。'))
         else if (code === 0 && stdout.trim()) finish(undefined, stdout.trim())
         else if (runtimeFailure === 'max-tokens') finish(Object.assign(new Error('本次任务的单次生成内容过长，模型达到输出长度上限。Stable 已停止本轮执行；请缩小单次生成范围或让 Agent 分步骤处理。'), { code: 'HARNESS_MAX_TOKENS' }))
@@ -185,4 +228,4 @@ class HarnessRunner {
   }
 }
 
-module.exports = { HarnessRunner, STDIN_BRIDGE }
+module.exports = { HarnessRunner, STDIN_BRIDGE, buildHarnessEnvironment, cleanupHarnessRunDirectory }

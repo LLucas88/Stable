@@ -29,17 +29,22 @@ test('user messages overwrite the main draft with recoverable resources and Ctrl
   assert.match(store, /kind === 'attachment' && item\.path/)
 })
 
-test('conversation links and Markdown files open a resizable in-window preview without a composer eye button', () => {
-  const composer = app.slice(app.indexOf('<div className="composer">'), app.indexOf('{contextOpen &&'))
+test('conversation links, generated files and uploaded attachments open a resizable in-window preview without a composer eye button', () => {
+  const composer = app.slice(app.indexOf('<div className="composer">'), app.indexOf('{previewTarget &&'))
   assert.doesNotMatch(composer, /<Eye|打开快捷预览|PreviewDialog/)
   assert.match(app, /className="conversation-preview"/)
   assert.match(app, /className="preview-resizer" role="separator"/)
   assert.match(app, /window\.stable\.preview\.openWeb\(previewTarget\.value, bounds\)/)
-  assert.match(app, /window\.stable\.preview\.openMarkdown\(previewTarget\.value, bounds, activeConversation\.id\)/)
-  assert.match(app, /className="selection-chip message-file-chip"/)
+  assert.match(app, /window\.stable\.preview\.openFile\(previewTarget\.value, bounds\)/)
+  assert.match(app, /function localArtifactPaths/)
+  assert.match(app, /className="conversation-file-card"/)
+  assert.match(app, /className="conversation-file-list artifact-links"/)
+  assert.match(app, /className="conversation-file-list message-file-cards"/)
   assert.match(app, /className="markdown-preview-link"/)
+  assert.doesNotMatch(app, /contextOpen|className="context-toggle"|className="context-panel"|data-context-open/)
   assert.match(css, /\.conversation-workspace\[data-preview-open="true"\]/)
   assert.match(css, /\.conversation-preview/)
+  assert.match(css, /\.conversation-file-card:focus-visible/)
 })
 
 test('settings exposes the global AGENTS.md editor and explains its future-task scope', () => {

@@ -6,6 +6,12 @@ const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload)
 
 contextBridge.exposeInMainWorld('stable', {
   bootstrap: () => invoke('stable:bootstrap'),
+  cloud: {
+    login: (username, password) => invoke('stable:cloud:login', { username, password }),
+    changePassword: (currentPassword, newPassword, confirmPassword) => invoke('stable:cloud:changePassword', { currentPassword, newPassword, confirmPassword }),
+    refresh: () => invoke('stable:cloud:refresh'),
+    logout: () => invoke('stable:cloud:logout'),
+  },
   data: {
     importFiles: () => invoke('stable:data:import'),
     importPaths: (paths) => invoke('stable:data:importPaths', { paths }),
@@ -70,6 +76,7 @@ contextBridge.exposeInMainWorld('stable', {
     remove: (id) => invoke('stable:agent:remove', { id }),
     configure: (id, capability, dataIds) => invoke('stable:agent:configure', { id, capability, dataIds }),
     configurePermission: (id, permissionMode) => invoke('stable:agent:configurePermission', { id, permissionMode }),
+    configureModel: (id, modelId) => invoke('stable:agent:configureModel', { id, modelId }),
     run: (conversationId, prompt, attachments = [], references = []) => invoke('stable:agent:run', { conversationId, prompt, attachments, references }),
     cancel: (conversationId) => invoke('stable:agent:cancel', { conversationId }),
     answerApproval: (conversationId, requestId, allowed) => invoke('stable:agent:answerApproval', { conversationId, requestId, allowed }),
@@ -128,7 +135,9 @@ contextBridge.exposeInMainWorld('stable', {
     },
   },
   model: {
-    save: (settings) => invoke('stable:model:save', settings),
+    save: (profile) => invoke('stable:model:save', profile),
+    remove: (id) => invoke('stable:model:remove', { id }),
+    setDefault: (id) => invoke('stable:model:setDefault', { id }),
   },
   settings: {
     globalInstructions: () => invoke('stable:settings:globalInstructions'),
@@ -136,7 +145,7 @@ contextBridge.exposeInMainWorld('stable', {
   },
   preview: {
     openWeb: (url, bounds) => invoke('stable:preview:openWeb', { url, bounds }),
-    openMarkdown: (path, bounds, conversationId) => invoke('stable:preview:openMarkdown', { path, bounds, conversationId }),
+    openFile: (path, bounds) => invoke('stable:preview:openFile', { path, bounds }),
     setBounds: (bounds) => invoke('stable:preview:setBounds', { bounds }),
     navigate: (action) => invoke('stable:preview:navigate', { action }),
     close: () => invoke('stable:preview:close'),

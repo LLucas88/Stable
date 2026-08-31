@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs')
+const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const JSZip = require('jszip')
@@ -49,19 +49,64 @@ test('selected ZIP files are materialized into an isolated workspace path for ag
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-zip-materialized-'))
   try {
     const sourceRoot = path.join(root, 'outside')
-    const workspaceRoot = path.join(root, 'workspace', '.stable', 'attachments')
-    mkdirSync(sourceRoot, { recursive: true })
+    const workspace = path.join(root, 'workspace')
+    const workspaceRoot = path.join(workspace, '.stable', 'attachments')
+    mkdirSync(sourceRoot, { recursive: true }); mkdirSync(workspace)
     const archive = new JSZip()
     archive.file('packages/tool.whl', 'wheel bytes')
     const sourcePath = path.join(sourceRoot, 'cli-package.zip')
     writeFileSync(sourcePath, await archive.generateAsync({ type: 'nodebuffer' }))
-    const materialized = materializeAttachment(sourcePath, workspaceRoot)
+    const materialized = materializeAttachment(sourcePath, workspaceRoot, workspace)
     assert.equal(materialized.type, 'zip')
     assert.equal(materialized.name, 'cli-package.zip')
     assert.ok(materialized.path.startsWith(workspaceRoot))
+    const escaped = path.join(root, 'escaped')
+    const unsafeWorkspace = path.join(root, 'unsafe-workspace')
+    mkdirSync(escaped); mkdirSync(unsafeWorkspace)
+    symlinkSync(escaped, path.join(unsafeWorkspace, '.stable'), process.platform === 'win32' ? 'junction' : 'dir')
+    assert.throws(() => materializeAttachment(sourcePath, path.join(unsafeWorkspace, '.stable', 'attachments'), unsafeWorkspace), /Junction 或符号链接/)
+    assert.deepEqual(readdirSync(escaped), [])
     rmSync(sourceRoot, { recursive: true, force: true })
     const copiedArchive = await JSZip.loadAsync(readFileSync(materialized.path))
     assert.ok(copiedArchive.file('packages/tool.whl'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('large source files stay byte-for-byte complete after workspace materialization', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-large-materialized-'))
+  try {
+    const sourceRoot = path.join(root, 'outside')
+    const workspace = path.join(root, 'workspace')
+    const workspaceRoot = path.join(workspace, '.stable', 'attachments')
+    mkdirSync(sourceRoot, { recursive: true }); mkdirSync(workspace)
+    const sourcePath = path.join(sourceRoot, 'large.txt')
+    const content = `HEAD\n${'正文'.repeat(180_000)}\nTAIL-BEYOND-PREVIEW`
+    writeFileSync(sourcePath, content, 'utf8')
+    const materialized = materializeAttachment(sourcePath, workspaceRoot, workspace)
+    assert.equal(readFileSync(materialized.path, 'utf8'), content)
+    assert.match(readFileSync(materialized.path, 'utf8'), /TAIL-BEYOND-PREVIEW$/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('folder and ZIP extracted previews include headings within the 300000 character budget', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-large-container-preview-'))
+  try {
+    const folder = path.join(root, 'folder')
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(path.join(folder, 'large.md'), `# Head\n${'A'.repeat(310_000)}`, 'utf8')
+    const folderPreview = await extractAttachmentText(folder)
+    assert.ok(folderPreview.text.length <= 300_000, `folder preview was ${folderPreview.text.length} characters`)
+
+    const archive = new JSZip()
+    archive.file('large.md', `# Head\n${'B'.repeat(310_000)}`)
+    const zipPath = path.join(root, 'large.zip')
+    writeFileSync(zipPath, await archive.generateAsync({ type: 'nodebuffer' }))
+    const zipPreview = await extractAttachmentText(zipPath)
+    assert.ok(zipPreview.text.length <= 300_000, `ZIP preview was ${zipPreview.text.length} characters`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

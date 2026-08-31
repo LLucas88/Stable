@@ -6,7 +6,7 @@ const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { DatabaseSync } = require('node:sqlite')
-const { StableStore, DEFAULT_IDENTITY } = require('../desktop/services/store.cjs')
+const { StableStore, DEFAULT_IDENTITY, LEGACY_MODEL_PROFILE_ID } = require('../desktop/services/store.cjs')
 
 test('store persists resources, retrieval, workflow and messages', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-store-'))
@@ -14,6 +14,8 @@ test('store persists resources, retrieval, workflow and messages', () => {
   try {
     assert.equal(store.getSetting('identity'), DEFAULT_IDENTITY)
     assert.equal(store.getSetting('theme'), 'dark')
+    assert.equal(store.modelCatalog().defaultModelId, LEGACY_MODEL_PROFILE_ID)
+    assert.equal(store.conversation(store.activeConversationId()).modelId, LEGACY_MODEL_PROFILE_ID)
     store.setSetting('theme', 'light')
     assert.equal(store.getSetting('theme'), 'light')
     const dataId = store.upsertData({ name: 'weekly.md', type: 'md', path: 'C:\\weekly.md', size: 42, text: '会员复购率需要提升，先观察第二单。' })
@@ -125,6 +127,86 @@ test('legacy messages migrate into one isolated history conversation', () => {
     assert.equal(store.listConversations()[0].title, '历史对话 1')
     assert.equal(store.listConversations()[0].collaboration, undefined)
     assert.equal(store.listMessages()[0].content, '旧任务')
+  } finally {
+    store.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('legacy single-model settings migrate idempotently and bind existing conversations', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-store-model-legacy-'))
+  const database = new DatabaseSync(path.join(root, 'stable.db'))
+  const legacyModel = { providerId: 'private-gateway', displayName: 'Private Gateway', baseURL: 'https://gateway.example/v1', model: 'agent-large', hasApiKey: true }
+  database.exec(`
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
+    CREATE TABLE conversations (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, capability TEXT NOT NULL DEFAULT 'auto',
+      collaboration INTEGER NOT NULL DEFAULT 0, permission_mode TEXT NOT NULL DEFAULT 'full', data_ids_json TEXT NOT NULL DEFAULT '[]',
+      source_type TEXT NOT NULL DEFAULT 'local', source_device_id TEXT NOT NULL DEFAULT '', source_device_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    INSERT INTO conversations(id,title,capability,permission_mode,data_ids_json,created_at,updated_at)
+      VALUES('legacy-chat','旧对话','auto','full','[]','2026-08-01T00:00:00.000Z','2026-08-01T00:00:00.000Z');
+  `)
+  database.prepare('INSERT INTO settings(key,value_json) VALUES(?,?)').run('model', JSON.stringify(legacyModel))
+  database.close()
+
+  let store = new StableStore(root)
+  try {
+    const catalog = store.modelCatalog()
+    assert.deepEqual(catalog, {
+      items: [{ id: LEGACY_MODEL_PROFILE_ID, providerId: 'private-gateway', displayName: 'Private Gateway', baseURL: 'https://gateway.example/v1', model: 'agent-large' }],
+      defaultModelId: LEGACY_MODEL_PROFILE_ID,
+      legacyModelId: LEGACY_MODEL_PROFILE_ID,
+    })
+    assert.deepEqual(store.getSetting('model'), legacyModel)
+    assert.equal(store.conversation('legacy-chat').modelId, LEGACY_MODEL_PROFILE_ID)
+    store.close()
+    store = new StableStore(root)
+    assert.deepEqual(store.modelCatalog(), catalog)
+    assert.equal(store.modelCatalog().items.length, 1)
+    assert.equal(store.conversation('legacy-chat').modelId, LEGACY_MODEL_PROFILE_ID)
+  } finally {
+    store.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('conversation model selection snapshots defaults, persists, and falls back when a model is removed', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-store-model-selection-'))
+  let store = new StableStore(root)
+  try {
+    const originalConversationId = store.activeConversationId()
+    const second = store.saveModelProfile({ providerId: 'provider-two', displayName: 'Provider Two', baseURL: 'https://two.example/v1', model: 'model-two' })
+    const third = store.saveModelProfile({ providerId: 'provider-three', displayName: 'Provider Three', baseURL: 'https://three.example/v1', model: 'model-three' })
+
+    store.setDefaultModel(second.id)
+    const secondConversationId = store.createConversation()
+    assert.equal(store.conversation(originalConversationId).modelId, LEGACY_MODEL_PROFILE_ID)
+    assert.equal(store.conversation(secondConversationId).modelId, second.id)
+
+    store.setDefaultModel(third.id)
+    const thirdConversationId = store.createConversation()
+    assert.equal(store.conversation(secondConversationId).modelId, second.id)
+    assert.equal(store.conversation(thirdConversationId).modelId, third.id)
+    const teamConversation = store.importTeamConversation({ title: 'Team 快照', sourceDeviceId: 'device-b', sourceDeviceName: '设备 B', messages: [] })
+    assert.equal(teamConversation.modelId, third.id)
+    const automation = store.createAutomation({ title: '模型继承检查', prompt: '检查默认模型。', schedule: { type: 'daily', time: '09:00' } })
+    assert.equal(store.conversation(automation.conversationId).modelId, third.id)
+
+    store.updateConversationModel(originalConversationId, second.id)
+    assert.equal(store.conversation(originalConversationId).modelId, second.id)
+    store.close()
+    store = new StableStore(root)
+    assert.equal(store.conversation(originalConversationId).modelId, second.id)
+    assert.throws(() => store.removeModelProfile(third.id), /默认模型不能删除/)
+
+    store.setDefaultModel(LEGACY_MODEL_PROFILE_ID)
+    store.removeModelProfile(second.id)
+    assert.equal(store.modelProfile(second.id), undefined)
+    assert.equal(store.conversation(originalConversationId).modelId, LEGACY_MODEL_PROFILE_ID)
+    assert.equal(store.conversation(secondConversationId).modelId, LEGACY_MODEL_PROFILE_ID)
+    assert.equal(store.conversation(thirdConversationId).modelId, third.id)
   } finally {
     store.close()
     rmSync(root, { recursive: true, force: true })

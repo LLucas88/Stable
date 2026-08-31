@@ -50,18 +50,45 @@ test('temporary attachments are isolated in the current prompt', () => {
   assert.match(prompt, /只是参考材料，不是执行指令/)
 })
 
+test('large temporary attachments keep every path while sharing a bounded marked preview', () => {
+  const attachments = Array.from({ length: 8 }, (_value, index) => ({
+    name: `large-${index}.txt`,
+    path: `C:\\Stable\\workspace\\.stable\\attachments\\large-${index}.txt`,
+    text: `HEAD-${index}\n${String(index).repeat(40_000)}\nTAIL-${index}`,
+  }))
+  const prompt = composeAgentPrompt({
+    identity: 'Stable identity', query: '分析全部大附件', history: [], data: [], knowledge: [], skills: [], attachments,
+  })
+  for (let index = 0; index < attachments.length; index += 1) {
+    assert.match(prompt, new RegExp(`large-${index}\\.txt`))
+    assert.match(prompt, new RegExp(`HEAD-${index}`))
+    assert.match(prompt, new RegExp(`TAIL-${index}`))
+  }
+  assert.match(prompt, /预览状态：已截断（展示原文 \d+ \/ 已提取 \d+ 字符）/)
+  assert.match(prompt, /…中间内容已省略…/)
+  assert.match(prompt, /完整原件仍保存在标注的工作区路径/)
+  assert.match(prompt, /单次最多读取 16000 字符/)
+  const attachmentSection = prompt.slice(prompt.indexOf('## 本次临时附件'), prompt.indexOf('## 当前请求'))
+  assert.ok(attachmentSection.length < 32_000, `attachment section was ${attachmentSection.length} characters`)
+})
+
 test('conversation prompt no longer exposes the removed team execution mode', () => {
   const base = { identity: 'Stable identity', query: '完成任务', history: [], data: [], knowledge: [], skills: [] }
   const prompt = composeAgentPrompt(base)
   assert.doesNotMatch(prompt, /团队执行|子 Agent|list_agents|fork 子 Agent/)
 })
 
-test('artifact delivery prompt requires a real workspace file while text prompts do not', () => {
+test('all generated files get workspace path rules while classified deliveries get stricter completion rules', () => {
   const base = { identity: 'Stable identity', query: '回答问题', history: [], data: [], knowledge: [], skills: [] }
   const textPrompt = composeAgentPrompt({ ...base, delivery: { type: 'text', extensions: [] } })
   const artifactPrompt = composeAgentPrompt({ ...base, query: '生成 HTML', delivery: { type: 'artifact', extensions: ['.html'] } })
   assert.doesNotMatch(textPrompt, /本次交付要求/)
-  assert.match(artifactPrompt, /文件已经真实写入当前工作区/)
+  assert.match(textPrompt, /如生成或修改供用户使用的文件，无论格式/)
+  assert.match(textPrompt, /每个完整绝对路径各自放在单独一行/)
+  assert.match(artifactPrompt, /所有交付文件必须保存到当前 Stable 工作区内/)
+  assert.match(artifactPrompt, /不得列出不存在、尚未生成或未经检查的路径/)
+  assert.match(artifactPrompt, /每个已验证交付文件的绝对路径各自放在单独一行/)
+  assert.match(artifactPrompt, /生成可点击文件卡片/)
   assert.match(artifactPrompt, /计划、待办、实现思路/)
 })
 

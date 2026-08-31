@@ -190,6 +190,7 @@ export interface ConversationItem {
   title: string
   capability: AgentCapability
   permissionMode: AgentPermissionMode
+  modelId: string
   dataIds: string[]
   messageCount: number
   sourceType: 'local' | 'team'
@@ -237,12 +238,18 @@ export interface AgentTraceItem {
   danger?: boolean
 }
 
-export interface ModelSettings {
+export interface ModelProfile {
+  id: string
   providerId: string
   displayName: string
   baseURL: string
   model: string
   hasApiKey: boolean
+}
+
+export interface ModelCatalog {
+  items: ModelProfile[]
+  defaultModelId: string
 }
 
 export interface GlobalInstructionsFile {
@@ -351,6 +358,46 @@ export interface TeamState {
   audit?: Array<{ id: string; type: string; detail: string; createdAt: string }>
 }
 
+export type CloudStatus = 'disabled' | 'checking' | 'signed_out' | 'password_change_required' | 'authenticated' | 'unavailable'
+
+export interface CloudAccount {
+  id: string
+  username: string
+  displayName: string
+  role: 'admin' | 'member'
+  status: 'active' | 'disabled'
+  mustChangePassword: boolean
+}
+
+export interface CloudQuota {
+  id: string
+  currency: string
+  limitMicros: number
+  spentMicros: number
+  reservedMicros: number
+  remainingMicros: number
+  periodStart: string
+  periodEnd: string
+}
+
+export interface CloudUsageSummary {
+  accountId: string
+  from: string
+  to: string
+  totals: { request_count?: number; settled_count?: number; exception_count?: number; prompt_tokens?: number; completion_tokens?: number; usage_unknown_count?: number; actual_micros?: number }
+  byModel: Array<{ model_id: string; request_count: number; prompt_tokens: number; completion_tokens: number; actual_micros: number }>
+}
+
+export interface CloudState {
+  status: CloudStatus
+  account: CloudAccount | null
+  quota: CloudQuota | null
+  usage: CloudUsageSummary | null
+  models: Array<{ id: string; object: 'model'; display_name?: string; provider?: string; context_window?: number; max_output_tokens?: number }>
+  error: string
+  baseURL: string
+}
+
 export interface BootstrapData {
   appVersion: string
   identity: string
@@ -364,7 +411,8 @@ export interface BootstrapData {
   conversations: ConversationItem[]
   activeConversationId: string
   messages: MessageItem[]
-  model: ModelSettings
+  models: ModelCatalog
+  cloud: CloudState
   team: TeamState
   automations: AutomationState
   update: UpdateState
@@ -374,6 +422,12 @@ export interface BootstrapData {
 
 export interface StableBridge {
   bootstrap(): Promise<BootstrapData>
+  cloud: {
+    login(username: string, password: string): Promise<BootstrapData>
+    changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<BootstrapData>
+    refresh(): Promise<BootstrapData>
+    logout(): Promise<BootstrapData>
+  }
   data: {
     importFiles(): Promise<{ added: number; items: DataItem[] }>
     importPaths(paths: string[]): Promise<{ added: number; items: DataItem[] }>
@@ -430,6 +484,7 @@ export interface StableBridge {
     remove(id: string): Promise<AgentState>
     configure(id: string, capability: AgentCapability, dataIds: string[]): Promise<AgentState>
     configurePermission(id: string, permissionMode: AgentPermissionMode): Promise<AgentState>
+    configureModel(id: string, modelId: string): Promise<AgentState>
     run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
     answerApproval(conversationId: string, requestId: string, allowed: boolean): Promise<boolean>
@@ -468,7 +523,9 @@ export interface StableBridge {
     onEvent(handler: (state: TeamState) => void): () => void
   }
   model: {
-    save(settings: ModelSettings & { apiKey?: string }): Promise<ModelSettings>
+    save(profile: ModelProfile & { apiKey?: string }): Promise<ModelCatalog>
+    remove(id: string): Promise<ModelCatalog>
+    setDefault(id: string): Promise<ModelCatalog>
   }
   settings: {
     globalInstructions(): Promise<GlobalInstructionsFile>
@@ -476,7 +533,7 @@ export interface StableBridge {
   }
   preview: {
     openWeb(url: string, bounds: PreviewBounds): Promise<PreviewState>
-    openMarkdown(path: string, bounds: PreviewBounds, conversationId: string): Promise<PreviewState>
+    openFile(path: string, bounds: PreviewBounds): Promise<PreviewState>
     setBounds(bounds: PreviewBounds): Promise<boolean>
     navigate(action: 'back' | 'forward' | 'reload'): Promise<boolean>
     close(): Promise<boolean>

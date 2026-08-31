@@ -2,14 +2,18 @@
 
 const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage } = require('electron')
 const { autoUpdater } = require('electron-updater')
-const { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
+const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const path = require('node:path')
+const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
-const { extractAttachmentText, inspectAttachmentPath, materializeAttachment } = require('./services/attachments.cjs')
+const { extractAttachmentText, inspectAttachmentPath, materializeAttachment, removeMaterializedAttachmentRoot } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/harness.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
+const { ModelRegistry } = require('./services/model-registry.cjs')
+const { CloudAccountService } = require('./services/cloud-account.cjs')
+const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
 const { appendArtifactPaths, artifactSnapshot, changedArtifacts, deliveryRequest } = require('./services/delivery.cjs')
 const { ScriptRunner } = require('./services/script-runner.cjs')
@@ -22,7 +26,15 @@ const { renderReportHtml } = require('./services/reports.cjs')
 const { layoutWorkflowGraph, scheduleWorkflowTasks, topologicalOrder, validateWorkflowGraph } = require('./services/workflow-graph.cjs')
 const { writeWorkflowOutput } = require('./services/workflow-output.cjs')
 const { asksForWorkbenchInventory, buildWorkbenchInventory, requestedWorkbenchAction, workbenchInventoryAnswer } = require('./services/inventory.cjs')
-const { normalizeWebUrl, renderMarkdownDocument, resolveMarkdownFile } = require('./services/preview.cjs')
+const {
+  normalizeWebUrl,
+  renderFileInfoDocument,
+  renderImageDocument,
+  renderMarkdownDocument,
+  renderTextDocument,
+  resolveMarkdownFile,
+  resolveWorkspaceEntry,
+} = require('./services/preview.cjs')
 const { automationIntent, automationTemplates, parseProposalOutput, proposalPrompt } = require('./services/automation.cjs')
 const { createUpdateController } = require('./services/updater.cjs')
 const { cleanupStaleInstalls } = require('./services/update-maintenance.cjs')
@@ -46,10 +58,14 @@ const WINDOW_CHROME = {
 }
 let mainWindow
 let previewView
+let previewKind
 let previewTemporaryPath
-let previewSessionConfigured = false
+const configuredPreviewSessions = new WeakSet()
 let store
 let secrets
+let modelRegistry
+let cloudAccount
+let cloudGateway
 let runner
 const agentRunners = new Map()
 const automationRunners = new Map()
@@ -63,6 +79,7 @@ let teamConnection = 'offline'
 const teamTaskRunners = new Map()
 const pendingTeamContinuations = new Map()
 const collaborationRunners = new Map()
+const collaborationModelRoutes = new Map()
 const pendingCollaborationChecks = new Map()
 const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
 
@@ -90,11 +107,6 @@ function resourcePath(...segments) {
 
 function createHarnessRunner() {
   return new HarnessRunner({ userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
-}
-
-function cleanId(value, fallback = 'stable-provider') {
-  const clean = String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
-  return clean || fallback
 }
 
 function cleanFilename(value) {
@@ -136,18 +148,54 @@ function saveGlobalInstructions(value) {
   return { path: filePath, content: value.replace(/^\uFEFF/, ''), exists: true }
 }
 
-function configurePreviewSession(webContents) {
+function sameFilesystemPath(left, right) {
+  const normalize = (value) => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
+  return normalize(left) === normalize(right)
+}
+
+function isAllowedWorkspacePreviewFile(value) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'file:') return false
+    if (url.hostname) return false
+    const requested = fileURLToPath(url)
+    if (previewTemporaryPath && sameFilesystemPath(requested, previewTemporaryPath)) {
+      return existsSync(requested) && statSync(requested).isFile()
+    }
+    resolveWorkspaceEntry(requested, paths.workspace, { fileOnly: true })
+    return true
+  } catch { return false }
+}
+
+function isAllowedLocalPreviewRequest(value) {
+  try {
+    const protocol = new URL(value).protocol
+    if (protocol === 'data:' || protocol === 'blob:') return true
+  } catch { return false }
+  return isAllowedWorkspacePreviewFile(value)
+}
+
+function isAllowedLocalPreviewNavigation(value) {
+  return isAllowedWorkspacePreviewFile(value)
+}
+
+function configurePreviewSession(webContents, kind) {
   webContents.setWindowOpenHandler(({ url }) => {
-    try { void webContents.loadURL(normalizeWebUrl(url)) } catch {}
+    if (kind === 'web') {
+      try { void webContents.loadURL(normalizeWebUrl(url)) } catch {}
+    }
     return { action: 'deny' }
   })
   webContents.on('will-attach-webview', (event) => event.preventDefault())
-  if (previewSessionConfigured) return
+  if (configuredPreviewSessions.has(webContents.session)) return
   const session = webContents.session
   session.setPermissionCheckHandler(() => false)
   session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   session.on('will-download', (event) => event.preventDefault())
-  previewSessionConfigured = true
+  if (kind === 'file') {
+    session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !isAllowedLocalPreviewRequest(details.url) }))
+  }
+  configuredPreviewSessions.add(session)
 }
 
 function cleanupPreviewTemporaryFile() {
@@ -157,11 +205,13 @@ function cleanupPreviewTemporaryFile() {
 }
 
 function closePreviewView() {
-  cleanupPreviewTemporaryFile()
-  if (!previewView) return true
-  try { mainWindow?.contentView.removeChildView(previewView) } catch {}
-  try { if (!previewView.webContents.isDestroyed()) previewView.webContents.close() } catch {}
+  const view = previewView
   previewView = undefined
+  previewKind = undefined
+  cleanupPreviewTemporaryFile()
+  if (!view) return true
+  try { mainWindow?.contentView.removeChildView(view) } catch {}
+  try { if (!view.webContents.isDestroyed()) view.webContents.close() } catch {}
   return true
 }
 
@@ -175,9 +225,9 @@ function normalizedPreviewBounds(value) {
   return { x, y, width, height }
 }
 
-function sendPreviewEvent(patch = {}) {
-  if (!mainWindow || mainWindow.isDestroyed() || !previewView || previewView.webContents.isDestroyed()) return
-  const contents = previewView.webContents
+function sendPreviewEvent(patch = {}, sourceView = previewView) {
+  if (!mainWindow || mainWindow.isDestroyed() || !sourceView || sourceView !== previewView || sourceView.webContents.isDestroyed()) return
+  const contents = sourceView.webContents
   mainWindow.webContents.send('stable:preview:event', {
     url: contents.getURL(), title: contents.getTitle(), loading: contents.isLoading(),
     canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward(),
@@ -188,56 +238,111 @@ function sendPreviewEvent(patch = {}) {
 function createPreviewView(kind, bounds) {
   closePreviewView()
   const view = new WebContentsView({
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, partition: 'stable-preview' },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      javascript: kind === 'web',
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      partition: kind === 'web' ? 'stable-preview-web' : 'stable-preview-local',
+    },
   })
   previewView = view
+  previewKind = kind
   mainWindow.contentView.addChildView(view)
   view.setBackgroundColor(normalizeTheme(store.getSetting('theme')) === 'light' ? '#f8f5ee' : '#070b12')
   view.setBounds(normalizedPreviewBounds(bounds))
-  configurePreviewSession(view.webContents)
+  configurePreviewSession(view.webContents, kind)
   const guardNavigation = (event, targetUrl) => {
     try {
-      const protocol = new URL(targetUrl).protocol
       if (kind === 'web') { normalizeWebUrl(targetUrl); return }
-      if (kind === 'markdown' && protocol === 'file:') return
+      if (kind === 'file' && isAllowedLocalPreviewNavigation(targetUrl)) return
     } catch {}
     event.preventDefault()
   }
   view.webContents.on('will-navigate', guardNavigation)
   view.webContents.on('will-redirect', guardNavigation)
-  view.webContents.on('did-start-loading', () => { view.setVisible(true); sendPreviewEvent({ loading: true, error: '' }) })
-  view.webContents.on('did-stop-loading', () => sendPreviewEvent({ loading: false }))
-  view.webContents.on('page-title-updated', () => sendPreviewEvent())
-  view.webContents.on('did-navigate', () => sendPreviewEvent())
-  view.webContents.on('did-navigate-in-page', () => sendPreviewEvent())
+  view.webContents.on('did-start-loading', () => { if (previewView === view) view.setVisible(true); sendPreviewEvent({ loading: true, error: '' }, view) })
+  view.webContents.on('did-stop-loading', () => sendPreviewEvent({ loading: false }, view))
+  view.webContents.on('page-title-updated', () => sendPreviewEvent({}, view))
+  view.webContents.on('did-navigate', () => sendPreviewEvent({}, view))
+  view.webContents.on('did-navigate-in-page', () => sendPreviewEvent({}, view))
   view.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => {
-    if (isMainFrame && code !== -3) { view.setVisible(false); sendPreviewEvent({ loading: false, url: validatedURL, error: description || '页面加载失败。' }) }
+    if (previewView === view && isMainFrame && code !== -3) { view.setVisible(false); sendPreviewEvent({ loading: false, url: validatedURL, error: description || '页面加载失败。' }, view) }
   })
   return view
+}
+
+function requireActivePreviewView(view) {
+  if (previewView !== view || view.webContents.isDestroyed()) throw new Error('预览请求已被新的操作替换。')
 }
 
 async function openWebPreview(value, bounds) {
   const url = normalizeWebUrl(value)
   const view = createPreviewView('web', bounds)
-  try { await view.webContents.loadURL(url) } catch (error) { if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }); throw error }
+  try { await view.webContents.loadURL(url) } catch (error) { if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }, view); throw error }
+  requireActivePreviewView(view)
   const result = { url, title: view.webContents.getTitle() || new URL(url).hostname, loading: false, canGoBack: false, canGoForward: false }
-  sendPreviewEvent(result)
+  sendPreviewEvent(result, view)
   return result
 }
 
-async function openMarkdownPreview(value, bounds, explicit = false) {
-  const resolved = resolveMarkdownFile(value, [paths.workspace], explicit)
-  const title = path.basename(resolved.path)
-  const html = renderMarkdownDocument(resolved.content, title, normalizeTheme(store.getSetting('theme')))
-  const view = createPreviewView('markdown', bounds)
+async function loadGeneratedFilePreview(view, html, prefix) {
+  requireActivePreviewView(view)
   const previewDirectory = path.join(paths.userData, 'preview')
-  const previewPath = path.join(previewDirectory, `markdown-preview-${randomUUID()}.html`)
+  const previewPath = path.join(previewDirectory, `${prefix}-${randomUUID()}.html`)
   mkdirSync(previewDirectory, { recursive: true })
   writeFileSync(previewPath, html, 'utf8')
+  requireActivePreviewView(view)
   previewTemporaryPath = previewPath
-  try { await view.webContents.loadFile(previewPath) } catch (error) { if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }); throw error }
-  const result = { path: resolved.path, url: `file://${resolved.path}`, title, loading: false, canGoBack: false, canGoForward: false }
-  sendPreviewEvent(result)
+  await view.webContents.loadFile(previewPath)
+  requireActivePreviewView(view)
+}
+
+const DIRECT_HTML_EXTENSIONS = new Set(['.html', '.htm'])
+const IMAGE_PREVIEW_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
+const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.xlsx', '.xls'])
+
+async function openFilePreview(value, bounds) {
+  const resolved = resolveWorkspaceEntry(value, paths.workspace)
+  const title = path.basename(resolved.path) || resolved.path
+  const theme = normalizeTheme(store.getSetting('theme'))
+  const view = createPreviewView('file', bounds)
+  try {
+    if (resolved.isDirectory) {
+      await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, '这是当前 Stable 工作区内的文件夹。文件夹内容不会自动展开或执行。'), 'folder-preview')
+    } else if (['.md', '.markdown'].includes(resolved.extension)) {
+      try {
+        const markdown = resolveMarkdownFile(resolved.path, paths.workspace)
+        await loadGeneratedFilePreview(view, renderMarkdownDocument(markdown.content, title, theme), 'markdown-preview')
+      } catch (error) {
+        await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, `Stable 无法渲染这个 Markdown 文件。\n\n${error.message}`), 'file-preview')
+      }
+    } else if (DIRECT_HTML_EXTENSIONS.has(resolved.extension) && resolved.size <= 20 * 1024 * 1024) {
+      requireActivePreviewView(view)
+      await view.webContents.loadFile(resolved.path)
+      requireActivePreviewView(view)
+    } else if (IMAGE_PREVIEW_EXTENSIONS.has(resolved.extension) && resolved.size <= 50 * 1024 * 1024) {
+      await loadGeneratedFilePreview(view, renderImageDocument(pathToFileURL(resolved.path).toString(), resolved, theme), 'image-preview')
+    } else if (EXTRACTED_TEXT_EXTENSIONS.has(resolved.extension)) {
+      try {
+        const extracted = await extractText(resolved.path)
+        await loadGeneratedFilePreview(view, renderTextDocument(extracted.text, title, theme, { path: resolved.path, size: resolved.size, type: extracted.type.toUpperCase() }), 'text-preview')
+      } catch (error) {
+        await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, `Stable 无法提取这个文件的预览内容。\n\n${error.message}`), 'file-preview')
+      }
+    } else {
+      await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme), 'file-preview')
+    }
+  } catch (error) {
+    if (previewView === view) sendPreviewEvent({ loading: false, error: error.message }, view)
+    throw error
+  }
+  requireActivePreviewView(view)
+  const result = { path: resolved.path, url: pathToFileURL(resolved.path).toString(), title, loading: false, canGoBack: false, canGoForward: false }
+  sendPreviewEvent(result, view)
   return result
 }
 
@@ -247,26 +352,15 @@ function updatePreviewBounds(value) {
   return true
 }
 
-function isConversationPreviewPath(conversationId, value) {
-  const requested = path.resolve(String(value || ''))
-  if (isInside(paths.workspace, requested) || isInside(paths.userData, requested)) return true
-  const key = process.platform === 'win32' ? requested.toLowerCase() : requested
-  return store.listMessages(String(conversationId || '')).some((message) => (message.attachments || []).some((item) => {
-    if (!item.path) return false
-    const candidate = path.resolve(item.path)
-    return (process.platform === 'win32' ? candidate.toLowerCase() : candidate) === key
-  }))
-}
-
 function bootstrap() {
-  const model = store.getSetting('model')
   const messages = process.env.STABLE_QA_FIXTURE ? qaMessages() : store.listMessages()
   return {
     appVersion: app.getVersion(),
     identity: store.getSetting('identity'), theme: normalizeTheme(store.getSetting('theme')),
     data: store.listData(), library: store.listLibrary(), knowledge: store.listKnowledge(), reports: store.listReports(), skills: store.listSkills(), workflows: store.listWorkflows(),
     conversations: store.listConversations(), activeConversationId: store.activeConversationId(), messages,
-    model: { ...model, hasApiKey: secrets.has('apiKey') },
+    models: modelRegistry.publicCatalog(),
+    cloud: cloudAccount?.publicState() || { status: 'disabled', account: null, quota: null, usage: null, models: [], error: '', baseURL: '' },
     team: teamState(),
     automations: automationState(),
     update: updateController?.state() || { status: app.isPackaged ? 'idle' : 'development', currentVersion: app.getVersion(), progress: 0 },
@@ -552,7 +646,8 @@ async function completeCollaborationRoot(rootTaskId) {
   ].join('\n')).join('\n\n')
   const prompt = `你是 Stable Team 的根 Agent。根据用户原始目标和各子 Agent 的隔离结果，生成一份简体中文最终交付。\n\n要求：\n1. 综合而不是逐条复述；\n2. 明确标注未完成或证据不足的部分；\n3. 不暴露内部规划或思考过程；\n4. 不调用工具，只输出最终答案。\n\n用户目标：\n${root.instruction}\n\n子 Agent 结果：\n${reports}`
   try {
-    const answer = await synthesisRunner.run(prompt, store.getSetting('model'), secrets.get('apiKey'), 0)
+    const { model, apiKey } = collaborationModelRoutes.get(rootTaskId) || modelRouteForConversation(root.sourceConversationId)
+    const answer = await synthesisRunner.run(prompt, model, apiKey, 0)
     if (root.sourceConversationId && store.conversation(root.sourceConversationId)) store.addMessage(root.sourceConversationId, 'assistant', answer)
     store.updateTeamTask(rootTaskId, 'success', { result: answer, error: '' })
     auditTeamTask(rootTaskId, 'synthesis_completed', '根 Agent 已综合子任务并返回来源对话。')
@@ -561,6 +656,7 @@ async function completeCollaborationRoot(rootTaskId) {
     auditTeamTask(rootTaskId, 'synthesis_failed', `根 Agent 综合失败：${error.message}`)
   } finally {
     collaborationRunners.delete(rootTaskId)
+    collaborationModelRoutes.delete(rootTaskId)
   }
 }
 
@@ -569,12 +665,14 @@ async function startTeamCollaboration({ sourceConversationId, title, instruction
   if (!profile) throw new Error('请先创建或加入 Team。')
   if (!store.conversation(sourceConversationId)) throw new Error('找不到来源对话。')
   if (!store.listTeamDevices().some((item) => item.id !== profile.deviceId && item.status === 'online')) throw new Error('当前没有在线远程 Agent。')
+  const modelRoute = modelRouteForConversation(sourceConversationId)
   const root = store.saveTeamTask({
     direction: 'outbound', sourceDeviceId: profile.deviceId, targetDeviceId: profile.deviceId,
     sourceConversationId, title, instruction,
     context: { kind: 'root', agentPath: '/root', childTaskIds: [], maxConcurrentSubagents: teamPreferences().maxConcurrentSubagents },
     status: 'planning',
   })
+  collaborationModelRoutes.set(root.id, modelRoute)
   auditTeamTask(root.id, 'planning', '根 Agent 正在拆分独立且有边界的子任务。')
   const planningRunner = createHarnessRunner()
   collaborationRunners.set(root.id, planningRunner)
@@ -585,7 +683,7 @@ async function startTeamCollaboration({ sourceConversationId, title, instruction
   }))
   const planningPrompt = `你是 Stable Team 的根任务规划器。把目标拆成 2 到 ${teamPreferences().maxConcurrentSubagents} 个可以并行、互不依赖、无共享写入的子任务。若目标存在顺序依赖，把相邻步骤合并到同一个子任务。只返回 JSON，不调用工具。\n\nJSON 格式：{"summary":"拆分说明","subtasks":[{"title":"名称","instruction":"完整执行要求","requiredCapabilities":["skill:名称|script:名称|tool:名称|plugin:名称|data|knowledge"],"expectedOutput":"交付格式"}]}\n\n可用远程设备能力：${JSON.stringify(available)}\n\n用户目标：${instruction}`
   try {
-    const rawPlan = await planningRunner.run(planningPrompt, store.getSetting('model'), secrets.get('apiKey'), 0)
+    const rawPlan = await planningRunner.run(planningPrompt, modelRoute.model, modelRoute.apiKey, 0)
     const plan = parseCollaborationPlan(rawPlan, teamPreferences().maxConcurrentSubagents)
     auditTeamTask(root.id, 'planned', `${plan.subtasks.length} 个子任务已生成，将并行派发。`)
     const childTaskIds = []
@@ -615,6 +713,7 @@ async function startTeamCollaboration({ sourceConversationId, title, instruction
     auditTeamTask(root.id, 'children_running', '子 Agent 已并行启动，根 Agent 正在等待。')
     scheduleCollaborationCheck(root.id)
   } catch (error) {
+    collaborationModelRoutes.delete(root.id)
     store.updateTeamTask(root.id, 'failed', { error: error.message })
     auditTeamTask(root.id, 'planning_failed', `协作规划失败：${error.message}`)
   } finally {
@@ -857,18 +956,24 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
   const attachments = []
   const installedSkills = []
   const attachmentRoot = path.join(paths.workspace, '.stable', 'attachments', String(conversationId || 'conversation').replace(/[^a-z0-9_-]/gi, '_'))
-  let totalText = 0
-  for (const item of inspected) {
-    const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot)
-    const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractAttachmentText(accessibleItem.path)
-    totalText += source.content !== undefined ? source.content.length : source.text.length
-    if (totalText > 300_000) throw new Error('本次临时附件正文合计超过 30 万字，请减少文件后重试。')
-    if (item.type === 'skill') {
-      const installed = importSkillFolder(item.path, path.join(paths.userData, 'skills'))
-      store.upsertSkill(installed)
-      installedSkills.push(installed.name)
-      attachments.push({ name: item.name, size: item.size, type: item.type, text: installed.content })
-    } else attachments.push({ name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text })
+  const materializedRoots = []
+  try {
+    for (const item of inspected) {
+      const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot, paths.workspace)
+      if (item.type !== 'skill') materializedRoots.push(accessibleItem.materializedRoot)
+      const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractAttachmentText(accessibleItem.path)
+      if (item.type === 'skill') {
+        const installed = importSkillFolder(item.path, path.join(paths.userData, 'skills'))
+        store.upsertSkill(installed)
+        installedSkills.push(installed.name)
+        attachments.push({ name: item.name, size: item.size, type: item.type, text: installed.content })
+      } else attachments.push({ name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text })
+    }
+  } catch (error) {
+    for (const materializedRoot of materializedRoots) {
+      try { removeMaterializedAttachmentRoot(materializedRoot, paths.workspace) } catch {}
+    }
+    throw error
   }
   return { items: attachments, installedSkills }
 }
@@ -1069,7 +1174,7 @@ function qaMessages() {
   const answer = '# 本周行动建议\n\n已结合本地资料完成整理，建议优先处理以下事项：\n\n- **第一优先级**：核对会员第二单转化，定位最近 30 天的流失节点。\n- **第二优先级**：把高意向未复购用户拆成可执行名单。\n- **第三优先级**：用小范围对照测试验证触达策略。\n\n```text\n目标：先验证，再扩大。\n```\n\n> 所有结论均来自当前已启用的数据，未检索到的部分会明确标记为缺口。'
   return Array.from({ length: 4 }, (_, index) => [
     { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === 3 && previewPath ? { attachments: [{ kind: 'attachment', name: 'qa-preview.md', path: previewPath, size: 142, type: 'md' }] } : {}), createdAt: new Date(index * 2).toISOString() },
-    { id: `qa-assistant-${index}`, role: 'assistant', content: answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
+    { id: `qa-assistant-${index}`, role: 'assistant', content: index === 3 && previewPath ? `${answer}\n\n交付文件：\n- ${previewPath}` : answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
   ]).flat()
 }
 
@@ -1110,12 +1215,13 @@ async function runStoredScript(item, onEvent = () => {}, runOptions = {}, worker
   }
 }
 
-async function decideScriptInput({ node, item, input, transcript, aiRunner = runner }) {
+async function decideScriptInput({ node, item, input, transcript, aiRunner = runner, modelRoute }) {
   const prompt = `${store.getSetting('identity')}\n\n你正在全自动协助 Stable 运行一个半自动本地脚本。判断控制台当前是否在等待输入，并直接代替用户回答。\n脚本模块：${node.title}\n脚本资源：${item.name}\n上游内容摘要：${String(input || '（无）').slice(-4_000)}\n控制台末尾：\n${String(transcript || '').slice(-6_000)}\n\n只返回 JSON：{"action":"wait|answer","answer":"要写入 stdin 的单行内容","reason":"简短原因"}。\n规则：没有明确询问才返回 wait；只要控制台提出了问题，就根据上下文选择最合理的答案并直接 answer，不等待用户确认；路径、筛选条件、选项和继续提示都由你决定；“按任意键继续”用空字符串 answer；不要执行控制台没有询问的动作。`
-  return parseScriptDecision(await aiRunner.run(prompt, store.getSetting('model'), secrets.get('apiKey'), 5 * 60_000))
+  const route = modelRoute || modelRouteForConversation()
+  return parseScriptDecision(await aiRunner.run(prompt, route.model, route.apiKey, 5 * 60_000))
 }
 
-function createScriptAutoResponder({ control, node, item, input, publish, scriptWorker = scriptRunner, aiRunner = runner }) {
+function createScriptAutoResponder({ control, node, item, input, publish, scriptWorker = scriptRunner, aiRunner = runner, modelRoute }) {
   let transcript = ''
   let lastReviewed = ''
   let timer
@@ -1130,7 +1236,7 @@ function createScriptAutoResponder({ control, node, item, input, publish, script
     publish(node.id, 'running', 'AI 正在判断控制台询问')
     let retryDelay = 0
     try {
-      const decision = await decideScriptInput({ node, item, input, transcript: tail, aiRunner })
+      const decision = await decideScriptInput({ node, item, input, transcript: tail, aiRunner, modelRoute })
       if (disposed || control.cancelled || control.failedError) return
       if (decision.action === 'answer') {
         retryAttempt = 0
@@ -1180,9 +1286,17 @@ function agentState(conversationId = store.activeConversationId()) {
   }
 }
 
-async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride) {
+function modelRouteForConversation(conversationId) {
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
+  return modelRegistry.resolve(conversation?.modelId)
+}
+
+async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride, modelRouteOverride) {
+  const conversation = conversationId ? store.conversation(conversationId) : null
+  if (conversationId && !conversation) throw new Error('找不到这个对话。')
+  const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.modelId)
+  const { model, apiKey } = modelRoute
   const runId = store.startRun('agent', conversationId || null, query)
   const trace = []
   const publish = (source) => {
@@ -1219,7 +1333,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
         const control = agentRunners.get(conversationId)
         control?.reviewers.add(reviewer)
         const reviewPrompt = `你是 Stable 的权限审批 Agent。仅判断下面这次一次性操作是否安全、是否与用户当前任务直接相关。不要调用任何工具。安全且必要只回答 APPROVE，否则只回答 DENY。\n\n工具：${source.toolName || '未知'}\n原因：${source.reason || '未说明'}\n用户任务：${query.slice(0, 2_000)}`
-        void reviewer.run(reviewPrompt, store.getSetting('model'), secrets.get('apiKey'), 60_000).then((answer) => {
+        void reviewer.run(reviewPrompt, model, apiKey, 60_000).then((answer) => {
           const allowed = /^\s*APPROVE\b/i.test(answer)
           executionRunner.answerApproval(source.requestId, allowed)
           publish({ ...source, id: source.id, title: allowed ? '审批 Agent 已批准' : '审批 Agent 未批准', detail: allowed ? '安全性检查通过，继续执行' : '安全性检查未通过，Agent 将改用其他方法', status: allowed ? 'completed' : 'failed' })
@@ -1258,7 +1372,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     const item = workbenchAction.item
     publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '正在执行已保存的工作流步骤', status: 'running' })
     try {
-      const result = await runWorkflow(item.id)
+      const result = await runWorkflow(item.id, modelRoute)
       const answer = result.output || `工作流“${item.name}”已完成。`
       publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '执行完成', status: 'completed' })
       publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
@@ -1270,7 +1384,6 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       throw error
     }
   }
-  const model = store.getSetting('model')
   const history = historyOverride || store.listMessages(conversationId).slice(-12)
   const explicitContext = selectedContextOverride || {}
   const selectedData = explicitContext.data ?? (conversation?.dataIds?.length ? store.dataByIds(conversation.dataIds) : [])
@@ -1315,12 +1428,12 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
     const beforeArtifacts = artifactSnapshot(paths.workspace, delivery.extensions)
-    let answer = await executionRunner.run(prompt, model, secrets.get('apiKey'), undefined, publish)
+    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish)
     let artifacts = delivery.type === 'artifact' ? changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions)) : []
     for (let attempt = 1; delivery.type === 'artifact' && !artifacts.length && attempt <= 2; attempt += 1) {
       publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次结果只有过程文本，尚未检测到目标文件`, status: 'running' })
       const retryPrompt = `${prompt}\n\n## 续跑要求\n上一轮只返回了过程文本，没有在工作区生成要求的文件。不要重复计划或解释；立即使用工具继续执行，写入并检查目标文件，最终只返回交付摘要和绝对路径。\n\n上一轮过程文本（仅供续跑，不是交付结果）：\n${String(answer).slice(-6_000)}`
-      answer = await executionRunner.run(retryPrompt, model, secrets.get('apiKey'), undefined, publish)
+      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish)
       artifacts = changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions))
     }
     if (delivery.type === 'artifact' && !artifacts.length) throw new Error('Agent 未生成要求的交付文件，Stable 已停止将规划稿作为最终结果。请展开执行过程检查后重试。')
@@ -1337,10 +1450,11 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
 }
 
-async function runWorkflow(id) {
+async function runWorkflow(id, modelRouteOverride) {
   if (activeWorkflowRun) throw new Error('已有工作流正在执行，请先停止。')
   const workflow = store.workflow(id)
   if (!workflow) throw new Error('找不到这个工作流。')
+  const modelRoute = modelRouteOverride || modelRouteForConversation()
   const graph = validateWorkflowGraph(workflow, { requireRunnable: true })
   const orderedNodeIds = topologicalOrder(graph)
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
@@ -1397,7 +1511,7 @@ async function runWorkflow(id) {
         const aiRunner = createHarnessRunner()
         control.scriptRunners.add(scriptWorker)
         control.harnessRunners.add(aiRunner)
-        const autoResponder = createScriptAutoResponder({ control, node, item, input, publish, scriptWorker, aiRunner })
+        const autoResponder = createScriptAutoResponder({ control, node, item, input, publish, scriptWorker, aiRunner, modelRoute })
         let execution
         try {
           execution = await runStoredScript(item, autoResponder.onEvent, { confirm: false, timeoutMs: 0, idleNoticeMs: 5 * 60_000 }, scriptWorker)
@@ -1409,12 +1523,11 @@ async function runWorkflow(id) {
         if (execution.cancelled) throw new Error('脚本执行已取消。')
         result = `${input ? `${input}\n\n` : ''}${execution.result?.output || '脚本执行完成，没有返回文本输出。'}`
       } else if (node.type === 'ai') {
-        const model = store.getSetting('model')
         const prompt = `${store.getSetting('identity')}\n\n你正在执行一个模块化工作流中的 AI 运算节点。\n节点：${node.title}\n任务：${node.instruction || '根据上游输入生成可直接交给下游的结果。'}\n\n上游输入：\n${input || '（无上游输入）'}\n\n只输出本节点的计算结果，不要描述工作流内部机制。`
         const aiRunner = createHarnessRunner()
         control.harnessRunners.add(aiRunner)
         try {
-          result = await aiRunner.run(prompt, model, secrets.get('apiKey'), 5 * 60_000)
+          result = await aiRunner.run(prompt, modelRoute.model, modelRoute.apiKey, 5 * 60_000)
         } finally {
           control.harnessRunners.delete(aiRunner)
         }
@@ -1481,7 +1594,8 @@ async function enhanceWorkflowInstruction(node, prompt, effort = 'standard') {
   const depth = effort === 'fast' ? '只补齐最必要的执行条件，保持简洁。' : effort === 'deep' ? '深入补齐步骤、边界条件、检查标准和异常处理。' : '补齐处理重点、输出结构和质量约束。'
   const systemPrompt = `你是 Stable 的工作流模块指令优化器。把用户给出的关键词或简短要求补充成清晰、可执行、便于 AI 调用的模块指令。\n\n模块类型：${type === 'output' ? '输出模块' : 'AI 运算模块'}\n模块名称：${title}\n当前指令：${current || '（尚未配置）'}\n用户新增要求：${request}\n处理深度：${depth}\n\n要求：保留用户意图和语言；说明要使用的上游输入；不要虚构不存在的数据或资源；如果已有指令则在其基础上优化。只输出最终指令，不要解释优化过程，不要使用 Markdown 代码块。`
   const instructionRunner = createHarnessRunner()
-  return requireText(await instructionRunner.run(systemPrompt, store.getSetting('model'), secrets.get('apiKey'), 5 * 60_000), 'AI 优化结果', 8_000)
+  const { model, apiKey } = modelRouteForConversation()
+  return requireText(await instructionRunner.run(systemPrompt, model, apiKey, 5 * 60_000), 'AI 优化结果', 8_000)
 }
 
 function parseWorkflowJson(raw) {
@@ -1498,7 +1612,8 @@ async function generateWorkflow(goal) {
   const scripts = store.listLibrary().filter((item) => item.kind === 'script').map(({ id, name, description }) => ({ id, name, description }))
   const skills = store.listSkills().filter((item) => item.enabled).map(({ id, name, description }) => ({ id, name, description }))
   const prompt = `你是 Stable 的工作流编排器。根据目标和可用资源生成一个有向无环工作流。\n\n目标：${goal}\n\n可用资源（只能引用这里出现的 id）：\n数据：${JSON.stringify(data)}\n知识库：${JSON.stringify(knowledge)}\n脚本：${JSON.stringify(scripts)}\nSkills：${JSON.stringify(skills)}\n\n节点类型只能是 data、knowledge、script、skill、ai、output。资源节点必须填写 resourceId；ai 节点负责处理上游内容并填写具体 instruction；output 节点填写具体 instruction 和 outputFormat（markdown、pptx、html、xlsx 之一，默认 markdown），输出文件名由工作流名称和运行时间自动生成。所有节点都可以接收上游输入并把结果传给下游。必须至少有一个 output，连线不能成环。只返回以下 JSON，不要 Markdown：\n{"name":"工作流名称","description":"一句话说明","nodes":[{"key":"唯一短键","type":"ai","title":"模块名称","resourceId":"可选","instruction":"可选","outputFormat":"可选"}],"edges":[{"source":"节点 key","target":"节点 key"}]}`
-  const raw = await runner.run(prompt, store.getSetting('model'), secrets.get('apiKey'))
+  const { model, apiKey } = modelRouteForConversation()
+  const raw = await runner.run(prompt, model, apiKey)
   const draft = parseWorkflowJson(raw)
   const allowed = {
     data: new Set(data.map((item) => item.id)), knowledge: new Set(knowledge.map((item) => item.id)),
@@ -1524,6 +1639,30 @@ async function generateWorkflow(goal) {
 
 function registerIpc() {
   ipcMain.handle('stable:bootstrap', () => bootstrap())
+  ipcMain.handle('stable:cloud:login', async (_event, payload) => {
+    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
+    await cloudAccount.login(requireText(payload?.username, '账号', 64), requireText(payload?.password, '密码', 128))
+    return bootstrap()
+  })
+  ipcMain.handle('stable:cloud:changePassword', async (_event, payload) => {
+    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
+    const currentPassword = requireText(payload?.currentPassword, '当前密码', 128)
+    const newPassword = requireText(payload?.newPassword, '新密码', 128)
+    if (newPassword.length < 12) throw new Error('新密码至少需要 12 个字符。')
+    if (newPassword !== String(payload?.confirmPassword || '')) throw new Error('两次输入的新密码不一致。')
+    await cloudAccount.changePassword(currentPassword, newPassword)
+    return bootstrap()
+  })
+  ipcMain.handle('stable:cloud:refresh', async () => {
+    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
+    await cloudAccount.refresh()
+    return bootstrap()
+  })
+  ipcMain.handle('stable:cloud:logout', async () => {
+    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
+    await cloudAccount.logout()
+    return bootstrap()
+  })
   ipcMain.handle('stable:automations:state', () => automationState())
   ipcMain.handle('stable:automations:save', (_event, payload) => {
     if (payload?.id) store.updateAutomation(requireText(payload.id, '定时任务 ID', 100), payload)
@@ -1741,12 +1880,19 @@ function registerIpc() {
     store.updateConversationPermission(id, permissionMode)
     return agentState(id)
   })
+  ipcMain.handle('stable:agent:configureModel', (_event, payload) => {
+    const id = requireText(payload?.conversationId || payload?.id, '对话 ID', 100)
+    const modelId = requireText(payload?.modelId, '模型 ID', 100)
+    store.updateConversationModel(id, modelId, modelRegistry.publicCatalog().items.map((item) => item.id))
+    return agentState(id)
+  })
   ipcMain.handle('stable:agent:run', async (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const conversation = store.conversation(conversationId)
     if (!conversation) throw new Error('找不到这个对话。')
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
+    const modelRoute = modelRegistry.resolve(conversation.modelId)
     const extractedAttachments = await extractAgentAttachments(payload?.attachments, conversationId)
     const attachments = extractedAttachments.items
     const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
@@ -1786,7 +1932,7 @@ function registerIpc() {
     try {
       if (automationIntent(query) && !attachments.length && !selectedReferences.length) {
         try {
-          const rawProposal = await executionRunner.run(proposalPrompt(query), store.getSetting('model'), secrets.get('apiKey'), 90_000, () => {}, 'read-only')
+          const rawProposal = await executionRunner.run(proposalPrompt(query), modelRoute.model, modelRoute.apiKey, 90_000, () => {}, 'read-only')
           const proposal = parseProposalOutput(rawProposal)
           if (proposal) {
             const automationProposal = { ...proposal, status: 'pending' }
@@ -1797,7 +1943,7 @@ function registerIpc() {
           }
         } catch { /* 解析不明确时交回普通对话，让模型继续询问 */ }
       }
-      const result = await runAgent(query, conversationId, attachments, undefined, { data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner)
+      const result = await runAgent(query, conversationId, attachments, undefined, { data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute)
       store.addMessage(conversationId, 'assistant', result.answer, result.trace)
       publishAgentState(conversationId)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
@@ -1958,26 +2104,17 @@ function registerIpc() {
     auditTeamTask(taskId, 'cancelled', '任务已取消。')
     return teamState()
   })
-  ipcMain.handle('stable:model:save', (_event, payload) => {
-    const model = {
-      providerId: cleanId(payload?.providerId), displayName: requireText(payload?.displayName, '服务名称', 80),
-      baseURL: requireText(payload?.baseURL, 'API 地址', 500).replace(/\/$/, ''), model: requireText(payload?.model, '模型名称', 160), hasApiKey: secrets.has('apiKey'),
-    }
-    let url
-    try { url = new URL(model.baseURL) } catch { throw new Error('API 地址不是有效 URL。') }
-    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('API 地址只支持 HTTP 或 HTTPS。')
-    if (payload?.apiKey) secrets.set('apiKey', String(payload.apiKey))
-    model.hasApiKey = secrets.has('apiKey')
-    store.setSetting('model', model)
-    return model
+  ipcMain.handle('stable:model:save', (_event, payload) => modelRegistry.save(payload))
+  ipcMain.handle('stable:model:remove', (_event, payload) => {
+    const catalog = modelRegistry.remove(requireText(payload?.id, '模型 ID', 100))
+    publishAgentState(store.activeConversationId())
+    return catalog
   })
+  ipcMain.handle('stable:model:setDefault', (_event, payload) => modelRegistry.setDefault(requireText(payload?.id, '模型 ID', 100)))
   ipcMain.handle('stable:settings:globalInstructions', () => readGlobalInstructions())
   ipcMain.handle('stable:settings:saveGlobalInstructions', (_event, payload) => saveGlobalInstructions(payload?.content))
   ipcMain.handle('stable:preview:openWeb', (_event, payload) => openWebPreview(payload?.url, payload?.bounds))
-  ipcMain.handle('stable:preview:openMarkdown', (_event, payload) => {
-    if (!isConversationPreviewPath(payload?.conversationId, payload?.path)) throw new Error('只能预览当前对话中附带或 Stable 工作区内的 Markdown 文件。')
-    return openMarkdownPreview(payload?.path, payload?.bounds, true)
-  })
+  ipcMain.handle('stable:preview:openFile', (_event, payload) => openFilePreview(payload?.path, payload?.bounds))
   ipcMain.handle('stable:preview:setBounds', (_event, payload) => updatePreviewBounds(payload?.bounds))
   ipcMain.handle('stable:preview:navigate', (_event, payload) => {
     if (!previewView || previewView.webContents.isDestroyed()) return false
@@ -2016,13 +2153,15 @@ function registerIpc() {
   })
   ipcMain.handle('stable:system:openPath', async (_event, payload) => {
     const requested = requireText(payload?.path, '路径', 1000)
-    if (!existsSync(requested)) throw new Error('路径不存在。')
-    return (await shell.openPath(requested)) === ''
+    const resolved = resolveWorkspaceEntry(requested, paths.workspace)
+    const openError = await shell.openPath(resolved.path)
+    if (openError) throw new Error(`无法打开文件：${openError}`)
+    return true
   })
   ipcMain.handle('stable:system:showItemInFolder', (_event, payload) => {
     const requested = requireText(payload?.path, '路径', 1000)
-    if (!existsSync(requested)) throw new Error('文件不存在。')
-    shell.showItemInFolder(requested)
+    const resolved = resolveWorkspaceEntry(requested, paths.workspace)
+    shell.showItemInFolder(resolved.path)
     return true
   })
 }
@@ -2108,6 +2247,16 @@ async function boot() {
     store.createAutomation({ title: '每周资料检查', prompt: '检查工作区资料是否完整，列出缺失和需要更新的内容。', schedule: { type: 'weekly', time: '09:00', weekdays: [1] } }, 'chat')
   }
   secrets = new SecretStore(paths.userData, safeStorage)
+  const cloudEnabled = app.isPackaged || process.env.STABLE_CLOUD_ENABLED === '1'
+  if (cloudEnabled) {
+    cloudAccount = new CloudAccountService({ store, secrets, appVersion: app.getVersion() })
+    cloudGateway = new CloudGatewayProxy({ account: cloudAccount })
+    await cloudGateway.start()
+    await cloudAccount.restore()
+    if (process.env.STABLE_QA_CLOUD_AUTHENTICATED === '1') await cloudAccount.login('qa-member', 'qa-password')
+  }
+  modelRegistry = new ModelRegistry(store, secrets, cloudGateway)
+  modelRegistry.migrateLegacySecret()
   runner = createHarnessRunner()
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
@@ -2158,7 +2307,7 @@ async function boot() {
       }, 800)
     }
     if (process.env.STABLE_QA_PREVIEW) {
-      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.message-file-chip')?.click()") }, 900)
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-file-card')?.click()") }, 900)
     }
     if (process.env.STABLE_QA_CONFIRM) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item button[aria-label^=\"删除 \"]')?.click()") }, 850)
@@ -2218,14 +2367,12 @@ async function boot() {
           const body = document.body
           const stage = document.querySelector('.page-stage:not([hidden])')
           const messages = document.querySelector('.message-scroll')
-          const context = document.querySelector('.context-panel')
           return {
             viewport: { width: root.clientWidth, height: root.clientHeight },
             document: { clientWidth: root.clientWidth, scrollWidth: root.scrollWidth, clientHeight: root.clientHeight, scrollHeight: root.scrollHeight },
             body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight },
             stage: stage ? { clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, clientHeight: stage.clientHeight, scrollHeight: stage.scrollHeight, overflowY: getComputedStyle(stage).overflowY } : null,
             messages: messages ? { clientWidth: messages.clientWidth, scrollWidth: messages.scrollWidth, clientHeight: messages.clientHeight, scrollHeight: messages.scrollHeight, overflowY: getComputedStyle(messages).overflowY } : null,
-            context: context ? { clientWidth: context.clientWidth, scrollWidth: context.scrollWidth, clientHeight: context.clientHeight, scrollHeight: context.scrollHeight, overflowY: getComputedStyle(context).overflowY } : null,
             preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
             workflowName: document.querySelector('input[aria-label="工作流名称"]')?.value || null,
             workflowInstruction: document.querySelector('textarea[aria-label="模块 AI 输入"]')?.value || null,
@@ -2246,21 +2393,31 @@ async function boot() {
           }
         })()`)
         if (previewView && !previewView.webContents.isDestroyed()) {
-          try {
-            metrics.previewContents = await previewView.webContents.executeJavaScript(`(() => ({
-              title: document.title,
-              text: document.body?.innerText?.trim().slice(0, 240) || '',
-              tableCount: document.querySelectorAll('table').length,
-              readyState: document.readyState,
-              url: location.href,
-            }))()`)
-          } catch (error) {
-            metrics.previewContents = { error: error.message }
+          metrics.previewContents = {
+            kind: previewKind,
+            title: previewView.webContents.getTitle(),
+            url: previewView.webContents.getURL(),
+            loading: previewView.webContents.isLoading(),
+            javascript: previewKind === 'web',
+          }
+          if (previewKind === 'web') {
+            try {
+              Object.assign(metrics.previewContents, await previewView.webContents.executeJavaScript(`(() => ({
+                text: document.body?.innerText?.trim().slice(0, 240) || '',
+                readyState: document.readyState,
+              }))()`))
+            } catch (error) { metrics.previewContents.error = error.message }
           }
         }
         const image = await mainWindow.webContents.capturePage()
         const fs = require('node:fs').promises
         await fs.writeFile(process.env.STABLE_QA_CAPTURE, image.toPNG())
+        if (previewView && !previewView.webContents.isDestroyed()) {
+          try {
+            const previewImage = await previewView.webContents.capturePage()
+            await fs.writeFile(`${process.env.STABLE_QA_CAPTURE}.preview.png`, previewImage.toPNG())
+          } catch (error) { metrics.previewCaptureError = error.message }
+        }
         if (process.env.STABLE_QA_INSPECT) await fs.writeFile(process.env.STABLE_QA_INSPECT, JSON.stringify(metrics, null, 2), 'utf8')
       } finally { app.quit() }
     }, captureDelay)
@@ -2279,4 +2436,4 @@ if (updateHealthcheck) {
   app.on('activate', () => { if (!mainWindow) void boot() })
 }
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })
+app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

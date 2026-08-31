@@ -20,17 +20,34 @@ function isInside(root, target) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
-function resolveMarkdownFile(value, trustedRoots = [], explicit = false) {
+function resolveWorkspaceEntry(value, workspace, options = {}) {
   const requested = String(value || '').trim()
-  if (!requested || requested.length > 2_000) throw new Error('Markdown 文件路径无效。')
-  if (!existsSync(requested)) throw new Error('Markdown 文件不存在。')
-  const resolved = realpathSync(requested)
+  if (!requested || requested.length > 2_000) throw new Error('文件路径无效。')
+  const workspaceAbsolute = path.resolve(workspace || '')
+  const absolute = path.resolve(requested)
+  if (!workspace || !isInside(workspaceAbsolute, absolute)) throw new Error('只能打开 Stable 工作区内真实存在的文件。')
+  if (!workspace || !existsSync(workspace)) throw new Error('Stable 工作区不存在。')
+  const workspacePath = realpathSync(workspaceAbsolute)
+  if (!statSync(workspacePath).isDirectory()) throw new Error('Stable 工作区路径无效。')
+  if (!existsSync(absolute)) throw new Error('文件不存在。')
+  const resolved = realpathSync(absolute)
+  if (!isInside(workspacePath, resolved)) throw new Error('只能打开 Stable 工作区内真实存在的文件。')
   const info = statSync(resolved)
-  if (!info.isFile()) throw new Error('Markdown 预览只支持文件。')
-  if (!['.md', '.markdown'].includes(path.extname(resolved).toLowerCase())) throw new Error('只能预览 .md 或 .markdown 文件。')
-  if (info.size > MAX_MARKDOWN_BYTES) throw new Error('Markdown 文件不能超过 2 MB。')
-  if (!explicit && !trustedRoots.some((root) => isInside(root, resolved))) throw new Error('只能预览 Stable 工作区内或对话中明确附带的 Markdown 文件。')
-  return { path: resolved, size: info.size, content: readFileSync(resolved, 'utf8') }
+  if (options.fileOnly && !info.isFile()) throw new Error('这里只能预览文件。')
+  return {
+    path: resolved,
+    size: info.size,
+    isFile: info.isFile(),
+    isDirectory: info.isDirectory(),
+    extension: info.isFile() ? path.extname(resolved).toLowerCase() : '',
+  }
+}
+
+function resolveMarkdownFile(value, workspace) {
+  const resolved = resolveWorkspaceEntry(value, workspace, { fileOnly: true })
+  if (!['.md', '.markdown'].includes(resolved.extension)) throw new Error('只能预览 .md 或 .markdown 文件。')
+  if (resolved.size > MAX_MARKDOWN_BYTES) throw new Error('Markdown 文件不能超过 2 MB。')
+  return { ...resolved, content: readFileSync(resolved.path, 'utf8') }
 }
 
 function escapeHtml(value) {
@@ -127,4 +144,59 @@ function renderMarkdownDocument(markdown, title, theme = 'dark') {
   </style></head><body><main>${renderMarkdown(markdown)}</main></body></html>`
 }
 
-module.exports = { MAX_MARKDOWN_BYTES, isInside, normalizeWebUrl, renderMarkdown, renderMarkdownDocument, resolveMarkdownFile }
+function previewPalette(theme) {
+  return theme === 'light'
+    ? { background: '#f8f5ee', surface: '#ffffff', text: '#172030', muted: '#5d6878', rule: '#d9d5cc', accent: '#155eef', code: '#f1eee7' }
+    : { background: '#070b12', surface: '#0e1521', text: '#dbe7f7', muted: '#8e9bad', rule: '#283446', accent: '#72a7ff', code: '#111b2a' }
+}
+
+function formatFileSize(value) {
+  const bytes = Number(value) || 0
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function renderTextDocument(text, title, theme = 'dark', metadata = {}) {
+  const light = theme === 'light'
+  const colors = previewPalette(theme)
+  const safeTitle = escapeHtml(title || '文件预览')
+  const kind = escapeHtml(metadata.kind || '文本预览')
+  const detail = [metadata.type, metadata.size === undefined ? '' : formatFileSize(metadata.size)].filter(Boolean).join(' · ')
+  const safeDetail = escapeHtml(detail)
+  const safePath = escapeHtml(metadata.path || '')
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>${safeTitle}</title><style>
+    :root{color-scheme:${light ? 'light' : 'dark'};font-family:"IBM Plex Sans","Microsoft YaHei",sans-serif;background:${colors.background};color:${colors.text}}*{box-sizing:border-box}body{margin:0;background:${colors.background}}main{width:min(68rem,calc(100% - 2rem));min-height:100vh;margin:auto;padding:2rem clamp(1rem,4vw,2.5rem);background:${colors.surface}}header{display:grid;gap:.35rem;padding-bottom:1.25rem;border-bottom:1px solid ${colors.rule}}header span{color:${colors.accent};font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}h1{margin:0;font-size:1.35rem;line-height:1.35;overflow-wrap:anywhere}header small{color:${colors.muted};line-height:1.5;overflow-wrap:anywhere}.path{font-family:"Cascadia Code",Consolas,monospace;font-size:.72rem}pre{margin:1.25rem 0 0;overflow:auto;padding:1rem;border:1px solid ${colors.rule};border-radius:.65rem;background:${colors.code};color:${colors.text};font-family:"Cascadia Code",Consolas,monospace;font-size:.86rem;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:600px){main{width:100%;padding:1.25rem}}
+  </style></head><body><main><header><span>${kind}</span><h1>${safeTitle}</h1>${safeDetail ? `<small>${safeDetail}</small>` : ''}${safePath ? `<small class="path">${safePath}</small>` : ''}</header><pre>${escapeHtml(text)}</pre></main></body></html>`
+}
+
+function renderFileInfoDocument(entry, theme = 'dark', message = 'Stable 暂不支持此格式的内容预览，但已确认该文件真实存在于当前工作区。') {
+  return renderTextDocument(message, path.basename(entry.path), theme, {
+    kind: entry.isDirectory ? '文件夹信息' : '文件信息',
+    path: entry.path,
+    size: entry.size,
+    type: entry.isDirectory ? '文件夹' : (entry.extension.slice(1).toUpperCase() || 'FILE'),
+  })
+}
+
+function renderImageDocument(fileUrl, entry, theme = 'dark') {
+  const light = theme === 'light'
+  const colors = previewPalette(theme)
+  const title = escapeHtml(path.basename(entry.path))
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src file: data:; base-uri 'none'; form-action 'none'"><title>${title}</title><style>
+    :root{color-scheme:${light ? 'light' : 'dark'};font-family:"Microsoft YaHei",sans-serif;background:${colors.background};color:${colors.text}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1rem;background:${colors.background}}figure{display:grid;max-width:100%;gap:.75rem;margin:0}img{display:block;max-width:100%;max-height:calc(100vh - 4rem);object-fit:contain;border-radius:.5rem;box-shadow:0 12px 36px rgba(0,0,0,.24)}figcaption{color:${colors.muted};font-size:.75rem;text-align:center;overflow-wrap:anywhere}
+  </style></head><body><figure><img src="${escapeHtml(fileUrl)}" alt="${title}"><figcaption>${title} · ${formatFileSize(entry.size)}</figcaption></figure></body></html>`
+}
+
+module.exports = {
+  MAX_MARKDOWN_BYTES,
+  isInside,
+  normalizeWebUrl,
+  renderFileInfoDocument,
+  renderImageDocument,
+  renderMarkdown,
+  renderMarkdownDocument,
+  renderTextDocument,
+  resolveMarkdownFile,
+  resolveWorkspaceEntry,
+}

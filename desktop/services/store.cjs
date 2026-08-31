@@ -8,6 +8,35 @@ const { normalizeWorkflowGraph } = require('./workflow-graph.cjs')
 const { computeNextRun, normalizeAutomationInput } = require('./automation.cjs')
 
 const DEFAULT_IDENTITY = 'Stable 是你的本地智能工作助理，擅长数据分析、知识管理、Skills 调用和自动化工作流。它优先保护本地数据，执行涉及文件修改、脚本运行或外部请求的操作前会明确说明，并保留可追溯的运行记录。'
+const LEGACY_MODEL_PROFILE_ID = 'legacy-default-model'
+const DEFAULT_MODEL_SETTING = {
+  providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com',
+  model: 'deepseek-v4-flash', hasApiKey: false,
+}
+
+function legacyModelProfile(value) {
+  const source = value && typeof value === 'object' ? value : DEFAULT_MODEL_SETTING
+  return {
+    id: LEGACY_MODEL_PROFILE_ID,
+    providerId: String(source.providerId || DEFAULT_MODEL_SETTING.providerId),
+    displayName: String(source.displayName || DEFAULT_MODEL_SETTING.displayName),
+    baseURL: String(source.baseURL || DEFAULT_MODEL_SETTING.baseURL),
+    model: String(source.model || DEFAULT_MODEL_SETTING.model),
+  }
+}
+
+function storedModelProfile(value) {
+  const source = value && typeof value === 'object' ? value : {}
+  const profile = {
+    id: String(source.id || randomUUID()).trim().slice(0, 160),
+    providerId: String(source.providerId || '').trim().slice(0, 160),
+    displayName: String(source.displayName || '').trim().slice(0, 80),
+    baseURL: String(source.baseURL || '').trim().slice(0, 500),
+    model: String(source.model || '').trim().slice(0, 160),
+  }
+  if (!profile.id || !profile.providerId || !profile.displayName || !profile.baseURL || !profile.model) throw new Error('模型配置不完整。')
+  return profile
+}
 
 function searchTerms(query) {
   const terms = new Set()
@@ -58,7 +87,7 @@ class StableStore {
       );
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, capability TEXT NOT NULL DEFAULT 'auto',
-        collaboration INTEGER NOT NULL DEFAULT 0, permission_mode TEXT NOT NULL DEFAULT 'full', data_ids_json TEXT NOT NULL DEFAULT '[]',
+        collaboration INTEGER NOT NULL DEFAULT 0, permission_mode TEXT NOT NULL DEFAULT 'full', model_id TEXT NOT NULL DEFAULT '', data_ids_json TEXT NOT NULL DEFAULT '[]',
         source_type TEXT NOT NULL DEFAULT 'local', source_device_id TEXT NOT NULL DEFAULT '', source_device_name TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
@@ -118,6 +147,7 @@ class StableStore {
     const conversationColumns = this.db.prepare('PRAGMA table_info(conversations)').all()
     if (!conversationColumns.some((column) => column.name === 'collaboration')) this.db.exec('ALTER TABLE conversations ADD COLUMN collaboration INTEGER NOT NULL DEFAULT 0')
     if (!conversationColumns.some((column) => column.name === 'permission_mode')) this.db.exec("ALTER TABLE conversations ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'request'")
+    if (!conversationColumns.some((column) => column.name === 'model_id')) this.db.exec("ALTER TABLE conversations ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
     if (!conversationColumns.some((column) => column.name === 'source_type')) this.db.exec("ALTER TABLE conversations ADD COLUMN source_type TEXT NOT NULL DEFAULT 'local'")
     if (!conversationColumns.some((column) => column.name === 'source_device_id')) this.db.exec("ALTER TABLE conversations ADD COLUMN source_device_id TEXT NOT NULL DEFAULT ''")
     if (!conversationColumns.some((column) => column.name === 'source_device_name')) this.db.exec("ALTER TABLE conversations ADD COLUMN source_device_name TEXT NOT NULL DEFAULT ''")
@@ -126,19 +156,16 @@ class StableStore {
     if (!messageColumns.some((column) => column.name === 'conversation_id')) this.db.exec('ALTER TABLE messages ADD COLUMN conversation_id TEXT')
     if (!messageColumns.some((column) => column.name === 'attachments_json')) this.db.exec('ALTER TABLE messages ADD COLUMN attachments_json TEXT')
     if (!messageColumns.some((column) => column.name === 'automation_json')) this.db.exec('ALTER TABLE messages ADD COLUMN automation_json TEXT')
+    if (this.getSetting('model') === undefined) this.setSetting('model', DEFAULT_MODEL_SETTING)
+    const modelCatalog = this.modelCatalog()
     this.initializeConversations()
+    this.db.prepare("UPDATE conversations SET model_id=? WHERE model_id IS NULL OR model_id=''").run(modelCatalog.defaultModelId)
     if (this.getSetting('codingPermissionsV0927') === undefined) {
       this.db.prepare("UPDATE conversations SET permission_mode='full' WHERE permission_mode='request'").run()
       this.setSetting('codingPermissionsV0927', true)
     }
     if (this.getSetting('identity') === undefined) this.setSetting('identity', DEFAULT_IDENTITY)
     if (this.getSetting('theme') === undefined) this.setSetting('theme', 'dark')
-    if (this.getSetting('model') === undefined) {
-      this.setSetting('model', {
-        providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com',
-        model: 'deepseek-v4-flash', hasApiKey: false,
-      })
-    }
   }
 
   getSetting(key) {
@@ -148,6 +175,60 @@ class StableStore {
 
   setSetting(key, value) {
     this.db.prepare('INSERT INTO settings(key,value_json) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json').run(key, JSON.stringify(value))
+  }
+
+  modelCatalog() {
+    const stored = this.getSetting('modelCatalog')
+    if (stored && Array.isArray(stored.items) && stored.items.length) {
+      const items = stored.items.map((item) => storedModelProfile(item))
+      const defaultModelId = items.some((item) => item.id === stored.defaultModelId) ? stored.defaultModelId : items[0].id
+      const catalog = {
+        items,
+        defaultModelId,
+        legacyModelId: String(stored.legacyModelId || LEGACY_MODEL_PROFILE_ID),
+      }
+      if (JSON.stringify(catalog) !== JSON.stringify(stored)) this.setSetting('modelCatalog', catalog)
+      return catalog
+    }
+    const profile = legacyModelProfile(this.getSetting('model'))
+    const catalog = { items: [profile], defaultModelId: profile.id, legacyModelId: profile.id }
+    this.setSetting('modelCatalog', catalog)
+    return catalog
+  }
+
+  modelProfile(id) { return this.modelCatalog().items.find((item) => item.id === id) }
+
+  saveModelProfile(value) {
+    const profile = storedModelProfile(value)
+    const catalog = this.modelCatalog()
+    if (catalog.items.some((item) => item.id !== profile.id && item.providerId === profile.providerId && item.model === profile.model)) throw new Error('这个服务中已经存在同名模型。')
+    const existing = catalog.items.findIndex((item) => item.id === profile.id)
+    const items = existing >= 0 ? catalog.items.map((item, index) => index === existing ? profile : item) : [...catalog.items, profile]
+    this.setSetting('modelCatalog', { ...catalog, items })
+    return profile
+  }
+
+  removeModelProfile(id) {
+    const catalog = this.modelCatalog()
+    if (!catalog.items.some((item) => item.id === id)) return catalog
+    if (catalog.defaultModelId === id) throw new Error('默认模型不能删除，请先设置其他默认模型。')
+    if (catalog.items.length <= 1) throw new Error('至少需要保留一个模型。')
+    const next = { ...catalog, items: catalog.items.filter((item) => item.id !== id) }
+    this.db.exec('BEGIN')
+    try {
+      this.db.prepare('UPDATE conversations SET model_id=?,updated_at=? WHERE model_id=?').run(catalog.defaultModelId, new Date().toISOString(), id)
+      this.setSetting('modelCatalog', next)
+      this.db.exec('COMMIT')
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    return next
+  }
+
+  setDefaultModel(id) {
+    const catalog = this.modelCatalog()
+    if (!catalog.items.some((item) => item.id === id)) throw new Error('找不到这个模型。')
+    const next = { ...catalog, defaultModelId: id }
+    this.setSetting('modelCatalog', next)
+    return next
   }
 
   initializeConversations() {
@@ -165,11 +246,13 @@ class StableStore {
   }
 
   listConversations() {
+    const defaultModelId = this.modelCatalog().defaultModelId
     return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
       GROUP BY c.id ORDER BY c.updated_at DESC`).all().map((row) => ({
       id: row.id, title: row.title, capability: row.capability || 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
+      modelId: row.model_id || defaultModelId,
       dataIds: JSON.parse(row.data_ids_json || '[]'), messageCount: Number(row.message_count || 0),
       sourceType: row.source_type === 'team' ? 'team' : 'local',
       ...(row.source_device_id ? { sourceDeviceId: row.source_device_id } : {}),
@@ -185,8 +268,10 @@ class StableStore {
     const id = randomUUID(); const now = new Date().toISOString()
     const title = String(options.title || '新对话').slice(0, 80)
     const permissionMode = ['request', 'auto', 'full'].includes(options.permissionMode) ? options.permissionMode : 'full'
-    this.db.prepare('INSERT INTO conversations(id,title,capability,permission_mode,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
-      .run(id, title, 'auto', permissionMode, '[]', now, now)
+    const requestedModelId = String(options.modelId || '')
+    const modelId = this.modelProfile(requestedModelId)?.id || this.modelCatalog().defaultModelId
+    this.db.prepare('INSERT INTO conversations(id,title,capability,permission_mode,model_id,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
+      .run(id, title, 'auto', permissionMode, modelId, '[]', now, now)
     if (options.select !== false) this.setSetting('activeConversationId', id)
     return id
   }
@@ -209,6 +294,15 @@ class StableStore {
   updateConversationPermission(id, permissionMode) {
     this.db.prepare('UPDATE conversations SET permission_mode=?,updated_at=? WHERE id=?')
       .run(permissionMode, new Date().toISOString(), id)
+  }
+
+  updateConversationModel(id, modelId, knownModelIds) {
+    if (!this.conversation(id)) throw new Error('找不到这个对话。')
+    const known = Array.isArray(knownModelIds) ? knownModelIds.includes(modelId) : Boolean(this.modelProfile(modelId))
+    if (!known) throw new Error('找不到这个模型。')
+    this.db.prepare('UPDATE conversations SET model_id=?,updated_at=? WHERE id=?')
+      .run(modelId, new Date().toISOString(), id)
+    return this.conversation(id)
   }
 
   removeConversation(id) {
@@ -418,9 +512,9 @@ class StableStore {
     this.db.exec('BEGIN')
     try {
       this.db.prepare(`INSERT INTO conversations(
-        id,title,capability,permission_mode,data_ids_json,source_type,source_device_id,source_device_name,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
-        id, offer.title || 'Team 对话', 'auto', 'request', '[]', 'team',
+        id,title,capability,permission_mode,model_id,data_ids_json,source_type,source_device_id,source_device_name,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
+        id, offer.title || 'Team 对话', 'auto', 'request', this.modelCatalog().defaultModelId, '[]', 'team',
         offer.sourceDeviceId || '', offer.sourceDeviceName || '', offer.createdAt || now, now,
       )
       const insert = this.db.prepare('INSERT INTO messages(id,conversation_id,role,content,trace_json,attachments_json,created_at) VALUES(?,?,?,?,?,?,?)')
@@ -681,4 +775,4 @@ class StableStore {
   close() { this.db.close() }
 }
 
-module.exports = { StableStore, DEFAULT_IDENTITY }
+module.exports = { StableStore, DEFAULT_IDENTITY, LEGACY_MODEL_PROFILE_ID }

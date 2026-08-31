@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, typ
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
   CircleStop, Clock3, Copy, Database, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
-  Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Play, Plus, Save,
+  Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
   RotateCw, SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
@@ -12,7 +12,7 @@ import sidebarLogoLightUrl from '../build/stable_logo_sidebar_light.png'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelSettings, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
+import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelCatalog, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
 
 const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
   { id: 'agent', label: '对话', icon: MessageSquareText },
@@ -142,6 +142,7 @@ export function App() {
   const launch = showLaunch ? <LaunchSplash running={launchRunning} onFinish={finishLaunch} /> : null
 
   if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div>{launch}</>
+  if (!['disabled', 'authenticated'].includes(state.cloud.status)) return <><div className="window-shell"><WindowTitlebar /><CloudAccessPage state={state} onComplete={(value) => { document.documentElement.dataset.theme = value.theme; setState(value); setError('') }} /></div>{launch}</>
 
   return (
     <><div className="window-shell">
@@ -164,7 +165,7 @@ export function App() {
 
       <main className="main-frame">
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} reportError={(reason) => { setError(errorMessage(reason)); setStatus('操作未完成') }} />
+          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
@@ -176,7 +177,7 @@ export function App() {
           {page === 'reports' && <ReportPage items={state.reports} update={(items) => update('reports', items)} action={action} />}
           {page === 'skills' && <SkillsPage items={state.skills} update={(items) => update('skills', items)} action={action} />}
           {page === 'knowledge' && <KnowledgePage items={state.knowledge} update={(items) => update('knowledge', items)} action={action} />}
-          {page === 'settings' && <SettingsPage state={state} updateModel={(model) => update('model', model)} updateTheme={(theme) => update('theme', theme)} action={action} />}
+          {page === 'settings' && <SettingsPage state={state} replaceState={setState} updateModels={(models) => update('models', models)} updateTheme={(theme) => update('theme', theme)} action={action} />}
         </div>}
 
       </main>
@@ -188,6 +189,53 @@ export function App() {
       </div>
     </div>{launch}</>
   )
+}
+
+function CloudAccessPage({ state, onComplete }: { state: BootstrapData; onComplete: (value: BootstrapData) => void }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState(state.cloud.error || '')
+  const errorRef = useRef<HTMLDivElement>(null)
+  const mustChange = state.cloud.status === 'password_change_required'
+  const unavailable = state.cloud.status === 'unavailable'
+
+  async function submit(run: () => Promise<BootstrapData>) {
+    setPending(true); setMessage('')
+    try { onComplete(await run()) }
+    catch (reason) {
+      setMessage(errorMessage(reason))
+      window.requestAnimationFrame(() => errorRef.current?.focus())
+    } finally { setPending(false) }
+  }
+
+  return <main className="cloud-access-shell">
+    <section className="cloud-access-card" aria-labelledby="cloud-access-title">
+      <div className="cloud-access-brand"><img src={logoUrl} alt="" width="52" height="52" /><span>STABLE CLOUD</span></div>
+      <div className="cloud-access-copy">
+        <h1 id="cloud-access-title">{mustChange ? '设置你的正式密码' : unavailable ? '暂时无法连接云端' : '登录 Stable'}</h1>
+        <p>{mustChange ? '这是一次性临时密码。修改完成后，其他设备会话将失效，本机继续使用新会话。' : unavailable ? '已保存的登录凭据仍在 Windows 安全存储中。网络恢复后可直接重试。' : '使用管理员分配的内部账号登录。模型凭据由 Stable 平台统一保管。'}</p>
+      </div>
+      {message && <div className="cloud-auth-error" role="alert" tabIndex={-1} ref={errorRef}><CircleAlert size={18} aria-hidden="true" /><span>{message}</span></div>}
+      {mustChange ? <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.changePassword(currentPassword, newPassword, confirmPassword)) }}>
+        <div className="field"><label htmlFor="current-password">当前临时密码</label><input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
+        <div className="field"><label htmlFor="new-password">新密码</label><input id="new-password" type="password" autoComplete="new-password" required minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-describedby="new-password-help" /><small id="new-password-help">至少 12 个字符，建议使用密码管理器生成并保存。</small></div>
+        <div className="field"><label htmlFor="confirm-password">确认新密码</label><input id="confirm-password" type="password" autoComplete="new-password" required minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></div>
+        <button className="button primary cloud-auth-submit" type="submit" disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} />正在修改…</> : '修改密码并继续'}</button>
+      </form> : unavailable ? <div className="cloud-auth-actions">
+        <button className="button primary" type="button" disabled={pending} onClick={() => void submit(() => window.stable.cloud.refresh())}>{pending ? '正在重试…' : '重新连接'}</button>
+        <button className="text-button" type="button" disabled={pending} onClick={() => void submit(() => window.stable.cloud.logout())}>清除本机登录</button>
+      </div> : <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.login(username, password)) }}>
+        <div className="field"><label htmlFor="cloud-username">账号</label><input id="cloud-username" autoComplete="username" required autoFocus value={username} onChange={(event) => setUsername(event.target.value)} /></div>
+        <div className="field"><label htmlFor="cloud-password">密码</label><input id="cloud-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
+        <button className="button primary cloud-auth-submit" type="submit" disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} />正在登录…</> : '登录'}</button>
+      </form>}
+      <div className="cloud-access-foot"><ShieldCheck size={16} aria-hidden="true" /><span>账号密码不会保存；设备会话由 Windows 安全存储加密。</span></div>
+    </section>
+  </main>
 }
 
 function ConfirmModal({ value, onCancel, onConfirm }: { value: { title: string; message: string; detail: string }; onCancel: () => void; onConfirm: () => void }) {
@@ -349,30 +397,36 @@ interface CopyUndoState {
 
 type ConversationPreviewTarget =
   | { requestId: number; kind: 'web'; value: string; title: string }
-  | { requestId: number; kind: 'markdown'; value: string; title: string }
+  | { requestId: number; kind: 'file'; value: string; title: string }
 
 function previewBounds(element: HTMLElement): PreviewBounds {
   const rect = element.getBoundingClientRect()
   return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) }
 }
 
-function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, reportError }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; reportError: (reason: unknown) => void }) {
+function emptyPreviewState(): PreviewState {
+  return { url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
+}
+
+function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
   const [prompt, setPrompt] = useState('')
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
-  const [contextOpen, setContextOpen] = useState(false)
+  const [composerErrorMap, setComposerErrorMap] = useState<Record<string, string>>({})
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [teamCollapsed, setTeamCollapsed] = useState(false)
   const [previewTarget, setPreviewTarget] = useState<ConversationPreviewTarget>()
   const [previewWidth, setPreviewWidth] = useState(0)
-  const [previewState, setPreviewState] = useState<PreviewState>({ url: '', title: '', loading: false, canGoBack: false, canGoForward: false })
+  const [previewState, setPreviewState] = useState<PreviewState>(emptyPreviewState)
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
+  const [modelStatus, setModelStatus] = useState('')
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const conversationWorkspaceRef = useRef<HTMLDivElement>(null)
+  const previewRequestRef = useRef(0)
   const previewViewportRef = useRef<HTMLDivElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
@@ -383,6 +437,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const teamMenuRef = useRef<HTMLDetailsElement>(null)
   const capabilityMenuRef = useRef<HTMLDetailsElement>(null)
   const permissionMenuRef = useRef<HTMLDetailsElement>(null)
+  const modelMenuRef = useRef<HTMLDetailsElement>(null)
   const activeConversationIdRef = useRef(state.activeConversationId)
   const stateRef = useRef(state)
   const activeConversation = state.conversations.find((item) => item.id === state.activeConversationId) || state.conversations[0]
@@ -391,8 +446,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const liveTrace = traceMap[state.activeConversationId]
   const attachments = attachmentMap[state.activeConversationId] || []
   const selectedReferences = referenceMap[state.activeConversationId] || []
+  const composerError = composerErrorMap[state.activeConversationId] || ''
   const activeCapability = CAPABILITY_OPTIONS.find((item) => item.id === activeConversation?.capability) || CAPABILITY_OPTIONS[0]
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
+  const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
+  const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || defaultModel
   const enabledData = state.data.filter((item) => item.enabled)
   const enabledSkills = state.skills.filter((item) => item.enabled)
   const enabledKnowledge = state.knowledge.filter((item) => item.enabled)
@@ -408,6 +466,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     setPrompt(prefill); consumePrefill()
     window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(prefill.length, prefill.length) })
   }, [active, prefill, running])
+
+  useEffect(() => { setModelStatus(''); if (modelMenuRef.current) modelMenuRef.current.open = false }, [state.activeConversationId])
+
+  useEffect(() => {
+    setPreviewTarget(undefined)
+    setPreviewWidth(0)
+    setPreviewState(emptyPreviewState())
+    void window.stable.preview.close()
+  }, [state.activeConversationId])
 
   function setAttachments(next: AgentAttachment[] | ((current: AgentAttachment[]) => AgentAttachment[])) {
     setAttachmentMap((current) => {
@@ -460,7 +527,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
-      for (const menu of [attachmentMenuRef.current, dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current]) {
+      for (const menu of [attachmentMenuRef.current, dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current, modelMenuRef.current]) {
         if (menu?.open && !menu.contains(event.target as Node)) menu.open = false
       }
     }
@@ -495,7 +562,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       try {
         const next = previewTarget.kind === 'web'
           ? await window.stable.preview.openWeb(previewTarget.value, bounds)
-          : await window.stable.preview.openMarkdown(previewTarget.value, bounds, activeConversation.id)
+          : await window.stable.preview.openFile(previewTarget.value, bounds)
         if (!cancelled) setPreviewState(next)
       } catch (reason) {
         if (!cancelled) setPreviewState((current) => ({ ...current, loading: false, error: errorMessage(reason) }))
@@ -513,10 +580,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }, [previewTarget])
 
   function openConversationPreview(target: Omit<ConversationPreviewTarget, 'requestId'>) {
-    setContextOpen(false)
     setPreviewWidth(0)
     setPreviewState({ url: target.kind === 'web' ? target.value : '', title: target.title, loading: true, canGoBack: false, canGoForward: false })
-    setPreviewTarget({ ...target, requestId: Date.now() })
+    previewRequestRef.current += 1
+    setPreviewTarget({ ...target, requestId: previewRequestRef.current })
   }
 
   function closeConversationPreview() {
@@ -556,6 +623,22 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   function configurePermission(permissionMode: AgentPermissionMode) {
     if (!activeConversation) return
     void action('正在保存权限设置', async () => updateAgent(await window.stable.agent.configurePermission(activeConversation.id, permissionMode)))
+  }
+
+  function configureModel(modelId: string) {
+    if (!activeConversation || modelId === activeConversation.modelId) {
+      if (modelMenuRef.current) modelMenuRef.current.open = false
+      return
+    }
+    const selected = state.models.items.find((item) => item.id === modelId)
+    if (!selected) return
+    const summary = modelMenuRef.current?.querySelector<HTMLElement>('summary')
+    void action('正在切换对话模型', async () => {
+      updateAgent(await window.stable.agent.configureModel(activeConversation.id, modelId))
+      setModelStatus(`已切换至 ${selected.displayName}，从下一条消息生效。`)
+      if (modelMenuRef.current) modelMenuRef.current.open = false
+      window.requestAnimationFrame(() => summary?.focus())
+    })
   }
 
   function commitRename(id: string) {
@@ -633,18 +716,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     return value ? { id: value.id, kind: item.kind, name: value.name, size: value.size, type: 'markdown' } : undefined
   }
 
-  function markdownPathFromMessage(item: NonNullable<MessageItem['attachments']>[number]) {
-    const markdown = /\.(?:md|markdown)$/i.test(item.name) || /^(?:md|markdown)$/i.test(item.type)
-    if (!markdown) return ''
-    if (item.path) return item.path
-    if (item.kind === 'knowledge') return (state.knowledge.find((entry) => entry.id === item.id) || state.knowledge.find((entry) => entry.name === item.name))?.path || ''
-    if (item.kind === 'data') return (state.data.find((entry) => entry.id === item.id) || state.data.find((entry) => entry.name === item.name))?.path || ''
-    return ''
-  }
-
   function previewMessageAttachment(item: NonNullable<MessageItem['attachments']>[number]) {
-    const filePath = markdownPathFromMessage(item)
-    if (filePath) openConversationPreview({ kind: 'markdown', value: filePath, title: item.name })
+    if (item.kind === 'attachment' && item.path) openConversationPreview({ kind: 'file', value: item.path, title: item.name })
   }
 
   async function copyUserMessage(message: MessageItem) {
@@ -687,14 +760,17 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   async function send() {
     if ((!prompt.trim() && !attachments.length && !selectedReferences.length) || running) return
     const conversationId = state.activeConversationId
+    const originalPrompt = prompt
     const value = prompt.trim() || '请读取并分析本次引用的资源与附件。'
     const currentAttachments = [...attachments]
     const currentReferences = [...selectedReferences]
+    const previousMessageIds = new Set(state.messages.map((item) => item.id))
     const messageAttachments: NonNullable<MessageItem['attachments']> = [
       ...currentReferences.map(({ id, kind, name, size, type }) => ({ id, kind, name, size, type })),
       ...currentAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' as const : 'attachment' as const, name: item.name, size: item.size, type: item.type, path: item.path })),
     ]
     copyUndoRef.current[conversationId] = undefined
+    setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
     setPrompt(''); setAttachments([]); setReferences([])
     setPendingMap((current) => ({ ...current, [conversationId]: { content: value, attachments: messageAttachments } }))
     setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', items: [], status: 'running', startedAt: Date.now() } }))
@@ -706,8 +782,26 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       updateAgentForConversation(result, conversationId)
       completed = true
     } catch (error) {
-      reportError(error)
-      try { updateAgentForConversation(await window.stable.agent.state(conversationId), conversationId) } catch { /* keep the active task usable */ }
+      let messageAccepted = true
+      try {
+        const recovered = await window.stable.agent.state(conversationId)
+        messageAccepted = recovered.messages.some((item) => item.role === 'user' && !previousMessageIds.has(item.id))
+        updateAgentForConversation(recovered, conversationId)
+      } catch { /* without confirmed server state, avoid restoring a possibly accepted message */ }
+      if (!messageAccepted) {
+        if (activeConversationIdRef.current === conversationId) setPrompt((current) => current.trim() ? current : originalPrompt)
+        setAttachmentMap((current) => {
+          const existing = current[conversationId] || []
+          const restored = [...currentAttachments, ...existing.filter((item) => !currentAttachments.some((sent) => sent.path === item.path))]
+          return { ...current, [conversationId]: restored }
+        })
+        setReferenceMap((current) => {
+          const existing = current[conversationId] || []
+          const restored = [...currentReferences, ...existing.filter((item) => !currentReferences.some((sent) => sent.kind === item.kind && sent.id === item.id))]
+          return { ...current, [conversationId]: restored }
+        })
+      }
+      setComposerErrorMap((current) => ({ ...current, [conversationId]: errorMessage(error) }))
     } finally {
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
       setTraceMap((current) => ({ ...current, [conversationId]: completed ? undefined : current[conversationId] }))
@@ -722,7 +816,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
 
-  return <section className="agent-layout reveal" data-context-open={contextOpen || undefined} data-sidebar-open={sidebarOpen || undefined}>
+  return <section className="agent-layout reveal" data-sidebar-open={sidebarOpen || undefined}>
     <aside className="conversation-sidebar" aria-label="对话任务">
       <div className="conversation-new-zone">
         <button className="conversation-new" type="button" onClick={() => replaceConversation(() => window.stable.agent.create(), '正在新建对话')}><Plus size={17} />新建对话</button>
@@ -755,14 +849,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       <header className="conversation-topbar">
         <button className="conversation-sidebar-toggle" type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="打开对话列表"><PanelLeftOpen size={18} /></button>
         <div><span>当前任务</span><strong>{activeConversation.title}</strong></div>
-        <button className="context-toggle" type="button" onClick={() => setContextOpen((value) => !value)} aria-controls="agent-context" aria-expanded={contextOpen} aria-label={contextOpen ? '收起本次上下文' : '展开本次上下文'}>
-          {contextOpen ? <PanelRightClose size={18} aria-hidden="true" /> : <PanelRightOpen size={18} aria-hidden="true" />}
-          <span>{contextOpen ? '收起上下文' : '本次上下文'}</span>
-        </button>
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} pending />}
           {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} />}
           {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
@@ -779,8 +869,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
               {attachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => setAttachments((current) => current.filter((entry) => entry.path !== item.path))} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
             </div>}
+            {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
-            <textarea ref={promptRef} id="agent-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => {
+            <textarea ref={promptRef} id="agent-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
               if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() }
             }} placeholder="给 Stable 一个任务，或拖入本次需要分析的文件" disabled={running} />
@@ -837,6 +928,21 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   </button>)}
                 </div>
               </details>
+              <details className="composer-menu model-menu" ref={modelMenuRef}>
+                <summary aria-label={`当前对话模型：${activeModel?.displayName || '尚未配置'}，打开模型选择`}><Box size={17} aria-hidden="true" /><span>{activeModel?.displayName || '配置模型'}</span><ChevronDown size={14} aria-hidden="true" /></summary>
+                <div className="composer-popover model-popover" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); if (modelMenuRef.current) modelMenuRef.current.open = false; modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus() } }}>
+                  <div className="composer-popover-head"><strong>选择模型</strong><span>当前对话 · 从下一条消息生效</span></div>
+                  {state.models.items.length ? <fieldset className="model-options"><legend className="sr-only">当前对话使用的模型</legend>{state.models.items.map((item) => {
+                    const selected = item.id === activeModel?.id
+                    return <label className="model-option" data-active={selected || undefined} key={item.id}>
+                      <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
+                      <span className="model-option-mark" aria-hidden="true">{selected ? <Check size={15} /> : <span />}</span>
+                      <span className="model-option-copy"><strong>{item.displayName}</strong><small>{item.providerId} · {item.model}</small></span>
+                      {item.id === state.models.defaultModelId && <em>默认</em>}
+                    </label>
+                  })}</fieldset> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
+                </div>
+              </details>
               <details className="composer-menu capability-menu" ref={capabilityMenuRef}>
                 <summary><Sparkles size={17} /><span>{activeCapability.label}</span><ChevronDown size={14} /></summary>
                 <div className="composer-popover capability-popover">
@@ -849,6 +955,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               {running
                 ? <button className="composer-stop" type="button" onClick={() => window.stable.agent.cancel(activeConversation.id)} aria-label="停止执行"><CircleStop size={20} /></button>
                 : <button className="composer-send" type="button" onClick={() => void send()} disabled={!prompt.trim() && !attachments.length && !selectedReferences.length} aria-label="发送任务"><ArrowUp size={20} /></button>}
+              <span className="sr-only" role="status" aria-live="polite">{modelStatus}</span>
             </div>
           </div>
         </DropTarget>
@@ -871,17 +978,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </div>
     </aside>}
     </div>
-    {contextOpen && <aside className="context-panel" id="agent-context">
-      <div className="context-panel-head"><div className="context-heading"><span>CONTEXT</span><h2>本次上下文</h2></div><button className="icon-button" type="button" onClick={() => setContextOpen(false)} aria-label="收起本次上下文"><X size={17} /></button></div>
-      <ContextLine icon={Database} label="已启用数据" value={state.data.filter((item) => item.enabled).length} />
-      <ContextLine icon={Database} label="当前引用资源" value={selectedReferences.length} />
-      <ContextLine icon={BookOpenText} label="已启用知识" value={state.knowledge.filter((item) => item.enabled).length} />
-      <ContextLine icon={Braces} label="已启用 Skills" value={state.skills.filter((item) => item.enabled).length} />
-      <ContextLine icon={Box} label="模型" value={state.model.model} />
-      <div className="context-note"><strong>{activeCapability.label}</strong><br />{activeCapability.detail}<br /><br />Stable 会优先加载当前对话显式引用的数据；未选择时再按问题检索已启用资料。</div>
-      <div className="trace-disclosure"><Activity size={16} /><span>执行区展示过程摘要与真实工具事件，不展示模型隐藏思维链。</span></div>
-      {state.messages.length > 0 && <button className="text-button" onClick={() => void action('正在清空对话', async () => updateAgent(await window.stable.agent.clear(activeConversation.id)))}>清空当前对话</button>}
-    </aside>}
   </section>
 }
 
@@ -910,13 +1006,13 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ message, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewLink }: { message: MessageItem; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function MessageTurn({ message, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewLink }: { message: MessageItem; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} />
   return <article className="assistant-turn">
     {message.trace?.length ? <RunTrace items={message.trace} status="completed" /> : null}
     <div className="assistant-answer">
       <div className="assistant-mark" aria-hidden="true">S</div>
-      <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} onPreview={onPreviewLink} /></div>
+      <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
     </div>
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
       <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
@@ -928,6 +1024,42 @@ function MessageTurn({ message, onCopy, onAutomationDecision, onPreviewAttachmen
   </article>
 }
 
+interface ConversationFileItem {
+  name: string
+  path: string
+  detail: string
+}
+
+function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; onOpen: () => void }) {
+  return <button className="conversation-file-card" type="button" onClick={onOpen} title={item.path} aria-label={`在侧栏预览 ${item.name}`}>
+    <span className="conversation-file-icon"><FileText size={18} aria-hidden="true" /></span>
+    <span className="conversation-file-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
+    <ChevronRight size={16} aria-hidden="true" />
+  </button>
+}
+
+function localArtifactPaths(content: string, workspace: string) {
+  const root = workspace.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLocaleLowerCase()
+  const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?=$|[\s`)\]}，。；、])/gi
+  const matches = new Map<string, { name: string; path: string }>()
+  for (const match of content.matchAll(pattern)) {
+    let filePath = match[1].replace(/\//g, '\\')
+    try { filePath = decodeURIComponent(filePath) } catch {}
+    const normalized = filePath.toLocaleLowerCase()
+    if (!normalized.startsWith(`${root}\\`)) continue
+    matches.set(normalized, { name: filePath.split('\\').pop() || filePath, path: filePath })
+  }
+  return [...matches.values()]
+}
+
+function ArtifactLinks({ content, workspace, onOpen }: { content: string; workspace: string; onOpen: (item: { name: string; path: string }) => void }) {
+  const artifacts = localArtifactPaths(content, workspace)
+  if (!artifacts.length) return null
+  return <div className="conversation-file-list artifact-links" aria-label="交付文件">
+    {artifacts.map((item) => <ConversationFileCard item={{ ...item, detail: '生成文件 · 侧栏预览' }} onOpen={() => onOpen(item)} key={item.path} />)}
+  </div>
+}
+
 function formatAutomationSchedule(schedule: AutomationSchedule) {
   if (schedule.type === 'once') return `${schedule.date} ${schedule.time}`
   if (schedule.type === 'daily') return `每天 ${schedule.time}`
@@ -936,16 +1068,15 @@ function formatAutomationSchedule(schedule: AutomationSchedule) {
 }
 
 function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void }) {
+  const uploadedFiles = attachments.filter((item) => item.kind === 'attachment' && item.path && onPreviewAttachment)
+  const staticAttachments = attachments.filter((item) => !uploadedFiles.includes(item))
   return <article className="user-turn" data-pending={pending || undefined}>
     <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p>
-      {attachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的附件">
-        {attachments.map((item, index) => {
-          const previewable = Boolean(onPreviewAttachment && (/\.(?:md|markdown)$/i.test(item.name) || /^(?:md|markdown)$/i.test(item.type)))
-          const chipContent = <>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></>
-          return previewable
-            ? <button className="selection-chip message-file-chip" type="button" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`} onClick={() => onPreviewAttachment?.(item)}>{chipContent}</button>
-            : <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{chipContent}</div>
-        })}
+      {uploadedFiles.length > 0 && <div className="conversation-file-list message-file-cards" aria-label="随消息上传的文件">
+        {uploadedFiles.map((item, index) => <ConversationFileCard item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
+      </div>}
+      {staticAttachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的引用">
+        {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
       {onCopy && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息到主输入框"><Copy size={15} aria-hidden="true" /></button></div>}
     </div>
@@ -1195,7 +1326,7 @@ function MarkdownContent({ content, onPreview }: { content: string; onPreview?: 
 }
 
 function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener): ReactNode[] {
-  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^)\s]+|[A-Za-z]:\\[^)]+\.(?:md|markdown))\)|https?:\/\/[^\s<]+|[A-Za-z]:\\[^\n<>|?*"]+?\.(?:md|markdown)\b)/g
+  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^)\s]+|[A-Za-z]:[\\/][^)\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15})\)|https?:\/\/[^\s<]+|[A-Za-z]:[\\/][^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?=$|[\s`)\]}，。；、]))/gi
   return text.split(token).filter(Boolean).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) return <strong key={`${keyPrefix}-${index}`}>{part.slice(2, -2)}</strong>
     if (part.startsWith('`') && part.endsWith('`')) return <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
@@ -1203,19 +1334,15 @@ function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener
     if (link && /^https?:\/\//i.test(link[2])) return onPreview
       ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
       : <a href={link[2]} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{link[1]}</a>
-    if (link && /^[A-Za-z]:\\.*\.(?:md|markdown)$/i.test(link[2])) return onPreview
-      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'markdown', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
+    if (link && /^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(link[2])) return onPreview
+      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
       : <Fragment key={`${keyPrefix}-${index}`}>{link[1]}</Fragment>
     if (/^https?:\/\//i.test(part)) return onPreview
       ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: part, title: new URL(part).hostname })} key={`${keyPrefix}-${index}`}>{part}</button>
       : <a href={part} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{part}</a>
-    if (/^[A-Za-z]:\\.*\.(?:md|markdown)$/i.test(part) && onPreview) return <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'markdown', value: part, title: part.split(/[/\\]/).pop() || 'Markdown' })} key={`${keyPrefix}-${index}`}>{part}</button>
+    if (/^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(part) && onPreview) return <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: part, title: part.split(/[/\\]/).pop() || '文件' })} key={`${keyPrefix}-${index}`}>{part}</button>
     return <Fragment key={`${keyPrefix}-${index}`}>{part}</Fragment>
   })
-}
-
-function ContextLine({ icon: Icon, label, value }: { icon: typeof Database; label: string; value: string | number }) {
-  return <div className="context-line"><Icon size={17} /><span>{label}</span><strong>{value}</strong></div>
 }
 
 type DataSection = 'database' | DataLibraryCategory
@@ -1642,8 +1769,8 @@ function AutomationsPage({ state, update, goChat, action }: { state: AutomationS
   </section>
 }
 
-function PageLead({ title, copy, action }: { title: string; copy: string; action: React.ReactNode }) {
-  return <div className="page-lead"><div><h2>{title}</h2><p>{copy}</p></div>{action}</div>
+function PageLead({ title, copy, action, headingId }: { title: string; copy: string; action: React.ReactNode; headingId?: string }) {
+  return <div className="page-lead"><div><h2 id={headingId}>{title}</h2><p>{copy}</p></div>{action}</div>
 }
 
 function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: string; detail: string; enabled: boolean; onToggle: (enabled: boolean) => void; onRemove: () => void }) {
@@ -1654,13 +1781,77 @@ function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: st
   </article>
 }
 
-function SettingsPage({ state, updateModel, updateTheme, action }: { state: BootstrapData; updateModel: (model: ModelSettings) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const [form, setForm] = useState({ ...state.model, apiKey: '' })
+type ModelProfileForm = ModelProfile & { apiKey: string }
+type ModelProfileErrors = Partial<Record<'displayName' | 'providerId' | 'baseURL' | 'model' | 'apiKey', string>>
+
+function modelProfileForm(profile?: ModelProfile, preset: Partial<ModelProfile> = {}): ModelProfileForm {
+  return profile
+    ? { ...profile, apiKey: '' }
+    : { id: window.crypto.randomUUID(), providerId: '', displayName: '', baseURL: '', model: '', hasApiKey: false, apiKey: '', ...preset }
+}
+
+function SettingsPage({ state, replaceState, updateModels, updateTheme, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; updateModels: (models: ModelCatalog) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const initialProfile = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
+  const [form, setForm] = useState<ModelProfileForm>(() => modelProfileForm(initialProfile))
   const [globalFile, setGlobalFile] = useState<GlobalInstructionsFile>({ path: `${state.paths.userData}\\AGENTS.md`, content: '', exists: false })
   const [globalDraft, setGlobalDraft] = useState('')
   const [globalStatus, setGlobalStatus] = useState('正在读取本机设置…')
-  const patch = (value: Partial<typeof form>) => setForm((current) => ({ ...current, ...value }))
-  function deepSeekPreset() { patch({ providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }) }
+  const [formErrors, setFormErrors] = useState<ModelProfileErrors>({})
+  const patch = (value: Partial<typeof form>) => { setForm((current) => ({ ...current, ...value })); setFormErrors({}) }
+  const editingExisting = state.models.items.some((item) => item.id === form.id)
+
+  function newProfile(preset: Partial<ModelProfile> = {}) { setFormErrors({}); setForm(modelProfileForm(undefined, preset)) }
+  function deepSeekPreset() {
+    const existing = state.models.items.find((item) => item.providerId === 'deepseek' && item.model === 'deepseek-v4-flash')
+    if (existing) setForm(modelProfileForm(existing))
+    else newProfile({ providerId: 'deepseek', displayName: 'DeepSeek V4 Flash', baseURL: 'https://api.deepseek.com', model: 'deepseek-v4-flash' })
+  }
+  function applyCatalog(catalog: ModelCatalog, preferredId = '') {
+    updateModels(catalog)
+    const next = catalog.items.find((item) => item.id === preferredId)
+      || catalog.items.find((item) => item.id === catalog.defaultModelId)
+      || catalog.items[0]
+    setForm(modelProfileForm(next))
+  }
+  function validateProfile() {
+    const errors: ModelProfileErrors = {}
+    if (!form.displayName.trim()) errors.displayName = '请输入显示名称。'
+    if (!form.providerId.trim()) errors.providerId = '请输入服务 ID。'
+    if (!form.baseURL.trim()) errors.baseURL = '请输入 API 地址。'
+    else {
+      try {
+        const url = new URL(form.baseURL)
+        if (!['http:', 'https:'].includes(url.protocol)) errors.baseURL = 'API 地址只支持 HTTP 或 HTTPS。'
+      } catch { errors.baseURL = '请输入有效的 HTTP 或 HTTPS 地址。' }
+    }
+    if (!form.model.trim()) errors.model = '请输入服务端实际模型名称。'
+    if (!form.hasApiKey && !form.apiKey.trim()) errors.apiKey = '首次保存该模型时需要填写 API Key。'
+    setFormErrors(errors)
+    if (Object.keys(errors).length) {
+      window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.model-profile-editor [aria-invalid="true"]')?.focus())
+      return false
+    }
+    return true
+  }
+  function saveProfile() {
+    if (!validateProfile()) return
+    void action('正在保存模型配置', async () => {
+      const catalog = await window.stable.model.save(form)
+      const saved = catalog.items.find((item) => item.id === form.id)
+        || catalog.items.at(-1)
+      applyCatalog(catalog, saved?.id)
+    })
+  }
+  function removeProfile(profile: ModelProfile) {
+    void action(`正在删除模型 ${profile.displayName}`, async () => {
+      const catalog = await window.stable.model.remove(profile.id)
+      applyCatalog(catalog, form.id === profile.id ? '' : form.id)
+    })
+  }
+  function setDefaultModel(profile: ModelProfile) {
+    if (profile.id === state.models.defaultModelId) return
+    void action('正在设置默认模型', async () => updateModels(await window.stable.model.setDefault(profile.id)))
+  }
   useEffect(() => {
     let active = true
     window.stable.settings.globalInstructions().then((value) => {
@@ -1691,15 +1882,36 @@ function SettingsPage({ state, updateModel, updateTheme, action }: { state: Boot
           </button>)}
         </div>
       </section>
-      <PageLead title="模型服务" copy="Stable 使用 OpenAI Chat Completions 兼容接口。API Key 由 Windows 安全存储加密。" action={<button className="text-button" onClick={deepSeekPreset}>使用 DeepSeek 预设</button>} />
-      <div className="form-grid">
-        <div className="field"><label htmlFor="display-name">服务名称</label><input id="display-name" value={form.displayName} onChange={(event) => patch({ displayName: event.target.value })} /></div>
-        <div className="field"><label htmlFor="provider-id">服务 ID</label><input id="provider-id" value={form.providerId} onChange={(event) => patch({ providerId: event.target.value })} /></div>
-        <div className="field span"><label htmlFor="base-url">API 地址</label><input id="base-url" value={form.baseURL} onChange={(event) => patch({ baseURL: event.target.value })} placeholder="https://api.example.com/v1" /></div>
-        <div className="field"><label htmlFor="model-name">模型名称</label><input id="model-name" value={form.model} onChange={(event) => patch({ model: event.target.value })} /></div>
-        <div className="field"><label htmlFor="api-key">API Key</label><input id="api-key" type="password" value={form.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder={form.hasApiKey ? '已安全保存；留空则保持不变' : '输入 API Key'} /></div>
-      </div>
-      <button className="button primary" onClick={() => void action('正在保存模型设置', async () => { const model = await window.stable.model.save(form); updateModel(model); patch({ ...model, apiKey: '' }) })}><Save size={17} />保存模型设置</button>
+      {state.cloud.status === 'authenticated' && <CloudAccountSettings state={state} replaceState={replaceState} action={action} />}
+      <section className="model-settings" aria-labelledby="model-settings-title">
+        {state.cloud.status === 'authenticated' ? <CloudModelSettings state={state} /> : <>
+        <PageLead headingId="model-settings-title" title="模型服务" copy="统一管理兼容接口与凭证。新对话使用默认模型，每个对话也可在输入区独立切换。" action={<div className="button-row"><button className="text-button" type="button" onClick={deepSeekPreset}>使用 DeepSeek 预设</button><button className="button" type="button" onClick={() => newProfile()}><Plus size={16} aria-hidden="true" />新增模型</button></div>} />
+        {state.models.items.length ? <div className="model-profile-list" aria-label="已配置模型">{state.models.items.map((item) => {
+          const isDefault = item.id === state.models.defaultModelId
+          const selected = item.id === form.id
+          return <article className="model-profile-card" data-active={selected || undefined} key={item.id}>
+            <button className="model-profile-select" type="button" aria-pressed={selected} onClick={() => setForm(modelProfileForm(item))}>
+              <span className="model-profile-icon"><Box size={18} aria-hidden="true" /></span>
+              <span><strong>{item.displayName}</strong><small>{item.providerId} · {item.model}</small></span>
+            </button>
+            <div className="model-profile-state"><span>{item.hasApiKey ? '密钥已保存' : '尚未保存密钥'}</span>{isDefault && <em><Check size={13} aria-hidden="true" />默认</em>}</div>
+            <div className="model-profile-actions"><button className="text-button" type="button" disabled={isDefault} onClick={() => setDefaultModel(item)}>{isDefault ? '默认模型' : '设为默认'}</button><button className="icon-button" type="button" disabled={isDefault || state.models.items.length <= 1} title={isDefault ? '请先设置其他默认模型' : state.models.items.length <= 1 ? '至少需要保留一个模型' : '删除模型'} onClick={() => removeProfile(item)} aria-label={`删除模型 ${item.displayName}`}><Trash2 size={16} aria-hidden="true" /></button></div>
+          </article>
+        })}</div> : <div className="model-profile-empty"><Box size={22} aria-hidden="true" /><strong>还没有模型配置</strong><span>新增一个 OpenAI Chat Completions 兼容模型后即可开始对话。</span></div>}
+
+        <section className="model-profile-editor" aria-labelledby="model-editor-title">
+          <div className="model-editor-head"><div><span>{editingExisting ? 'EDIT MODEL' : 'NEW MODEL'}</span><h3 id="model-editor-title">{editingExisting ? `编辑 ${form.displayName}` : '新增模型配置'}</h3><p>每个模型独立保存服务地址与 API Key，切换时不会覆盖其他配置。</p></div>{editingExisting && <button className="text-button" type="button" onClick={() => newProfile()}><Plus size={15} aria-hidden="true" />新增另一项</button>}</div>
+          <div className="form-grid">
+            <div className="field"><label htmlFor="display-name">显示名称</label><input id="display-name" required value={form.displayName} onChange={(event) => patch({ displayName: event.target.value })} aria-invalid={Boolean(formErrors.displayName)} aria-describedby={formErrors.displayName ? 'display-name-error' : undefined} placeholder="例如：DeepSeek V4 Flash" />{formErrors.displayName && <small className="field-error" id="display-name-error" role="alert">{formErrors.displayName}</small>}</div>
+            <div className="field"><label htmlFor="provider-id">服务 ID</label><input id="provider-id" required spellCheck={false} value={form.providerId} onChange={(event) => patch({ providerId: event.target.value })} aria-invalid={Boolean(formErrors.providerId)} aria-describedby={formErrors.providerId ? 'provider-id-error' : undefined} placeholder="例如：deepseek" />{formErrors.providerId && <small className="field-error" id="provider-id-error" role="alert">{formErrors.providerId}</small>}</div>
+            <div className="field span"><label htmlFor="base-url">API 地址</label><input id="base-url" type="url" required spellCheck={false} value={form.baseURL} onChange={(event) => patch({ baseURL: event.target.value })} aria-invalid={Boolean(formErrors.baseURL)} aria-describedby={formErrors.baseURL ? 'base-url-error' : undefined} placeholder="https://api.example.com/v1" />{formErrors.baseURL && <small className="field-error" id="base-url-error" role="alert">{formErrors.baseURL}</small>}</div>
+            <div className="field"><label htmlFor="model-name">模型名称</label><input id="model-name" required spellCheck={false} value={form.model} onChange={(event) => patch({ model: event.target.value })} aria-invalid={Boolean(formErrors.model)} aria-describedby={formErrors.model ? 'model-name-error' : undefined} placeholder="服务端实际模型名称" />{formErrors.model && <small className="field-error" id="model-name-error" role="alert">{formErrors.model}</small>}</div>
+            <div className="field"><label htmlFor="api-key">API Key</label><input id="api-key" type="password" spellCheck={false} value={form.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} aria-invalid={Boolean(formErrors.apiKey)} aria-describedby={`api-key-help${formErrors.apiKey ? ' api-key-error' : ''}`} placeholder={form.hasApiKey ? '已安全保存；留空则保持不变' : '输入 API Key'} /><small id="api-key-help">由 Windows 安全存储加密，不会显示在模型列表中。</small>{formErrors.apiKey && <small className="field-error" id="api-key-error" role="alert">{formErrors.apiKey}</small>}</div>
+          </div>
+          <button className="button primary" type="button" onClick={saveProfile}><Save size={17} aria-hidden="true" />{editingExisting ? '保存模型配置' : '添加模型'}</button>
+        </section>
+        </>}
+      </section>
       <section className="update-settings" aria-labelledby="update-settings-title">
         <div className="settings-section-head"><span>UPDATE</span><h2 id="update-settings-title">软件更新</h2><p>安装版会从 GitHub Releases 后台下载安装包；安装时由独立窗口显示真实进度，完成后请重新打开 Stable。</p></div>
         <div className="update-settings-row"><div><strong>当前版本 v{state.update.currentVersion}</strong><span aria-live="polite">{state.update.status === 'development' ? '开发模式不连接更新服务' : state.update.status === 'checking' ? '正在检查更新…' : state.update.status === 'downloading' ? `正在下载 ${state.update.progress}%` : state.update.status === 'downloaded' ? `v${state.update.availableVersion} 已下载，等待安装` : state.update.status === 'installing' ? `正在打开 v${state.update.availableVersion} 安装进度窗口` : state.update.status === 'error' ? state.update.error : '已启用自动更新'}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'downloaded', 'installing'].includes(state.update.status)} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{state.update.status === 'downloaded' ? '已准备好' : state.update.status === 'installing' ? '正在安装' : '检查更新'}</button></div>
@@ -1719,6 +1931,46 @@ function SettingsPage({ state, updateModel, updateTheme, action }: { state: Boot
       <p>卸载 Stable 时默认保留这里的数据。需要完全移除时，可在卸载后手动删除应用数据目录。</p>
     </aside>
   </section>
+}
+
+function formatCloudMoney(micros: number, currency = 'CNY') {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(micros || 0) / 1_000_000)
+}
+
+function CloudAccountSettings({ state, replaceState, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const account = state.cloud.account
+  const quota = state.cloud.quota
+  const usage = state.cloud.usage?.totals
+  if (!account) return null
+  const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
+  const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
+  return <section className="cloud-account-settings" aria-labelledby="cloud-account-title">
+    <PageLead headingId="cloud-account-title" title="Stable Cloud 账号" copy="平台统一提供模型凭据，并在每次模型请求前检查剩余额度。" action={<div className="button-row"><button className="text-button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新</button><button className="button" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}>退出账号</button></div>} />
+    <div className="cloud-account-grid">
+      <article className="cloud-account-identity"><span className="cloud-account-avatar" aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{account.displayName}</strong><span>{account.username} · {account.role === 'admin' ? '管理员' : '成员'}</span></div><em><ShieldCheck size={13} aria-hidden="true" />已登录</em></article>
+      <article className="cloud-quota-card">
+        <div><span>本期额度</span><strong>{quota ? `${formatCloudMoney(committed, quota.currency)} / ${formatCloudMoney(quota.limitMicros, quota.currency)}` : '未分配'}</strong></div>
+        {quota && <><div className="cloud-quota-track" role="progressbar" aria-label="本期额度使用比例" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div className="cloud-quota-meta"><span>剩余 {formatCloudMoney(quota.remainingMicros, quota.currency)}</span><span>截止 {new Date(quota.periodEnd).toLocaleDateString('zh-CN')}</span></div></>}
+      </article>
+    </div>
+    <div className="cloud-usage-grid" aria-label="近 30 天模型用量">
+      <div><span>模型请求</span><strong>{Number(usage?.request_count || 0).toLocaleString('zh-CN')}</strong></div>
+      <div><span>输入 Token</span><strong>{Number(usage?.prompt_tokens || 0).toLocaleString('zh-CN')}</strong></div>
+      <div><span>输出 Token</span><strong>{Number(usage?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
+      <div><span>确认消耗</span><strong>{formatCloudMoney(Number(usage?.actual_micros || 0), quota?.currency || 'CNY')}</strong></div>
+    </div>
+  </section>
+}
+
+function CloudModelSettings({ state }: { state: BootstrapData }) {
+  return <>
+    <PageLead headingId="model-settings-title" title="云端模型" copy="模型、价格和供应商凭据由管理员统一维护。你可以在每个对话的输入区选择本次使用的模型。" action={null} />
+    {state.models.items.length ? <div className="model-profile-list" aria-label="可用云端模型">{state.models.items.map((item, index) => <article className="model-profile-card cloud-model-card" key={item.id}>
+      <span className="model-profile-icon"><Box size={18} aria-hidden="true" /></span>
+      <span className="cloud-model-copy"><strong>{item.displayName}</strong><small>{item.model}</small></span>
+      {index === 0 && <em className="cloud-model-default"><Check size={13} aria-hidden="true" />默认</em>}
+    </article>)}</div> : <div className="model-profile-empty"><Box size={22} aria-hidden="true" /><strong>管理员尚未配置模型</strong><span>账号可以登录，但模型调用会保持停止；请先在 Stable Cloud 管理后台添加模型和供应商密钥。</span></div>}
+  </>
 }
 
 function Empty({ icon: Icon, title, detail }: { icon: typeof Database; title: string; detail: string }) {
