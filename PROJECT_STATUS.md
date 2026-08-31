@@ -1,11 +1,11 @@
 # Stable 项目状态与开发交接
 
 > 最后更新：2026-09-01
-> 文档版本：`2026-09-01.2`
+> 文档版本：`2026-09-01.3`
 > 项目目录：`D:\Codex\2026-08-19\Stable-0.9.1`  
 > 当前发布基线：`v0.9.34`
 > 当前开发版本：`v0.9.39`
-> 当前状态：**v0.9.39 已在未发布的 v0.9.38 全部能力上完成 Stable Cloud 桌面账号接入：安装版登录门禁、临时密码强制改密、Windows 加密设备会话、账号/金额额度/近 30 天用量、云端只读模型目录，以及为每次 Harness 模型请求生成独立幂等键的本机回环代理均已实现。141 项自动化测试、类型检查和生产构建通过；完整安装包与轻量更新包已在本机成功生成，打包后 `--stable-update-healthcheck` 退出码为 0。真实公网检查确认 GitHub 最新正式版仍为 v0.9.34 且发布账号有效。Stable Cloud 当前 Sites 托管层仍要求 ChatGPT 所有者登录，普通桌面请求收到 HTML 401；必须明确批准将入口改为公网可达，并配置至少一个真实供应商模型与服务端密钥后，才能安全发布 v0.9.39。当前受管环境的 Chromium Renderer/GPU 子进程仍因缺失依赖退出，本轮 Electron 视觉截图未计为通过。**
+> 当前状态：**v0.9.39 已在未发布的 v0.9.38 全部能力上完成 Stable Cloud 桌面账号接入：安装版登录门禁、临时密码强制改密、Windows 加密设备会话、账号/金额额度/近 30 天用量、云端只读模型目录，以及为每次 Harness 模型请求生成独立幂等键的本机回环代理均已实现。141 项自动化测试、类型检查和生产构建通过；完整安装包与轻量更新包已在本机成功生成，打包后 `--stable-update-healthcheck` 退出码为 0。GitHub Hosted Windows 手动预检 Run `33431193467` 在提交 `5f20eb4` 上通过测试、两类打包、可见成功更新、可见失败回滚、静默失败回滚与证据上传，手动运行未发布 Release。真实公网检查确认 GitHub 最新正式版仍为 v0.9.34 且发布账号有效。Stable Cloud 当前 Sites 托管层仍要求 ChatGPT 所有者登录，普通桌面请求收到 HTML 401；必须明确批准将入口改为公网可达，并配置至少一个真实供应商模型与服务端密钥后，才能安全发布 v0.9.39。当前受管环境的 Chromium Renderer/GPU 子进程仍因缺失依赖退出，本轮 Electron 视觉截图未计为通过。**
 > 适用读者：后续开发者、测试人员与项目维护者
 > 文档范围：记录项目背景、目标、发布状态、本次会话、验证证据、未完成事项、卡点、踩坑与后续顺序
 > 证据口径：`已发布` 表示远程 Release 已核验；`自动化验证` 表示测试或构建通过；`隔离验证` 表示本机 QA 环境通过；`待真机验收` 表示仍需用户设备给出最终结论
@@ -20,6 +20,7 @@
 - Harness 子进程只持有随机的本机回环代理凭据；真实设备令牌留在 Electron 主进程。代理只接受 `127.0.0.1`、随机进程凭据和固定 `/v1` 路径，并为每个 `/v1/chat/completions` 请求生成唯一 `Idempotency-Key`。
 - 新增 8 项账号/网关/桌面集成测试；当前完整结果为 `npm test` 141/141、`npm run typecheck`、`npm run build` 通过。
 - 本机 `npm run dist` 与 `npm run dist:update` 均成功；完整安装包为 `283855390` bytes，轻量更新包为 `115329902` bytes，打包目录中的应用健康检查退出码为 `0`。
+- 预检分支 `codex/v0.9.39-preflight` 已推送；GitHub Actions Run `33431193467` 成功，成功升级终态为 `100|complete|success|0`，没有自动重启且用户数据保留；可见和静默强制失败均回滚到 v0.9.31，终态为 `92|healthcheck_rollback|failed_rolled_back|12`。
 - 公网实测：GitHub 最新 Release 为 v0.9.34，资产公开可读，`gh auth status` 有效；Stable Cloud `/api/health` 与 `/api/account` 在未登录 ChatGPT 时均由托管层返回 HTML 401，因此暂不发布避免其他设备升级后无法登录。
 - Electron 登录页与登录后设置页截图尝试因当前环境已有的 Chromium Renderer/GPU 子进程缺失错误失败，未计入视觉验收。
 - 已完成本地打包但尚未执行本版安装器隔离 QA；仍未创建提交/标签/Release、未配置真实供应商 Key、未执行真实模型调用或其他设备更新验收。
@@ -305,6 +306,10 @@ Stable 是一个 Windows 本地优先的 Agent 桌面工作台，能够在本机
 | 完整安装包 | `npm run dist` 通过；`release-0.9.39/Stable-Setup-0.9.39-x64.exe` 为 `283855390` bytes，SHA-256 `51FA525314B5E76F6F97DEF8FDCEA22A1FF02E93F932C8DAF95571CAA0398882` |
 | 轻量更新包 | `npm run dist:update` 通过；`release-0.9.39-update/Stable-Update-0.9.39-x64.exe` 为 `115329902` bytes，SHA-256 `008AD118D82CCF8C628D962113EC374EE63C0039DCC2490314DEFDC3A4D80FD2`；`latest.yml` 为 `354` bytes，SHA-256 `E9606DE6143178E9CC3E2B61A98D8ED12257B5762AAEC9D4299CC36FEFBBD974` |
 | 打包后健康检查 | `release-0.9.39/win-unpacked/Stable.exe --stable-update-healthcheck` 静默执行，退出码 `0` |
+| GitHub Windows 预检 | Run `33431193467`、提交 `5f20eb47b76fdfc024d298f6ab66b4b11a63dbc9`，总耗时 `22m45s`；测试、两类打包、基线下载、安装器 QA 和证据上传均通过，Release 步骤按手动预检规则跳过 |
+| 可见成功更新 | v0.9.31 → v0.9.39；进度单调到 `100|complete|success|0`，未自动重启，快捷方式指向新版，用户数据保留，Runtime 与新版健康检查通过 |
+| 可见失败回滚 | 强制健康检查失败后终态 `92|healthcheck_rollback|failed_rolled_back|12`；结果窗口保持打开，旧版 v0.9.31、用户数据与嵌入 Runtime 均恢复 |
+| 静默失败回滚 | 安装器进程和状态文件退出码均为 `12`；回滚到 v0.9.31，用户数据保留且 Runtime 健康检查通过 |
 | 云端账号与额度 | 登录、临时密码强制改密、令牌轮换、恢复/退出、账号快照、金额额度和近 30 天用量均有主进程及 UI 契约测试 |
 | 模型网关安全 | 真实云端 Bearer 不进入渲染页面或 Harness；本机代理拒绝无随机凭据请求，连续两次模型请求产生不同 `Idempotency-Key` |
 | 外部可达性 | GitHub 最新 v0.9.34 Release API 返回 200 且发布登录有效；Stable Cloud 普通桌面请求被 Sites 托管层以 HTML 401 阻断，故发布门禁未放行 |
@@ -325,7 +330,7 @@ Stable 是一个 Windows 本地优先的 Agent 桌面工作台，能够在本机
 | 本机 Runtime 修复 | 正式路径 37,847 个文件、730,332,578 bytes；Node v24.14.0、Harness 0.1.0-rc.5；关键入口 SHA-256 为 `C0226687...BC366C62`，`HarnessRunner.ready()` 为 `true` |
 | Harness 本地集成 | Electron host 下完整模拟调用连续五次通过：`HARNESS_INTEGRATION_PASS requests=1 events=4`；Runtime 数量、字节、哈希以及三个曾受影响依赖的文件数均保持不变；未连接真实模型或消耗额度 |
 | 源码版重启 | 应用版本为 `0.9.39`；本轮两次隔离 Electron Cloud 截图均受当前环境 Chromium Renderer/GPU 子进程启动失败限制，未保持运行，也未计为验收通过 |
-| 本轮未执行 | 真实模型服务请求、真实用户文件人工界面验收、本版安装器隔离安装/更新/回滚 QA、GitHub Actions、标签与 Release |
+| 本轮未执行 | 真实模型服务请求、真实用户文件人工界面验收、标签、正式 GitHub Release 与其他真实设备更新验收 |
 
 ### 8.1 v0.9.34 发布门禁
 
@@ -677,6 +682,7 @@ npm run dist:update
 - [x] `v0.9.38` 文件卡片、上传附件预览、上下文面板移除与 realpath 工作区边界已通过 133 项测试、类型检查、生产构建和深色/浅色隔离 Electron 冒烟；最终持久源码重启受当前受管环境的 Chromium Renderer/GPU 子进程启动失败限制，未计为通过。
 - [x] `v0.9.39` 云端账号、强制改密、额度/用量、只读模型目录、回环代理和逐请求幂等键已通过 141 项测试、类型检查和生产构建。
 - [x] `v0.9.39` 本地完整安装包、轻量更新包、blockmap 和轻量 `latest.yml` 已成功生成；打包后应用健康检查退出码为 0。
+- [x] `v0.9.39` GitHub Hosted Windows 手动预检 Run `33431193467` 已通过可见成功更新、可见失败回滚、静默失败回滚、数据保留、Runtime 和快捷方式验证；Release 步骤明确跳过。
 - [x] 已确认 GitHub 最新正式版仍为 v0.9.34、公开 Release API 可达且当前 GitHub 发布登录有效。
 - [ ] 尚未批准并完成 Stable Cloud Sites 公网入口调整；当前普通桌面请求被托管层 HTML 401 阻断。
 - [ ] 尚未配置并验证真实供应商模型、价格和服务端 Key。
