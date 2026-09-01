@@ -1,6 +1,6 @@
 'use strict'
 
-const { constants: { COPYFILE_EXCL }, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, unlinkSync } = require('node:fs')
+const { constants: { COPYFILE_EXCL }, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const path = require('node:path')
 const JSZip = require('jszip')
@@ -9,6 +9,14 @@ const { SUPPORTED_DATA_EXTENSIONS, extractText, inspectDataFile } = require('./i
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
 const MAX_ATTACHMENT_FILES = 2_000
 const MAX_ATTACHMENT_TEXT = 300_000
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_MESSAGE_IMAGE_BYTES = 10 * 1024 * 1024
+const IMAGE_MEDIA_TYPES = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+})
 const TEXT_FILE_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.json', '.yaml', '.yml', '.html', '.log', '.xml',
   '.js', '.jsx', '.ts', '.tsx', '.css', '.scss', '.less', '.py', '.ps1', '.bat', '.cmd',
@@ -20,6 +28,39 @@ const READABLE_FILE_EXTENSIONS = new Set([...TEXT_FILE_EXTENSIONS, ...SUPPORTED_
 function validateSource(sourcePath) {
   if (typeof sourcePath !== 'string' || !sourcePath.trim() || !existsSync(sourcePath)) throw new Error('找不到要添加的附件。')
   return sourcePath
+}
+
+function imageMediaTypeForPath(sourcePath) {
+  return IMAGE_MEDIA_TYPES[path.extname(String(sourcePath || '')).toLowerCase()]
+}
+
+function detectedImageMediaType(buffer) {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  return ''
+}
+
+function inspectImagePath(sourcePath) {
+  validateSource(sourcePath)
+  const info = statSync(sourcePath)
+  if (!info.isFile()) throw new Error('选择的图片不是普通文件。')
+  if (!info.size) throw new Error(`“${path.basename(sourcePath)}”是空图片，未添加。`)
+  if (info.size > MAX_IMAGE_BYTES) throw new Error(`“${path.basename(sourcePath)}”超过 5 MB，未添加。`)
+  const declared = imageMediaTypeForPath(sourcePath)
+  const data = readFileSync(sourcePath)
+  const detected = detectedImageMediaType(data)
+  if (!declared || !detected || declared !== detected) throw new Error(`“${path.basename(sourcePath)}”不是有效的 PNG、JPG 或 WebP 图片。`)
+  return {
+    name: path.basename(sourcePath), path: sourcePath, size: info.size, type: path.extname(sourcePath).slice(1).toLowerCase(),
+    mediaType: detected, previewUrl: `data:${detected};base64,${data.toString('base64')}`,
+  }
+}
+
+function isImageAttachment(item) {
+  if (!item) return false
+  if (typeof item === 'string') return Boolean(imageMediaTypeForPath(item))
+  return String(item.mediaType || '').startsWith('image/') || Boolean(imageMediaTypeForPath(item.path || item.name))
 }
 
 function scanAttachmentFolder(sourcePath) {
@@ -55,9 +96,48 @@ function inspectAttachmentPath(sourcePath) {
     return { name: path.basename(sourcePath), path: sourcePath, size: scanned.size, type: 'folder' }
   }
   if (!info.isFile()) throw new Error('选择的附件既不是文件也不是文件夹。')
+  if (imageMediaTypeForPath(sourcePath)) return inspectImagePath(sourcePath)
   if (path.extname(sourcePath).toLowerCase() !== '.zip') return inspectDataFile(sourcePath)
   if (info.size > MAX_ATTACHMENT_BYTES) throw new Error(`“${path.basename(sourcePath)}”超过 100 MB，未添加。`)
   return { name: path.basename(sourcePath), path: sourcePath, size: info.size, type: 'zip' }
+}
+
+function savePastedImage(input, destinationRoot, workspaceRoot) {
+  const declared = String(input?.mediaType || '').toLowerCase()
+  if (!Object.values(IMAGE_MEDIA_TYPES).includes(declared)) throw new Error('粘贴截图只支持 PNG、JPG 或 WebP。')
+  const data = Buffer.from(input?.data || [])
+  if (!data.length) throw new Error('剪贴板图片为空，未添加。')
+  if (data.length > MAX_IMAGE_BYTES) throw new Error('剪贴板图片超过 5 MB，未添加。')
+  const detected = detectedImageMediaType(data)
+  if (!detected || detected !== declared) throw new Error('剪贴板图片格式无效，未添加。')
+  const destination = ensureAttachmentDestination(destinationRoot, workspaceRoot)
+  const itemRoot = path.join(destination.destinationPath, randomUUID())
+  const extension = detected === 'image/jpeg' ? '.jpg' : detected === 'image/webp' ? '.webp' : '.png'
+  const requestedBase = path.basename(String(input?.name || `粘贴截图${extension}`), path.extname(String(input?.name || '')))
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 80) || '粘贴截图'
+  const targetPath = path.join(itemRoot, `${requestedBase}${extension}`)
+  mkdirSync(itemRoot)
+  try {
+    writeFileSync(targetPath, data, { flag: 'wx' })
+    const inspected = inspectImagePath(targetPath)
+    return { ...inspected, draft: true }
+  } catch (error) {
+    removeWithoutFollowingLinks(itemRoot)
+    throw error
+  }
+}
+
+function discardDraftImage(sourcePath, destinationRoot, workspaceRoot) {
+  const workspace = path.resolve(String(workspaceRoot || ''))
+  const drafts = path.resolve(String(destinationRoot || ''))
+  const target = path.resolve(String(sourcePath || ''))
+  const itemRoot = path.dirname(target)
+  if (!workspaceRoot || !destinationRoot || !isInside(workspace, drafts) || path.dirname(itemRoot) !== drafts || !isInside(itemRoot, target)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path.basename(itemRoot))) {
+    throw new Error('拒绝清理非 Stable 草稿图片。')
+  }
+  removeWithoutFollowingLinks(itemRoot)
+  return true
 }
 
 function isInside(root, target) {
@@ -224,9 +304,13 @@ async function extractZipText(sourcePath) {
 
 async function extractAttachmentText(sourcePath) {
   const inspected = inspectAttachmentPath(sourcePath)
+  if (isImageAttachment(inspected)) return { text: '', size: inspected.size, type: inspected.type, mediaType: inspected.mediaType }
   if (inspected.type === 'folder') return extractFolderText(sourcePath)
   if (inspected.type === 'zip') return extractZipText(sourcePath)
   return extractText(sourcePath)
 }
 
-module.exports = { extractAttachmentText, inspectAttachmentPath, materializeAttachment, removeMaterializedAttachmentRoot, scanAttachmentFolder, safeZipEntryName }
+module.exports = {
+  MAX_IMAGE_BYTES, MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, imageMediaTypeForPath, inspectAttachmentPath,
+  isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage, scanAttachmentFolder, safeZipEntryName,
+}

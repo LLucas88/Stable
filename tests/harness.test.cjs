@@ -8,6 +8,7 @@ const os = require('node:os')
 const { spawnSync } = require('node:child_process')
 const { EventEmitter } = require('node:events')
 const { PassThrough } = require('node:stream')
+const { pathToFileURL } = require('node:url')
 const YAML = require('yaml')
 const { HarnessRunner, STDIN_BRIDGE, buildHarnessEnvironment, cleanupHarnessRunDirectory } = require('../desktop/services/harness.cjs')
 
@@ -21,6 +22,8 @@ test('headless bridge is valid module code and namespaces child events by sessio
   assert.match(STDIN_BRIDGE, /STABLE_APPROVAL_DIR/)
   assert.match(STDIN_BRIDGE, /kind:'approval'/)
   assert.match(STDIN_BRIDGE, /write\|edit\|replace\|patch/)
+  assert.match(STDIN_BRIDGE, /attachments\.saveImage/)
+  assert.match(STDIN_BRIDGE, /type:'image'/)
   assert.match(readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'harness.cjs'), 'utf8'), /HARNESS_MAX_TOKENS/)
 })
 
@@ -129,6 +132,7 @@ test('harness config stores only an environment reference, never the API key', (
     const value = YAML.parse(raw)
     assert.equal(value['agent-default-model'].provider, 'private-gateway')
     assert.equal(value['llm-pi-ai'].providers['private-gateway'].apiKeyEnv, 'STABLE_API_KEY')
+    assert.deepEqual(value['llm-pi-ai'].providers['private-gateway'].models[0].input, ['text', 'image'])
     assert.equal(value['tool-subagent'].maxDepth, 3)
     assert.doesNotMatch(raw, /secret-value/)
     assert.equal(value['tool-subagent-fork'].maxDepth, 3)
@@ -145,6 +149,7 @@ test('each harness run keeps its model settings and credentials isolated', async
   writeFileSync(runtime.cli, '')
   const starts = []
   const children = []
+  const stdinInputs = []
   function fakeSpawn(_command, _arguments, options) {
     const child = new EventEmitter()
     child.pid = 10_000 + children.length
@@ -152,6 +157,8 @@ test('each harness run keeps its model settings and credentials isolated', async
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
     child.stdin = new PassThrough()
+    const inputIndex = stdinInputs.push('') - 1
+    child.stdin.on('data', (chunk) => { stdinInputs[inputIndex] += chunk.toString('utf8') })
     children.push(child)
     starts.push(options)
     return child
@@ -165,7 +172,7 @@ test('each harness run keeps its model settings and credentials isolated', async
 
   try {
     const first = runnerA.run('first', deepSeek, 'deepseek-secret')
-    const second = runnerB.run('second', privateModel, 'private-secret', 0, () => {}, 'read-only')
+    const second = runnerB.run('second', privateModel, 'private-secret', 0, () => {}, 'read-only', [{ path: path.join(root, 'workspace-b', 'image.png'), mediaType: 'image/png', name: 'image.png' }])
     assert.equal(starts.length, 2)
     const firstHome = starts[0].env.DSH_HOME
     const secondHome = starts[1].env.DSH_HOME
@@ -180,6 +187,8 @@ test('each harness run keeps its model settings and credentials isolated', async
     const secondRaw = readFileSync(path.join(secondHome, 'settings.yaml'), 'utf8')
     assert.equal(YAML.parse(firstRaw)['agent-default-model'].provider, 'deepseek')
     assert.equal(YAML.parse(secondRaw)['agent-default-model'].provider, 'private-gateway')
+    assert.deepEqual(YAML.parse(firstRaw)['llm-pi-ai'].providers.deepseek.models[0].input, ['text'])
+    assert.deepEqual(YAML.parse(secondRaw)['llm-pi-ai'].providers['private-gateway'].models[0].input, ['text', 'image'])
     assert.equal(readFileSync(path.join(firstHome, 'settings.yaml'), 'utf8'), firstRaw)
     assert.doesNotMatch(`${firstRaw}\n${secondRaw}`, /deepseek-secret|private-secret/)
 
@@ -188,10 +197,47 @@ test('each harness run keeps its model settings and credentials isolated', async
     children[1].stdout.write('SECOND_OK')
     children[1].emit('close', 0, null)
     assert.deepEqual(await Promise.all([first, second]), ['FIRST_OK', 'SECOND_OK'])
+    assert.deepEqual(JSON.parse(stdinInputs[0]), { prompt: 'first', images: [] })
+    assert.deepEqual(JSON.parse(stdinInputs[1]), { prompt: 'second', images: [{ path: path.join(root, 'workspace-b', 'image.png'), mediaType: 'image/png', name: 'image.png' }] })
     assert.equal(existsSync(firstHome), false)
     assert.equal(existsSync(secondHome), false)
   } finally {
     for (const child of children) child.removeAllListeners()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('DeepSeek routes reject image input before starting the runtime', () => {
+  const runner = new HarnessRunner({ userData: os.tmpdir(), workspace: os.tmpdir(), packaged: false, resourcesPath: os.tmpdir() })
+  const model = { id: 'deepseek-chat', providerId: 'stable-cloud', displayName: 'DeepSeek Chat', baseURL: 'https://example.test/v1', model: 'deepseek-chat' }
+  assert.throws(
+    () => runner.run('分析图片', model, 'secret', 0, () => {}, 'workspace-write', [{ path: 'image.png', mediaType: 'image/png', name: 'image.png' }]),
+    /DeepSeek 暂不支持图片分析，请切换其他模型/,
+  )
+})
+
+test('bundled Harness sends a workspace image as real multimodal request content', { skip: process.platform !== 'win32' }, async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-harness-image-'))
+  const mockEntry = path.join(__dirname, '..', 'runtime', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-llm-mock-server', 'lib', 'index.js')
+  const { startMockLlmServer } = await import(pathToFileURL(mockEntry).href)
+  const server = await startMockLlmServer({ sequence: ['success'], repeatLast: true, successText: 'IMAGE_OK', apiKey: 'vision-secret' })
+  try {
+    const workspace = path.join(root, 'workspace')
+    const imagePath = path.join(workspace, 'pixel.png')
+    mkdirSync(workspace)
+    writeFileSync(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
+    const runner = new HarnessRunner({ userData: root, workspace, packaged: false, resourcesPath: root, environment: {} })
+    const answer = await runner.run(
+      '请分析这张图片。',
+      { id: 'vision-probe', providerId: 'vision-probe', displayName: 'Vision Probe', baseURL: `${server.baseURL}/v1`, model: 'vision-probe' },
+      'vision-secret', 60_000, () => {}, 'read-only',
+      [{ path: imagePath, mediaType: 'image/png', name: 'pixel.png' }],
+    )
+    assert.equal(answer, 'IMAGE_OK')
+    assert.ok(server.requests.length >= 1)
+    assert.ok(server.requests.some((request) => /data:image\/png;base64,/.test(JSON.stringify(request.body))))
+  } finally {
+    await server.close()
     rmSync(root, { recursive: true, force: true })
   }
 })

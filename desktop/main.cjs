@@ -8,10 +8,10 @@ const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
-const { extractAttachmentText, inspectAttachmentPath, materializeAttachment, removeMaterializedAttachmentRoot } = require('./services/attachments.cjs')
+const { MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/harness.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
-const { ModelRegistry } = require('./services/model-registry.cjs')
+const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cjs')
 const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
@@ -353,7 +353,7 @@ function updatePreviewBounds(value) {
 }
 
 function bootstrap() {
-  const messages = process.env.STABLE_QA_FIXTURE ? qaMessages() : store.listMessages()
+  const messages = process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_IMAGE_FIXTURE ? qaMessages() : store.listMessages()
   return {
     appVersion: app.getVersion(),
     identity: store.getSetting('identity'), theme: normalizeTheme(store.getSetting('theme')),
@@ -943,6 +943,8 @@ function inspectAgentAttachments(inputPaths) {
   const files = requirePaths(inputPaths, '临时附件', 8).map(inspectAttachmentPath)
   const totalSize = files.reduce((sum, item) => sum + item.size, 0)
   if (totalSize > 100 * 1024 * 1024) throw new Error('本次临时附件总大小不能超过 100 MB。')
+  const imageSize = files.filter(isImageAttachment).reduce((sum, item) => sum + item.size, 0)
+  if (imageSize > MAX_MESSAGE_IMAGE_BYTES) throw new Error('本次图片总大小不能超过 10 MB。')
   return files.map(({ content: _content, description: _description, ...item }) => item)
 }
 
@@ -956,7 +958,9 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
   const attachments = []
   const installedSkills = []
   const attachmentRoot = path.join(paths.workspace, '.stable', 'attachments', String(conversationId || 'conversation').replace(/[^a-z0-9_-]/gi, '_'))
+  const draftImageRoot = path.join(paths.workspace, '.stable', 'draft-images')
   const materializedRoots = []
+  const consumedDraftImages = []
   try {
     for (const item of inspected) {
       const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot, paths.workspace)
@@ -967,7 +971,14 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
         store.upsertSkill(installed)
         installedSkills.push(installed.name)
         attachments.push({ name: item.name, size: item.size, type: item.type, text: installed.content })
-      } else attachments.push({ name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text })
+      } else {
+        attachments.push({
+          name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text,
+          ...(isImageAttachment(accessibleItem) ? { mediaType: accessibleItem.mediaType } : {}),
+        })
+        const relativeDraft = path.relative(path.resolve(draftImageRoot), path.resolve(item.path))
+        if (relativeDraft && !relativeDraft.startsWith('..') && !path.isAbsolute(relativeDraft)) consumedDraftImages.push(item.path)
+      }
     }
   } catch (error) {
     for (const materializedRoot of materializedRoots) {
@@ -975,7 +986,7 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
     }
     throw error
   }
-  return { items: attachments, installedSkills }
+  return { items: attachments, installedSkills, consumedDraftImages }
 }
 
 async function importLibraryFiles(category) {
@@ -1156,8 +1167,15 @@ async function importScriptAsset(category) {
 
 function qaMessages() {
   const previewPath = paths ? path.join(paths.workspace, 'qa-preview.md') : ''
+  const imagePath = paths && process.env.STABLE_QA_IMAGE_FIXTURE ? path.join(paths.workspace, 'qa-image.png') : ''
   if (previewPath && (process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_CONVERSATION_FIXTURE)) {
     writeFileSync(previewPath, '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
+  }
+  if (imagePath) {
+    const imageSource = process.env.STABLE_QA_IMAGE_SOURCE && existsSync(process.env.STABLE_QA_IMAGE_SOURCE)
+      ? path.resolve(process.env.STABLE_QA_IMAGE_SOURCE)
+      : resourcePath('build', 'stable_logo.png')
+    copyFileSync(imageSource, imagePath)
   }
   const trace = [
     { id: 'context', runId: 'qa-run', kind: 'context', title: '准备本次上下文', detail: '2 条相关数据 · 1 个 Skill · deepseek-v4-flash', status: 'completed', time: 1 },
@@ -1172,6 +1190,10 @@ function qaMessages() {
     { id: 'complete', runId: 'qa-run', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed', time: 4100 },
   ]
   const answer = '# 本周行动建议\n\n已结合本地资料完成整理，建议优先处理以下事项：\n\n- **第一优先级**：核对会员第二单转化，定位最近 30 天的流失节点。\n- **第二优先级**：把高意向未复购用户拆成可执行名单。\n- **第三优先级**：用小范围对照测试验证触达策略。\n\n```text\n目标：先验证，再扩大。\n```\n\n> 所有结论均来自当前已启用的数据，未检索到的部分会明确标记为缺口。'
+  if (imagePath) return [
+    { id: 'qa-image-user', role: 'user', content: '看一下这个图片', attachments: [{ kind: 'attachment', name: 'qa-image.png', path: imagePath, size: statSync(imagePath).size, type: 'png' }], createdAt: new Date(0).toISOString() },
+    { id: 'qa-image-assistant', role: 'assistant', content: '图片已收到，可以继续分析。', trace, createdAt: new Date(1).toISOString() },
+  ]
   return Array.from({ length: 4 }, (_, index) => [
     { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === 3 && previewPath ? { attachments: [{ kind: 'attachment', name: 'qa-preview.md', path: previewPath, size: 142, type: 'md' }] } : {}), createdAt: new Date(index * 2).toISOString() },
     { id: `qa-assistant-${index}`, role: 'assistant', content: index === 3 && previewPath ? `${answer}\n\n交付文件：\n- ${previewPath}` : answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
@@ -1423,17 +1445,18 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     : `${query}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
   const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
+  const imageAttachments = attachments.filter(isImageAttachment)
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
   publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${capability} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
     const beforeArtifacts = artifactSnapshot(paths.workspace, delivery.extensions)
-    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish)
+    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
     let artifacts = delivery.type === 'artifact' ? changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions)) : []
     for (let attempt = 1; delivery.type === 'artifact' && !artifacts.length && attempt <= 2; attempt += 1) {
       publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次结果只有过程文本，尚未检测到目标文件`, status: 'running' })
       const retryPrompt = `${prompt}\n\n## 续跑要求\n上一轮只返回了过程文本，没有在工作区生成要求的文件。不要重复计划或解释；立即使用工具继续执行，写入并检查目标文件，最终只返回交付摘要和绝对路径。\n\n上一轮过程文本（仅供续跑，不是交付结果）：\n${String(answer).slice(-6_000)}`
-      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish)
+      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
       artifacts = changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions))
     }
     if (delivery.type === 'artifact' && !artifacts.length) throw new Error('Agent 未生成要求的交付文件，Stable 已停止将规划稿作为最终结果。请展开执行过程检查后重试。')
@@ -1825,6 +1848,30 @@ function registerIpc() {
   ipcMain.handle('stable:workflows:generate', (_event, payload) => generateWorkflow(requireText(payload?.goal, '工作流目标', 2_000)))
 
   ipcMain.handle('stable:agent:inspectAttachments', (_event, payload) => inspectAgentAttachments(payload?.paths))
+  ipcMain.handle('stable:agent:savePastedImage', (_event, payload) => {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    if (!store.conversation(conversationId)) throw new Error('找不到这个对话。')
+    return savePastedImage({ name: payload?.name, mediaType: payload?.mediaType, data: payload?.data }, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace)
+  })
+  ipcMain.handle('stable:agent:discardDraftImage', (_event, payload) => discardDraftImage(requireText(payload?.path, '草稿图片路径', 2_000), path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace))
+  ipcMain.handle('stable:agent:imagePreview', (_event, payload) => {
+    const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
+    if (!isImageAttachment(inspected) || !inspected.previewUrl) throw new Error('这个附件不是可预览图片。')
+    return inspected.previewUrl
+  })
+  ipcMain.handle('stable:agent:saveImageAs', async (_event, payload) => {
+    const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
+    if (!isImageAttachment(inspected)) throw new Error('这个附件不是可下载图片。')
+    const extension = path.extname(inspected.path).toLowerCase().replace(/^\./, '') || 'png'
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '下载图片',
+      defaultPath: cleanFilename(inspected.name),
+      filters: [{ name: '图片', extensions: [extension] }],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    copyFileSync(inspected.path, result.filePath)
+    return { canceled: false, path: result.filePath }
+  })
   ipcMain.handle('stable:agent:selectAttachmentFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择本次任务文件夹', properties: ['openDirectory'] })
     return result.canceled ? [] : inspectAgentAttachments(result.filePaths)
@@ -1893,7 +1940,10 @@ function registerIpc() {
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
     const modelRoute = modelRegistry.resolve(conversation.modelId)
-    const extractedAttachments = await extractAgentAttachments(payload?.attachments, conversationId)
+    const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
+    const requestedAttachments = rawAttachments.length ? inspectAgentAttachments(rawAttachments.map((item) => item?.path)) : []
+    if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
+    const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
     const attachments = extractedAttachments.items
     const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
     const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
@@ -1925,6 +1975,9 @@ function registerIpc() {
     ]
     store.updateConversationContext(conversationId, conversation.capability, [])
     store.addMessage(conversationId, 'user', query, undefined, messageAttachments)
+    for (const draftPath of extractedAttachments.consumedDraftImages || []) {
+      try { discardDraftImage(draftPath, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace) } catch {}
+    }
     publishAgentState(conversationId)
     const executionRunner = createHarnessRunner()
     const control = { runner: executionRunner, reviewers: new Set() }
@@ -2306,6 +2359,23 @@ async function boot() {
         if (point) mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y })
       }, 800)
     }
+    if (process.env.STABLE_QA_IMAGE_FIXTURE) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript(`(async () => {
+        const textarea = document.querySelector('.composer textarea')
+        if (!textarea) return
+        const preview = await window.stable.agent.imagePreview(${JSON.stringify(path.join(paths.workspace, 'qa-image.png'))})
+        const blob = await (await fetch(preview)).blob()
+        const transfer = new DataTransfer()
+        transfer.items.add(new File([blob], 'qa-pasted-image.png', { type: 'image/png' }))
+        textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
+      })()`) }, 700)
+    }
+    if (process.env.STABLE_QA_IMAGE_PREVIEW) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.message-image')?.click()") }, 1_100)
+    }
+    if (process.env.STABLE_QA_IMAGE_ZOOM) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.image-lightbox [aria-label=\"放大图片\"]')?.click()") }, 1_500)
+    }
     if (process.env.STABLE_QA_PREVIEW) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-file-card')?.click()") }, 900)
     }
@@ -2373,6 +2443,35 @@ async function boot() {
             body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight },
             stage: stage ? { clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, clientHeight: stage.clientHeight, scrollHeight: stage.scrollHeight, overflowY: getComputedStyle(stage).overflowY } : null,
             messages: messages ? { clientWidth: messages.clientWidth, scrollWidth: messages.scrollWidth, clientHeight: messages.clientHeight, scrollHeight: messages.scrollHeight, overflowY: getComputedStyle(messages).overflowY } : null,
+            imageLayout: (() => {
+              const gallery = document.querySelector('.message-image-gallery')?.getBoundingClientRect()
+              const bubble = document.querySelector('.user-bubble')?.getBoundingClientRect()
+              const sent = document.querySelector('.message-image')?.getBoundingClientRect()
+              const draft = document.querySelector('.composer-image-selection')?.getBoundingClientRect()
+              return gallery && bubble && sent && draft ? {
+                sent: { width: Math.round(sent.width), height: Math.round(sent.height), bottom: Math.round(sent.bottom) },
+                bubble: { top: Math.round(bubble.top) },
+                draft: { width: Math.round(draft.width), height: Math.round(draft.height) },
+                sentAboveBubble: sent.bottom <= bubble.top,
+                visibleMetadata: Boolean(document.querySelector('.message-image-gallery figcaption, .composer-image-selection strong, .composer-image-selection small')),
+              } : null
+            })(),
+            imageLightbox: (() => {
+              const dialog = document.querySelector('.image-lightbox')
+              const image = dialog?.querySelector('img')
+              const rect = image?.getBoundingClientRect()
+              return dialog && image && rect ? {
+                visible: true,
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                naturalWidth: image.naturalWidth,
+                naturalHeight: image.naturalHeight,
+                zoom: dialog.querySelector('.image-lightbox-zoom output')?.textContent?.trim() || null,
+                downloadVisible: Boolean(dialog.querySelector('[aria-label="下载图片到本地"]')),
+                closeVisible: Boolean(dialog.querySelector('[aria-label="关闭图片预览"]')),
+                editVisible: Boolean(dialog.querySelector('[aria-label*="编辑"]')),
+              } : null
+            })(),
             preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
             workflowName: document.querySelector('input[aria-label="工作流名称"]')?.value || null,
             workflowInstruction: document.querySelector('textarea[aria-label="模块 AI 输入"]')?.value || null,

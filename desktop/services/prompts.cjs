@@ -27,6 +27,9 @@ function attachmentBlock(items) {
   if (!items?.length) return ''
   const itemLimit = Math.max(1, Math.min(ATTACHMENT_PREVIEW_ITEM_CHARS, Math.floor(ATTACHMENT_PREVIEW_TOTAL_CHARS / items.length)))
   return `\n\n## 本次临时附件\n${items.map((item) => {
+    if (String(item.mediaType || '').startsWith('image/')) {
+      return `### ${item.name}\n可访问路径：${item.path}\n图片格式：${item.mediaType}\n图片像素已作为当前用户消息的视觉输入直接发送给所选模型；请结合用户请求分析图片内容。`
+    }
     const preview = attachmentPreview(item.text, itemLimit)
     const status = preview.truncated
       ? `已截断（展示原文 ${preview.shownChars} / 已提取 ${preview.extractedChars} 字符）`
