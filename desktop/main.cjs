@@ -8,10 +8,10 @@ const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
-const { extractAttachmentText, inspectAttachmentPath, materializeAttachment, removeMaterializedAttachmentRoot } = require('./services/attachments.cjs')
+const { MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/harness.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
-const { ModelRegistry } = require('./services/model-registry.cjs')
+const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cjs')
 const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
@@ -943,6 +943,8 @@ function inspectAgentAttachments(inputPaths) {
   const files = requirePaths(inputPaths, '临时附件', 8).map(inspectAttachmentPath)
   const totalSize = files.reduce((sum, item) => sum + item.size, 0)
   if (totalSize > 100 * 1024 * 1024) throw new Error('本次临时附件总大小不能超过 100 MB。')
+  const imageSize = files.filter(isImageAttachment).reduce((sum, item) => sum + item.size, 0)
+  if (imageSize > MAX_MESSAGE_IMAGE_BYTES) throw new Error('本次图片总大小不能超过 10 MB。')
   return files.map(({ content: _content, description: _description, ...item }) => item)
 }
 
@@ -956,7 +958,9 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
   const attachments = []
   const installedSkills = []
   const attachmentRoot = path.join(paths.workspace, '.stable', 'attachments', String(conversationId || 'conversation').replace(/[^a-z0-9_-]/gi, '_'))
+  const draftImageRoot = path.join(paths.workspace, '.stable', 'draft-images')
   const materializedRoots = []
+  const consumedDraftImages = []
   try {
     for (const item of inspected) {
       const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot, paths.workspace)
@@ -967,7 +971,14 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
         store.upsertSkill(installed)
         installedSkills.push(installed.name)
         attachments.push({ name: item.name, size: item.size, type: item.type, text: installed.content })
-      } else attachments.push({ name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text })
+      } else {
+        attachments.push({
+          name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text,
+          ...(isImageAttachment(accessibleItem) ? { mediaType: accessibleItem.mediaType } : {}),
+        })
+        const relativeDraft = path.relative(path.resolve(draftImageRoot), path.resolve(item.path))
+        if (relativeDraft && !relativeDraft.startsWith('..') && !path.isAbsolute(relativeDraft)) consumedDraftImages.push(item.path)
+      }
     }
   } catch (error) {
     for (const materializedRoot of materializedRoots) {
@@ -975,7 +986,7 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
     }
     throw error
   }
-  return { items: attachments, installedSkills }
+  return { items: attachments, installedSkills, consumedDraftImages }
 }
 
 async function importLibraryFiles(category) {
@@ -1423,17 +1434,18 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     : `${query}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
   const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
+  const imageAttachments = attachments.filter(isImageAttachment)
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
   publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${capability} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
     const beforeArtifacts = artifactSnapshot(paths.workspace, delivery.extensions)
-    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish)
+    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
     let artifacts = delivery.type === 'artifact' ? changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions)) : []
     for (let attempt = 1; delivery.type === 'artifact' && !artifacts.length && attempt <= 2; attempt += 1) {
       publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次结果只有过程文本，尚未检测到目标文件`, status: 'running' })
       const retryPrompt = `${prompt}\n\n## 续跑要求\n上一轮只返回了过程文本，没有在工作区生成要求的文件。不要重复计划或解释；立即使用工具继续执行，写入并检查目标文件，最终只返回交付摘要和绝对路径。\n\n上一轮过程文本（仅供续跑，不是交付结果）：\n${String(answer).slice(-6_000)}`
-      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish)
+      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
       artifacts = changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions))
     }
     if (delivery.type === 'artifact' && !artifacts.length) throw new Error('Agent 未生成要求的交付文件，Stable 已停止将规划稿作为最终结果。请展开执行过程检查后重试。')
@@ -1825,6 +1837,17 @@ function registerIpc() {
   ipcMain.handle('stable:workflows:generate', (_event, payload) => generateWorkflow(requireText(payload?.goal, '工作流目标', 2_000)))
 
   ipcMain.handle('stable:agent:inspectAttachments', (_event, payload) => inspectAgentAttachments(payload?.paths))
+  ipcMain.handle('stable:agent:savePastedImage', (_event, payload) => {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    if (!store.conversation(conversationId)) throw new Error('找不到这个对话。')
+    return savePastedImage({ name: payload?.name, mediaType: payload?.mediaType, data: payload?.data }, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace)
+  })
+  ipcMain.handle('stable:agent:discardDraftImage', (_event, payload) => discardDraftImage(requireText(payload?.path, '草稿图片路径', 2_000), path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace))
+  ipcMain.handle('stable:agent:imagePreview', (_event, payload) => {
+    const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
+    if (!isImageAttachment(inspected) || !inspected.previewUrl) throw new Error('这个附件不是可预览图片。')
+    return inspected.previewUrl
+  })
   ipcMain.handle('stable:agent:selectAttachmentFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择本次任务文件夹', properties: ['openDirectory'] })
     return result.canceled ? [] : inspectAgentAttachments(result.filePaths)
@@ -1893,7 +1916,10 @@ function registerIpc() {
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
     const modelRoute = modelRegistry.resolve(conversation.modelId)
-    const extractedAttachments = await extractAgentAttachments(payload?.attachments, conversationId)
+    const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
+    const requestedAttachments = rawAttachments.length ? inspectAgentAttachments(rawAttachments.map((item) => item?.path)) : []
+    if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
+    const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
     const attachments = extractedAttachments.items
     const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
     const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
@@ -1925,6 +1951,9 @@ function registerIpc() {
     ]
     store.updateConversationContext(conversationId, conversation.capability, [])
     store.addMessage(conversationId, 'user', query, undefined, messageAttachments)
+    for (const draftPath of extractedAttachments.consumedDraftImages || []) {
+      try { discardDraftImage(draftPath, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace) } catch {}
+    }
     publishAgentState(conversationId)
     const executionRunner = createHarnessRunner()
     const control = { runner: executionRunner, reviewers: new Set() }

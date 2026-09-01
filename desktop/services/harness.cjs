@@ -4,6 +4,7 @@ const { spawn, spawnSync } = require('node:child_process')
 const { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
+const { isDeepSeekModel } = require('./model-registry.cjs')
 
 const STDIN_BRIDGE = [
   "import path from 'node:path';",
@@ -12,6 +13,13 @@ const STDIN_BRIDGE = [
   'const chunks=[];',
   'for await (const chunk of process.stdin) chunks.push(chunk);',
   'const cli=process.argv[1];',
+  "const rawInput=Buffer.concat(chunks).toString('utf8');",
+  "let task=rawInput;let imageInputs=[];try{const payload=JSON.parse(rawInput);if(payload&&typeof payload.prompt==='string'){task=payload.prompt;imageInputs=Array.isArray(payload.images)?payload.images:[];}}catch{}",
+  "const packageEntry=(name)=>path.join(path.dirname(cli),'..','..',name,'lib','index.js');",
+  "const {AgentLoop}=await import(pathToFileURL(packageEntry('dsh-agent-loop')).href);",
+  "const {createUserMessage}=await import(pathToFileURL(packageEntry('dsh-llm')).href);",
+  "const originalCreateAgent=AgentLoop.prototype.createAgent;let imagesClaimed=false;",
+  "AgentLoop.prototype.createAgent=async function(...args){const handle=await originalCreateAgent.apply(this,args);if(imagesClaimed||!imageInputs.length)return handle;imagesClaimed=true;const attachments=handle.agent.ctx.get('attachments');if(!attachments)throw new Error('Harness 图片存储服务不可用。');const refs=[];for(const input of imageInputs){const resolved=path.resolve(String(input.path||''));const relative=path.relative(process.cwd(),resolved);if(!resolved||relative.startsWith('..')||path.isAbsolute(relative))throw new Error('图片只能从 Stable 工作区发送。');const mediaType=String(input.mediaType||'');const ref=await attachments.saveImage({data:readFileSync(resolved),mediaType,name:String(input.name||path.basename(resolved))});refs.push(ref);}const originalFollowup=handle.agent.followup.bind(handle.agent);handle.agent.followup=(message)=>originalFollowup(createUserMessage({content:[...message.content,...refs.map((attachment)=>({type:'image',attachment}))],source:message.source}));return handle;};",
   "const sessionPath=path.join(path.dirname(cli),'..','..','dsh-session','lib','index.js');",
   'const {Session}=await import(pathToFileURL(sessionPath).href);',
   'const originalAppend=Session.prototype.append;',
@@ -52,7 +60,7 @@ const STDIN_BRIDGE = [
   "  else if(type==='turn/end'){const completed=data.reason?.kind==='completed';const cancelled=data.reason?.kind==='interrupted';publish({...base,id:`${sessionId}:agent`,kind:'status',entity:'agent',eventType:'agent/end',title:agentNames.get(sessionId)||(parentSessionId?'子 Agent':'Stable 总控'),detail:completed?(parentSessionId?'已向总控提交结果':'已完成任务'):clean(data.reason?.error?.message||data.reason?.kind||'执行中断'),status:completed?'completed':cancelled?'cancelled':'failed'});}",
   '  return event;',
   '};',
-  "process.argv=[process.execPath,cli,'--profile','headless',Buffer.concat(chunks).toString('utf8')];",
+  "process.argv=[process.execPath,cli,'--profile','headless',task];",
   'await import(pathToFileURL(cli).href);',
 ].join('')
 
@@ -133,7 +141,7 @@ class HarnessRunner {
       'agent-default-model': { provider: model.providerId, model: model.model },
       'llm-pi-ai': { providers: { [model.providerId]: {
         displayName: model.displayName, apiKeyEnv: 'STABLE_API_KEY', api: 'openai-completions', baseURL: model.baseURL,
-        models: [{ id: model.model, name: model.model }],
+        models: [{ id: model.model, name: model.model, input: isDeepSeekModel(model) ? ['text'] : ['text', 'image'] }],
       } } },
       'tool-subagent': { maxDepth: 3 },
       'tool-subagent-fork': { maxDepth: 3 },
@@ -142,9 +150,10 @@ class HarnessRunner {
     return dshHome
   }
 
-  run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write') {
+  run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = []) {
     if (this.child) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先在“设置”中保存 API Key。')
+    if (imageAttachments.length && isDeepSeekModel(model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
     const paths = this.runtimePaths()
     if (!this.ready()) throw new Error('Stable 的 Harness 运行时不完整，请重新安装。')
     const runsRoot = path.join(this.options.userData, 'harness', 'runs')
@@ -208,7 +217,10 @@ class HarnessRunner {
         else if (runtimeFailure === 'max-tokens') finish(Object.assign(new Error('本次任务的单次生成内容过长，模型达到输出长度上限。Stable 已停止本轮执行；请缩小单次生成范围或让 Agent 分步骤处理。'), { code: 'HARNESS_MAX_TOKENS' }))
         else finish(new Error(`Harness 执行失败（code ${code ?? 'unknown'}, signal ${signal ?? 'none'}）。${runtimeFailure ? `\n运行时原因：${runtimeFailure}` : ''}${stderr.trim() ? `\n${stderr.trim()}` : ''}`))
       })
-      child.stdin.end(prompt, 'utf8')
+      child.stdin.end(JSON.stringify({
+        prompt,
+        images: imageAttachments.map((item) => ({ path: item.path, mediaType: item.mediaType, name: item.name })),
+      }), 'utf8')
     })
   }
 

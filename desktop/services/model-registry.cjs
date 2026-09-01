@@ -27,6 +27,11 @@ function normalizeBaseURL(value) {
 
 function modelSecretKey(id) { return `${SECRET_PREFIX}${id}:apiKey` }
 
+function isDeepSeekModel(model = {}) {
+  return [model.id, model.providerId, model.displayName, model.model]
+    .some((value) => String(value || '').toLowerCase().includes('deepseek'))
+}
+
 class ModelRegistry {
   constructor(store, secrets, cloudGateway) {
     this.store = store
@@ -120,4 +125,4 @@ class ModelRegistry {
   }
 }
 
-module.exports = { ModelRegistry, cleanProviderId, modelSecretKey, normalizeBaseURL }
+module.exports = { ModelRegistry, cleanProviderId, isDeepSeekModel, modelSecretKey, normalizeBaseURL }

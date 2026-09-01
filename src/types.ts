@@ -211,6 +211,9 @@ export interface AgentAttachment {
   path: string
   size: number
   type: string
+  mediaType?: string
+  previewUrl?: string
+  draft?: boolean
 }
 
 export type AgentTraceKind = 'context' | 'reasoning' | 'tool' | 'status' | 'approval'
@@ -475,6 +478,9 @@ export interface StableBridge {
   }
   agent: {
     inspectAttachments(paths: string[]): Promise<AgentAttachment[]>
+    savePastedImage(conversationId: string, name: string, mediaType: string, data: Uint8Array): Promise<AgentAttachment>
+    discardDraftImage(path: string): Promise<boolean>
+    imagePreview(path: string): Promise<string>
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>

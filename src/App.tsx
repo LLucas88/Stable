@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
   CircleStop, Clock3, Copy, Database, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
-  Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
+  Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
   RotateCw, SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
@@ -29,6 +29,15 @@ const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
 function errorMessage(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error)
   return raw.replace(/^Error invoking remote method '[^']+': Error:\s*/, '')
+}
+
+function attachmentIsImage(item: { name?: string; path?: string; type?: string; mediaType?: string }) {
+  if (String(item.mediaType || '').startsWith('image/')) return true
+  return /\.(?:png|jpe?g|webp)$/i.test(String(item.path || item.name || '')) || /^(?:png|jpe?g|webp)$/i.test(String(item.type || ''))
+}
+
+function profileIsDeepSeek(item?: Pick<ModelProfile, 'id' | 'providerId' | 'displayName' | 'model'>) {
+  return Boolean(item && [item.id, item.providerId, item.displayName, item.model].some((value) => value.toLowerCase().includes('deepseek')))
 }
 
 function DropTarget({ label, onPaths, className = '', children }: { label: string; onPaths: (paths: string[]) => void | Promise<void>; className?: string; children: ReactNode }) {
@@ -422,6 +431,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [modelStatus, setModelStatus] = useState('')
+  const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, string>>({})
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -445,12 +455,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
   const attachments = attachmentMap[state.activeConversationId] || []
+  const imageAttachments = attachments.filter(attachmentIsImage)
   const selectedReferences = referenceMap[state.activeConversationId] || []
   const composerError = composerErrorMap[state.activeConversationId] || ''
   const activeCapability = CAPABILITY_OPTIONS.find((item) => item.id === activeConversation?.capability) || CAPABILITY_OPTIONS[0]
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
   const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
   const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || defaultModel
+  const deepSeekImageBlocked = imageAttachments.length > 0 && profileIsDeepSeek(activeModel)
+  const attachmentStatus = attachmentStatusMap[state.activeConversationId] || ''
   const enabledData = state.data.filter((item) => item.enabled)
   const enabledSkills = state.skills.filter((item) => item.enabled)
   const enabledKnowledge = state.knowledge.filter((item) => item.enabled)
@@ -481,6 +494,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       const currentItems = current[state.activeConversationId] || []
       return { ...current, [state.activeConversationId]: typeof next === 'function' ? next(currentItems) : next }
     })
+  }
+
+  function setAttachmentStatus(value: string) {
+    setAttachmentStatusMap((current) => ({ ...current, [state.activeConversationId]: value }))
   }
 
   function setReferences(next: AgentReference[] | ((current: AgentReference[]) => AgentReference[])) {
@@ -655,8 +672,55 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       const merged = [...attachments]
       for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
       if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
+      if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
       setAttachments(merged)
+      setAttachmentStatus(`已添加 ${inspected.length} 个附件。`)
     })
+  }
+
+  async function addPastedImages(files: File[]) {
+    const saved: AgentAttachment[] = []
+    setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))
+    setAttachmentStatus('正在读取剪贴板图片。')
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
+        const name = file.name && !/^image\.(?:png|jpe?g|webp)$/i.test(file.name) ? file.name : `粘贴截图-${Date.now()}-${index + 1}.${extension}`
+        saved.push(await window.stable.agent.savePastedImage(state.activeConversationId, name, file.type, new Uint8Array(await file.arrayBuffer())))
+      }
+      const merged = [...attachments]
+      for (const item of saved) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
+      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
+      if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
+      setAttachments(merged)
+      setAttachmentStatus(`已从剪贴板添加 ${saved.length} 张图片。`)
+    } catch (error) {
+      for (const item of saved) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
+      setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: errorMessage(error) }))
+      setAttachmentStatus('剪贴板图片未添加。')
+    }
+  }
+
+  function handlePromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === 'file' && ['image/png', 'image/jpeg', 'image/webp'].includes(item.type))
+      .map((item) => item.getAsFile()).filter((item): item is File => Boolean(item))
+    if (!files.length) return
+    event.preventDefault()
+    const pastedText = event.clipboardData.getData('text/plain')
+    if (pastedText) {
+      const start = event.currentTarget.selectionStart
+      const end = event.currentTarget.selectionEnd
+      setPrompt((current) => `${current.slice(0, start)}${pastedText}${current.slice(end)}`)
+    }
+    void addPastedImages(files)
+  }
+
+  function removeAttachment(item: AgentAttachment) {
+    setAttachments((current) => current.filter((entry) => entry.path !== item.path))
+    setAttachmentStatus(`已移除附件 ${item.name}。`)
+    if (item.draft) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
   }
 
   function addAttachmentFolder() {
@@ -759,6 +823,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   async function send() {
     if ((!prompt.trim() && !attachments.length && !selectedReferences.length) || running) return
+    if (deepSeekImageBlocked) {
+      setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: 'DeepSeek 暂不支持图片分析，请切换其他模型。' }))
+      window.requestAnimationFrame(() => promptRef.current?.focus())
+      return
+    }
     const conversationId = state.activeConversationId
     const originalPrompt = prompt
     const value = prompt.trim() || '请读取并分析本次引用的资源与附件。'
@@ -867,22 +936,26 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
           <div className="composer-box">
             {(selectedReferences.length > 0 || attachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与附件">
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
-              {attachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => setAttachments((current) => current.filter((entry) => entry.path !== item.path))} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
+              {attachments.map((item) => attachmentIsImage(item)
+                ? <div className="selection-chip image-selection-chip" data-kind="image" key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}><AttachmentImage item={item} /><span><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></span><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={13} /></button></div>
+                : <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
             </div>}
+            {deepSeekImageBlocked && <div className="composer-warning" role="status"><CircleAlert size={16} aria-hidden="true" /><span>DeepSeek 暂不支持图片分析，请切换其他模型后发送。</span></div>}
             {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
+            <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
-            <textarea ref={promptRef} id="agent-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
+            <textarea ref={promptRef} id="agent-prompt" value={prompt} onPaste={handlePromptPaste} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
               if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() }
-            }} placeholder="给 Stable 一个任务，或拖入本次需要分析的文件" disabled={running} />
+            }} placeholder="给 Stable 一个任务，或选择、拖入、粘贴图片与文件" disabled={running} />
             <div className="composer-actions">
               <div className="composer-tools">
-                <input ref={attachmentInputRef} type="file" multiple hidden accept=".txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = ''; if (attachmentMenuRef.current) attachmentMenuRef.current.open = false }} />
+                <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = ''; if (attachmentMenuRef.current) attachmentMenuRef.current.open = false }} />
                 <details className="composer-menu attachment-menu" ref={attachmentMenuRef}>
                   <summary className="composer-tool" aria-label="添加本次任务附件"><Paperclip size={18} aria-hidden="true" /></summary>
                   <div className="composer-popover attachment-popover">
                     <div className="composer-popover-head"><strong>添加附件</strong><span>本次任务临时使用</span></div>
-                    <button className="composer-attachment-option" type="button" onClick={() => attachmentInputRef.current?.click()}><FilePlus2 size={16} aria-hidden="true" /><span><strong>文件或压缩包</strong><small>支持常用文档与 ZIP</small></span></button>
+                    <button className="composer-attachment-option" type="button" onClick={() => attachmentInputRef.current?.click()}><FilePlus2 size={16} aria-hidden="true" /><span><strong>图片、文件或压缩包</strong><small>支持 PNG、JPG、WebP、常用文档与 ZIP</small></span></button>
                     <button className="composer-attachment-option" type="button" onClick={addAttachmentFolder}><FolderInput size={16} aria-hidden="true" /><span><strong>普通文件夹</strong><small>不按 Skill 校验</small></span></button>
                   </div>
                 </details>
@@ -937,7 +1010,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
                       <span className="model-option-mark" aria-hidden="true">{selected ? <Check size={15} /> : <span />}</span>
-                      <span className="model-option-copy"><strong>{item.displayName}</strong><small>{item.providerId} · {item.model}</small></span>
+                      <span className="model-option-copy"><strong>{item.displayName}</strong><small>{item.providerId} · {item.model}{profileIsDeepSeek(item) ? ' · 不支持图片' : ' · 可发送图片'}</small></span>
                       {item.id === state.models.defaultModelId && <em>默认</em>}
                     </label>
                   })}</fieldset> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
@@ -1038,6 +1111,20 @@ function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; on
   </button>
 }
 
+function AttachmentImage({ item }: { item: { name: string; path?: string; previewUrl?: string } }) {
+  const [source, setSource] = useState(item.previewUrl || '')
+  useEffect(() => {
+    if (item.previewUrl) { setSource(item.previewUrl); return }
+    if (!item.path) { setSource(''); return }
+    let cancelled = false
+    void window.stable.agent.imagePreview(item.path).then((value) => { if (!cancelled) setSource(value) }).catch(() => { if (!cancelled) setSource('') })
+    return () => { cancelled = true }
+  }, [item.path, item.previewUrl])
+  return source
+    ? <img className="attachment-thumbnail" src={source} alt="" aria-hidden="true" />
+    : <span className="attachment-thumbnail attachment-thumbnail-placeholder" aria-hidden="true"><ImageIcon size={18} /></span>
+}
+
 function localArtifactPaths(content: string, workspace: string) {
   const root = workspace.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLocaleLowerCase()
   const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?=$|[\s`)\]}，。；、])/gi
@@ -1068,12 +1155,17 @@ function formatAutomationSchedule(schedule: AutomationSchedule) {
 }
 
 function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void }) {
-  const uploadedFiles = attachments.filter((item) => item.kind === 'attachment' && item.path && onPreviewAttachment)
+  const uploadedFiles = attachments.filter((item) => item.kind === 'attachment' && item.path)
+  const imageFiles = uploadedFiles.filter(attachmentIsImage)
+  const documentFiles = uploadedFiles.filter((item) => !imageFiles.includes(item))
   const staticAttachments = attachments.filter((item) => !uploadedFiles.includes(item))
   return <article className="user-turn" data-pending={pending || undefined}>
     <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p>
-      {uploadedFiles.length > 0 && <div className="conversation-file-list message-file-cards" aria-label="随消息上传的文件">
-        {uploadedFiles.map((item, index) => <ConversationFileCard item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
+      {imageFiles.length > 0 && <div className="message-image-gallery" aria-label="随消息上传的图片">
+        {imageFiles.map((item, index) => <figure key={`${item.path}-${index}`}><AttachmentImage item={item} /><figcaption><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></figcaption></figure>)}
+      </div>}
+      {documentFiles.length > 0 && <div className="conversation-file-list message-file-cards" aria-label="随消息上传的文件">
+        {documentFiles.map((item, index) => <ConversationFileCard item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
       </div>}
       {staticAttachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的引用">
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}

@@ -2,11 +2,41 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } = require('node:fs')
+const { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const JSZip = require('jszip')
-const { extractAttachmentText, inspectAttachmentPath, materializeAttachment } = require('../desktop/services/attachments.cjs')
+const { discardDraftImage, extractAttachmentText, inspectAttachmentPath, materializeAttachment, savePastedImage } = require('../desktop/services/attachments.cjs')
+
+const ONE_PIXEL_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+
+test('PNG images expose a bounded preview and pasted screenshots stay in a removable workspace draft', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-image-attachment-'))
+  try {
+    const workspace = path.join(root, 'workspace')
+    const draftRoot = path.join(workspace, '.stable', 'draft-images')
+    mkdirSync(workspace)
+    const selectedPath = path.join(root, 'selected.png')
+    writeFileSync(selectedPath, ONE_PIXEL_PNG)
+    const selected = inspectAttachmentPath(selectedPath)
+    assert.equal(selected.type, 'png')
+    assert.equal(selected.mediaType, 'image/png')
+    assert.match(selected.previewUrl, /^data:image\/png;base64,/)
+
+    const pasted = savePastedImage({ name: '截图.png', mediaType: 'image/png', data: ONE_PIXEL_PNG }, draftRoot, workspace)
+    assert.equal(pasted.draft, true)
+    assert.ok(pasted.path.startsWith(draftRoot))
+    assert.equal(existsSync(pasted.path), true)
+    assert.equal(discardDraftImage(pasted.path, draftRoot, workspace), true)
+    assert.equal(existsSync(pasted.path), false)
+
+    const fakeImage = path.join(root, 'fake.jpg')
+    writeFileSync(fakeImage, 'not an image')
+    assert.throws(() => inspectAttachmentPath(fakeImage), /不是有效的 PNG、JPG 或 WebP/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('ordinary folders are accepted as temporary attachments without Skill metadata', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-folder-attachment-'))
