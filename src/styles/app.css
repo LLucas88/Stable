@@ -258,7 +258,7 @@ h2 { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.025em; line
   align-items: center;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   padding-block: var(--space-md) var(--space-sm);
   border-inline-end: 1px solid var(--color-rule-2);
   background: var(--color-paper-2);
@@ -291,6 +291,147 @@ h2 { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.025em; line
 }
 
 .rail-version { flex: 0 0 auto; padding: var(--space-xs); color: var(--color-muted); font-family: var(--font-mono); font-size: 0.67rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.rail-account-dock {
+  position: relative;
+  width: 100%;
+  flex: 0 0 auto;
+  padding-inline: var(--space-xs);
+}
+
+.rail-account-trigger {
+  display: grid;
+  width: 3.5rem;
+  min-height: 3.5rem;
+  margin-inline: auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-ink);
+  transition: background-color var(--dur-short) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+
+.rail-account-trigger:active { transform: translateY(1px); }
+
+.account-avatar {
+  display: grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.account-menu-popover,
+.account-content-popover {
+  position: absolute;
+  z-index: calc(var(--z-sticky) + 5);
+  inset-block-end: 0;
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-float);
+  animation: account-popover-in var(--dur-short) var(--ease-out) both;
+}
+
+.account-menu-popover {
+  inset-inline-start: calc(100% + var(--space-xs));
+  display: grid;
+  width: 15rem;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+}
+
+.account-menu-identity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs);
+}
+
+.account-menu-identity > span:last-child { display: grid; min-width: 0; gap: var(--space-3xs); }
+.account-menu-identity strong,
+.account-menu-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-identity strong { font-size: var(--text-sm); }
+.account-menu-identity small { color: var(--color-muted); font-size: var(--text-xs); }
+
+.account-menu-popover nav { display: grid; gap: var(--space-3xs); }
+.account-menu-popover nav button {
+  display: grid;
+  min-height: 3.6rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-ink-2);
+  text-align: start;
+}
+.account-menu-popover nav button > span { display: grid; min-width: 0; gap: var(--space-3xs); }
+.account-menu-popover nav button strong { color: var(--color-ink); font-size: var(--text-sm); }
+.account-menu-popover nav button small { overflow: hidden; color: var(--color-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-popover nav button[data-active="true"] { background: var(--color-paper-4); color: var(--color-focus); }
+.account-menu-popover > .rail-version { justify-self: start; padding: var(--space-xs); }
+
+.account-content-popover {
+  inset-inline-start: calc(100% + 15rem + var(--space-lg));
+  display: grid;
+  width: min(38rem, calc(100vw - var(--rail-width) - 18rem));
+  max-height: min(42rem, calc(100vh - 4.5rem));
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.account-content-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  box-shadow: inset 0 -1px 0 var(--color-rule-2);
+}
+.account-content-popover > header > span { display: grid; gap: var(--space-3xs); }
+.account-content-popover > header strong { font-family: var(--font-display); font-size: var(--text-md); }
+.account-content-popover > header small { color: var(--color-muted); font-size: var(--text-xs); }
+.account-content-body { min-height: 0; overflow-y: auto; padding: var(--space-lg); }
+
+.account-theme-options { grid-template-columns: 1fr; }
+.account-theme-options .theme-option { min-height: 7rem; }
+.account-module { display: grid; gap: var(--space-md); }
+.account-module .cloud-account-grid { grid-template-columns: 1fr; }
+.account-module .cloud-usage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.account-module-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.account-logout { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.account-module-empty { display: grid; min-height: 16rem; place-items: center; align-content: center; gap: var(--space-xs); color: var(--color-muted); text-align: center; }
+.account-module-empty strong { color: var(--color-ink); }
+.account-module-empty span { max-width: 24rem; font-size: var(--text-sm); }
+.account-update-settings,
+.account-agent-history { margin: 0; padding: 0; box-shadow: none !important; }
+.account-update-settings > p,
+.account-agent-history > p { color: var(--color-muted); font-size: var(--text-sm); }
+.account-agent-history { display: grid; gap: var(--space-md); }
+.account-agent-history textarea { min-height: 12rem; }
+
+@keyframes account-popover-in {
+  from { opacity: 0; transform: translateX(-0.35rem) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-menu-popover,
+  .account-content-popover { animation: none; }
+}
 
 .rail-button {
   position: relative;
@@ -1527,6 +1668,8 @@ h2 { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.025em; line
 .report-source-field textarea:focus-visible { outline-color: var(--color-focus); }
 
 @media (hover: hover) and (pointer: fine) {
+  .rail-account-trigger:hover,
+  .account-menu-popover nav button:hover { background: var(--color-paper-4); color: var(--color-ink); }
   .rail-button:hover { background: var(--color-paper-3); color: var(--color-ink); }
   .quick-strip button:hover,
   .button:hover,
@@ -1591,6 +1734,15 @@ h2 { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.025em; line
   .app-shell { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .side-rail { position: fixed; inset-block: auto 0; inset-inline: 0; min-height: auto; height: var(--space-2xl); flex-direction: row; padding: var(--space-2xs) var(--space-xs); border: 0; }
   .rail-version { display: none; }
+  .rail-account-dock { width: auto; margin-inline-start: auto; padding: 0; }
+  .rail-account-trigger { width: 3.75rem; min-height: 3.75rem; }
+  .account-menu-popover { inset-inline: auto 0; inset-block: auto calc(100% + var(--space-xs)); }
+  .account-content-popover {
+    inset-inline: auto calc(15rem + var(--space-md));
+    inset-block: auto calc(100% + var(--space-xs));
+    width: min(34rem, calc(100vw - 18rem));
+    max-height: calc(100vh - var(--space-2xl) - var(--space-lg));
+  }
   .brand-mark,
   .conversation-sidebar { display: none; }
   .rail-nav { flex-direction: row; justify-content: space-around; padding: 0; }
@@ -1637,6 +1789,18 @@ h2 { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.025em; line
 }
 
 @media (max-width: 40rem) {
+  .account-content-popover {
+    position: fixed;
+    inset: var(--space-md) var(--space-md) calc(var(--space-2xl) + var(--space-md));
+    width: auto;
+    max-height: none;
+  }
+  .account-content-body { padding: var(--space-md); }
+  .account-menu-popover { width: min(15rem, calc(100vw - var(--space-lg))); }
+  .account-module .cloud-usage-grid { grid-template-columns: 1fr 1fr; }
+  .account-module-actions { align-items: stretch; flex-direction: column; }
+  .account-module-actions .button,
+  .account-module-actions .text-button { justify-content: center; }
   .cloud-access-shell { padding: var(--space-md); place-items: start center; }
   .cloud-access-card { padding: var(--space-lg) var(--space-md); }
   .cloud-account-identity { grid-template-columns: auto minmax(0, 1fr); }

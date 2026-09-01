@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Copy, Database, Download, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
-  Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
-  RotateCw, SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
+  CircleStop, Clock3, Copy, Database, Download, Eye, FilePlus2, FileText, FolderInput, Home, Library,
+  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
+  RotateCw, SendHorizontal, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import launchLogoUrl from '../build/stable_launch_logo.png'
@@ -12,7 +12,7 @@ import sidebarLogoLightUrl from '../build/stable_logo_sidebar_light.png'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelCatalog, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
+import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
 
 const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
   { id: 'agent', label: '对话', icon: MessageSquareText },
@@ -23,7 +23,6 @@ const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
   { id: 'skills', label: 'Skills', icon: Braces },
   { id: 'workflows', label: '工作流', icon: Workflow },
   { id: 'knowledge', label: '知识库', icon: BookOpenText },
-  { id: 'settings', label: '设置', icon: Settings },
 ]
 
 function errorMessage(error: unknown) {
@@ -169,7 +168,7 @@ export function App() {
             </button>
           ))}
         </nav>
-        <div className="rail-version" aria-label={`Stable 版本 ${state.appVersion}`}>v{state.appVersion}</div>
+        <AccountDock state={state} replaceState={setState} updateTheme={(theme) => update('theme', theme)} action={action} />
       </aside>
 
       <main className="main-frame">
@@ -186,7 +185,6 @@ export function App() {
           {page === 'reports' && <ReportPage items={state.reports} update={(items) => update('reports', items)} action={action} />}
           {page === 'skills' && <SkillsPage items={state.skills} update={(items) => update('skills', items)} action={action} />}
           {page === 'knowledge' && <KnowledgePage items={state.knowledge} update={(items) => update('knowledge', items)} action={action} />}
-          {page === 'settings' && <SettingsPage state={state} replaceState={setState} updateModels={(models) => update('models', models)} updateTheme={(theme) => update('theme', theme)} action={action} />}
         </div>}
 
       </main>
@@ -371,7 +369,7 @@ function HomePage({ state, go }: { state: BootstrapData; go: (page: Page) => voi
     <div className="quick-strip">
       <button onClick={() => go('agent')}><Braces size={18} /><span><strong>在对话中安装 Skill</strong><small>发送完整 Skill 文件夹给 Agent</small></span></button>
       <button onClick={() => go('workflows')}><Workflow size={18} /><span><strong>编排工作流</strong><small>连接数据、脚本、知识与 AI</small></span></button>
-      <button onClick={() => go('settings')}><KeyRound size={18} /><span><strong>配置模型</strong><small>DeepSeek 或 OpenAI 兼容服务</small></span></button>
+      <button onClick={() => go('agent')}><Box size={18} /><span><strong>选择对话模型</strong><small>在对话输入区切换当前模型</small></span></button>
     </div>
   </section>
 }
@@ -1962,85 +1960,97 @@ function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: st
   </article>
 }
 
-type ModelProfileForm = ModelProfile & { apiKey: string }
-type ModelProfileErrors = Partial<Record<'displayName' | 'providerId' | 'baseURL' | 'model' | 'apiKey', string>>
+type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history'
 
-function modelProfileForm(profile?: ModelProfile, preset: Partial<ModelProfile> = {}): ModelProfileForm {
-  return profile
-    ? { ...profile, apiKey: '' }
-    : { id: window.crypto.randomUUID(), providerId: '', displayName: '', baseURL: '', model: '', hasApiKey: false, apiKey: '', ...preset }
+const ACCOUNT_MODULES: Array<{ id: AccountModuleId; label: string; detail: string; icon: typeof Home }> = [
+  { id: 'appearance', label: '主题设置', detail: '深色或浅色界面', icon: Sun },
+  { id: 'account', label: '账号情况', detail: '身份、额度与用量', icon: ShieldCheck },
+  { id: 'updates', label: '软件更新', detail: '版本与安装状态', icon: RotateCw },
+  { id: 'agent-history', label: 'Agent 对话记录', detail: '全局对话提醒', icon: MessageSquareText },
+]
+
+function AccountDock({ state, replaceState, updateTheme, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [activeModule, setActiveModule] = useState<AccountModuleId | null>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const account = state.cloud.account
+  const displayName = account?.displayName || 'Stable 用户'
+  const avatar = displayName.trim().slice(0, 1).toUpperCase() || 'S'
+  const selected = ACCOUNT_MODULES.find((item) => item.id === activeModule)
+
+  useEffect(() => {
+    if (!open) return
+    const closeFromOutside = (event: globalThis.PointerEvent) => {
+      if (!dockRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setActiveModule(null)
+      }
+    }
+    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      if (activeModule) setActiveModule(null)
+      else {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeFromOutside)
+    window.addEventListener('keydown', closeFromKeyboard)
+    return () => {
+      document.removeEventListener('pointerdown', closeFromOutside)
+      window.removeEventListener('keydown', closeFromKeyboard)
+    }
+  }, [activeModule, open])
+
+  function toggleMenu() {
+    setOpen((current) => {
+      if (current) setActiveModule(null)
+      return !current
+    })
+  }
+
+  return <div className="rail-account-dock" ref={dockRef}>
+    {open && <section className="account-menu-popover" id="account-menu-popover" aria-label="账号与设置菜单">
+      <div className="account-menu-identity">
+        <span className="account-avatar" aria-hidden="true">{avatar}</span>
+        <span><strong>{displayName}</strong><small>{account ? `@${account.username}` : '本地开发模式'}</small></span>
+      </div>
+      <nav aria-label="账号设置模块">
+        {ACCOUNT_MODULES.map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" data-active={activeModule === id || undefined} aria-pressed={activeModule === id} onClick={() => setActiveModule(id)}>
+          <Icon size={17} aria-hidden="true" />
+          <span><strong>{label}</strong><small>{detail}</small></span>
+          <ChevronRight size={15} aria-hidden="true" />
+        </button>)}
+      </nav>
+      <div className="rail-version" aria-label={`Stable 版本 ${state.appVersion}`}>Stable v{state.appVersion}</div>
+    </section>}
+
+    {open && selected && <section className="account-content-popover" role="dialog" aria-labelledby="account-module-title">
+      <header>
+        <span><strong id="account-module-title">{selected.label}</strong><small>{selected.detail}</small></span>
+        <button type="button" className="icon-button" onClick={() => setActiveModule(null)} aria-label={`关闭${selected.label}`}><X size={17} aria-hidden="true" /></button>
+      </header>
+      <div className="account-content-body">
+        <AccountModuleContent module={selected.id} state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} />
+      </div>
+    </section>}
+
+    <button ref={triggerRef} className="rail-account-trigger" type="button" aria-label={`打开${displayName}的账号菜单`} aria-expanded={open} aria-controls="account-menu-popover" onClick={toggleMenu}>
+      <span className="account-avatar" aria-hidden="true">{avatar}</span>
+    </button>
+  </div>
 }
 
-function SettingsPage({ state, replaceState, updateModels, updateTheme, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; updateModels: (models: ModelCatalog) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const initialProfile = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
-  const [form, setForm] = useState<ModelProfileForm>(() => modelProfileForm(initialProfile))
-  const [globalFile, setGlobalFile] = useState<GlobalInstructionsFile>({ path: `${state.paths.userData}\\AGENTS.md`, content: '', exists: false })
-  const [globalDraft, setGlobalDraft] = useState('')
-  const [globalStatus, setGlobalStatus] = useState('正在读取本机设置…')
-  const [formErrors, setFormErrors] = useState<ModelProfileErrors>({})
-  const patch = (value: Partial<typeof form>) => { setForm((current) => ({ ...current, ...value })); setFormErrors({}) }
-  const editingExisting = state.models.items.some((item) => item.id === form.id)
+function AccountModuleContent({ module, state, replaceState, updateTheme, action }: { module: AccountModuleId; state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  if (module === 'appearance') return <ThemeSettingsModule state={state} updateTheme={updateTheme} action={action} />
+  if (module === 'account') return <CloudAccountModule state={state} replaceState={replaceState} action={action} />
+  if (module === 'updates') return <UpdateSettingsModule state={state} action={action} />
+  return <AgentHistoryModule state={state} action={action} />
+}
 
-  function newProfile(preset: Partial<ModelProfile> = {}) { setFormErrors({}); setForm(modelProfileForm(undefined, preset)) }
-  function deepSeekPreset() {
-    const existing = state.models.items.find((item) => item.providerId === 'deepseek' && item.model === 'deepseek-v4-flash')
-    if (existing) setForm(modelProfileForm(existing))
-    else newProfile({ providerId: 'deepseek', displayName: 'DeepSeek V4 Flash', baseURL: 'https://api.deepseek.com', model: 'deepseek-v4-flash' })
-  }
-  function applyCatalog(catalog: ModelCatalog, preferredId = '') {
-    updateModels(catalog)
-    const next = catalog.items.find((item) => item.id === preferredId)
-      || catalog.items.find((item) => item.id === catalog.defaultModelId)
-      || catalog.items[0]
-    setForm(modelProfileForm(next))
-  }
-  function validateProfile() {
-    const errors: ModelProfileErrors = {}
-    if (!form.displayName.trim()) errors.displayName = '请输入显示名称。'
-    if (!form.providerId.trim()) errors.providerId = '请输入服务 ID。'
-    if (!form.baseURL.trim()) errors.baseURL = '请输入 API 地址。'
-    else {
-      try {
-        const url = new URL(form.baseURL)
-        if (!['http:', 'https:'].includes(url.protocol)) errors.baseURL = 'API 地址只支持 HTTP 或 HTTPS。'
-      } catch { errors.baseURL = '请输入有效的 HTTP 或 HTTPS 地址。' }
-    }
-    if (!form.model.trim()) errors.model = '请输入服务端实际模型名称。'
-    if (!form.hasApiKey && !form.apiKey.trim()) errors.apiKey = '首次保存该模型时需要填写 API Key。'
-    setFormErrors(errors)
-    if (Object.keys(errors).length) {
-      window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.model-profile-editor [aria-invalid="true"]')?.focus())
-      return false
-    }
-    return true
-  }
-  function saveProfile() {
-    if (!validateProfile()) return
-    void action('正在保存模型配置', async () => {
-      const catalog = await window.stable.model.save(form)
-      const saved = catalog.items.find((item) => item.id === form.id)
-        || catalog.items.at(-1)
-      applyCatalog(catalog, saved?.id)
-    })
-  }
-  function removeProfile(profile: ModelProfile) {
-    void action(`正在删除模型 ${profile.displayName}`, async () => {
-      const catalog = await window.stable.model.remove(profile.id)
-      applyCatalog(catalog, form.id === profile.id ? '' : form.id)
-    })
-  }
-  function setDefaultModel(profile: ModelProfile) {
-    if (profile.id === state.models.defaultModelId) return
-    void action('正在设置默认模型', async () => updateModels(await window.stable.model.setDefault(profile.id)))
-  }
-  useEffect(() => {
-    let active = true
-    window.stable.settings.globalInstructions().then((value) => {
-      if (!active) return
-      setGlobalFile(value); setGlobalDraft(value.content); setGlobalStatus(value.exists ? '已读取当前全局提醒' : '文件尚未创建，保存时会自动创建')
-    }).catch((reason) => { if (active) setGlobalStatus(errorMessage(reason)) })
-    return () => { active = false }
-  }, [])
+function ThemeSettingsModule({ state, updateTheme, action }: { state: BootstrapData; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
   function setTheme(theme: ThemeMode) {
     void action('正在切换主题', async () => {
       const saved = await window.stable.appearance.setTheme(theme)
@@ -2048,85 +2058,30 @@ function SettingsPage({ state, replaceState, updateModels, updateTheme, action }
       updateTheme(saved)
     })
   }
-  return <section className="settings-layout reveal">
-    <div className="settings-form">
-      <section className="appearance-settings" aria-labelledby="appearance-title">
-        <div className="settings-section-head"><h2 id="appearance-title">外观主题</h2><p>选择适合当前环境的黑色或白色界面，品牌蓝保持一致。</p></div>
-        <div className="theme-options">
-          {([
-            { id: 'dark' as const, label: '黑色', detail: '深色背景，适合长时间工作', icon: Moon },
-            { id: 'light' as const, label: '白色', detail: '暖白背景，适合长时间查看', icon: Sun },
-          ]).map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" className="theme-option" data-active={state.theme === id || undefined} aria-pressed={state.theme === id} onClick={() => setTheme(id)}>
-            <span className="theme-sample" data-preview={id} aria-hidden="true"><span /><span /></span>
-            <span className="theme-option-copy"><span><Icon size={17} />{label}</span><small>{detail}</small></span>
-            {state.theme === id && <Check className="theme-selected" size={17} aria-hidden="true" />}
-          </button>)}
-        </div>
-      </section>
-      {state.cloud.status === 'authenticated' && <CloudAccountSettings state={state} replaceState={replaceState} action={action} />}
-      <section className="model-settings" aria-labelledby="model-settings-title">
-        {state.cloud.status === 'authenticated' ? <CloudModelSettings state={state} /> : <>
-        <PageLead headingId="model-settings-title" title="模型服务" copy="统一管理兼容接口与凭证。新对话使用默认模型，每个对话也可在输入区独立切换。" action={<div className="button-row"><button className="text-button" type="button" onClick={deepSeekPreset}>使用 DeepSeek 预设</button><button className="button" type="button" onClick={() => newProfile()}><Plus size={16} aria-hidden="true" />新增模型</button></div>} />
-        {state.models.items.length ? <div className="model-profile-list" aria-label="已配置模型">{state.models.items.map((item) => {
-          const isDefault = item.id === state.models.defaultModelId
-          const selected = item.id === form.id
-          return <article className="model-profile-card" data-active={selected || undefined} key={item.id}>
-            <button className="model-profile-select" type="button" aria-pressed={selected} onClick={() => setForm(modelProfileForm(item))}>
-              <span className="model-profile-icon"><Box size={18} aria-hidden="true" /></span>
-              <span><strong>{item.displayName}</strong><small>{item.providerId} · {item.model}</small></span>
-            </button>
-            <div className="model-profile-state"><span>{item.hasApiKey ? '密钥已保存' : '尚未保存密钥'}</span>{isDefault && <em><Check size={13} aria-hidden="true" />默认</em>}</div>
-            <div className="model-profile-actions"><button className="text-button" type="button" disabled={isDefault} onClick={() => setDefaultModel(item)}>{isDefault ? '默认模型' : '设为默认'}</button><button className="icon-button" type="button" disabled={isDefault || state.models.items.length <= 1} title={isDefault ? '请先设置其他默认模型' : state.models.items.length <= 1 ? '至少需要保留一个模型' : '删除模型'} onClick={() => removeProfile(item)} aria-label={`删除模型 ${item.displayName}`}><Trash2 size={16} aria-hidden="true" /></button></div>
-          </article>
-        })}</div> : <div className="model-profile-empty"><Box size={22} aria-hidden="true" /><strong>还没有模型配置</strong><span>新增一个 OpenAI Chat Completions 兼容模型后即可开始对话。</span></div>}
-
-        <section className="model-profile-editor" aria-labelledby="model-editor-title">
-          <div className="model-editor-head"><div><span>{editingExisting ? 'EDIT MODEL' : 'NEW MODEL'}</span><h3 id="model-editor-title">{editingExisting ? `编辑 ${form.displayName}` : '新增模型配置'}</h3><p>每个模型独立保存服务地址与 API Key，切换时不会覆盖其他配置。</p></div>{editingExisting && <button className="text-button" type="button" onClick={() => newProfile()}><Plus size={15} aria-hidden="true" />新增另一项</button>}</div>
-          <div className="form-grid">
-            <div className="field"><label htmlFor="display-name">显示名称</label><input id="display-name" required value={form.displayName} onChange={(event) => patch({ displayName: event.target.value })} aria-invalid={Boolean(formErrors.displayName)} aria-describedby={formErrors.displayName ? 'display-name-error' : undefined} placeholder="例如：DeepSeek V4 Flash" />{formErrors.displayName && <small className="field-error" id="display-name-error" role="alert">{formErrors.displayName}</small>}</div>
-            <div className="field"><label htmlFor="provider-id">服务 ID</label><input id="provider-id" required spellCheck={false} value={form.providerId} onChange={(event) => patch({ providerId: event.target.value })} aria-invalid={Boolean(formErrors.providerId)} aria-describedby={formErrors.providerId ? 'provider-id-error' : undefined} placeholder="例如：deepseek" />{formErrors.providerId && <small className="field-error" id="provider-id-error" role="alert">{formErrors.providerId}</small>}</div>
-            <div className="field span"><label htmlFor="base-url">API 地址</label><input id="base-url" type="url" required spellCheck={false} value={form.baseURL} onChange={(event) => patch({ baseURL: event.target.value })} aria-invalid={Boolean(formErrors.baseURL)} aria-describedby={formErrors.baseURL ? 'base-url-error' : undefined} placeholder="https://api.example.com/v1" />{formErrors.baseURL && <small className="field-error" id="base-url-error" role="alert">{formErrors.baseURL}</small>}</div>
-            <div className="field"><label htmlFor="model-name">模型名称</label><input id="model-name" required spellCheck={false} value={form.model} onChange={(event) => patch({ model: event.target.value })} aria-invalid={Boolean(formErrors.model)} aria-describedby={formErrors.model ? 'model-name-error' : undefined} placeholder="服务端实际模型名称" />{formErrors.model && <small className="field-error" id="model-name-error" role="alert">{formErrors.model}</small>}</div>
-            <div className="field"><label htmlFor="api-key">API Key</label><input id="api-key" type="password" spellCheck={false} value={form.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} aria-invalid={Boolean(formErrors.apiKey)} aria-describedby={`api-key-help${formErrors.apiKey ? ' api-key-error' : ''}`} placeholder={form.hasApiKey ? '已安全保存；留空则保持不变' : '输入 API Key'} /><small id="api-key-help">由 Windows 安全存储加密，不会显示在模型列表中。</small>{formErrors.apiKey && <small className="field-error" id="api-key-error" role="alert">{formErrors.apiKey}</small>}</div>
-          </div>
-          <button className="button primary" type="button" onClick={saveProfile}><Save size={17} aria-hidden="true" />{editingExisting ? '保存模型配置' : '添加模型'}</button>
-        </section>
-        </>}
-      </section>
-      <section className="update-settings" aria-labelledby="update-settings-title">
-        <div className="settings-section-head"><span>UPDATE</span><h2 id="update-settings-title">软件更新</h2><p>安装版会从 GitHub Releases 后台下载安装包；安装时由独立窗口显示真实进度，完成后请重新打开 Stable。</p></div>
-        <div className="update-settings-row"><div><strong>当前版本 v{state.update.currentVersion}</strong><span aria-live="polite">{state.update.status === 'development' ? '开发模式不连接更新服务' : state.update.status === 'checking' ? '正在检查更新…' : state.update.status === 'downloading' ? `正在下载 ${state.update.progress}%` : state.update.status === 'downloaded' ? `v${state.update.availableVersion} 已下载，等待安装` : state.update.status === 'installing' ? `正在打开 v${state.update.availableVersion} 安装进度窗口` : state.update.status === 'error' ? state.update.error : '已启用自动更新'}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'downloaded', 'installing'].includes(state.update.status)} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{state.update.status === 'downloaded' ? '已准备好' : state.update.status === 'installing' ? '正在安装' : '检查更新'}</button></div>
-      </section>
-      <section className="global-instructions-settings" aria-labelledby="global-instructions-title">
-        <div className="settings-section-head"><span>GLOBAL CONTEXT</span><h2 id="global-instructions-title">全局 Agent 对话提醒</h2><p>保存到本机 AGENTS.md，仅在之后启动的新任务中读取；不会改变正在执行的任务，也不属于当前对话的临时提示。</p></div>
-        <div className="field"><label htmlFor="global-instructions">本机全局说明</label><textarea id="global-instructions" rows={10} value={globalDraft} onChange={(event) => { setGlobalDraft(event.target.value); setGlobalStatus('有尚未保存的更改') }} placeholder="例如：默认使用简体中文；交付文件保存到工作区并返回完整路径。" /></div>
-        <div className="global-instructions-meta"><code>{globalFile.path}</code><span role="status">{globalStatus}</span></div>
-        <button className="button primary" type="button" onClick={() => void action('正在保存全局 Agent 对话提醒', async () => { const saved = await window.stable.settings.saveGlobalInstructions(globalDraft); setGlobalFile(saved); setGlobalDraft(saved.content); setGlobalStatus('已保存，只影响之后启动的新任务') })}><Save size={17} />保存全局提醒</button>
-      </section>
-    </div>
-    <aside className="local-sheet">
-      <h2>本地目录</h2>
-      <div><span>应用数据</span><code>{state.paths.userData}</code></div>
-      <div><span>工作区</span><code>{state.paths.workspace}</code></div>
-      <button className="button" onClick={() => window.stable.system.openPath(state.paths.workspace)}><Library size={17} />打开工作区</button>
-      <p>卸载 Stable 时默认保留这里的数据。需要完全移除时，可在卸载后手动删除应用数据目录。</p>
-    </aside>
-  </section>
+  return <div className="theme-options account-theme-options">
+    {([
+      { id: 'dark' as const, label: '黑色', detail: '深色背景，适合长时间工作', icon: Moon },
+      { id: 'light' as const, label: '白色', detail: '暖白背景，适合长时间查看', icon: Sun },
+    ]).map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" className="theme-option" data-active={state.theme === id || undefined} aria-pressed={state.theme === id} onClick={() => setTheme(id)}>
+      <span className="theme-sample" data-preview={id} aria-hidden="true"><span /><span /></span>
+      <span className="theme-option-copy"><span><Icon size={17} aria-hidden="true" />{label}</span><small>{detail}</small></span>
+      {state.theme === id && <Check className="theme-selected" size={17} aria-hidden="true" />}
+    </button>)}
+  </div>
 }
 
 function formatCloudMoney(micros: number, currency = 'CNY') {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(micros || 0) / 1_000_000)
 }
 
-function CloudAccountSettings({ state, replaceState, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+function CloudAccountModule({ state, replaceState, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
   const account = state.cloud.account
   const quota = state.cloud.quota
   const usage = state.cloud.usage?.totals
-  if (!account) return null
+  if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>当前未连接云端账号</strong><span>本地开发模式不会显示账号额度与云端用量。</span></div>
   const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
   const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
-  return <section className="cloud-account-settings" aria-labelledby="cloud-account-title">
-    <PageLead headingId="cloud-account-title" title="Stable Cloud 账号" copy="平台统一提供模型凭据，并在每次模型请求前检查剩余额度。" action={<div className="button-row"><button className="text-button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新</button><button className="button" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}>退出账号</button></div>} />
+  return <section className="cloud-account-settings account-module">
     <div className="cloud-account-grid">
       <article className="cloud-account-identity"><span className="cloud-account-avatar" aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{account.displayName}</strong><span>{account.username} · {account.role === 'admin' ? '管理员' : '成员'}</span></div><em><ShieldCheck size={13} aria-hidden="true" />已登录</em></article>
       <article className="cloud-quota-card">
@@ -2140,18 +2095,44 @@ function CloudAccountSettings({ state, replaceState, action }: { state: Bootstra
       <div><span>输出 Token</span><strong>{Number(usage?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
       <div><span>确认消耗</span><strong>{formatCloudMoney(Number(usage?.actual_micros || 0), quota?.currency || 'CNY')}</strong></div>
     </div>
+    <div className="account-module-actions"><button className="button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新账号</button><button className="text-button account-logout" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}><LogOut size={15} aria-hidden="true" />退出账号</button></div>
   </section>
 }
 
-function CloudModelSettings({ state }: { state: BootstrapData }) {
-  return <>
-    <PageLead headingId="model-settings-title" title="云端模型" copy="模型、价格和供应商凭据由管理员统一维护。你可以在每个对话的输入区选择本次使用的模型。" action={null} />
-    {state.models.items.length ? <div className="model-profile-list" aria-label="可用云端模型">{state.models.items.map((item, index) => <article className="model-profile-card cloud-model-card" key={item.id}>
-      <span className="model-profile-icon"><Box size={18} aria-hidden="true" /></span>
-      <span className="cloud-model-copy"><strong>{item.displayName}</strong><small>{item.model}</small></span>
-      {index === 0 && <em className="cloud-model-default"><Check size={13} aria-hidden="true" />默认</em>}
-    </article>)}</div> : <div className="model-profile-empty"><Box size={22} aria-hidden="true" /><strong>管理员尚未配置模型</strong><span>账号可以登录，但模型调用会保持停止；请先在 Stable Cloud 管理后台添加模型和供应商密钥。</span></div>}
-  </>
+function UpdateSettingsModule({ state, action }: { state: BootstrapData; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const update = state.update
+  const status = update.status === 'development' ? '开发模式不连接更新服务'
+    : update.status === 'checking' ? '正在检查更新…'
+      : update.status === 'downloading' ? `正在下载 ${update.progress}%`
+        : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，等待安装`
+          : update.status === 'installing' ? `正在打开 v${update.availableVersion} 安装进度窗口`
+            : update.status === 'error' ? update.error : '已启用自动更新'
+  return <section className="update-settings account-update-settings">
+    <div className="update-settings-row"><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'downloaded', 'installing'].includes(update.status)} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{update.status === 'downloaded' ? '已准备好' : update.status === 'installing' ? '正在安装' : '检查更新'}</button></div>
+    <p>安装时会打开独立进度窗口；完成后重新点击 Stable 图标即可进入新版。</p>
+  </section>
+}
+
+function AgentHistoryModule({ state, action }: { state: BootstrapData; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  const [globalFile, setGlobalFile] = useState<GlobalInstructionsFile>({ path: `${state.paths.userData}\\AGENTS.md`, content: '', exists: false })
+  const [globalDraft, setGlobalDraft] = useState('')
+  const [globalStatus, setGlobalStatus] = useState('正在读取本机记录…')
+  useEffect(() => {
+    let active = true
+    window.stable.settings.globalInstructions().then((value) => {
+      if (!active) return
+      setGlobalFile(value)
+      setGlobalDraft(value.content)
+      setGlobalStatus(value.exists ? '已读取当前记录' : '文件尚未创建，保存时会自动创建')
+    }).catch((reason) => { if (active) setGlobalStatus(errorMessage(reason)) })
+    return () => { active = false }
+  }, [])
+  return <section className="global-instructions-settings account-agent-history">
+    <p>内容保存到本机 AGENTS.md，仅在之后启动的新任务中读取。</p>
+    <div className="field"><label htmlFor="account-global-instructions">本机全局说明</label><textarea id="account-global-instructions" rows={9} value={globalDraft} onChange={(event) => { setGlobalDraft(event.target.value); setGlobalStatus('有尚未保存的更改') }} placeholder="例如：默认使用简体中文；交付文件保存到工作区并返回完整路径。" /></div>
+    <div className="global-instructions-meta"><code>{globalFile.path}</code><span role="status">{globalStatus}</span></div>
+    <button className="button primary" type="button" onClick={() => void action('正在保存全局 Agent 对话提醒', async () => { const saved = await window.stable.settings.saveGlobalInstructions(globalDraft); setGlobalFile(saved); setGlobalDraft(saved.content); setGlobalStatus('已保存，只影响之后启动的新任务') })}><Save size={17} aria-hidden="true" />保存记录</button>
+  </section>
 }
 
 function Empty({ icon: Icon, title, detail }: { icon: typeof Database; title: string; detail: string }) {

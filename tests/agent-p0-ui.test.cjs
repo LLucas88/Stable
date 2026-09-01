@@ -47,7 +47,7 @@ test('conversation links, generated files and uploaded attachments open a resiza
   assert.match(css, /\.conversation-file-card:focus-visible/)
 })
 
-test('settings exposes the global AGENTS.md editor and explains its future-task scope', () => {
+test('account menu exposes the global AGENTS.md editor and explains its future-task scope', () => {
   assert.match(app, /全局 Agent 对话提醒/)
   assert.match(app, /仅在之后启动的新任务中读取/)
   assert.match(app, /window\.stable\.settings\.globalInstructions\(\)/)
@@ -55,4 +55,6 @@ test('settings exposes the global AGENTS.md editor and explains its future-task 
   assert.match(main, /path\.join\(app\.getPath\('userData'\), 'AGENTS\.md'\)/)
   assert.match(main, /globalInstructions: readGlobalInstructions\(\)\.content/)
   assert.match(css, /\.global-instructions-settings/)
+  assert.match(app, /Agent 对话记录/)
+  assert.match(app, /className="account-content-popover"/)
 })

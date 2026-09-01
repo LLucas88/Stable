@@ -1,4 +1,4 @@
-export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'settings'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge'
 export type ThemeMode = 'dark' | 'light'
 
 export interface DataItem {

@@ -7,7 +7,7 @@ const path = require('node:path')
 
 function source(...segments) { return readFileSync(path.join(__dirname, '..', ...segments), 'utf8') }
 
-test('renderer exposes a model catalog, settings editor, and conversation-scoped radio picker', () => {
+test('renderer keeps conversation-scoped model switching without exposing the removed settings catalog', () => {
   const app = source('src', 'App.tsx')
   const types = source('src', 'types.ts')
   const preload = source('desktop', 'preload.cjs')
@@ -29,18 +29,16 @@ test('renderer exposes a model catalog, settings editor, and conversation-scoped
   assert.match(app, /当前对话 · 从下一条消息生效/)
   assert.match(app, /window\.stable\.agent\.configureModel\(activeConversation\.id, modelId\)/)
   assert.match(app, /role="status" aria-live="polite"/)
-  assert.match(app, /className="model-profile-list"/)
-  assert.match(app, /window\.stable\.model\.save\(form\)/)
-  assert.match(app, /window\.stable\.model\.setDefault\(profile\.id\)/)
-  assert.match(app, /window\.stable\.model\.remove\(profile\.id\)/)
+  assert.doesNotMatch(app, /className="model-profile-list"/)
+  assert.doesNotMatch(app, /window\.stable\.model\.save\(form\)/)
+  assert.doesNotMatch(app, /window\.stable\.model\.setDefault\(profile\.id\)/)
+  assert.doesNotMatch(app, /window\.stable\.model\.remove\(profile\.id\)/)
   assert.match(app, /activeConversation\?\.modelId/)
-  assert.match(app, /function validateProfile\(\)/)
-  assert.match(app, /aria-invalid=\{Boolean\(formErrors\.baseURL\)\}/)
-  assert.match(app, /providerId === 'deepseek' && item\.model === 'deepseek-v4-flash'/)
+  assert.doesNotMatch(app, /function validateProfile\(\)/)
+  assert.doesNotMatch(app, /id: 'settings'/)
+  assert.doesNotMatch(app, /function CloudModelSettings/)
   assert.match(css, /\.model-popover/)
   assert.match(css, /\.model-option:has\(input:focus-visible\)/)
-  assert.match(css, /\.model-profile-editor/)
-  assert.match(css, /\.model-profile-editor \.field > \.field-error/)
 })
 
 test('main process snapshots the selected route before asynchronous message preparation', () => {

@@ -24,14 +24,14 @@ test('advanced report studio is bridged to the Stable report library', () => {
   assert.doesNotMatch(studio, /localStorage\.setItem\('report_autosave'/)
 })
 
-test('version is visible in the left rail and the direct launcher accepts isolated user data', () => {
+test('version is visible in the account menu and the direct launcher accepts isolated user data', () => {
   const app = readFileSync(join(root, 'src', 'App.tsx'), 'utf8')
   const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
   assert.equal(pkg.version, '0.9.39')
   assert.match(app, /className="rail-version"/)
-  assert.match(app, />v\{state\.appVersion\}</)
+  assert.match(app, />Stable v\{state\.appVersion\}</)
   assert.match(main, /--stable-user-data=/)
   assert.match(main, /!process\.env\.STABLE_QA_CAPTURE && !userDataPath/)
   assert.match(main, /app\.isPackaged[\s\S]*appendSwitch\('no-sandbox'\)/)

@@ -20,18 +20,28 @@ test('packaged desktop restores Stable Cloud before exposing a redacted account 
   assert.match(types, /cloud: CloudState/)
 })
 
-test('renderer gates packaged access on login and shows quota plus a read-only cloud model catalog', () => {
+test('renderer gates packaged access on login and moves account controls into adjacent rail popovers', () => {
   const app = source('src', 'App.tsx')
   const css = source('src', 'styles', 'app.css')
   assert.match(app, /<CloudAccessPage state=\{state\}/)
   assert.match(app, /autoComplete="username"/)
   assert.match(app, /autoComplete="current-password"/)
   assert.match(app, /role="alert" tabIndex=\{-1\}/)
-  assert.match(app, /Stable Cloud 账号/)
+  assert.match(app, /账号情况/)
   assert.match(app, /role="progressbar"/)
-  assert.match(app, /云端模型由管理员统一维护|模型、价格和供应商凭据由管理员统一维护/)
+  assert.match(app, /className="rail-account-trigger"/)
+  assert.match(app, /className="account-menu-popover"/)
+  assert.match(app, /className="account-content-popover"/)
+  assert.match(app, /主题设置/)
+  assert.match(app, /账号情况/)
+  assert.match(app, /软件更新/)
+  assert.match(app, /Agent 对话记录/)
+  assert.doesNotMatch(app, /function CloudModelSettings|title="云端模型"/)
+  assert.doesNotMatch(app, /id: 'settings'/)
   assert.match(css, /\.cloud-access-card/)
   assert.match(css, /\.cloud-quota-track/)
+  assert.match(css, /\.account-menu-popover/)
+  assert.match(css, /\.account-content-popover/)
 })
 
 test('authenticated cloud catalog replaces local provider keys and resolves through the loopback gateway', () => {
