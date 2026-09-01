@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('stable', {
     savePastedImage: (conversationId, name, mediaType, data) => invoke('stable:agent:savePastedImage', { conversationId, name, mediaType, data }),
     discardDraftImage: (path) => invoke('stable:agent:discardDraftImage', { path }),
     imagePreview: (path) => invoke('stable:agent:imagePreview', { path }),
+    saveImageAs: (path) => invoke('stable:agent:saveImageAs', { path }),
     selectAttachmentFolder: () => invoke('stable:agent:selectAttachmentFolder'),
     selectSkillFolder: () => invoke('stable:agent:selectSkillFolder'),
     create: () => invoke('stable:agent:create'),

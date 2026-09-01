@@ -481,6 +481,7 @@ export interface StableBridge {
     savePastedImage(conversationId: string, name: string, mediaType: string, data: Uint8Array): Promise<AgentAttachment>
     discardDraftImage(path: string): Promise<boolean>
     imagePreview(path: string): Promise<string>
+    saveImageAs(path: string): Promise<{ canceled: boolean; path?: string }>
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>

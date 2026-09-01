@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Copy, Database, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
-  Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
+  CircleStop, Clock3, Copy, Database, Download, Eye, FilePlus2, FileText, FolderInput, Home, KeyRound, Library,
+  Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
   RotateCw, SendHorizontal, Settings, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
@@ -408,6 +408,14 @@ type ConversationPreviewTarget =
   | { requestId: number; kind: 'web'; value: string; title: string }
   | { requestId: number; kind: 'file'; value: string; title: string }
 
+type MessageAttachmentItem = NonNullable<MessageItem['attachments']>[number]
+type ViewerImageItem = { name: string; path?: string; previewUrl?: string }
+
+interface ImageViewerTarget {
+  items: ViewerImageItem[]
+  index: number
+}
+
 function previewBounds(element: HTMLElement): PreviewBounds {
   const rect = element.getBoundingClientRect()
   return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) }
@@ -426,6 +434,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [teamCollapsed, setTeamCollapsed] = useState(false)
   const [previewTarget, setPreviewTarget] = useState<ConversationPreviewTarget>()
+  const [imageViewer, setImageViewer] = useState<ImageViewerTarget>()
   const [previewWidth, setPreviewWidth] = useState(0)
   const [previewState, setPreviewState] = useState<PreviewState>(emptyPreviewState)
   const [editingId, setEditingId] = useState('')
@@ -772,6 +781,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     if (item.kind === 'attachment' && item.path) openConversationPreview({ kind: 'file', value: item.path, title: item.name })
   }
 
+  function openImageViewer(items: ViewerImageItem[], index: number) {
+    setImageViewer({ items, index })
+  }
+
   async function copyUserMessage(message: MessageItem) {
     const restoredReferences = (message.attachments || []).map(referenceFromMessage).filter((item): item is AgentReference => Boolean(item))
     const restoredAttachments: AgentAttachment[] = []
@@ -909,8 +922,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewLink={openConversationPreview} key={message.id} />)}
-          {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} pending />}
+          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
           {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} />}
           {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
             if (!item.requestId) return
@@ -923,9 +936,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
           <div className="composer-box">
             {imageAttachments.length > 0 && <div className="composer-image-selections" aria-label="待发送图片">
-              {imageAttachments.map((item) => <div className="composer-image-selection" key={item.path}>
-                <AttachmentImage item={item} />
-                <button type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={14} aria-hidden="true" /></button>
+              {imageAttachments.map((item, index) => <div className="composer-image-selection" key={item.path}>
+                <button className="composer-image-preview" type="button" onClick={() => openImageViewer(imageAttachments, index)} aria-label={`预览图片 ${item.name}`}><AttachmentImage item={item} /></button>
+                <button className="composer-image-remove" type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={14} aria-hidden="true" /></button>
               </div>)}
             </div>}
             {(selectedReferences.length > 0 || documentAttachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与文件">
@@ -1036,6 +1049,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </div>
     </aside>}
     </div>
+    {imageViewer && <ImageLightbox items={imageViewer.items} index={imageViewer.index} onIndexChange={(index) => setImageViewer((current) => current ? { ...current, index } : current)} onClose={() => setImageViewer(undefined)} />}
   </section>
 }
 
@@ -1064,8 +1078,8 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ message, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewLink }: { message: MessageItem; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
-  if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} />
+function MessageTurn({ message, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { message: MessageItem; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+  if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} />
   return <article className="assistant-turn">
     {message.trace?.length ? <RunTrace items={message.trace} status="completed" /> : null}
     <div className="assistant-answer">
@@ -1096,7 +1110,7 @@ function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; on
   </button>
 }
 
-function AttachmentImage({ item }: { item: { name: string; path?: string; previewUrl?: string } }) {
+function useAttachmentImageSource(item: { path?: string; previewUrl?: string }) {
   const [source, setSource] = useState(item.previewUrl || '')
   useEffect(() => {
     if (item.previewUrl) { setSource(item.previewUrl); return }
@@ -1106,8 +1120,94 @@ function AttachmentImage({ item }: { item: { name: string; path?: string; previe
     return () => { cancelled = true }
   }, [item.path, item.previewUrl])
   return source
+}
+
+function AttachmentImage({ item }: { item: { name: string; path?: string; previewUrl?: string } }) {
+  const source = useAttachmentImageSource(item)
+  return source
     ? <img className="attachment-thumbnail" src={source} alt="" aria-hidden="true" />
     : <span className="attachment-thumbnail attachment-thumbnail-placeholder" aria-hidden="true"><ImageIcon size={18} /></span>
+}
+
+function ImageLightbox({ items, index, onIndexChange, onClose }: { items: ViewerImageItem[]; index: number; onIndexChange: (index: number) => void; onClose: () => void }) {
+  const item = items[index]
+  const source = useAttachmentImageSource(item || {})
+  const [zoom, setZoom] = useState(1)
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
+  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [downloadStatus, setDownloadStatus] = useState('')
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    closeRef.current?.focus()
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener('resize', resize)
+    return () => { window.removeEventListener('resize', resize); previousFocus?.focus() }
+  }, [])
+
+  useEffect(() => { setZoom(1); setNaturalSize({ width: 0, height: 0 }); setDownloadStatus('') }, [index])
+
+  function changeZoom(delta: number) {
+    setZoom((value) => Math.max(0.25, Math.min(4, Math.round((value + delta) * 100) / 100)))
+  }
+
+  function navigate(delta: number) {
+    if (items.length < 2) return
+    onIndexChange((index + delta + items.length) % items.length)
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); navigate(-1); return }
+    if (event.key === 'ArrowRight') { event.preventDefault(); navigate(1); return }
+    if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoom(0.25); return }
+    if (event.key === '-') { event.preventDefault(); changeZoom(-0.25); return }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') || [])
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+
+  async function downloadImage() {
+    if (!item?.path) return
+    setDownloadStatus('正在选择保存位置')
+    try {
+      const result = await window.stable.agent.saveImageAs(item.path)
+      setDownloadStatus(result.canceled ? '' : `已下载到 ${result.path}`)
+    } catch (error) {
+      setDownloadStatus(error instanceof Error ? error.message : '图片下载失败')
+    }
+  }
+
+  const availableWidth = Math.max(120, viewport.width - 128)
+  const availableHeight = Math.max(120, viewport.height - 176)
+  const fitScale = naturalSize.width && naturalSize.height ? Math.min(1, availableWidth / naturalSize.width, availableHeight / naturalSize.height) : 1
+  const imageStyle = naturalSize.width && naturalSize.height ? { width: `${Math.round(naturalSize.width * fitScale * zoom)}px`, height: `${Math.round(naturalSize.height * fitScale * zoom)}px` } : undefined
+
+  return <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`图片预览 ${item?.name || ''}`} ref={dialogRef} onKeyDown={handleKeyDown} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="image-lightbox-toolbar">
+      <button className="image-lightbox-button" type="button" onClick={() => void downloadImage()} disabled={!item?.path} aria-label="下载图片到本地"><Download size={20} aria-hidden="true" /></button>
+      <button className="image-lightbox-button" type="button" onClick={onClose} aria-label="关闭图片预览" ref={closeRef}><X size={22} aria-hidden="true" /></button>
+    </div>
+    {items.length > 1 && <button className="image-lightbox-nav image-lightbox-prev" type="button" onClick={() => navigate(-1)} aria-label="上一张图片"><ArrowLeft size={24} aria-hidden="true" /></button>}
+    <div className="image-lightbox-stage">
+      {source
+        ? <img src={source} alt={item?.name || '预览图片'} draggable={false} style={imageStyle} onLoad={(event) => setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
+        : <div className="image-lightbox-loading"><LoaderCircle className="spin" size={28} /><span>正在加载图片</span></div>}
+    </div>
+    {items.length > 1 && <button className="image-lightbox-nav image-lightbox-next" type="button" onClick={() => navigate(1)} aria-label="下一张图片"><ArrowRight size={24} aria-hidden="true" /></button>}
+    <div className="image-lightbox-zoom" aria-label="图片缩放控制">
+      <button type="button" onClick={() => changeZoom(-0.25)} disabled={zoom <= 0.25} aria-label="缩小图片"><Minus size={20} aria-hidden="true" /></button>
+      <output aria-live="polite">{Math.round(zoom * 100)}%</output>
+      <button type="button" onClick={() => changeZoom(0.25)} disabled={zoom >= 4} aria-label="放大图片"><Plus size={20} aria-hidden="true" /></button>
+    </div>
+    <span className="sr-only" role="status" aria-live="polite">{downloadStatus}</span>
+  </div>
 }
 
 function localArtifactPaths(content: string, workspace: string) {
@@ -1139,7 +1239,7 @@ function formatAutomationSchedule(schedule: AutomationSchedule) {
   return `每月 ${schedule.day} 日 ${schedule.time}`
 }
 
-function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: NonNullable<MessageItem['attachments']>[number]) => void }) {
+function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment, onPreviewImages }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void }) {
   const uploadedFiles = attachments.filter((item) => item.kind === 'attachment' && item.path)
   const imageFiles = uploadedFiles.filter(attachmentIsImage)
   const documentFiles = uploadedFiles.filter((item) => !imageFiles.includes(item))
@@ -1147,8 +1247,8 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
   return <article className="user-turn" data-pending={pending || undefined}>
     <div className="user-turn-stack">
       {imageFiles.length > 0 && <div className="message-image-gallery" aria-label="随消息上传的图片">
-        {imageFiles.map((item, index) => onPreviewAttachment
-          ? <button className="message-image" type="button" onClick={() => onPreviewAttachment(item)} aria-label={`预览图片 ${item.name}`} key={`${item.path}-${index}`}><AttachmentImage item={item} /></button>
+        {imageFiles.map((item, index) => onPreviewImages
+          ? <button className="message-image" type="button" onClick={() => onPreviewImages(imageFiles, index)} aria-label={`预览图片 ${item.name}`} key={`${item.path}-${index}`}><AttachmentImage item={item} /></button>
           : <span className="message-image" key={`${item.path}-${index}`}><AttachmentImage item={item} /></span>)}
       </div>}
       <div className="user-bubble"><div className="turn-label">你</div>{content && <p>{content}</p>}

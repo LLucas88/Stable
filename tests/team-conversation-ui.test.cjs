@@ -29,7 +29,7 @@ test('agent workbench keeps a neutral conversation focus, compact Team and subag
   assert.match(app, /function SubagentTraceCard/)
   assert.match(app, /<small>当前任务<\/small>/)
   assert.match(app, /<small>最新动作<\/small>/)
-  assert.match(css, /#root \.trace-summary[\s\S]*box-shadow: inset 0 -1px 0 var\(--color-rule\)/)
+  assert.match(css, /#root \.trace-summary:hover,[\s\S]*box-shadow: none !important/)
   assert.match(css, /#root \.composer-box,[\s\S]*#root \.composer-box:focus-within[^}]*box-shadow: none !important[^}]*transition: none !important/)
   assert.match(css, /\.team-conversation-zone\[data-collapsed="true"\]/)
   assert.match(css, /\.trace-subagent-card\s*\{/)

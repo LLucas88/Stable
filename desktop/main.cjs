@@ -1171,7 +1171,12 @@ function qaMessages() {
   if (previewPath && (process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_CONVERSATION_FIXTURE)) {
     writeFileSync(previewPath, '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
   }
-  if (imagePath) copyFileSync(resourcePath('build', 'stable_logo.png'), imagePath)
+  if (imagePath) {
+    const imageSource = process.env.STABLE_QA_IMAGE_SOURCE && existsSync(process.env.STABLE_QA_IMAGE_SOURCE)
+      ? path.resolve(process.env.STABLE_QA_IMAGE_SOURCE)
+      : resourcePath('build', 'stable_logo.png')
+    copyFileSync(imageSource, imagePath)
+  }
   const trace = [
     { id: 'context', runId: 'qa-run', kind: 'context', title: '准备本次上下文', detail: '2 条相关数据 · 1 个 Skill · deepseek-v4-flash', status: 'completed', time: 1 },
     { id: 'root:agent', runId: 'qa-run', kind: 'status', entity: 'agent', eventType: 'agent/end', sessionId: 'root', depth: 0, title: 'Stable 总控', detail: '已完成任务', status: 'completed', time: 4100 },
@@ -1854,6 +1859,19 @@ function registerIpc() {
     if (!isImageAttachment(inspected) || !inspected.previewUrl) throw new Error('这个附件不是可预览图片。')
     return inspected.previewUrl
   })
+  ipcMain.handle('stable:agent:saveImageAs', async (_event, payload) => {
+    const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
+    if (!isImageAttachment(inspected)) throw new Error('这个附件不是可下载图片。')
+    const extension = path.extname(inspected.path).toLowerCase().replace(/^\./, '') || 'png'
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '下载图片',
+      defaultPath: cleanFilename(inspected.name),
+      filters: [{ name: '图片', extensions: [extension] }],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    copyFileSync(inspected.path, result.filePath)
+    return { canceled: false, path: result.filePath }
+  })
   ipcMain.handle('stable:agent:selectAttachmentFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择本次任务文件夹', properties: ['openDirectory'] })
     return result.canceled ? [] : inspectAgentAttachments(result.filePaths)
@@ -2352,6 +2370,12 @@ async function boot() {
         textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
       })()`) }, 700)
     }
+    if (process.env.STABLE_QA_IMAGE_PREVIEW) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.message-image')?.click()") }, 1_100)
+    }
+    if (process.env.STABLE_QA_IMAGE_ZOOM) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.image-lightbox [aria-label=\"放大图片\"]')?.click()") }, 1_500)
+    }
     if (process.env.STABLE_QA_PREVIEW) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-file-card')?.click()") }, 900)
     }
@@ -2430,6 +2454,22 @@ async function boot() {
                 draft: { width: Math.round(draft.width), height: Math.round(draft.height) },
                 sentAboveBubble: sent.bottom <= bubble.top,
                 visibleMetadata: Boolean(document.querySelector('.message-image-gallery figcaption, .composer-image-selection strong, .composer-image-selection small')),
+              } : null
+            })(),
+            imageLightbox: (() => {
+              const dialog = document.querySelector('.image-lightbox')
+              const image = dialog?.querySelector('img')
+              const rect = image?.getBoundingClientRect()
+              return dialog && image && rect ? {
+                visible: true,
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                naturalWidth: image.naturalWidth,
+                naturalHeight: image.naturalHeight,
+                zoom: dialog.querySelector('.image-lightbox-zoom output')?.textContent?.trim() || null,
+                downloadVisible: Boolean(dialog.querySelector('[aria-label="下载图片到本地"]')),
+                closeVisible: Boolean(dialog.querySelector('[aria-label="关闭图片预览"]')),
+                editVisible: Boolean(dialog.querySelector('[aria-label*="编辑"]')),
               } : null
             })(),
             preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
