@@ -39,13 +39,13 @@ test('conversation selection and composer focus stay neutral while history label
   assert.match(main, /STABLE_QA_AGENT_NEUTRAL_STATES/)
 })
 
-test('paperclip separates ordinary file, ZIP and folder attachments from Skill installation', () => {
+test('paperclip directly opens the ordinary image and file picker while Skill installation stays separate', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(app, /accept="[^"]*\.zip"/)
-  assert.match(app, /window\.stable\.agent\.selectAttachmentFolder\(\)/)
-  assert.match(app, />普通文件夹</)
+  assert.match(app, /className="composer-tool" type="button" onClick=\{\(\) => attachmentInputRef\.current\?\.click\(\)\} aria-label="添加图片或文件"/)
+  assert.doesNotMatch(app, /attachment-popover|composer-attachment-option|>普通文件夹</)
   assert.match(app, />安装新的 Skill 文件夹</)
   assert.match(preload, /stable:agent:selectAttachmentFolder/)
   assert.match(main, /inspectAttachmentPath/)
@@ -65,7 +65,11 @@ test('conversation images support selection, drag, paste, thumbnail removal and 
   assert.match(app, /accept="[^"]*\.png,[^"]*\.jpg,[^"]*\.webp/)
   assert.match(app, /onPaste=\{handlePromptPaste\}/)
   assert.match(app, /window\.stable\.agent\.savePastedImage/)
-  assert.match(app, /className="selection-chip image-selection-chip"/)
+  assert.match(app, /className="composer-image-selections" aria-label="待发送图片"/)
+  assert.match(app, /className="composer-image-selection"/)
+  assert.doesNotMatch(app, /image-selection-chip|<figcaption>/)
+  assert.match(app, /className="user-turn-stack"/)
+  assert.match(app, /className="message-image"/)
   assert.match(app, /DeepSeek 暂不支持图片分析，请切换其他模型/)
   assert.match(app, /role="status" aria-live="polite"/)
   assert.match(preload, /stable:agent:savePastedImage/)
@@ -74,7 +78,20 @@ test('conversation images support selection, drag, paste, thumbnail removal and 
   assert.match(harness, /input: isDeepSeekModel\(model\) \? \['text'\] : \['text', 'image'\]/)
   assert.match(harness, /attachments\.saveImage/)
   assert.match(css, /\.message-image-gallery/)
-  assert.match(css, /\.image-selection-chip/)
+  assert.match(css, /\.message-image \{[^}]*width: 6\.25rem;[^}]*height: 6\.25rem;/)
+  assert.match(css, /\.composer-image-selection \{[^}]*width: 5\.5rem;[^}]*height: 5\.5rem;/)
+  assert.match(main, /STABLE_QA_IMAGE_FIXTURE/)
+  assert.match(main, /sentAboveBubble: sent\.bottom <= bubble\.top/)
+  assert.match(main, /visibleMetadata: Boolean/)
+})
+
+test('resource picker trigger is icon-only with an accessible label', () => {
+  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu permission-menu"'))
+  const summary = menu.slice(menu.indexOf('<summary'), menu.indexOf('</summary>'))
+  assert.match(summary, /aria-label=\{`选择引用资源/)
+  assert.match(summary, /<Database size=\{18\} aria-hidden="true"/)
+  assert.doesNotMatch(summary, /ChevronDown|<span>/)
 })
 
 test('generated deliverables and materialized uploads share clickable file cards behind a real workspace guard', () => {

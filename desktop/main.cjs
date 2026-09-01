@@ -353,7 +353,7 @@ function updatePreviewBounds(value) {
 }
 
 function bootstrap() {
-  const messages = process.env.STABLE_QA_FIXTURE ? qaMessages() : store.listMessages()
+  const messages = process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_IMAGE_FIXTURE ? qaMessages() : store.listMessages()
   return {
     appVersion: app.getVersion(),
     identity: store.getSetting('identity'), theme: normalizeTheme(store.getSetting('theme')),
@@ -1167,9 +1167,11 @@ async function importScriptAsset(category) {
 
 function qaMessages() {
   const previewPath = paths ? path.join(paths.workspace, 'qa-preview.md') : ''
+  const imagePath = paths && process.env.STABLE_QA_IMAGE_FIXTURE ? path.join(paths.workspace, 'qa-image.png') : ''
   if (previewPath && (process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_CONVERSATION_FIXTURE)) {
     writeFileSync(previewPath, '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
   }
+  if (imagePath) copyFileSync(resourcePath('build', 'stable_logo.png'), imagePath)
   const trace = [
     { id: 'context', runId: 'qa-run', kind: 'context', title: '准备本次上下文', detail: '2 条相关数据 · 1 个 Skill · deepseek-v4-flash', status: 'completed', time: 1 },
     { id: 'root:agent', runId: 'qa-run', kind: 'status', entity: 'agent', eventType: 'agent/end', sessionId: 'root', depth: 0, title: 'Stable 总控', detail: '已完成任务', status: 'completed', time: 4100 },
@@ -1183,6 +1185,10 @@ function qaMessages() {
     { id: 'complete', runId: 'qa-run', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed', time: 4100 },
   ]
   const answer = '# 本周行动建议\n\n已结合本地资料完成整理，建议优先处理以下事项：\n\n- **第一优先级**：核对会员第二单转化，定位最近 30 天的流失节点。\n- **第二优先级**：把高意向未复购用户拆成可执行名单。\n- **第三优先级**：用小范围对照测试验证触达策略。\n\n```text\n目标：先验证，再扩大。\n```\n\n> 所有结论均来自当前已启用的数据，未检索到的部分会明确标记为缺口。'
+  if (imagePath) return [
+    { id: 'qa-image-user', role: 'user', content: '看一下这个图片', attachments: [{ kind: 'attachment', name: 'qa-image.png', path: imagePath, size: statSync(imagePath).size, type: 'png' }], createdAt: new Date(0).toISOString() },
+    { id: 'qa-image-assistant', role: 'assistant', content: '图片已收到，可以继续分析。', trace, createdAt: new Date(1).toISOString() },
+  ]
   return Array.from({ length: 4 }, (_, index) => [
     { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === 3 && previewPath ? { attachments: [{ kind: 'attachment', name: 'qa-preview.md', path: previewPath, size: 142, type: 'md' }] } : {}), createdAt: new Date(index * 2).toISOString() },
     { id: `qa-assistant-${index}`, role: 'assistant', content: index === 3 && previewPath ? `${answer}\n\n交付文件：\n- ${previewPath}` : answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
@@ -2335,6 +2341,17 @@ async function boot() {
         if (point) mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y })
       }, 800)
     }
+    if (process.env.STABLE_QA_IMAGE_FIXTURE) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript(`(async () => {
+        const textarea = document.querySelector('.composer textarea')
+        if (!textarea) return
+        const preview = await window.stable.agent.imagePreview(${JSON.stringify(path.join(paths.workspace, 'qa-image.png'))})
+        const blob = await (await fetch(preview)).blob()
+        const transfer = new DataTransfer()
+        transfer.items.add(new File([blob], 'qa-pasted-image.png', { type: 'image/png' }))
+        textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
+      })()`) }, 700)
+    }
     if (process.env.STABLE_QA_PREVIEW) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-file-card')?.click()") }, 900)
     }
@@ -2402,6 +2419,19 @@ async function boot() {
             body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight },
             stage: stage ? { clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, clientHeight: stage.clientHeight, scrollHeight: stage.scrollHeight, overflowY: getComputedStyle(stage).overflowY } : null,
             messages: messages ? { clientWidth: messages.clientWidth, scrollWidth: messages.scrollWidth, clientHeight: messages.clientHeight, scrollHeight: messages.scrollHeight, overflowY: getComputedStyle(messages).overflowY } : null,
+            imageLayout: (() => {
+              const gallery = document.querySelector('.message-image-gallery')?.getBoundingClientRect()
+              const bubble = document.querySelector('.user-bubble')?.getBoundingClientRect()
+              const sent = document.querySelector('.message-image')?.getBoundingClientRect()
+              const draft = document.querySelector('.composer-image-selection')?.getBoundingClientRect()
+              return gallery && bubble && sent && draft ? {
+                sent: { width: Math.round(sent.width), height: Math.round(sent.height), bottom: Math.round(sent.bottom) },
+                bubble: { top: Math.round(bubble.top) },
+                draft: { width: Math.round(draft.width), height: Math.round(draft.height) },
+                sentAboveBubble: sent.bottom <= bubble.top,
+                visibleMetadata: Boolean(document.querySelector('.message-image-gallery figcaption, .composer-image-selection strong, .composer-image-selection small')),
+              } : null
+            })(),
             preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
             workflowName: document.querySelector('input[aria-label="工作流名称"]')?.value || null,
             workflowInstruction: document.querySelector('textarea[aria-label="模块 AI 输入"]')?.value || null,

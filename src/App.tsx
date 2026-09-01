@@ -441,7 +441,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
   const attachmentInputRef = useRef<HTMLInputElement>(null)
-  const attachmentMenuRef = useRef<HTMLDetailsElement>(null)
   const dataMenuRef = useRef<HTMLDetailsElement>(null)
   const skillMenuRef = useRef<HTMLDetailsElement>(null)
   const teamMenuRef = useRef<HTMLDetailsElement>(null)
@@ -456,6 +455,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const liveTrace = traceMap[state.activeConversationId]
   const attachments = attachmentMap[state.activeConversationId] || []
   const imageAttachments = attachments.filter(attachmentIsImage)
+  const documentAttachments = attachments.filter((item) => !attachmentIsImage(item))
   const selectedReferences = referenceMap[state.activeConversationId] || []
   const composerError = composerErrorMap[state.activeConversationId] || ''
   const activeCapability = CAPABILITY_OPTIONS.find((item) => item.id === activeConversation?.capability) || CAPABILITY_OPTIONS[0]
@@ -544,7 +544,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
-      for (const menu of [attachmentMenuRef.current, dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current, modelMenuRef.current]) {
+      for (const menu of [dataMenuRef.current, skillMenuRef.current, teamMenuRef.current, capabilityMenuRef.current, permissionMenuRef.current, modelMenuRef.current]) {
         if (menu?.open && !menu.contains(event.target as Node)) menu.open = false
       }
     }
@@ -721,18 +721,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     setAttachments((current) => current.filter((entry) => entry.path !== item.path))
     setAttachmentStatus(`已移除附件 ${item.name}。`)
     if (item.draft) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
-  }
-
-  function addAttachmentFolder() {
-    void action('正在读取附件文件夹', async () => {
-      const inspected = await window.stable.agent.selectAttachmentFolder()
-      if (!inspected.length) return
-      const merged = [...attachments]
-      for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
-      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
-      setAttachments(merged)
-      if (attachmentMenuRef.current) attachmentMenuRef.current.open = false
-    })
   }
 
   function addSkillFolder() {
@@ -934,11 +922,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       <div className="composer">
         <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
           <div className="composer-box">
-            {(selectedReferences.length > 0 || attachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与附件">
+            {imageAttachments.length > 0 && <div className="composer-image-selections" aria-label="待发送图片">
+              {imageAttachments.map((item) => <div className="composer-image-selection" key={item.path}>
+                <AttachmentImage item={item} />
+                <button type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={14} aria-hidden="true" /></button>
+              </div>)}
+            </div>}
+            {(selectedReferences.length > 0 || documentAttachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与文件">
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
-              {attachments.map((item) => attachmentIsImage(item)
-                ? <div className="selection-chip image-selection-chip" data-kind="image" key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}><AttachmentImage item={item} /><span><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></span><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={13} /></button></div>
-                : <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
+              {documentAttachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
             </div>}
             {deepSeekImageBlocked && <div className="composer-warning" role="status"><CircleAlert size={16} aria-hidden="true" /><span>DeepSeek 暂不支持图片分析，请切换其他模型后发送。</span></div>}
             {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
@@ -950,15 +942,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             }} placeholder="给 Stable 一个任务，或选择、拖入、粘贴图片与文件" disabled={running} />
             <div className="composer-actions">
               <div className="composer-tools">
-                <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = ''; if (attachmentMenuRef.current) attachmentMenuRef.current.open = false }} />
-                <details className="composer-menu attachment-menu" ref={attachmentMenuRef}>
-                  <summary className="composer-tool" aria-label="添加本次任务附件"><Paperclip size={18} aria-hidden="true" /></summary>
-                  <div className="composer-popover attachment-popover">
-                    <div className="composer-popover-head"><strong>添加附件</strong><span>本次任务临时使用</span></div>
-                    <button className="composer-attachment-option" type="button" onClick={() => attachmentInputRef.current?.click()}><FilePlus2 size={16} aria-hidden="true" /><span><strong>图片、文件或压缩包</strong><small>支持 PNG、JPG、WebP、常用文档与 ZIP</small></span></button>
-                    <button className="composer-attachment-option" type="button" onClick={addAttachmentFolder}><FolderInput size={16} aria-hidden="true" /><span><strong>普通文件夹</strong><small>不按 Skill 校验</small></span></button>
-                  </div>
-                </details>
+                <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
+                <button className="composer-tool" type="button" onClick={() => attachmentInputRef.current?.click()} aria-label="添加图片或文件"><Paperclip size={18} aria-hidden="true" /></button>
                 <details className="composer-menu skill-menu" ref={skillMenuRef}>
                   <summary className="composer-tool" aria-label="选择 Skill"><Braces size={18} aria-hidden="true" /></summary>
                   <div className="composer-popover">
@@ -982,7 +967,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   </div>
                 </details>
                 <details className="composer-menu data-menu" ref={dataMenuRef}>
-                  <summary><Database size={17} /><span>{selectedReferences.filter((item) => item.kind !== 'skill').length ? `${selectedReferences.filter((item) => item.kind !== 'skill').length} 个资源` : '引用资源'}</span><ChevronDown size={14} /></summary>
+                  <summary className="composer-tool" aria-label={`选择引用资源${selectedReferences.filter((item) => item.kind !== 'skill').length ? `，已选择 ${selectedReferences.filter((item) => item.kind !== 'skill').length} 个` : ''}`}><Database size={18} aria-hidden="true" /></summary>
                   <div className="composer-popover">
                     <div className="composer-popover-head"><strong>引用本地资源</strong><span>可多选</span></div>
                     <ResourceGroup title="数据库" items={enabledData.map((item) => ({ id: item.id, kind: 'data' as const, name: item.name, size: item.size, type: item.type }))} selected={selectedReferences} toggle={toggleReference} />
@@ -1160,10 +1145,13 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
   const documentFiles = uploadedFiles.filter((item) => !imageFiles.includes(item))
   const staticAttachments = attachments.filter((item) => !uploadedFiles.includes(item))
   return <article className="user-turn" data-pending={pending || undefined}>
-    <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p>
+    <div className="user-turn-stack">
       {imageFiles.length > 0 && <div className="message-image-gallery" aria-label="随消息上传的图片">
-        {imageFiles.map((item, index) => <figure key={`${item.path}-${index}`}><AttachmentImage item={item} /><figcaption><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></figcaption></figure>)}
+        {imageFiles.map((item, index) => onPreviewAttachment
+          ? <button className="message-image" type="button" onClick={() => onPreviewAttachment(item)} aria-label={`预览图片 ${item.name}`} key={`${item.path}-${index}`}><AttachmentImage item={item} /></button>
+          : <span className="message-image" key={`${item.path}-${index}`}><AttachmentImage item={item} /></span>)}
       </div>}
+      <div className="user-bubble"><div className="turn-label">你</div>{content && <p>{content}</p>}
       {documentFiles.length > 0 && <div className="conversation-file-list message-file-cards" aria-label="随消息上传的文件">
         {documentFiles.map((item, index) => <ConversationFileCard item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
       </div>}
@@ -1171,6 +1159,7 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
       {onCopy && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息到主输入框"><Copy size={15} aria-hidden="true" /></button></div>}
+      </div>
     </div>
   </article>
 }
