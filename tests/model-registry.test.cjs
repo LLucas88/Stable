@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const { mkdtempSync, readFileSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
-const { ModelRegistry, modelSecretKey } = require('../desktop/services/model-registry.cjs')
+const { ModelRegistry, isDeepSeekModel, isZhipuModel, modelSecretKey } = require('../desktop/services/model-registry.cjs')
 const { SecretStore } = require('../desktop/services/secrets.cjs')
 const { StableStore, LEGACY_MODEL_PROFILE_ID } = require('../desktop/services/store.cjs')
 
@@ -24,6 +24,16 @@ function setup() {
   const registry = new ModelRegistry(store, secrets)
   return { root, store, secrets, registry }
 }
+
+test('model family detection recognizes provider, model name, display name, and official endpoint', () => {
+  assert.equal(isDeepSeekModel({ providerId: 'stable-cloud', model: 'deepseek-v4-flash' }), true)
+  assert.equal(isDeepSeekModel({ providerId: 'custom', baseURL: 'https://api.deepseek.com/v1' }), true)
+  assert.equal(isZhipuModel({ providerId: 'zhipu' }), true)
+  assert.equal(isZhipuModel({ providerId: 'stable-cloud', model: 'glm-5.3-flash' }), true)
+  assert.equal(isZhipuModel({ providerId: 'custom', baseURL: 'https://open.bigmodel.cn/api/paas/v4' }), true)
+  assert.equal(isZhipuModel({ displayName: '智谱开放平台' }), true)
+  assert.equal(isZhipuModel({ providerId: 'openai', model: 'gpt-5' }), false)
+})
 
 test('legacy encrypted API key migrates without entering model metadata', () => {
   const context = setup()

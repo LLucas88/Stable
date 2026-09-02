@@ -28,8 +28,16 @@ function normalizeBaseURL(value) {
 function modelSecretKey(id) { return `${SECRET_PREFIX}${id}:apiKey` }
 
 function isDeepSeekModel(model = {}) {
-  return [model.id, model.providerId, model.displayName, model.model]
+  return [model.id, model.providerId, model.displayName, model.model, model.baseURL]
     .some((value) => String(value || '').toLowerCase().includes('deepseek'))
+}
+
+function isZhipuModel(model = {}) {
+  return [model.id, model.providerId, model.displayName, model.model, model.baseURL]
+    .some((value) => {
+      const text = String(value || '').toLowerCase()
+      return text.includes('glm') || text.includes('zhipu') || text.includes('bigmodel') || text.includes('智谱')
+    })
 }
 
 class ModelRegistry {
@@ -125,4 +133,4 @@ class ModelRegistry {
   }
 }
 
-module.exports = { ModelRegistry, cleanProviderId, isDeepSeekModel, modelSecretKey, normalizeBaseURL }
+module.exports = { ModelRegistry, cleanProviderId, isDeepSeekModel, isZhipuModel, modelSecretKey, normalizeBaseURL }

@@ -75,8 +75,11 @@ contextBridge.exposeInMainWorld('stable', {
     selectSkillFolder: () => invoke('stable:agent:selectSkillFolder'),
     create: () => invoke('stable:agent:create'),
     state: (id) => invoke('stable:agent:state', { id }),
+    search: (query) => invoke('stable:agent:search', { query }),
     select: (id) => invoke('stable:agent:select', { id }),
     rename: (id, title) => invoke('stable:agent:rename', { id, title }),
+    pin: (id, pinned) => invoke('stable:agent:pin', { id, pinned }),
+    openWorkspace: () => invoke('stable:agent:openWorkspace'),
     remove: (id) => invoke('stable:agent:remove', { id }),
     configure: (id, capability, dataIds) => invoke('stable:agent:configure', { id, capability, dataIds }),
     configurePermission: (id, permissionMode) => invoke('stable:agent:configurePermission', { id, permissionMode }),
@@ -112,6 +115,7 @@ contextBridge.exposeInMainWorld('stable', {
   updater: {
     state: () => invoke('stable:update:state'),
     check: () => invoke('stable:update:check'),
+    download: () => invoke('stable:update:download'),
     install: () => invoke('stable:update:install'),
     onEvent: (handler) => {
       const listener = (_event, payload) => handler(payload)
@@ -175,6 +179,7 @@ contextBridge.exposeInMainWorld('stable', {
   system: {
     openPath: (path) => invoke('stable:system:openPath', { path }),
     showItemInFolder: (path) => invoke('stable:system:showItemInFolder', { path }),
+    openExternalHtml: (path) => invoke('stable:system:openExternalHtml', { path }),
   },
   files: {
     path: (file) => webUtils.getPathForFile(file),

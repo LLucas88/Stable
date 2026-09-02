@@ -4,7 +4,86 @@ const { spawn, spawnSync } = require('node:child_process')
 const { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
-const { isDeepSeekModel } = require('./model-registry.cjs')
+const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
+
+const ZHIPU_SEARCH_PROVIDER_ID = 'zhipu-official'
+const ZHIPU_SEARCH_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/web_search'
+
+function isHttpSourceURL(value) {
+  try { return ['http:', 'https:'].includes(new URL(value).protocol) }
+  catch { return false }
+}
+
+function mapZhipuSearchResponse(payload) {
+  const sources = []
+  const seen = new Set()
+  for (const item of Array.isArray(payload?.search_result) ? payload.search_result : []) {
+    const url = String(item?.link || '').trim()
+    if (!isHttpSourceURL(url) || seen.has(url)) continue
+    seen.add(url)
+    const title = String(item?.title || '').trim()
+    const snippet = String(item?.content || '').trim()
+    const publishedAt = String(item?.publish_date || '').trim()
+    sources.push({
+      url,
+      ...(title ? { title } : {}),
+      ...(snippet ? { snippet } : {}),
+      ...(publishedAt ? { publishedAt } : {}),
+    })
+  }
+  return { sources, truncated: false }
+}
+
+function createZhipuSearchProvider({ apiKey, WebError, fetchImpl = globalThis.fetch, endpoint = ZHIPU_SEARCH_ENDPOINT }) {
+  const fail = (message, code = 'WEB_PROVIDER_ERROR', cause) => new WebError(message, code, cause === undefined ? undefined : { cause })
+  const aborted = (signal, cause) => fail('智谱联网搜索已取消。', 'WEB_ABORTED', signal?.reason ?? cause)
+  return {
+    id: ZHIPU_SEARCH_PROVIDER_ID,
+    available() { return Boolean(apiKey) && typeof fetchImpl === 'function' && isHttpSourceURL(endpoint) },
+    async search(request, signal) {
+      if (signal?.aborted) throw aborted(signal)
+      const query = String(request?.query || '').trim().slice(0, 70)
+      if (!query) throw fail('智谱联网搜索关键词不能为空。')
+      const requestedCount = Number(request?.maxResults)
+      const count = Number.isFinite(requestedCount) ? Math.max(1, Math.min(50, Math.trunc(requestedCount))) : 10
+      let response
+      try {
+        response = await fetchImpl(endpoint, {
+          method: 'POST',
+          redirect: 'error',
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ search_query: query, search_engine: 'search_std', search_intent: false, count, search_recency_filter: 'noLimit', content_size: 'medium' }),
+          ...(signal ? { signal } : {}),
+        })
+      } catch (error) {
+        if (signal?.aborted || error?.name === 'AbortError') throw aborted(signal, error)
+        throw fail(`智谱联网搜索请求失败：${String(error?.message || error)}`, 'WEB_PROVIDER_ERROR', error)
+      }
+      let payload
+      try { payload = await response.json() }
+      catch (error) {
+        if (signal?.aborted || error?.name === 'AbortError') throw aborted(signal, error)
+        throw fail(`智谱联网搜索返回了无效数据（HTTP ${response.status}）。`, 'WEB_PROVIDER_ERROR', error)
+      }
+      if (!response.ok) {
+        const detail = String(payload?.error?.message || payload?.message || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 300)
+        throw fail(`智谱联网搜索失败（HTTP ${response.status}）${detail ? `：${detail}` : '。'}`)
+      }
+      if (!Array.isArray(payload?.search_result)) throw fail('智谱联网搜索响应缺少 search_result。')
+      const result = mapZhipuSearchResponse(payload)
+      if (result.sources.length <= count) return result
+      return { ...result, sources: result.sources.slice(0, count), truncated: true }
+    },
+  }
+}
+
+const ZHIPU_SEARCH_BRIDGE = [
+  `const ZHIPU_SEARCH_PROVIDER_ID=${JSON.stringify(ZHIPU_SEARCH_PROVIDER_ID)};`,
+  `const ZHIPU_SEARCH_ENDPOINT=${JSON.stringify(ZHIPU_SEARCH_ENDPOINT)};`,
+  `${isHttpSourceURL.toString()};`,
+  `${mapZhipuSearchResponse.toString()};`,
+  `${createZhipuSearchProvider.toString()};`,
+].join('')
 
 const STDIN_BRIDGE = [
   "import path from 'node:path';",
@@ -18,6 +97,9 @@ const STDIN_BRIDGE = [
   "const packageEntry=(name)=>path.join(path.dirname(cli),'..','..',name,'lib','index.js');",
   "const {AgentLoop}=await import(pathToFileURL(packageEntry('dsh-agent-loop')).href);",
   "const {createUserMessage}=await import(pathToFileURL(packageEntry('dsh-llm')).href);",
+  "const {WebError,WebRuntime}=await import(pathToFileURL(packageEntry('dsh-web')).href);",
+  ZHIPU_SEARCH_BRIDGE,
+  "const zhipuSearchKey=String(process.env.STABLE_ZHIPU_SEARCH_API_KEY||'');if(zhipuSearchKey){const zhipuSearchProvider=createZhipuSearchProvider({apiKey:zhipuSearchKey,WebError});WebRuntime.prototype.search=function(request,signal){return zhipuSearchProvider.search(request,signal);};}",
   "const originalCreateAgent=AgentLoop.prototype.createAgent;let imagesClaimed=false;",
   "AgentLoop.prototype.createAgent=async function(...args){const handle=await originalCreateAgent.apply(this,args);if(imagesClaimed||!imageInputs.length)return handle;imagesClaimed=true;const attachments=handle.agent.ctx.get('attachments');if(!attachments)throw new Error('Harness 图片存储服务不可用。');const refs=[];for(const input of imageInputs){const resolved=path.resolve(String(input.path||''));const relative=path.relative(process.cwd(),resolved);if(!resolved||relative.startsWith('..')||path.isAbsolute(relative))throw new Error('图片只能从 Stable 工作区发送。');const mediaType=String(input.mediaType||'');const ref=await attachments.saveImage({data:readFileSync(resolved),mediaType,name:String(input.name||path.basename(resolved))});refs.push(ref);}const originalFollowup=handle.agent.followup.bind(handle.agent);handle.agent.followup=(message)=>originalFollowup(createUserMessage({content:[...message.content,...refs.map((attachment)=>({type:'image',attachment}))],source:message.source}));return handle;};",
   "const sessionPath=path.join(path.dirname(cli),'..','..','dsh-session','lib','index.js');",
@@ -54,6 +136,7 @@ const STDIN_BRIDGE = [
   "  if(type==='subagent/descriptor'){const label=clean(data.label||'子 Agent');agentNames.set(sessionId,label);publish({...base,id:`${sessionId}:descriptor`,kind:'status',entity:'agent',eventType:'agent/descriptor',title:label,detail:`${clean(data.mode)} · ${clean(data.provider)}`,mode:data.mode,provider:clean(data.provider),status:'completed'});}",
   "  else if(type==='turn/start') publish({...base,id:`${sessionId}:agent`,kind:'status',entity:'agent',eventType:'agent/start',title:agentNames.get(sessionId)||(parentSessionId?'子 Agent':'Stable 总控'),detail:parentSessionId?'正在执行委派任务':'正在协调本次任务',status:'running'});",
   "  else if(type==='step/start') publish({...base,id:`${sessionId}:reasoning:${data.turn}:${data.step}`,kind:'reasoning',title:'分析任务与上下文',detail:'模型正在规划下一步动作',status:'running'});",
+  "  else if(type==='assistant/chunk'&&!parentSessionId&&data.chunk?.type==='text-delta'&&data.chunk.text) publish({...base,id:`${sessionId}:answer:${data.turn}:${data.step}`,kind:'answer',eventType:'agent/answer-delta',turn:data.turn,step:data.step,delta:String(data.chunk.text),status:'running'});",
   "  else if(type==='tool/call'){const key=`${sessionId}:${data.callId}`;toolNames.set(key,data.name);publish({...base,id:`${sessionId}:tool:${data.callId}`,kind:'tool',entity:'tool',eventType:'tool/start',title:`使用工具 ${clean(data.name)}`,detail:detail(data.arguments),status:'running'});}",
   "  else if(type==='tool/result'){const key=`${sessionId}:${data.callId}`;const failed=Boolean(data.error);publish({...base,id:`${sessionId}:tool:${data.callId}`,kind:'tool',entity:'tool',eventType:'tool/end',title:`使用工具 ${clean(toolNames.get(key)||'工具')}`,detail:failed?clean(data.error?.message||'执行失败'):'执行完成',status:failed?'failed':'completed'});}",
   "  else if(type==='assistant/message') publish({...base,id:`${sessionId}:reasoning:${data.turn}:${data.step}`,kind:'reasoning',title:'整理回答',detail:parentSessionId?'正在向总控报告结果':'正在生成最终回答',status:'completed'});",
@@ -73,7 +156,15 @@ function buildHarnessEnvironment({ baseEnvironment = process.env, model, apiKey,
     DSH_AGENTS_HOME: agentsHome,
     DSH_PERMISSION_MODE: sandboxMode === 'read-only' ? 'read-only' : 'workspace-write',
   }
-  if (String(model?.providerId || '').toLowerCase() === 'deepseek') environment.DEEPSEEK_API_KEY = apiKey
+  const usesCloudGateway = String(model?.providerId || '').toLowerCase() === 'stable-cloud'
+  if (!usesCloudGateway && isDeepSeekModel(model)) {
+    environment.DEEPSEEK_API_KEY = apiKey
+    environment.DSH_WEB_SEARCH_PROVIDER = 'deepseek-official'
+    delete environment.STABLE_ZHIPU_SEARCH_API_KEY
+  } else if (!usesCloudGateway && isZhipuModel(model)) {
+    environment.STABLE_ZHIPU_SEARCH_API_KEY = apiKey
+    environment.DSH_WEB_SEARCH_PROVIDER = ZHIPU_SEARCH_PROVIDER_ID
+  }
   delete environment.NODE_OPTIONS; delete environment.NODE_PATH
   return environment
 }
@@ -240,4 +331,7 @@ class HarnessRunner {
   }
 }
 
-module.exports = { HarnessRunner, STDIN_BRIDGE, buildHarnessEnvironment, cleanupHarnessRunDirectory }
+module.exports = {
+  HarnessRunner, STDIN_BRIDGE, ZHIPU_SEARCH_ENDPOINT, ZHIPU_SEARCH_PROVIDER_ID,
+  buildHarnessEnvironment, cleanupHarnessRunDirectory, createZhipuSearchProvider, mapZhipuSearchResponse,
+}

@@ -168,7 +168,7 @@ export interface AutomationTemplate { id: string; title: string; description: st
 export interface AutomationState { items: AutomationItem[]; runs: AutomationRun[]; templates: AutomationTemplate[] }
 
 export interface UpdateState {
-  status: 'development' | 'idle' | 'checking' | 'current' | 'downloading' | 'downloaded' | 'installing' | 'error'
+  status: 'development' | 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error'
   currentVersion: string; availableVersion?: string; releaseName?: string; progress: number; error?: string
 }
 
@@ -194,9 +194,18 @@ export interface ConversationItem {
   dataIds: string[]
   messageCount: number
   sourceType: 'local' | 'team'
+  pinned: boolean
   sourceDeviceId?: string
   sourceDeviceName?: string
   createdAt: string
+  updatedAt: string
+}
+
+export interface ConversationSearchResult {
+  id: string
+  title: string
+  snippet: string
+  messageCount: number
   updatedAt: string
 }
 
@@ -218,6 +227,7 @@ export interface AgentAttachment {
 
 export type AgentTraceKind = 'context' | 'reasoning' | 'tool' | 'status' | 'approval'
 export type AgentTraceStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+export type AgentTraceEventType = 'agent/descriptor' | 'agent/start' | 'agent/end' | 'tool/start' | 'tool/end'
 
 export interface AgentTraceItem {
   id: string
@@ -228,7 +238,7 @@ export interface AgentTraceItem {
   status: AgentTraceStatus
   time: number
   conversationId?: string
-  eventType?: string
+  eventType?: AgentTraceEventType
   entity?: 'agent' | 'tool'
   sessionId?: string
   parentSessionId?: string
@@ -240,6 +250,22 @@ export interface AgentTraceItem {
   reason?: string
   danger?: boolean
 }
+
+export interface AgentAnswerDeltaEvent {
+  id: string
+  runId: string
+  kind: 'answer'
+  title: 'Stable'
+  status: 'running'
+  time: number
+  conversationId: string
+  eventType: 'agent/answer-delta'
+  delta: string
+  turn: number
+  step: number
+}
+
+export type AgentEvent = AgentTraceItem | AgentAnswerDeltaEvent
 
 export interface ModelProfile {
   id: string
@@ -486,8 +512,11 @@ export interface StableBridge {
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>
     state(id: string): Promise<AgentState>
+    search(query: string): Promise<ConversationSearchResult[]>
     select(id: string): Promise<AgentState>
     rename(id: string, title: string): Promise<AgentState>
+    pin(id: string, pinned: boolean): Promise<AgentState>
+    openWorkspace(): Promise<boolean>
     remove(id: string): Promise<AgentState>
     configure(id: string, capability: AgentCapability, dataIds: string[]): Promise<AgentState>
     configurePermission(id: string, permissionMode: AgentPermissionMode): Promise<AgentState>
@@ -496,7 +525,7 @@ export interface StableBridge {
     cancel(conversationId: string): Promise<boolean>
     answerApproval(conversationId: string, requestId: string, allowed: boolean): Promise<boolean>
     clear(conversationId: string): Promise<AgentState>
-    onEvent(handler: (event: AgentTraceItem) => void): () => void
+    onEvent(handler: (event: AgentEvent) => void): () => void
     onState(handler: (state: AgentState) => void): () => void
   }
   automations: {
@@ -511,6 +540,7 @@ export interface StableBridge {
   updater: {
     state(): Promise<UpdateState>
     check(): Promise<UpdateState>
+    download(): Promise<UpdateState>
     install(): Promise<boolean>
     onEvent(handler: (state: UpdateState) => void): () => void
   }
@@ -557,6 +587,7 @@ export interface StableBridge {
   system: {
     openPath(path: string): Promise<boolean>
     showItemInFolder(path: string): Promise<boolean>
+    openExternalHtml(path: string): Promise<boolean>
   }
   files: {
     path(file: File): string

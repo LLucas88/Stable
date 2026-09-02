@@ -5,7 +5,7 @@ function publicError(error) {
   return message.replace(/https?:\/\/[^\s]+/g, 'GitHub Releases').slice(0, 300)
 }
 
-function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, checkDelayMs = 12_000, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
+function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
   let timer; let interval
   let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0 }
   const emit = (patch) => { state = { ...state, ...patch }; publish({ ...state }); return { ...state } }
@@ -17,14 +17,21 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     return true
   }
 
+  async function download() {
+    if (!isPackaged || !autoUpdater || state.status !== 'available') throw new Error('当前没有可下载的更新。')
+    emit({ status: 'downloading', progress: 0, error: undefined })
+    try { await autoUpdater.downloadUpdate(); return { ...state } }
+    catch (error) { return emit({ status: 'error', error: publicError(error) }) }
+  }
+
   if (isPackaged && autoUpdater) {
-    autoUpdater.autoDownload = true
+    autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.autoRunAppAfterInstall = false
     autoUpdater.disableDifferentialDownload = false
     autoUpdater.disableWebInstaller = true
     autoUpdater.on('checking-for-update', () => emit({ status: 'checking', error: undefined }))
-    autoUpdater.on('update-available', (info) => emit({ status: 'downloading', availableVersion: info.version, releaseName: info.releaseName || '', error: undefined }))
+    autoUpdater.on('update-available', (info) => emit({ status: 'available', availableVersion: info.version, releaseName: info.releaseName || '', progress: 0, error: undefined }))
     autoUpdater.on('update-not-available', (info) => emit({ status: 'current', availableVersion: info?.version || currentVersion, progress: 0, error: undefined }))
     autoUpdater.on('download-progress', (info) => emit({ status: 'downloading', progress: Math.max(0, Math.min(100, Math.round(info.percent || 0))) }))
     autoUpdater.on('update-downloaded', (info) => emit({ status: 'downloaded', availableVersion: info.version, releaseName: info.releaseName || '', progress: 100, error: undefined }))
@@ -45,7 +52,7 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
   }
 
   function dispose() { clearTimeout(timer); clearInterval(interval) }
-  return { check, dispose, install, start, state: () => ({ ...state }) }
+  return { check, dispose, download, install, start, state: () => ({ ...state }) }
 }
 
 module.exports = { createUpdateController, publicError }

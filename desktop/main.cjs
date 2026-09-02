@@ -53,8 +53,8 @@ const {
 
 const APP_ID = 'com.stable.agent'
 const WINDOW_CHROME = {
-  dark: { backgroundColor: '#070b12', symbolColor: '#dbe7f7', height: 40 },
-  light: { backgroundColor: '#f8f5ee', symbolColor: '#172030', height: 40 },
+  dark: { backgroundColor: '#060d15', symbolColor: '#dbe7f7', height: 40 },
+  light: { backgroundColor: '#f3eee6', symbolColor: '#172030', height: 40 },
 }
 let mainWindow
 let previewView
@@ -183,6 +183,8 @@ function configurePreviewSession(webContents, kind) {
   webContents.setWindowOpenHandler(({ url }) => {
     if (kind === 'web') {
       try { void webContents.loadURL(normalizeWebUrl(url)) } catch {}
+    } else if (kind === 'html' && isAllowedLocalPreviewNavigation(url)) {
+      try { void webContents.loadURL(url) } catch {}
     }
     return { action: 'deny' }
   })
@@ -192,7 +194,7 @@ function configurePreviewSession(webContents, kind) {
   session.setPermissionCheckHandler(() => false)
   session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   session.on('will-download', (event) => event.preventDefault())
-  if (kind === 'file') {
+  if (kind !== 'web') {
     session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !isAllowedLocalPreviewRequest(details.url) }))
   }
   configuredPreviewSessions.add(session)
@@ -243,10 +245,10 @@ function createPreviewView(kind, bounds) {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      javascript: kind === 'web',
+      javascript: kind === 'web' || kind === 'html',
       webviewTag: false,
       navigateOnDragDrop: false,
-      partition: kind === 'web' ? 'stable-preview-web' : 'stable-preview-local',
+      partition: kind === 'web' ? 'stable-preview-web' : kind === 'html' ? 'stable-preview-html' : 'stable-preview-local',
     },
   })
   previewView = view
@@ -258,7 +260,7 @@ function createPreviewView(kind, bounds) {
   const guardNavigation = (event, targetUrl) => {
     try {
       if (kind === 'web') { normalizeWebUrl(targetUrl); return }
-      if (kind === 'file' && isAllowedLocalPreviewNavigation(targetUrl)) return
+      if (kind !== 'web' && isAllowedLocalPreviewNavigation(targetUrl)) return
     } catch {}
     event.preventDefault()
   }
@@ -309,7 +311,8 @@ async function openFilePreview(value, bounds) {
   const resolved = resolveWorkspaceEntry(value, paths.workspace)
   const title = path.basename(resolved.path) || resolved.path
   const theme = normalizeTheme(store.getSetting('theme'))
-  const view = createPreviewView('file', bounds)
+  const interactiveHtml = !resolved.isDirectory && DIRECT_HTML_EXTENSIONS.has(resolved.extension) && resolved.size <= 20 * 1024 * 1024
+  const view = createPreviewView(interactiveHtml ? 'html' : 'file', bounds)
   try {
     if (resolved.isDirectory) {
       await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, '这是当前 Stable 工作区内的文件夹。文件夹内容不会自动展开或执行。'), 'folder-preview')
@@ -1166,10 +1169,12 @@ async function importScriptAsset(category) {
 }
 
 function qaMessages() {
-  const previewPath = paths ? path.join(paths.workspace, 'qa-preview.md') : ''
+  const previewPath = paths ? path.join(paths.workspace, process.env.STABLE_QA_HTML_FIXTURE ? 'qa-preview.html' : 'qa-preview.md') : ''
   const imagePath = paths && process.env.STABLE_QA_IMAGE_FIXTURE ? path.join(paths.workspace, 'qa-image.png') : ''
   if (previewPath && (process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_CONVERSATION_FIXTURE)) {
-    writeFileSync(previewPath, '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
+    writeFileSync(previewPath, process.env.STABLE_QA_HTML_FIXTURE
+      ? '<!doctype html><meta charset="utf-8"><title>Stable HTML 内置浏览器</title><button id="verify" onclick="this.textContent=\'交互已启用\'">验证交互</button><script>document.documentElement.dataset.stableQa=\'ready\'</script>'
+      : '# 对话文件预览\n\n用于验证 Stable 可调宽侧边 Markdown 面板。\n\n| 项目 | 状态 |\n| --- | --- |\n| 同窗侧栏 | 已打开 |', 'utf8')
   }
   if (imagePath) {
     const imageSource = process.env.STABLE_QA_IMAGE_SOURCE && existsSync(process.env.STABLE_QA_IMAGE_SOURCE)
@@ -1190,13 +1195,14 @@ function qaMessages() {
     { id: 'complete', runId: 'qa-run', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed', time: 4100 },
   ]
   const answer = '# 本周行动建议\n\n已结合本地资料完成整理，建议优先处理以下事项：\n\n- **第一优先级**：核对会员第二单转化，定位最近 30 天的流失节点。\n- **第二优先级**：把高意向未复购用户拆成可执行名单。\n- **第三优先级**：用小范围对照测试验证触达策略。\n\n```text\n目标：先验证，再扩大。\n```\n\n> 所有结论均来自当前已启用的数据，未检索到的部分会明确标记为缺口。'
+  const previewIndex = process.env.STABLE_QA_HTML_FIXTURE ? 1 : 3
   if (imagePath) return [
     { id: 'qa-image-user', role: 'user', content: '看一下这个图片', attachments: [{ kind: 'attachment', name: 'qa-image.png', path: imagePath, size: statSync(imagePath).size, type: 'png' }], createdAt: new Date(0).toISOString() },
     { id: 'qa-image-assistant', role: 'assistant', content: '图片已收到，可以继续分析。', trace, createdAt: new Date(1).toISOString() },
   ]
   return Array.from({ length: 4 }, (_, index) => [
-    { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === 3 && previewPath ? { attachments: [{ kind: 'attachment', name: 'qa-preview.md', path: previewPath, size: 142, type: 'md' }] } : {}), createdAt: new Date(index * 2).toISOString() },
-    { id: `qa-assistant-${index}`, role: 'assistant', content: index === 3 && previewPath ? `${answer}\n\n交付文件：\n- ${previewPath}` : answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
+    { id: `qa-user-${index}`, role: 'user', content: index ? `继续展开第 ${index + 1} 项，并给出执行清单` : '读取我导入的数据，整理一份本周行动清单', ...(index === previewIndex && previewPath ? { attachments: [{ kind: 'attachment', name: path.basename(previewPath), path: previewPath, size: statSync(previewPath).size, type: path.extname(previewPath).slice(1) }] } : {}), createdAt: new Date(index * 2).toISOString() },
+    { id: `qa-assistant-${index}`, role: 'assistant', content: index === previewIndex && previewPath ? `${answer}\n\n交付文件：\n- ${previewPath}` : answer, trace, createdAt: new Date(index * 2 + 1).toISOString() },
   ]).flat()
 }
 
@@ -1322,6 +1328,19 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const runId = store.startRun('agent', conversationId || null, query)
   const trace = []
   const publish = (source) => {
+    if (source.eventType === 'agent/answer-delta') {
+      const delta = String(source.delta || '').slice(0, 8_000)
+      if (!delta) return
+      const event = {
+        id: String(source.id || 'answer'), runId, kind: 'answer', title: 'Stable', status: 'running',
+        time: Number.isFinite(source.time) ? source.time : Date.now(), eventType: 'agent/answer-delta', delta,
+        turn: Number.isFinite(source.turn) ? Math.max(0, Number(source.turn)) : 0,
+        step: Number.isFinite(source.step) ? Math.max(0, Number(source.step)) : 0,
+        ...(conversationId ? { conversationId } : {}),
+      }
+      if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
+      return
+    }
     const event = {
       id: String(source.id || `status:${trace.length}`), runId,
       kind: ['context', 'reasoning', 'tool', 'status', 'approval'].includes(source.kind) ? source.kind : 'status',
@@ -1720,6 +1739,7 @@ function registerIpc() {
   })
   ipcMain.handle('stable:update:state', () => updateController.state())
   ipcMain.handle('stable:update:check', () => updateController.check(true))
+  ipcMain.handle('stable:update:download', () => updateController.download())
   ipcMain.handle('stable:update:install', () => updateController.install())
   ipcMain.handle('stable:data:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '导入本地数据', properties: ['openFile', 'multiSelections'], filters: [
@@ -1891,6 +1911,11 @@ function registerIpc() {
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     return agentState(id)
   })
+  ipcMain.handle('stable:agent:search', (_event, payload) => {
+    if (typeof payload?.query !== 'string') throw new Error('搜索关键词无效。')
+    if (payload.query.length > 200) throw new Error('搜索关键词不能超过 200 个字符。')
+    return store.searchConversations(payload.query, 30)
+  })
   ipcMain.handle('stable:agent:select', (_event, payload) => {
     const id = store.selectConversation(requireText(payload?.id, '对话 ID', 100))
     return agentState(id)
@@ -1900,6 +1925,16 @@ function registerIpc() {
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     store.renameConversation(id, requireText(payload?.title, '对话名称', 80))
     return agentState(id)
+  })
+  ipcMain.handle('stable:agent:pin', (_event, payload) => {
+    const id = requireText(payload?.id, '对话 ID', 100)
+    store.setConversationPinned(id, Boolean(payload?.pinned))
+    return agentState(store.activeConversationId())
+  })
+  ipcMain.handle('stable:agent:openWorkspace', async () => {
+    const error = await shell.openPath(paths.workspace)
+    if (error) throw new Error(error)
+    return true
   })
   ipcMain.handle('stable:agent:remove', async (_event, payload) => {
     const id = requireText(payload?.id, '对话 ID', 100)
@@ -2217,6 +2252,14 @@ function registerIpc() {
     shell.showItemInFolder(resolved.path)
     return true
   })
+  ipcMain.handle('stable:system:openExternalHtml', async (_event, payload) => {
+    const requested = requireText(payload?.path, '路径', 1000)
+    const resolved = resolveWorkspaceEntry(requested, paths.workspace, { fileOnly: true })
+    if (!DIRECT_HTML_EXTENSIONS.has(resolved.extension)) throw new Error('只有 HTML 文件可以使用外部浏览器打开。')
+    const openError = await shell.openPath(resolved.path)
+    if (openError) throw new Error(`无法使用默认浏览器打开 HTML：${openError}`)
+    return true
+  })
 }
 
 function createWindow() {
@@ -2259,6 +2302,9 @@ async function boot() {
     const secondId = store.createConversation(); store.renameConversation(secondId, '周报整理'); store.addMessage(secondId, 'user', '把本周资料整理成行动清单')
     const thirdId = store.createConversation(); store.renameConversation(thirdId, '竞对观察'); store.addMessage(thirdId, 'user', '整理竞对变化')
     store.selectConversation(primaryId)
+  }
+  if (process.env.STABLE_QA_PIN_ALL_CONVERSATIONS) {
+    for (const conversation of store.listConversations()) store.setConversationPinned(conversation.id, true)
   }
   if (process.env.STABLE_QA_KNOWLEDGE_FIXTURE && store.listKnowledge().length === 0) {
     const fixtureRoot = knowledgeRoot(); mkdirSync(fixtureRoot, { recursive: true })
@@ -2345,6 +2391,15 @@ async function boot() {
     if (process.env.STABLE_QA_AGENT_SIDEBAR) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-sidebar-toggle')?.click()") }, 650)
     }
+    if (process.env.STABLE_QA_TOGGLE_RAIL) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.window-titlebar-tools button[aria-controls=\"stable-main-navigation\"]')?.click()") }, 650)
+    }
+    if (process.env.STABLE_QA_CONVERSATION_SEARCH) {
+      const searchQuery = process.env.STABLE_QA_CONVERSATION_SEARCH === '1' ? '' : process.env.STABLE_QA_CONVERSATION_SEARCH
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.window-titlebar-tools button[aria-label=\"搜索对话记录\"]')?.click()") }, 550)
+      if (searchQuery) setTimeout(() => { void mainWindow.webContents.executeJavaScript(`(() => { const input = document.querySelector('.conversation-search-field input'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set; if (input && setter) { setter.call(input, ${JSON.stringify(searchQuery)}); input.dispatchEvent(new Event('input', { bubbles: true })) } })()`) }, 850)
+      if (process.env.STABLE_QA_CONVERSATION_SEARCH_SELECT) setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-search-result')?.click()") }, 1_250)
+    }
     if (process.env.STABLE_QA_AGENT_TRACE) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("Array.from(document.querySelectorAll('.trace-summary[aria-expanded=\"false\"]')).at(-1)?.click()") }, 900)
     }
@@ -2358,6 +2413,22 @@ async function boot() {
         })()`)
         if (point) mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y })
       }, 800)
+    }
+    if (process.env.STABLE_QA_PIN_FIRST_CONVERSATION) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not(.conversation-pinned-shortcut) .conversation-pin-action')?.click()") }, 550)
+    }
+    if (process.env.STABLE_QA_CONVERSATION_ACTION_MENU) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not(.conversation-pinned-shortcut) .conversation-item-actions > button')?.click()") }, 900)
+    }
+    if (process.env.STABLE_QA_OPEN_CONVERSATION_FROM_TAB) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.rail-conversation-tasks-slot .conversation-list-item:not(.conversation-pinned-shortcut) .conversation-select')?.click()") }, 900)
+    }
+    if (process.env.STABLE_QA_UPDATE_AVAILABLE) {
+      setTimeout(() => { mainWindow.webContents.send('stable:update:event', { status: 'available', currentVersion: app.getVersion(), availableVersion: '9.9.9', progress: 0 }) }, 450)
+    }
+    if (process.env.STABLE_QA_ACCOUNT_UPDATE_MENU) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.rail-account-trigger')?.click()") }, 700)
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.account-menu-popover button[data-update-ready=\"true\"]')?.click()") }, 1_000)
     }
     if (process.env.STABLE_QA_IMAGE_FIXTURE) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript(`(async () => {
@@ -2378,6 +2449,9 @@ async function boot() {
     }
     if (process.env.STABLE_QA_PREVIEW) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-file-card')?.click()") }, 900)
+    }
+    if (process.env.STABLE_QA_FILE_CONTEXT_MENU) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript(`new Promise((resolve) => { const target = document.querySelector('.conversation-file-card'); if (!target) return resolve(false); target.scrollIntoView({ block: 'center' }); setTimeout(() => { const rect = target.getBoundingClientRect(); target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 24, clientY: rect.top + 24 })); resolve(true) }, 120) })`) }, 900)
     }
     if (process.env.STABLE_QA_CONFIRM) {
       setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item button[aria-label^=\"删除 \"]')?.click()") }, 850)
@@ -2442,6 +2516,7 @@ async function boot() {
             document: { clientWidth: root.clientWidth, scrollWidth: root.scrollWidth, clientHeight: root.clientHeight, scrollHeight: root.scrollHeight },
             body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight },
             stage: stage ? { clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, clientHeight: stage.clientHeight, scrollHeight: stage.scrollHeight, overflowY: getComputedStyle(stage).overflowY } : null,
+            activePage: stage?.dataset.page || null,
             messages: messages ? { clientWidth: messages.clientWidth, scrollWidth: messages.scrollWidth, clientHeight: messages.clientHeight, scrollHeight: messages.scrollHeight, overflowY: getComputedStyle(messages).overflowY } : null,
             imageLayout: (() => {
               const gallery = document.querySelector('.message-image-gallery')?.getBoundingClientRect()
@@ -2473,6 +2548,25 @@ async function boot() {
               } : null
             })(),
             preview: (() => { const pane = document.querySelector('.conversation-preview')?.getBoundingClientRect(); const workspace = document.querySelector('.conversation-workspace')?.getBoundingClientRect(); return pane && workspace ? { width: Math.round(pane.width), workspaceWidth: Math.round(workspace.width), ratio: Math.round(pane.width / workspace.width * 1000) / 1000 } : null })(),
+            conversationActionMenu: (() => { const menu = document.querySelector('.conversation-action-menu'); const actions = menu?.parentElement; const rect = menu?.getBoundingClientRect(); return menu && actions && rect ? { text: menu.textContent?.replace(/\s+/g, ' ').trim(), opacity: getComputedStyle(actions).opacity, display: getComputedStyle(menu).display, left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null })(),
+            rail: (() => { const shell = document.querySelector('.app-shell'); const main = document.querySelector('.main-frame')?.getBoundingClientRect(); return shell && main ? { collapsed: shell.dataset.railCollapsed === 'true', sidebarVisible: Boolean(document.querySelector('#stable-main-navigation')), mainLeft: Math.round(main.left), mainWidth: Math.round(main.width) } : null })(),
+            conversationSearch: (() => { const dialog = document.querySelector('.conversation-search-dialog'); const input = dialog?.querySelector('input'); const rect = dialog?.getBoundingClientRect(); return dialog && input && rect ? { visible: true, query: input.value, resultCount: dialog.querySelectorAll('.conversation-search-result').length, focused: document.activeElement === input, left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null })(),
+            currentTask: document.querySelector('.conversation-topbar strong')?.textContent?.trim() || null,
+            newConversation: (() => {
+              const conversation = document.querySelector('.conversation[data-empty="true"]')
+              const intro = conversation?.querySelector('.conversation-empty')?.getBoundingClientRect()
+              const composer = conversation?.querySelector('.composer-box')?.getBoundingClientRect()
+              const video = conversation?.querySelector('.conversation-start-animation')
+              const frame = conversation?.getBoundingClientRect()
+              return conversation && intro && composer && video && frame ? {
+                title: conversation.querySelector('.conversation-empty h2')?.textContent?.trim() || '',
+                video: { loop: video.loop, muted: video.muted, paused: video.paused, readyState: video.readyState, currentTime: Math.round(video.currentTime * 100) / 100 },
+                composer: { left: Math.round(composer.left), top: Math.round(composer.top), width: Math.round(composer.width), height: Math.round(composer.height) },
+                intro: { left: Math.round(intro.left), bottom: Math.round(intro.bottom), width: Math.round(intro.width), height: Math.round(intro.height) },
+                gap: Math.round(composer.top - intro.bottom),
+                centerDelta: Math.round((composer.top + composer.height / 2) - (frame.top + frame.height / 2)),
+              } : null
+            })(),
             workflowName: document.querySelector('input[aria-label="工作流名称"]')?.value || null,
             workflowInstruction: document.querySelector('textarea[aria-label="模块 AI 输入"]')?.value || null,
             workflowEditorVisible: Boolean(document.querySelector('.workflow-node-editor')),
@@ -2497,14 +2591,20 @@ async function boot() {
             title: previewView.webContents.getTitle(),
             url: previewView.webContents.getURL(),
             loading: previewView.webContents.isLoading(),
-            javascript: previewKind === 'web',
+            javascript: previewKind === 'web' || previewKind === 'html',
           }
-          if (previewKind === 'web') {
+          if (previewKind === 'web' || previewKind === 'html') {
             try {
-              Object.assign(metrics.previewContents, await previewView.webContents.executeJavaScript(`(() => ({
-                text: document.body?.innerText?.trim().slice(0, 240) || '',
-                readyState: document.readyState,
-              }))()`))
+              Object.assign(metrics.previewContents, await previewView.webContents.executeJavaScript(`(() => {
+                const qaButton = document.querySelector('#verify')
+                qaButton?.click()
+                return {
+                  text: document.body?.innerText?.trim().slice(0, 240) || '',
+                  readyState: document.readyState,
+                  stableQa: document.documentElement.dataset.stableQa || '',
+                  interactionText: qaButton?.textContent?.trim() || '',
+                }
+              })()`))
             } catch (error) { metrics.previewContents.error = error.message }
           }
         }

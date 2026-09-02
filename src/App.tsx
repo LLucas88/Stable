@@ -1,29 +1,56 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Copy, Database, Download, Eye, FilePlus2, FileText, FolderInput, Home, Library,
-  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, Network, PanelLeftOpen, Paperclip, Pencil, Play, Plus, Save,
-  RotateCw, SendHorizontal, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
+  Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert,
+  CircleStop, Clock3, Copy, Database, Download, ExternalLink, Eye, FilePlus2, FileText, FlaskConical, FolderInput, FolderOpen, Home, Library, ListTree,
+  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, MoreVertical, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Play, Plus, Save,
+  RotateCw, SendHorizontal, Share2, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import launchLogoUrl from '../build/stable_launch_logo.png'
-import sidebarLogoDarkUrl from '../build/stable_logo_sidebar_dark.png'
-import sidebarLogoLightUrl from '../build/stable_logo_sidebar_light.png'
+import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
+import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
 
-const NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
+type WorkspaceMode = 'work' | 'lab'
+type RepositoryPageId = Extract<Page, 'data' | 'reports' | 'skills' | 'knowledge'>
+type PrimaryNavId = Page | 'repository'
+
+const DEFAULT_RAIL_WIDTH = 376
+const MIN_RAIL_WIDTH = 280
+const MAX_RAIL_WIDTH = 560
+const MIN_MAIN_WIDTH = 640
+
+function maximumRailWidth() {
+  return Math.max(MIN_RAIL_WIDTH, Math.min(MAX_RAIL_WIDTH, window.innerWidth - MIN_MAIN_WIDTH))
+}
+
+function clampRailWidth(value: number) {
+  return Math.min(maximumRailWidth(), Math.max(MIN_RAIL_WIDTH, value))
+}
+
+const WORK_NAV: Array<{ id: PrimaryNavId; label: string; icon: typeof Home }> = [
   { id: 'agent', label: '对话', icon: MessageSquareText },
   { id: 'automations', label: '定时', icon: Clock3 },
+  { id: 'repository', label: '仓库', icon: Library },
+]
+
+const LAB_NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
+  { id: 'workflows', label: '工作流', icon: Workflow },
   { id: 'team', label: 'Team', icon: UsersRound },
+]
+
+const REPOSITORY_TABS: Array<{ id: RepositoryPageId; label: string; icon: typeof Home }> = [
   { id: 'data', label: '数据', icon: Database },
   { id: 'reports', label: '报告', icon: FileText },
   { id: 'skills', label: 'Skills', icon: Braces },
-  { id: 'workflows', label: '工作流', icon: Workflow },
   { id: 'knowledge', label: '知识库', icon: BookOpenText },
 ]
+
+const PAGE_IDS = [...WORK_NAV.filter((item) => item.id !== 'repository').map((item) => item.id), ...LAB_NAV.map((item) => item.id), ...REPOSITORY_TABS.map((item) => item.id)] as Page[]
+const isRepositoryPage = (value: Page): value is RepositoryPageId => REPOSITORY_TABS.some((item) => item.id === value)
 
 function errorMessage(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error)
@@ -60,7 +87,10 @@ function DropTarget({ label, onPaths, className = '', children }: { label: strin
 
 export function App() {
   const requestedPage = new URLSearchParams(window.location.search).get('page') as Page | null
-  const [page, setPage] = useState<Page>(requestedPage && NAV.some((item) => item.id === requestedPage) ? requestedPage : 'agent')
+  const initialPage = requestedPage && PAGE_IDS.includes(requestedPage) ? requestedPage : 'agent'
+  const [page, setPage] = useState<Page>(initialPage)
+  const [mode, setMode] = useState<WorkspaceMode>(LAB_NAV.some((item) => item.id === initialPage) ? 'lab' : 'work')
+  const [repositoryTab, setRepositoryTab] = useState<RepositoryPageId>(isRepositoryPage(initialPage) ? initialPage : 'data')
   const [agentPrefill, setAgentPrefill] = useState('')
   const [state, setState] = useState<BootstrapData | null>(null)
   const [showLaunch, setShowLaunch] = useState(true)
@@ -69,7 +99,18 @@ export function App() {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('正在读取本地工作区')
   const [confirmation, setConfirmation] = useState<{ title: string; message: string; detail: string } | null>(null)
+  const [conversationNewTarget, setConversationNewTarget] = useState<HTMLDivElement | null>(null)
+  const [conversationTasksTarget, setConversationTasksTarget] = useState<HTMLDivElement | null>(null)
+  const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH)
+  const [railCollapsed, setRailCollapsed] = useState(false)
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false)
+  const [conversationSearchQuery, setConversationSearchQuery] = useState('')
+  const [conversationSearchResults, setConversationSearchResults] = useState<ConversationSearchResult[]>([])
+  const [conversationSearchLoading, setConversationSearchLoading] = useState(false)
+  const [conversationSearchError, setConversationSearchError] = useState('')
   const confirmationResolver = useRef<((value: boolean) => void) | null>(null)
+  const railResize = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
+  const conversationSearchButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     return window.stable.appearance.onLaunchStart(() => setLaunchRunning(true))
@@ -95,6 +136,10 @@ export function App() {
 
   useEffect(() => window.stable.automations.onEvent((automations) => setState((current) => current ? { ...current, automations } : current)), [])
   useEffect(() => window.stable.updater.onEvent((update) => setState((current) => current ? { ...current, update } : current)), [])
+  useEffect(() => {
+    setMode(LAB_NAV.some((item) => item.id === page) ? 'lab' : 'work')
+    if (isRepositoryPage(page)) setRepositoryTab(page)
+  }, [page])
 
   useEffect(() => {
     if (!launchRunning || !showLaunch) return
@@ -125,6 +170,30 @@ export function App() {
     return () => { window.removeEventListener('dragover', preventNavigation); window.removeEventListener('drop', preventNavigation) }
   }, [])
 
+  useEffect(() => {
+    if (!conversationSearchOpen || !state) return
+    let cancelled = false
+    setConversationSearchLoading(true)
+    setConversationSearchError('')
+    const timer = window.setTimeout(() => {
+      void window.stable.agent.search(conversationSearchQuery).then((results) => {
+        if (!cancelled) setConversationSearchResults(results)
+      }).catch((reason) => {
+        if (!cancelled) { setConversationSearchResults([]); setConversationSearchError(errorMessage(reason)) }
+      }).finally(() => { if (!cancelled) setConversationSearchLoading(false) })
+    }, 160)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [conversationSearchOpen, conversationSearchQuery, state?.conversations.length])
+
+  useEffect(() => {
+    const fitRailToWindow = () => setRailWidth((current) => clampRailWidth(current))
+    window.addEventListener('resize', fitRailToWindow)
+    return () => {
+      window.removeEventListener('resize', fitRailToWindow)
+      document.documentElement.removeAttribute('data-rail-resizing')
+    }
+  }, [])
+
   const update = <K extends keyof BootstrapData>(key: K, value: BootstrapData[K]) => setState((current) => current ? { ...current, [key]: value } : current)
 
   function requestConfirmation(label: string) {
@@ -147,6 +216,79 @@ export function App() {
     finally { setBusy('') }
   }
 
+  function selectMode(next: WorkspaceMode) {
+    setMode(next)
+    setPage(next === 'work' ? 'agent' : 'workflows')
+  }
+
+  function navigate(id: PrimaryNavId) {
+    if (id === 'repository') setPage(repositoryTab)
+    else setPage(id)
+  }
+
+  function selectRepositoryTab(id: RepositoryPageId) {
+    setRepositoryTab(id)
+    setPage(id)
+  }
+
+  function beginRailResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.focus()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    railResize.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: railWidth }
+    document.documentElement.dataset.railResizing = 'true'
+  }
+
+  function continueRailResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = railResize.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    setRailWidth(clampRailWidth(resize.startWidth + event.clientX - resize.startX))
+  }
+
+  function endRailResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (railResize.current?.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    railResize.current = null
+    document.documentElement.removeAttribute('data-rail-resizing')
+  }
+
+  function resizeRailWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const steps: Record<string, number> = { ArrowLeft: -16, ArrowRight: 16 }
+    if (event.key in steps) {
+      event.preventDefault()
+      setRailWidth((current) => clampRailWidth(current + steps[event.key]))
+    } else if (event.key === 'Home') {
+      event.preventDefault(); setRailWidth(MIN_RAIL_WIDTH)
+    } else if (event.key === 'End') {
+      event.preventDefault(); setRailWidth(maximumRailWidth())
+    }
+  }
+
+  function openConversationSearch() {
+    setConversationSearchQuery('')
+    setConversationSearchResults([])
+    setConversationSearchError('')
+    setConversationSearchOpen(true)
+  }
+
+  function closeConversationSearch(restoreFocus = true) {
+    setConversationSearchOpen(false)
+    setConversationSearchQuery('')
+    if (restoreFocus) window.requestAnimationFrame(() => conversationSearchButtonRef.current?.focus())
+  }
+
+  function selectConversationSearchResult(id: string) {
+    closeConversationSearch(false)
+    setMode('work')
+    setPage('agent')
+    if (state?.activeConversationId === id) return
+    void action('正在切换对话', async () => {
+      const agent = await window.stable.agent.select(id)
+      setState((current) => current ? { ...current, ...agent } : current)
+    })
+  }
+
   const launch = showLaunch ? <LaunchSplash running={launchRunning} onFinish={finishLaunch} /> : null
 
   if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div>{launch}</>
@@ -154,37 +296,56 @@ export function App() {
 
   return (
     <><div className="window-shell">
-      <WindowTitlebar />
-      <div className="app-shell">
-      <aside className="side-rail" aria-label="主导航">
-        <button className="brand-mark" onClick={() => setPage('agent')} aria-label="打开对话">
-          <img src={state.theme === 'light' ? sidebarLogoLightUrl : sidebarLogoDarkUrl} alt="Stable" width="48" height="48" />
-        </button>
-        <nav className="rail-nav">
-          {NAV.map(({ id, label, icon: Icon }) => (
-            <button key={id} className="rail-button" data-active={page === id} onClick={() => setPage(id)} aria-label={label} aria-current={page === id ? 'page' : undefined}>
+      <WindowTitlebar railCollapsed={railCollapsed} searchOpen={conversationSearchOpen} searchButtonRef={conversationSearchButtonRef} onToggleRail={() => setRailCollapsed((current) => !current)} onSearch={openConversationSearch} />
+      <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
+      {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">
+        <div className="rail-mode-switch" role="tablist" aria-label="Stable 工作区">
+          <button type="button" role="tab" aria-selected={mode === 'work'} data-active={mode === 'work' || undefined} onClick={() => selectMode('work')}><BriefcaseBusiness size={14} aria-hidden="true" /><span>工作</span></button>
+          <button type="button" role="tab" aria-selected={mode === 'lab'} data-active={mode === 'lab' || undefined} onClick={() => selectMode('lab')}><FlaskConical size={14} aria-hidden="true" /><span>实验室</span></button>
+        </div>
+        {mode === 'work' && <div className="rail-conversation-new-slot" ref={setConversationNewTarget} />}
+        <nav className="rail-nav" aria-label={mode === 'work' ? '工作模块' : '实验室模块'}>
+          {(mode === 'work' ? WORK_NAV : LAB_NAV).map(({ id, label, icon: Icon }) => {
+            const active = id === 'repository' ? isRepositoryPage(page) : page === id
+            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} aria-label={label} aria-current={active ? 'page' : undefined}>
               <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </button>
-          ))}
+          })}
         </nav>
+        {mode === 'work' && <div className="rail-conversation-tasks-slot" ref={setConversationTasksTarget} aria-label="对话任务" />}
         <AccountDock state={state} replaceState={setState} updateTheme={(theme) => update('theme', theme)} action={action} />
-      </aside>
+      </aside>}
 
-      <main className="main-frame">
+      {!railCollapsed && <div
+        className="rail-resizer"
+        role="separator"
+        aria-label="调整导航栏宽度"
+        aria-controls="stable-main-frame"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_RAIL_WIDTH}
+        aria-valuemax={maximumRailWidth()}
+        aria-valuenow={Math.round(railWidth)}
+        tabIndex={0}
+        onDoubleClick={() => setRailWidth(clampRailWidth(DEFAULT_RAIL_WIDTH))}
+        onKeyDown={resizeRailWithKeyboard}
+        onPointerDown={beginRailResize}
+        onPointerMove={continueRailResize}
+        onPointerUp={endRailResize}
+        onPointerCancel={endRailResize}
+      />}
+
+      <main className="main-frame" id="stable-main-frame">
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} />
+          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => setPage('agent')} conversationNewTarget={conversationNewTarget} conversationTasksTarget={conversationTasksTarget} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
         </div>
-        {page !== 'agent' && page !== 'workflows' && <div className="page-stage" data-page={page} key={page}>
+        {isRepositoryPage(page) && <RepositoryPage activeTab={page} onTabChange={selectRepositoryTab} state={state} update={update} action={action} />}
+        {page !== 'agent' && page !== 'workflows' && !isRepositoryPage(page) && <div className="page-stage" data-page={page} key={page}>
           {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
-          {page === 'data' && <DataPage dataItems={state.data} libraryItems={state.library} updateData={(items) => update('data', items)} updateLibrary={(items) => update('library', items)} action={action} />}
-          {page === 'reports' && <ReportPage items={state.reports} update={(items) => update('reports', items)} action={action} />}
-          {page === 'skills' && <SkillsPage items={state.skills} update={(items) => update('skills', items)} action={action} />}
-          {page === 'knowledge' && <KnowledgePage items={state.knowledge} update={(items) => update('knowledge', items)} action={action} />}
         </div>}
 
       </main>
@@ -194,8 +355,32 @@ export function App() {
         {confirmation && <ConfirmModal value={confirmation} onCancel={() => resolveConfirmation(false)} onConfirm={() => resolveConfirmation(true)} />}
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
       </div>
+      {conversationSearchOpen && <ConversationSearch query={conversationSearchQuery} results={conversationSearchResults} loading={conversationSearchLoading} error={conversationSearchError} activeConversationId={state.activeConversationId} onQueryChange={setConversationSearchQuery} onSelect={selectConversationSearchResult} onClose={() => closeConversationSearch()} />}
     </div>{launch}</>
   )
+}
+
+function RepositoryPage({ activeTab, onTabChange, state, update, action }: {
+  activeTab: RepositoryPageId
+  onTabChange: (page: RepositoryPageId) => void
+  state: BootstrapData
+  update: <K extends keyof BootstrapData>(key: K, value: BootstrapData[K]) => void
+  action: (label: string, run: () => Promise<void>) => Promise<void>
+}) {
+  return <section className="repository-page page-stage" data-page="repository">
+    <header className="repository-header">
+      <div><span>REPOSITORY</span><h1>仓库</h1><p>集中管理 Stable 的数据、报告、Skills 与知识库。</p></div>
+      <nav className="repository-tabs" role="tablist" aria-label="仓库分类">
+        {REPOSITORY_TABS.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={activeTab === id} data-active={activeTab === id || undefined} onClick={() => onTabChange(id)}><Icon size={17} aria-hidden="true" />{label}</button>)}
+      </nav>
+    </header>
+    <div className="repository-body" role="tabpanel" aria-label={REPOSITORY_TABS.find((item) => item.id === activeTab)?.label}>
+      {activeTab === 'data' && <DataPage dataItems={state.data} libraryItems={state.library} updateData={(items) => update('data', items)} updateLibrary={(items) => update('library', items)} action={action} />}
+      {activeTab === 'reports' && <ReportPage items={state.reports} update={(items) => update('reports', items)} action={action} />}
+      {activeTab === 'skills' && <SkillsPage items={state.skills} update={(items) => update('skills', items)} action={action} />}
+      {activeTab === 'knowledge' && <KnowledgePage items={state.knowledge} update={(items) => update('knowledge', items)} action={action} />}
+    </div>
+  </section>
 }
 
 function CloudAccessPage({ state, onComplete }: { state: BootstrapData; onComplete: (value: BootstrapData) => void }) {
@@ -278,10 +463,67 @@ function LaunchSplash({ running, onFinish }: { running: boolean; onFinish: () =>
   </div>
 }
 
-function WindowTitlebar() {
-  return <div className="window-titlebar" aria-hidden="true">
-    <img src={logoUrl} alt="" width="16" height="16" />
-    <span>Stable</span>
+function WindowTitlebar({ railCollapsed, searchOpen, searchButtonRef, onToggleRail, onSearch }: {
+  railCollapsed?: boolean
+  searchOpen?: boolean
+  searchButtonRef?: RefObject<HTMLButtonElement>
+  onToggleRail?: () => void
+  onSearch?: () => void
+}) {
+  if (!onToggleRail || !onSearch) return <div className="window-titlebar" aria-hidden="true" />
+  return <div className="window-titlebar">
+    <div className="window-titlebar-tools" aria-label="窗口工具">
+      <button type="button" onClick={onToggleRail} aria-controls="stable-main-navigation" aria-expanded={!railCollapsed} aria-label={railCollapsed ? '展开侧边导航栏' : '收起侧边导航栏'} title={railCollapsed ? '展开侧边导航栏' : '收起侧边导航栏'}>
+        {railCollapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}
+      </button>
+      <button ref={searchButtonRef} type="button" onClick={onSearch} aria-haspopup="dialog" aria-expanded={searchOpen} aria-label="搜索对话记录" title="搜索对话记录"><Search size={17} aria-hidden="true" /></button>
+    </div>
+  </div>
+}
+
+function ConversationSearch({ query, results, loading, error, activeConversationId, onQueryChange, onSelect, onClose }: {
+  query: string
+  results: ConversationSearchResult[]
+  loading: boolean
+  error: string
+  activeConversationId: string
+  onQueryChange: (value: string) => void
+  onSelect: (id: string) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { window.requestAnimationFrame(() => inputRef.current?.focus()) }, [])
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') || [])
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable.at(-1)!
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+
+  return <div className="conversation-search-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="conversation-search-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="conversation-search-title" onKeyDown={handleKeyDown}>
+      <header><div><h2 id="conversation-search-title">搜索对话记录</h2><p>搜索对话标题和全部消息内容</p></div><button type="button" onClick={onClose} aria-label="关闭对话搜索"><X size={17} aria-hidden="true" /></button></header>
+      <label className="conversation-search-field">
+        <Search size={17} aria-hidden="true" />
+        <input ref={inputRef} value={query} maxLength={200} onChange={(event) => onQueryChange(event.target.value)} placeholder="输入标题或消息关键词" aria-label="搜索对话标题或消息内容" />
+        {query && <button type="button" onClick={() => { onQueryChange(''); inputRef.current?.focus() }} aria-label="清除搜索关键词"><X size={15} aria-hidden="true" /></button>}
+      </label>
+      <div className="conversation-search-summary" aria-live="polite"><span>{query.trim() ? '搜索结果' : '最近对话'}</span><small>{loading ? '正在搜索…' : `${results.length} 条`}</small></div>
+      <div className="conversation-search-results">
+        {!loading && error && <div className="conversation-search-empty" role="alert"><CircleAlert size={20} aria-hidden="true" /><strong>搜索失败</strong><span>{error}</span></div>}
+        {!loading && !error && !results.length && <div className="conversation-search-empty"><Search size={20} aria-hidden="true" /><strong>{query.trim() ? '没有找到相关对话' : '还没有对话记录'}</strong><span>{query.trim() ? '试试更短或不同的关键词。' : '创建对话后会显示在这里。'}</span></div>}
+        {results.map((item) => <button type="button" className="conversation-search-result" data-active={item.id === activeConversationId || undefined} aria-current={item.id === activeConversationId ? 'page' : undefined} onClick={() => onSelect(item.id)} key={item.id}>
+          <MessageSquareText size={17} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.snippet || `${item.messageCount} 条消息`}</small></span><ChevronRight size={16} aria-hidden="true" />
+        </button>)}
+      </div>
+    </section>
   </div>
 }
 
@@ -423,14 +665,14 @@ function emptyPreviewState(): PreviewState {
   return { url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 }
 
-function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationNewTarget, conversationTasksTarget }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationNewTarget: HTMLDivElement | null; conversationTasksTarget: HTMLDivElement | null }) {
   const [prompt, setPrompt] = useState('')
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
   const [composerErrorMap, setComposerErrorMap] = useState<Record<string, string>>({})
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [teamCollapsed, setTeamCollapsed] = useState(false)
+  const [conversationMenuId, setConversationMenuId] = useState('')
   const [previewTarget, setPreviewTarget] = useState<ConversationPreviewTarget>()
   const [imageViewer, setImageViewer] = useState<ImageViewerTarget>()
   const [previewWidth, setPreviewWidth] = useState(0)
@@ -440,6 +682,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [modelStatus, setModelStatus] = useState('')
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, string>>({})
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
+  const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { runId: string; turn: number; step: number; content: string } | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const conversationWorkspaceRef = useRef<HTMLDivElement>(null)
@@ -460,6 +703,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
+  const streamingAnswer = streamingAnswerMap[state.activeConversationId]
   const attachments = attachmentMap[state.activeConversationId] || []
   const imageAttachments = attachments.filter(attachmentIsImage)
   const documentAttachments = attachments.filter((item) => !attachmentIsImage(item))
@@ -471,12 +715,13 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || defaultModel
   const deepSeekImageBlocked = imageAttachments.length > 0 && profileIsDeepSeek(activeModel)
   const attachmentStatus = attachmentStatusMap[state.activeConversationId] || ''
+  const conversationIsEmpty = state.messages.length === 0 && !pendingPrompt
+  const reduceConversationMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const enabledData = state.data.filter((item) => item.enabled)
   const enabledSkills = state.skills.filter((item) => item.enabled)
   const enabledKnowledge = state.knowledge.filter((item) => item.enabled)
   const scripts = state.library.filter((item) => item.kind === 'script')
-  const localConversations = state.conversations.filter((item) => item.sourceType !== 'team')
-  const teamConversations = state.conversations.filter((item) => item.sourceType === 'team')
+  const pinnedConversations = state.conversations.filter((item) => item.pinned)
   const remoteTeamDevices = state.team.devices.filter((item) => item.id !== state.team.profile?.deviceId)
   activeConversationIdRef.current = state.activeConversationId
   stateRef.current = state
@@ -488,6 +733,17 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }, [active, prefill, running])
 
   useEffect(() => { setModelStatus(''); if (modelMenuRef.current) modelMenuRef.current.open = false }, [state.activeConversationId])
+
+  useEffect(() => {
+    if (!conversationMenuId) return
+    const closeMenu = (event: globalThis.PointerEvent) => {
+      if (!(event.target as Element).closest(`[data-conversation-menu="${conversationMenuId}"]`)) setConversationMenuId('')
+    }
+    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setConversationMenuId('') }
+    document.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', closeFromKeyboard)
+    return () => { document.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeFromKeyboard) }
+  }, [conversationMenuId])
 
   useEffect(() => {
     setPreviewTarget(undefined)
@@ -522,6 +778,22 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => window.stable.agent.onEvent((event) => {
     if (!event.conversationId) return
+    if (event.eventType === 'agent/answer-delta') {
+      if (event.delta) setStreamingAnswerMap((all) => {
+          const current = all[event.conversationId]
+          const sameStep = current?.runId === event.runId && current.turn === event.turn && current.step === event.step
+          return { ...all, [event.conversationId]: {
+            runId: event.runId,
+            turn: event.turn,
+            step: event.step,
+            content: `${sameStep ? current.content : ''}${event.delta}`,
+          } }
+        })
+      return
+    }
+    if (event.eventType === 'tool/start' && !event.parentSessionId) {
+      setStreamingAnswerMap((all) => ({ ...all, [event.conversationId!]: undefined }))
+    }
     setTraceMap((all) => {
       const current = all[event.conversationId!]
       const sameRun = current?.runId === event.runId
@@ -547,7 +819,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     const element = scrollRef.current
     if (!element) return
     element.scrollTo({ top: element.scrollHeight, behavior: running ? 'smooth' : 'auto' })
-  }, [state.messages.length, pendingPrompt, liveTrace?.items.length, running])
+  }, [state.messages.length, pendingPrompt, liveTrace?.items.length, streamingAnswer?.content.length, running])
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -639,6 +911,12 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     void action(label, async () => updateAgent(await run()))
   }
 
+  function selectConversation(item: ConversationItem) {
+    openConversation()
+    if (item.id !== activeConversation.id) replaceConversation(() => window.stable.agent.select(item.id), '正在切换对话')
+    else setSidebarOpen(false)
+  }
+
   function configure(capability: AgentCapability, dataIds: string[]) {
     if (!activeConversation) return
     void action('正在保存对话设置', async () => updateAgent(await window.stable.agent.configure(activeConversation.id, capability, dataIds)))
@@ -670,6 +948,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     setEditingId('')
     if (!title) return
     void action('正在重命名对话', async () => updateAgent(await window.stable.agent.rename(id, title)))
+  }
+
+  function togglePin(item: ConversationItem) {
+    setConversationMenuId('')
+    void action(item.pinned ? '正在取消置顶对话' : '正在置顶对话', async () => updateAgent(await window.stable.agent.pin(item.id, !item.pinned)))
   }
 
   function addAttachments(paths: string[]) {
@@ -806,18 +1089,56 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     return true
   }
 
-  function ConversationRow({ item }: { item: ConversationItem }) {
-    return <article className="conversation-list-item" data-active={item.id === activeConversation.id || undefined} key={item.id}>
+  function ConversationRow({ item, shortcut = false }: { item: ConversationItem; shortcut?: boolean }) {
+    if (shortcut) return <article className="conversation-list-item conversation-pinned-shortcut" data-active={item.id === activeConversation.id || undefined}>
+      <Pin size={14} aria-hidden="true" />
+      <button className="conversation-select" type="button" onClick={() => selectConversation(item)}><strong>{item.title}</strong></button>
+    </article>
+    const menuOpen = conversationMenuId === item.id
+    return <article className="conversation-list-item" data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
+      <button className="conversation-pin-action" type="button" onClick={() => togglePin(item)} aria-label={item.pinned ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}><span>{item.pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</span></button>
       {editingId === item.id
         ? <input className="conversation-title-input" autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} onBlur={() => commitRename(item.id)} onKeyDown={(event) => { if (event.key === 'Enter') commitRename(item.id); if (event.key === 'Escape') setEditingId('') }} aria-label="对话名称" />
-        : <button className="conversation-select" type="button" onClick={() => item.id !== activeConversation.id ? replaceConversation(() => window.stable.agent.select(item.id), '正在切换对话') : setSidebarOpen(false)}>
-          <strong>{item.title}</strong>{item.sourceType === 'team' && <small>{item.sourceDeviceName || 'Team'}</small>}{runningMap[item.id] && <small className="conversation-running"><LoaderCircle className="spin" size={12} />执行中</small>}
+        : <button className="conversation-select" type="button" onClick={() => selectConversation(item)}>
+          <strong>{item.title}</strong>
         </button>}
-      <div className="conversation-item-actions">
-        <button type="button" onClick={() => { setEditingId(item.id); setEditingTitle(item.title) }} aria-label={`重命名 ${item.title}`}><Pencil size={14} /></button>
-        <button type="button" disabled={Boolean(runningMap[item.id])} onClick={() => replaceConversation(() => window.stable.agent.remove(item.id), '正在删除对话')} aria-label={`删除 ${item.title}`}><Trash2 size={14} /></button>
+      <div className="conversation-item-actions" data-conversation-menu={item.id}>
+        <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setConversationMenuId((current) => current === item.id ? '' : item.id)}><MoreVertical size={15} aria-hidden="true" /></button>
+        {menuOpen && <div className="conversation-action-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => togglePin(item)}>{item.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{item.pinned ? '取消置顶' : '置顶任务'}</span></button>
+          <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); void action('正在打开资源管理器', async () => { await window.stable.agent.openWorkspace() }) }}><FolderOpen size={14} /><span>在资源管理器打开</span></button>
+          <button type="button" role="menuitem" disabled aria-disabled="true"><ListTree size={14} /><span>文件管理</span><small>暂不可用</small></button>
+          <button type="button" role="menuitem" disabled aria-disabled="true"><Share2 size={14} /><span>分享</span><small>暂不可用</small></button>
+          <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); setEditingId(item.id); setEditingTitle(item.title) }}><Pencil size={14} /><span>重命名</span></button>
+          <button className="danger" type="button" role="menuitem" disabled={Boolean(runningMap[item.id])} onClick={() => { setConversationMenuId(''); replaceConversation(() => window.stable.agent.remove(item.id), '正在删除对话') }}><Trash2 size={14} /><span>删除任务</span></button>
+        </div>}
       </div>
     </article>
+  }
+
+  function ConversationNewButton() {
+    return <div className="conversation-new-zone">
+      <button className="conversation-new" type="button" onClick={() => { openConversation(); replaceConversation(() => window.stable.agent.create(), '正在新建对话') }}><Plus size={17} aria-hidden="true" />新建对话</button>
+    </div>
+  }
+
+  function ConversationTaskSections() {
+    return <>
+      {pinnedConversations.length > 0 && <section className="conversation-pinned" aria-label="置顶任务">
+        <div className="conversation-section-head"><span>置顶</span><small>{pinnedConversations.length}</small></div>
+        <div className="conversation-list">{pinnedConversations.map((item) => <ConversationRow item={item} shortcut key={`pinned-${item.id}`} />)}</div>
+      </section>}
+      <section className="conversation-history-card" aria-label="任务清单">
+        <div className="conversation-section-head"><span>任务清单</span></div>
+        <div className="conversation-list">
+          {state.team.conversationOffers.map((offer) => <article className="team-offer-card" key={offer.id}>
+            <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
+            <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
+          </article>)}
+          {state.conversations.filter((item) => !item.pinned).map((item) => <ConversationRow item={item} key={`task-${item.id}`} />)}
+        </div>
+      </section>
+    </>
   }
 
   async function send() {
@@ -842,6 +1163,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     setPrompt(''); setAttachments([]); setReferences([])
     setPendingMap((current) => ({ ...current, [conversationId]: { content: value, attachments: messageAttachments } }))
     setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', items: [], status: 'running', startedAt: Date.now() } }))
+    setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
     setRunningMap((current) => ({ ...current, [conversationId]: true }))
     let completed = false
     try {
@@ -873,6 +1195,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     } finally {
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
       setTraceMap((current) => ({ ...current, [conversationId]: completed ? undefined : current[conversationId] }))
+      setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
       setRunningMap((current) => ({ ...current, [conversationId]: false }))
     }
   }
@@ -885,44 +1208,24 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
 
   return <section className="agent-layout reveal" data-sidebar-open={sidebarOpen || undefined}>
-    <aside className="conversation-sidebar" aria-label="对话任务">
-      <div className="conversation-new-zone">
-        <button className="conversation-new" type="button" onClick={() => replaceConversation(() => window.stable.agent.create(), '正在新建对话')}><Plus size={17} />新建对话</button>
-      </div>
-      <section className="conversation-history-card" aria-label="本机对话记录">
-        <div className="conversation-history-head"><span>任务记录</span></div>
-        <div className="conversation-list">
-          {localConversations.map((item) => <ConversationRow item={item} key={item.id} />)}
-        </div>
-      </section>
-      <section className="team-conversation-zone" data-collapsed={teamCollapsed || undefined} aria-label="Team 对话">
-        <div className="team-conversation-head">
-          {!teamCollapsed && <div className="team-conversation-title"><span>TEAM</span><small>{state.team.conversationOffers.length ? `${state.team.conversationOffers.length} 待确认` : '对话快照'}</small></div>}
-          <button className="team-collapse-button" type="button" onClick={() => setTeamCollapsed((value) => !value)} aria-expanded={!teamCollapsed} aria-label={teamCollapsed ? '展开 Team 对话' : '收起 Team 对话'}>
-            {teamCollapsed ? <UsersRound size={18} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
-          </button>
-        </div>
-        {!teamCollapsed && <>
-          {state.team.conversationOffers.map((offer) => <article className="team-offer-card" key={offer.id}>
-            <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
-            <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
-          </article>)}
-          <div className="team-conversation-list">{teamConversations.map((item) => <ConversationRow item={item} key={item.id} />)}</div>
-          {!state.team.conversationOffers.length && !teamConversations.length && <p className="team-conversation-empty">接收的 Team 对话会显示在这里</p>}
-        </>}
-      </section>
+    {conversationNewTarget && createPortal(<ConversationNewButton />, conversationNewTarget)}
+    {conversationTasksTarget && createPortal(<ConversationTaskSections />, conversationTasksTarget)}
+    <aside className="conversation-sidebar conversation-sidebar-mobile" aria-label="对话任务">
+      <ConversationNewButton />
+      <ConversationTaskSections />
     </aside>
     <div className="conversation-workspace" data-preview-open={Boolean(previewTarget) || undefined} ref={conversationWorkspaceRef} style={previewTarget ? { '--preview-width': `${previewWidth || 320}px` } as CSSProperties : undefined}>
-    <div className="conversation">
+    <div className="conversation" data-empty={conversationIsEmpty || undefined}>
       <header className="conversation-topbar">
         <button className="conversation-sidebar-toggle" type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="打开对话列表"><PanelLeftOpen size={18} /></button>
         <div><span>当前任务</span><strong>{activeConversation.title}</strong></div>
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.messages.length === 0 && !pendingPrompt ? <div className="conversation-empty"><Bot size={23} /><h2>从一个具体任务开始</h2><p>Stable 只加载手动引用或检索命中的本地资源，并把真实工具动作记录在回答前。</p></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
           {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} />}
+          {streamingAnswer?.content && <article className="assistant-turn streaming-assistant-turn" aria-live="polite"><div className="assistant-answer" data-streaming="true"><div className="assistant-mark" aria-hidden="true">S</div><div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={streamingAnswer.content} /></div></div></article>}
           {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
             if (!item.requestId) return
             await window.stable.agent.answerApproval(activeConversation.id, item.requestId, allowed)
@@ -1101,11 +1404,47 @@ interface ConversationFileItem {
 }
 
 function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; onOpen: () => void }) {
-  return <button className="conversation-file-card" type="button" onClick={onOpen} title={item.path} aria-label={`在侧栏预览 ${item.name}`}>
-    <span className="conversation-file-icon"><FileText size={18} aria-hidden="true" /></span>
-    <span className="conversation-file-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
-    <ChevronRight size={16} aria-hidden="true" />
-  </button>
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>()
+  const [menuError, setMenuError] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
+  const isHtml = /\.html?$/i.test(item.path)
+
+  useEffect(() => {
+    if (!menuPosition) return
+    const closeOutside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuPosition(undefined) }
+    const closeWithKeyboard = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setMenuPosition(undefined) }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeWithKeyboard)
+    window.requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeWithKeyboard) }
+  }, [menuPosition])
+
+  function openContextMenu(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    const width = 210
+    const height = isHtml ? 92 : 50
+    setMenuPosition({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)) })
+  }
+
+  async function openInExternalBrowser() {
+    setMenuPosition(undefined)
+    setMenuError('')
+    try { await window.stable.system.openExternalHtml(item.path) }
+    catch (reason) { setMenuError(errorMessage(reason)) }
+  }
+
+  return <div className="conversation-file-card-shell">
+    <button className="conversation-file-card" type="button" onClick={onOpen} onContextMenu={openContextMenu} title={item.path} aria-label={`在 Stable 内置浏览器预览 ${item.name}`} aria-haspopup="menu">
+      <span className="conversation-file-icon"><FileText size={18} aria-hidden="true" /></span>
+      <span className="conversation-file-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
+      <ChevronRight size={16} aria-hidden="true" />
+    </button>
+    {menuPosition && <div className="conversation-file-menu" role="menu" aria-label={`${item.name} 附件操作`} ref={menuRef} style={{ left: menuPosition.x, top: menuPosition.y }}>
+      <button type="button" role="menuitem" onClick={() => { setMenuPosition(undefined); void window.stable.system.showItemInFolder(item.path) }}><FolderOpen size={14} aria-hidden="true" /><span>打开文件所在位置</span></button>
+      {isHtml && <button type="button" role="menuitem" onClick={() => void openInExternalBrowser()}><ExternalLink size={14} aria-hidden="true" /><span>用外部浏览器打开</span></button>}
+    </div>}
+    {menuError && <span className="conversation-file-error" role="alert">{menuError}</span>}
+  </div>
 }
 
 function useAttachmentImageSource(item: { path?: string; previewUrl?: string }) {
@@ -1978,6 +2317,7 @@ function AccountDock({ state, replaceState, updateTheme, action }: { state: Boot
   const displayName = account?.displayName || 'Stable 用户'
   const avatar = displayName.trim().slice(0, 1).toUpperCase() || 'S'
   const selected = ACCOUNT_MODULES.find((item) => item.id === activeModule)
+  const updateReady = ['available', 'downloading', 'downloaded'].includes(state.update.status)
 
   useEffect(() => {
     if (!open) return
@@ -2018,9 +2358,10 @@ function AccountDock({ state, replaceState, updateTheme, action }: { state: Boot
         <span><strong>{displayName}</strong><small>{account ? `@${account.username}` : '本地开发模式'}</small></span>
       </div>
       <nav aria-label="账号设置模块">
-        {ACCOUNT_MODULES.map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" data-active={activeModule === id || undefined} aria-pressed={activeModule === id} onClick={() => setActiveModule(id)}>
+        {ACCOUNT_MODULES.map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" data-active={activeModule === id || undefined} data-update-ready={id === 'updates' && updateReady || undefined} aria-pressed={activeModule === id} onClick={() => setActiveModule(id)}>
           <Icon size={17} aria-hidden="true" />
           <span><strong>{label}</strong><small>{detail}</small></span>
+          {id === 'updates' && updateReady && <i className="update-dot" aria-label="发现可用更新" />}
           <ChevronRight size={15} aria-hidden="true" />
         </button>)}
       </nav>
@@ -2037,8 +2378,10 @@ function AccountDock({ state, replaceState, updateTheme, action }: { state: Boot
       </div>
     </section>}
 
-    <button ref={triggerRef} className="rail-account-trigger" type="button" aria-label={`打开${displayName}的账号菜单`} aria-expanded={open} aria-controls="account-menu-popover" onClick={toggleMenu}>
+    <button ref={triggerRef} className="rail-account-trigger" type="button" aria-label={`打开${displayName}的账号菜单${updateReady ? '，发现可用更新' : ''}`} aria-expanded={open} aria-controls="account-menu-popover" onClick={toggleMenu}>
       <span className="account-avatar" aria-hidden="true">{avatar}</span>
+      <span className="rail-account-name">{displayName}</span>
+      {updateReady && <i className="update-dot" aria-label="发现可用更新" />}
     </button>
   </div>
 }
@@ -2103,13 +2446,23 @@ function UpdateSettingsModule({ state, action }: { state: BootstrapData; action:
   const update = state.update
   const status = update.status === 'development' ? '开发模式不连接更新服务'
     : update.status === 'checking' ? '正在检查更新…'
-      : update.status === 'downloading' ? `正在下载 ${update.progress}%`
-        : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，等待安装`
-          : update.status === 'installing' ? `正在打开 v${update.availableVersion} 安装进度窗口`
-            : update.status === 'error' ? update.error : '已启用自动更新'
+      : update.status === 'available' ? `发现新版本 v${update.availableVersion}，等待下载`
+        : update.status === 'downloading' ? `正在下载 ${update.progress}%`
+          : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，等待安装`
+            : update.status === 'installing' ? `正在打开 v${update.availableVersion} 安装进度窗口`
+              : update.status === 'error' ? update.error : '启动时自动检查更新，不会自动下载'
+  const buttonLabel = update.status === 'available' ? '下载更新'
+    : update.status === 'downloading' ? `下载中 ${update.progress}%`
+      : update.status === 'downloaded' ? '安装更新'
+        : update.status === 'installing' ? '正在安装' : '检查更新'
+  const runUpdateAction = () => {
+    if (update.status === 'available') return action('正在下载软件更新', async () => { await window.stable.updater.download() })
+    if (update.status === 'downloaded') return action('正在安装软件更新', async () => { await window.stable.updater.install() })
+    return action('正在检查软件更新', async () => { await window.stable.updater.check() })
+  }
   return <section className="update-settings account-update-settings">
-    <div className="update-settings-row"><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'downloaded', 'installing'].includes(update.status)} onClick={() => void action('正在检查软件更新', async () => { await window.stable.updater.check() })}>{update.status === 'downloaded' ? '已准备好' : update.status === 'installing' ? '正在安装' : '检查更新'}</button></div>
-    <p>安装时会打开独立进度窗口；完成后重新点击 Stable 图标即可进入新版。</p>
+    <div className="update-settings-row" data-update-ready={['available', 'downloading', 'downloaded'].includes(update.status) || undefined}><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'installing'].includes(update.status)} onClick={() => void runUpdateAction()}>{buttonLabel}</button></div>
+    <p>Stable 启动时只检查新版本；只有你点击“下载更新”后才会下载，安装继续使用现有独立进度窗口。</p>
   </section>
 }
 
