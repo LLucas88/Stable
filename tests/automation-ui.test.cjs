@@ -60,7 +60,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(workflow, /electron-builder --win --x64 --publish never[\s\S]+Full installer build failed/)
   assert.match(workflow, /npm run dist:update[\s\S]+Lightweight updater build failed/)
   assert.match(workflow, /verify-update-installer\.ps1/)
-  assert.match(workflow, /release-0\.9\.39-update\/Stable-Update-0\.9\.39-x64\.exe/)
+  assert.match(workflow, /release-0\.91\.1-update\/Stable-Update-0\.91\.1-x64\.exe/)
   assert.match(workflow, /timeout-minutes: 75/)
   assert.match(workflow, /Upload installer QA evidence/)
   assert.match(workflow, /GITHUB_EVENT_NAME[\s\S]+GITHUB_REF_TYPE[\s\S]+GITHUB_REF_NAME[\s\S]+does not match package version/)
