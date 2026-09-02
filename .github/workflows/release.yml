@@ -52,8 +52,8 @@ jobs:
         run: |
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller ./release-0.9.39-update/Stable-Update-0.9.39-x64.exe `
-            -ExpectedVersion 0.9.39
+            -UpdateInstaller ./release-0.91.1-update/Stable-Update-0.91.1-x64.exe `
+            -ExpectedVersion 0.91.1
       - name: Upload installer QA evidence
         if: always()
         uses: actions/upload-artifact@v4
