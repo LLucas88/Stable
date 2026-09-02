@@ -10,7 +10,10 @@ const { EventEmitter } = require('node:events')
 const { PassThrough } = require('node:stream')
 const { pathToFileURL } = require('node:url')
 const YAML = require('yaml')
-const { HarnessRunner, STDIN_BRIDGE, buildHarnessEnvironment, cleanupHarnessRunDirectory } = require('../desktop/services/harness.cjs')
+const {
+  HarnessRunner, STDIN_BRIDGE, ZHIPU_SEARCH_ENDPOINT, ZHIPU_SEARCH_PROVIDER_ID,
+  buildHarnessEnvironment, cleanupHarnessRunDirectory, createZhipuSearchProvider, mapZhipuSearchResponse,
+} = require('../desktop/services/harness.cjs')
 
 test('headless bridge is valid module code and namespaces child events by session', () => {
   const checked = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: STDIN_BRIDGE, encoding: 'utf8' })
@@ -24,6 +27,14 @@ test('headless bridge is valid module code and namespaces child events by sessio
   assert.match(STDIN_BRIDGE, /write\|edit\|replace\|patch/)
   assert.match(STDIN_BRIDGE, /attachments\.saveImage/)
   assert.match(STDIN_BRIDGE, /type:'image'/)
+  assert.match(STDIN_BRIDGE, /assistant\/chunk/)
+  assert.match(STDIN_BRIDGE, /agent\/answer-delta/)
+  assert.match(STDIN_BRIDGE, /!parentSessionId/)
+  assert.match(STDIN_BRIDGE, /zhipu-official/)
+  assert.match(STDIN_BRIDGE, /STABLE_ZHIPU_SEARCH_API_KEY/)
+  assert.match(STDIN_BRIDGE, /search_result/)
+  assert.match(STDIN_BRIDGE, /WebRuntime\.prototype\.search/)
+  assert.doesNotMatch(STDIN_BRIDGE, /registerSearchProvider\(createZhipuSearchProvider/)
   assert.match(readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'harness.cjs'), 'utf8'), /HARNESS_MAX_TOKENS/)
 })
 
@@ -242,8 +253,32 @@ test('bundled Harness sends a workspace image as real multimodal request content
   }
 })
 
-test('non-DeepSeek models preserve an existing search credential without aliasing their model key', () => {
+test('model runs select the matching official web search provider without persisting another credential', () => {
   const common = { approvalDir: 'approvals', dshHome: 'home', agentsHome: 'agents' }
+  const deepSeekEnvironment = buildHarnessEnvironment({
+    ...common, baseEnvironment: { STABLE_ZHIPU_SEARCH_API_KEY: 'stale-zhipu-key' },
+    model: { providerId: 'deepseek', model: 'deepseek-v4-flash' }, apiKey: 'deepseek-model-key',
+  })
+  assert.equal(deepSeekEnvironment.DEEPSEEK_API_KEY, 'deepseek-model-key')
+  assert.equal(deepSeekEnvironment.DSH_WEB_SEARCH_PROVIDER, 'deepseek-official')
+  assert.equal(deepSeekEnvironment.STABLE_ZHIPU_SEARCH_API_KEY, undefined)
+
+  const zhipuEnvironment = buildHarnessEnvironment({
+    ...common, baseEnvironment: { DEEPSEEK_API_KEY: 'dedicated-search-key' },
+    model: { providerId: 'zhipu', displayName: 'GLM 5.3 Flash', model: 'glm-5.3-flash' }, apiKey: 'zhipu-model-key',
+  })
+  assert.equal(zhipuEnvironment.STABLE_API_KEY, 'zhipu-model-key')
+  assert.equal(zhipuEnvironment.STABLE_ZHIPU_SEARCH_API_KEY, 'zhipu-model-key')
+  assert.equal(zhipuEnvironment.DSH_WEB_SEARCH_PROVIDER, ZHIPU_SEARCH_PROVIDER_ID)
+  assert.equal(zhipuEnvironment.DEEPSEEK_API_KEY, 'dedicated-search-key')
+
+  const cloudEnvironment = buildHarnessEnvironment({
+    ...common, baseEnvironment: {},
+    model: { providerId: 'stable-cloud', model: 'glm-5.3-flash' }, apiKey: 'local-loopback-secret',
+  })
+  assert.equal(cloudEnvironment.STABLE_ZHIPU_SEARCH_API_KEY, undefined)
+  assert.equal(cloudEnvironment.DSH_WEB_SEARCH_PROVIDER, undefined)
+
   const privateEnvironment = buildHarnessEnvironment({
     ...common,
     baseEnvironment: { DEEPSEEK_API_KEY: 'dedicated-search-key', NODE_OPTIONS: 'remove-me' },
@@ -258,4 +293,85 @@ test('non-DeepSeek models preserve an existing search credential without aliasin
   })
   assert.equal(withoutSearchCredential.STABLE_API_KEY, 'openai-model-key')
   assert.equal(withoutSearchCredential.DEEPSEEK_API_KEY, undefined)
+})
+
+test('Zhipu search provider calls the official endpoint and normalizes citeable sources', async () => {
+  class TestWebError extends Error {
+    constructor(message, code, options) { super(message); this.code = code; this.cause = options?.cause }
+  }
+  const requests = []
+  const provider = createZhipuSearchProvider({
+    apiKey: 'zhipu-secret',
+    WebError: TestWebError,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options })
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            search_result: [
+              { title: 'Result A', content: 'Summary A', link: 'https://example.com/a', publish_date: '2026-09-02' },
+              { title: 'Duplicate', content: 'Duplicate', link: 'https://example.com/a' },
+              { title: 'Unsafe', content: 'Skip', link: 'file:///tmp/private' },
+              { title: 'Result B', link: 'http://example.org/b' },
+            ],
+          }
+        },
+      }
+    },
+  })
+
+  assert.equal(provider.id, ZHIPU_SEARCH_PROVIDER_ID)
+  assert.equal(provider.available(), true)
+  const result = await provider.search({ query: 'a'.repeat(100), maxResults: 99 })
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].url, ZHIPU_SEARCH_ENDPOINT)
+  assert.equal(requests[0].options.headers.authorization, 'Bearer zhipu-secret')
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    search_query: 'a'.repeat(70), search_engine: 'search_std', search_intent: false,
+    count: 50, search_recency_filter: 'noLimit', content_size: 'medium',
+  })
+  assert.deepEqual(result, {
+    sources: [
+      { url: 'https://example.com/a', title: 'Result A', snippet: 'Summary A', publishedAt: '2026-09-02' },
+      { url: 'http://example.org/b', title: 'Result B' },
+    ],
+    truncated: false,
+  })
+  assert.deepEqual(mapZhipuSearchResponse({ search_result: [] }), { sources: [], truncated: false })
+})
+
+test('Zhipu search provider enforces the Harness result bound even when the API over-returns', async () => {
+  class TestWebError extends Error {
+    constructor(message, code) { super(message); this.code = code }
+  }
+  const provider = createZhipuSearchProvider({
+    apiKey: 'zhipu-secret', WebError: TestWebError,
+    fetchImpl: async () => ({
+      ok: true, status: 200,
+      json: async () => ({ search_result: [1, 2, 3].map((index) => ({ title: `R${index}`, link: `https://example.com/${index}` })) }),
+    }),
+  })
+  assert.deepEqual(await provider.search({ query: 'Stable', maxResults: 2 }), {
+    sources: [
+      { url: 'https://example.com/1', title: 'R1' },
+      { url: 'https://example.com/2', title: 'R2' },
+    ],
+    truncated: true,
+  })
+})
+
+test('Zhipu search provider exposes provider-safe HTTP errors without leaking credentials', async () => {
+  class TestWebError extends Error {
+    constructor(message, code) { super(message); this.code = code }
+  }
+  const provider = createZhipuSearchProvider({
+    apiKey: 'never-leak-this-key', WebError: TestWebError,
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'API key invalid' } }) }),
+  })
+  await assert.rejects(
+    () => provider.search({ query: 'Stable' }),
+    (error) => error.code === 'WEB_PROVIDER_ERROR' && /HTTP 401.*API key invalid/.test(error.message) && !error.message.includes('never-leak-this-key'),
+  )
 })

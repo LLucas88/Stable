@@ -31,7 +31,13 @@ async function main() {
     const longPrompt = `只回复 STABLE_MOCK_OK\n${'本地资料片段。'.repeat(12_000)}\nLONG_PROMPT_END`
     assert.ok(longPrompt.length > 80_000, 'regression prompt must exceed the Windows command-line limit')
     const events = []
-    const answer = await runner.run(longPrompt, { providerId: 'stable-mock', displayName: 'Stable Mock', baseURL: `http://127.0.0.1:${port}/v1`, model: 'stable-mock' }, 'local-test-key', 120_000, (event) => events.push(event))
+    let runCompleted = false
+    let answerStreamedBeforeCompletion = false
+    const runPromise = runner.run(longPrompt, { providerId: 'stable-mock', displayName: 'Stable Mock', baseURL: `http://127.0.0.1:${port}/v1`, model: 'stable-mock' }, 'local-test-key', 120_000, (event) => {
+      events.push(event)
+      if (event.eventType === 'agent/answer-delta' && !runCompleted) answerStreamedBeforeCompletion = true
+    })
+    const answer = await runPromise.finally(() => { runCompleted = true })
     assert.match(answer, /STABLE_MOCK_OK/)
     assert.equal(requests[0].url, '/v1/chat/completions')
     assert.equal(requests[0].authorization, 'Bearer local-test-key')
@@ -39,6 +45,8 @@ async function main() {
     assert.doesNotMatch(answer, /local-test-key/)
     assert.ok(events.some((event) => event.kind === 'reasoning' && event.status === 'running'), 'Harness step/start should stream a reasoning summary')
     assert.ok(events.some((event) => event.kind === 'reasoning' && event.status === 'completed'), 'assistant/message should complete the reasoning summary')
+    assert.equal(events.filter((event) => event.eventType === 'agent/answer-delta').map((event) => event.delta).join(''), 'STABLE_MOCK_OK', 'answer text should stream before the Harness process exits')
+    assert.equal(answerStreamedBeforeCompletion, true, 'answer delta must arrive before the final run promise settles')
     assert.ok(events.every((event) => !JSON.stringify(event).includes('本地资料片段')), 'trace events must not leak prompt content')
     process.stdout.write(`HARNESS_INTEGRATION_PASS requests=${requests.length} events=${events.length}\n`)
   } finally {

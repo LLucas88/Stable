@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { readFileSync } = require('node:fs')
+const { existsSync, readFileSync, statSync } = require('node:fs')
 const path = require('node:path')
 
 test('agent composer multi-selects data, scripts, knowledge and Skills into removable chips', () => {
@@ -23,10 +23,10 @@ test('agent composer multi-selects data, scripts, knowledge and Skills into remo
   assert.match(css, /\.selection-chip[^}]*flex: 0 0 auto/)
 })
 
-test('conversation selection and composer focus stay neutral while history labels use available width', () => {
+test('conversation selection has a clear neutral active surface while history labels use available width', () => {
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
-  assert.match(css, /#root \.conversation-history-card \.conversation-list-item\[data-active="true"\] \{ background: transparent !important; \}/)
+  assert.match(css, /#root \.conversation-history-card \.conversation-list-item\[data-active="true"\],[\s\S]*background: var\(--color-paper-4\) !important;/)
   assert.match(css, /\.conversation-select strong \{[^}]*font-family: var\(--font-body\);[^}]*font-weight: 400;/)
   assert.match(css, /\.conversation-list-item \{[^}]*transition: none;/)
   assert.match(css, /\.conversation-item-actions \{[^}]*position: absolute;[^}]*padding: 0;[^}]*background: transparent;[^}]*transition: none;/)
@@ -417,13 +417,48 @@ test('home lead keeps the requested three fixed lines', () => {
   assert.match(css, /\.home-intro h2 > span[^}]*display: block[^}]*white-space: nowrap/)
 })
 
-test('sidebar brand logo follows the active light or dark theme', () => {
+test('workspace mode switch is the first sidebar component and no large sidebar logo remains', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  assert.match(app, /stable_logo_sidebar_dark\.png/)
-  assert.match(app, /stable_logo_sidebar_light\.png/)
-  assert.match(app, /state\.theme === 'light' \? sidebarLogoLightUrl : sidebarLogoDarkUrl/)
-  assert.match(css, /\.brand-mark img \{[^}]*transform: translateY\(-6px\)/)
+  const sidebar = app.slice(app.indexOf('<aside className="side-rail"'), app.indexOf('</aside>'))
+  assert.ok(sidebar.indexOf('className="rail-mode-switch"') < sidebar.indexOf('className="rail-conversation-new-slot"'))
+  assert.doesNotMatch(sidebar, /brand-mark|<img/)
+  assert.doesNotMatch(css, /\.brand-mark/)
+})
+
+test('a new empty conversation centers the full composer beneath the supplied looping animation', () => {
+  const root = path.join(__dirname, '..')
+  const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
+  const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+  const animation = path.join(root, 'src', 'assets', 'bloub-2.mp4')
+  assert.equal(existsSync(animation), true)
+  assert.ok(statSync(animation).size > 0)
+  assert.match(app, /import conversationStartAnimationUrl from '\.\/assets\/bloub-2\.mp4'/)
+  assert.match(app, /const conversationIsEmpty = state\.messages\.length === 0 && !pendingPrompt/)
+  assert.match(app, /className="conversation" data-empty=\{conversationIsEmpty \|\| undefined\}/)
+  assert.match(app, /className="conversation-start-animation"[\s\S]*autoPlay=\{!reduceConversationMotion\}[\s\S]*loop muted playsInline/)
+  assert.match(app, /<h2>准备好了，随时开始<\/h2>/)
+  assert.doesNotMatch(app, /从一个具体任务开始/)
+  assert.match(css, /\.conversation\[data-empty="true"\]\s*\{[^}]*grid-template-rows:\s*auto minmax\(var\(--space-lg\), 1fr\) auto auto minmax\(var\(--space-lg\), 1fr\)/)
+  assert.match(css, /\.conversation\[data-empty="true"\] \.message-scroll\s*\{[^}]*grid-row:\s*3/)
+  assert.match(css, /\.conversation\[data-empty="true"\] \.composer\s*\{[^}]*grid-row:\s*4[^}]*background:\s*transparent/)
+  assert.match(css, /html\[data-theme="dark"\] \.conversation-start-animation/)
+})
+
+test('assistant text deltas render immediately while the final answer remains persisted by the existing run result', () => {
+  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  assert.match(main, /source\.eventType === 'agent\/answer-delta'/)
+  assert.match(main, /mainWindow\.webContents\.send\('stable:agent:event', event\)/)
+  assert.match(app, /const \[streamingAnswerMap, setStreamingAnswerMap\]/)
+  assert.match(app, /event\.eventType === 'agent\/answer-delta'/)
+  assert.match(app, /sameStep \? current\.content : ''/)
+  assert.match(app, /event\.eventType === 'tool\/start' && !event\.parentSessionId/)
+  assert.match(app, /className="assistant-turn streaming-assistant-turn" aria-live="polite"/)
+  assert.match(app, /updateAgentForConversation\(result, conversationId\)/)
+  assert.match(app, /setStreamingAnswerMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: undefined \}\)\)/)
+  assert.match(css, /\.assistant-answer\[data-streaming="true"\] \.markdown-body::after/)
 })
 
 test('all script categories expose the shared console and cards keep a shadow-free hover state', () => {

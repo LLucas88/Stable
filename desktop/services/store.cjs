@@ -247,6 +247,7 @@ class StableStore {
 
   listConversations() {
     const defaultModelId = this.modelCatalog().defaultModelId
+    const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
     return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
       GROUP BY c.id ORDER BY c.updated_at DESC`).all().map((row) => ({
@@ -255,6 +256,7 @@ class StableStore {
       modelId: row.model_id || defaultModelId,
       dataIds: JSON.parse(row.data_ids_json || '[]'), messageCount: Number(row.message_count || 0),
       sourceType: row.source_type === 'team' ? 'team' : 'local',
+      pinned: pinnedIds.has(row.id),
       ...(row.source_device_id ? { sourceDeviceId: row.source_device_id } : {}),
       ...(row.source_device_name ? { sourceDeviceName: row.source_device_name } : {}),
       createdAt: row.created_at, updatedAt: row.updated_at,
@@ -263,6 +265,46 @@ class StableStore {
 
   conversation(id) { return this.listConversations().find((item) => item.id === id) }
   activeConversationId() { return this.getSetting('activeConversationId') }
+
+  searchConversations(query, limit = 30) {
+    const normalized = String(query || '').trim().toLowerCase()
+    const requestedLimit = Math.max(1, Math.min(50, Number(limit) || 30))
+    const conversations = this.listConversations()
+    if (!normalized) return conversations.slice(0, requestedLimit).map((item) => ({
+      id: item.id, title: item.title, snippet: '', messageCount: item.messageCount, updatedAt: item.updatedAt,
+    }))
+
+    const terms = normalized.split(/\s+/u).filter(Boolean).slice(0, 12)
+    const messages = this.db.prepare('SELECT conversation_id,content FROM messages ORDER BY created_at DESC').all()
+    const byConversation = new Map()
+    for (const row of messages) {
+      const items = byConversation.get(row.conversation_id) || []
+      items.push(String(row.content || ''))
+      byConversation.set(row.conversation_id, items)
+    }
+
+    return conversations.map((item) => {
+      const conversationMessages = byConversation.get(item.id) || []
+      const titleLower = item.title.toLowerCase()
+      const searchable = `${titleLower}\n${conversationMessages.map((message) => message.toLowerCase()).join('\n')}`
+      if (!terms.every((term) => searchable.includes(term))) return undefined
+      const matchingMessage = conversationMessages.find((message) => terms.some((term) => message.toLowerCase().includes(term)))
+      const compact = matchingMessage?.replace(/\s+/g, ' ').trim() || ''
+      const positions = compact ? terms.map((term) => compact.toLowerCase().indexOf(term)).filter((index) => index >= 0) : []
+      const firstMatch = positions.length ? Math.min(...positions) : 0
+      const start = Math.max(0, firstMatch - 36)
+      const excerpt = compact.slice(start, start + 110)
+      return {
+        id: item.id,
+        title: item.title,
+        snippet: excerpt ? `${start > 0 ? '…' : ''}${excerpt}${start + 110 < compact.length ? '…' : ''}` : '标题匹配',
+        messageCount: item.messageCount,
+        updatedAt: item.updatedAt,
+        score: terms.reduce((score, term) => score + (titleLower.includes(term) ? 100 : occurrences(searchable, term)), 0),
+      }
+    }).filter(Boolean).sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt)).slice(0, requestedLimit)
+      .map(({ score: _score, ...item }) => item)
+  }
 
   createConversation(options = {}) {
     const id = randomUUID(); const now = new Date().toISOString()
@@ -284,6 +326,15 @@ class StableStore {
 
   renameConversation(id, title) {
     this.db.prepare('UPDATE conversations SET title=?,updated_at=? WHERE id=?').run(title, new Date().toISOString(), id)
+  }
+
+  setConversationPinned(id, pinned) {
+    if (!this.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)) throw new Error('找不到这个对话。')
+    const ids = new Set(this.getSetting('pinnedConversationIds') || [])
+    if (pinned) ids.add(id)
+    else ids.delete(id)
+    this.setSetting('pinnedConversationIds', [...ids])
+    return this.conversation(id)
   }
 
   updateConversationContext(id, capability, dataIds) {
@@ -313,6 +364,8 @@ class StableStore {
       this.db.prepare('DELETE FROM conversations WHERE id=?').run(id)
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
+    if (pinnedIds.delete(id)) this.setSetting('pinnedConversationIds', [...pinnedIds])
     let next = this.db.prepare('SELECT id FROM conversations ORDER BY updated_at DESC LIMIT 1').get()?.id
     if (!next) next = this.createConversation()
     this.setSetting('activeConversationId', next)

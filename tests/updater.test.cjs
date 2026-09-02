@@ -13,21 +13,28 @@ test('development builds never contact the release service', async () => {
   assert.equal(checks, 0)
 })
 
-test('packaged updater downloads the fast-install package and waits for restart confirmation', async () => {
+test('packaged updater checks first and downloads only after explicit confirmation', async () => {
   const updater = new EventEmitter()
-  updater.checkForUpdates = async () => { updater.emit('update-available', { version: '0.9.28' }); updater.emit('download-progress', { percent: 51.4 }); updater.emit('update-downloaded', { version: '0.9.28' }) }
+  updater.checkForUpdates = async () => { updater.emit('update-available', { version: '0.9.28' }) }
+  let downloads = 0
+  updater.downloadUpdate = async () => { downloads += 1; updater.emit('download-progress', { percent: 51.4 }); updater.emit('update-downloaded', { version: '0.9.28' }) }
   let installArgs
   updater.quitAndInstall = (...args) => { installArgs = args }
   const controller = createUpdateController({ autoUpdater: updater, isPackaged: true, currentVersion: '0.9.27' })
-  const state = await controller.check(true)
-  assert.equal(state.status, 'downloaded')
-  assert.equal(state.progress, 100)
+  const checked = await controller.check(true)
+  assert.equal(checked.status, 'available')
+  assert.equal(checked.progress, 0)
+  assert.equal(downloads, 0)
   assert.equal(installArgs, undefined)
-  assert.equal(updater.autoDownload, true)
+  assert.equal(updater.autoDownload, false)
   assert.equal(updater.autoInstallOnAppQuit, false)
   assert.equal(updater.autoRunAppAfterInstall, false)
   assert.equal(updater.disableDifferentialDownload, false)
   assert.equal(updater.disableWebInstaller, true)
+  const downloaded = await controller.download()
+  assert.equal(downloads, 1)
+  assert.equal(downloaded.status, 'downloaded')
+  assert.equal(downloaded.progress, 100)
   assert.doesNotMatch(publicError(new Error('failed https://secret.example/token')), /secret\.example/)
   controller.dispose()
 })
