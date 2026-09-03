@@ -45,3 +45,30 @@ test('local gateway rejects callers without its per-process credential', async (
   const response = await fetch(`${proxy.baseURL}/models`)
   assert.equal(response.status, 401)
 })
+
+test('gateway converts HTML interception to a JSON error without forwarding the interception page', async (t) => {
+  const account = { baseURL: 'https://stable.example.com', token: () => 'cloud' }
+  const proxy = new CloudGatewayProxy({ account, fetchImpl: async () => new Response('<html>private-interception-body</html>', { status: 403, headers: { 'content-type': 'text/html' } }) })
+  await proxy.start(); t.after(() => proxy.stop())
+  const response = await fetch(`${proxy.baseURL}/models`, { headers: { authorization: `Bearer ${proxy.secret}` } })
+  assert.equal(response.status, 403)
+  assert.match(response.headers.get('content-type'), /application\/json/)
+  const result = await response.text()
+  assert.match(result, /代理或站点入口拦截/)
+  assert.doesNotMatch(result, /private-interception-body/)
+})
+
+test('gateway forwards SSE and provider JSON quota rejection without buffering or changing status', async (t) => {
+  const account = { baseURL: 'https://stable.example.com', token: () => 'cloud' }
+  let quota = false
+  const proxy = new CloudGatewayProxy({ account, fetchImpl: async () => quota ? Response.json({ error: { code: 'quota_exceeded' } }, { status: 429 }) : new Response('data: first\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } }) })
+  await proxy.start(); t.after(() => proxy.stop())
+  const options = { method: 'POST', headers: { authorization: `Bearer ${proxy.secret}`, 'content-type': 'application/json' }, body: '{}' }
+  const response = await fetch(`${proxy.baseURL}/chat/completions`, options)
+  assert.equal(response.headers.get('content-type'), 'text/event-stream')
+  assert.equal(await response.text(), 'data: first\n\ndata: [DONE]\n\n')
+  quota = true
+  const rejected = await fetch(`${proxy.baseURL}/chat/completions`, options)
+  assert.equal(rejected.status, 429)
+  assert.equal((await rejected.json()).error.code, 'quota_exceeded')
+})

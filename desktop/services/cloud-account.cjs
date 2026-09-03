@@ -2,6 +2,7 @@
 
 const os = require('node:os')
 const { randomUUID } = require('node:crypto')
+const { cloudResponseError } = require('./cloud-transport.cjs')
 
 const DEFAULT_CLOUD_URL = 'https://stable-cloud-admin.foamy-auk-6029.chatgpt.site'
 const DEVICE_TOKEN_KEY = 'cloud:device-token'
@@ -15,14 +16,6 @@ function cleanBaseURL(value) {
     throw new Error('Stable Cloud 只允许 HTTPS 或本机 HTTP 地址。')
   }
   return raw
-}
-
-function errorFromPayload(status, payload) {
-  const message = String(payload?.error?.message || payload?.message || '').trim()
-  const error = new Error(message || `Stable Cloud 请求失败（HTTP ${status}）。`)
-  error.code = String(payload?.error?.code || payload?.code || `http_${status}`)
-  error.status = status
-  return error
 }
 
 function timeoutSignal(milliseconds = 15_000) {
@@ -63,6 +56,7 @@ class CloudAccountService {
         signal: timeoutSignal(), redirect: 'error',
       })
     } catch (error) {
+      if (error.cloudDiagnostic) throw error
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new Error('连接 Stable Cloud 超时，请检查网络后重试。')
       throw new Error(`无法连接 Stable Cloud：${error.message}`)
     }
@@ -71,8 +65,8 @@ class CloudAccountService {
     if (text) {
       try { payload = JSON.parse(text) } catch { payload = null }
     }
-    if (!response.ok) throw errorFromPayload(response.status, payload)
-    if (text && !payload) throw Object.assign(new Error('Stable Cloud 返回了无法识别的响应，请确认站点允许桌面客户端访问。'), { code: 'invalid_cloud_response', status: 502 })
+    if (!response.ok) throw cloudResponseError(response, payload)
+    if (text && !payload) throw cloudResponseError(response, null)
     return payload
   }
 
