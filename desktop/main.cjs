@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage } = require('electron')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
@@ -14,6 +14,7 @@ const { SecretStore } = require('./services/secrets.cjs')
 const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cjs')
 const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
+const { createCloudFetch } = require('./services/cloud-transport.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
 const { appendArtifactPaths, artifactSnapshot, changedArtifacts, deliveryRequest } = require('./services/delivery.cjs')
 const { ScriptRunner } = require('./services/script-runner.cjs')
@@ -2348,8 +2349,13 @@ async function boot() {
   secrets = new SecretStore(paths.userData, safeStorage)
   const cloudEnabled = app.isPackaged || process.env.STABLE_CLOUD_ENABLED === '1'
   if (cloudEnabled) {
-    cloudAccount = new CloudAccountService({ store, secrets, appVersion: app.getVersion() })
-    cloudGateway = new CloudGatewayProxy({ account: cloudAccount })
+    const cloudFetch = createCloudFetch({
+      session: session.fromPartition('stable-cloud-network', { cache: false }),
+      logPath: path.join(paths.userData, 'logs', 'cloud-network.jsonl'),
+      appVersion: app.getVersion(),
+    })
+    cloudAccount = new CloudAccountService({ store, secrets, appVersion: app.getVersion(), fetchImpl: cloudFetch })
+    cloudGateway = new CloudGatewayProxy({ account: cloudAccount, fetchImpl: cloudFetch })
     await cloudGateway.start()
     await cloudAccount.restore()
     if (process.env.STABLE_QA_CLOUD_AUTHENTICATED === '1') await cloudAccount.login('qa-member', 'qa-password')

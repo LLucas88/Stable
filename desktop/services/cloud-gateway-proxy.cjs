@@ -3,6 +3,7 @@
 const http = require('node:http')
 const { randomUUID } = require('node:crypto')
 const { Readable } = require('node:stream')
+const { cloudResponseError, responseType } = require('./cloud-transport.cjs')
 
 const MAX_BODY_BYTES = 16 * 1024 * 1024
 const RESPONSE_HEADERS = new Set(['content-type', 'cache-control', 'x-request-id'])
@@ -72,6 +73,10 @@ class CloudGatewayProxy {
         headers['idempotency-key'] = `stable-${randomUUID()}`
       }
       const upstream = await this.fetch(`${this.account.baseURL}${pathname}`, { method: request.method, headers, body, redirect: 'error' })
+      if (!['json', 'event-stream'].includes(responseType(upstream))) {
+        if (upstream.body) await upstream.body.cancel()
+        throw cloudResponseError(upstream, null)
+      }
       response.statusCode = upstream.status
       for (const [name, value] of upstream.headers) if (RESPONSE_HEADERS.has(name.toLowerCase())) response.setHeader(name, value)
       if (!upstream.body) { response.end(); return }
