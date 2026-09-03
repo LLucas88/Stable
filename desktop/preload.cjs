@@ -52,6 +52,17 @@ contextBridge.exposeInMainWorld('stable', {
     setEnabled: (id, enabled) => invoke('stable:skills:enabled', { id, enabled }),
     remove: (id) => invoke('stable:skills:remove', { id }),
   },
+  extensions: {
+    wendingStatus: () => invoke('stable:extensions:wendingStatus'),
+    prepareWending: () => invoke('stable:extensions:prepareWending'),
+    sendWendingCode: (mobile, channel) => invoke('stable:extensions:sendWendingCode', { mobile, channel }),
+    verifyWendingCode: (code) => invoke('stable:extensions:verifyWendingCode', { code }),
+    selectWendingAccount: (id) => invoke('stable:extensions:selectWendingAccount', { id }),
+    selectWendingBrand: (id) => invoke('stable:extensions:selectWendingBrand', { id }),
+    refreshWendingBrands: () => invoke('stable:extensions:refreshWendingBrands'),
+    resetWendingLogin: () => invoke('stable:extensions:resetWendingLogin'),
+    cancelWendingLogin: () => invoke('stable:extensions:cancelWendingLogin'),
+  },
   workflows: {
     save: (workflow) => invoke('stable:workflows:save', workflow),
     remove: (id) => invoke('stable:workflows:remove', { id }),
@@ -85,6 +96,7 @@ contextBridge.exposeInMainWorld('stable', {
     configurePermission: (id, permissionMode) => invoke('stable:agent:configurePermission', { id, permissionMode }),
     configureModel: (id, modelId) => invoke('stable:agent:configureModel', { id, modelId }),
     run: (conversationId, prompt, attachments = [], references = []) => invoke('stable:agent:run', { conversationId, prompt, attachments, references }),
+    steer: (conversationId, requestId, prompt, attachments = [], references = []) => invoke('stable:agent:steer', { conversationId, requestId, prompt, attachments, references }),
     cancel: (conversationId) => invoke('stable:agent:cancel', { conversationId }),
     answerApproval: (conversationId, requestId, allowed) => invoke('stable:agent:answerApproval', { conversationId, requestId, allowed }),
     clear: (conversationId) => invoke('stable:agent:clear', { conversationId }),
@@ -167,6 +179,7 @@ contextBridge.exposeInMainWorld('stable', {
     writeText: (text) => invoke('stable:clipboard:writeText', { text }),
   },
   appearance: {
+    setCompletedCount: (count) => invoke('stable:appearance:completedCount', { count }),
     setTheme: (theme) => invoke('stable:appearance:theme', { theme }),
     completeLaunch: () => invoke('stable:appearance:launchComplete'),
     onLaunchStart: (handler) => {

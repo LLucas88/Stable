@@ -1,0 +1,17 @@
+{
+  "id": "wending-cli",
+  "platform": "win32-x64",
+  "python": "3.11.15",
+  "packages": {
+    "crm-brand-cli": "0.9.0.dev9",
+    "crm-base-cli": "1.0.1",
+    "click": "8.3.1",
+    "colorama": "0.4.6"
+  },
+  "sourceArchive": "问鼎CLI培训分发包-20260803.zip",
+  "sha256": {
+    "crm_base_cli-1.0.1-py3-none-any.whl": "876569C0D1E3D1345727E6B3F8502BCE81A52052769855986A8E599907BEAD95",
+    "crm_brand_cli-0.9.0.dev9-py3-none-any.whl": "D3D6BE37C7FD9D048AB1000D55B1F429FC748820D8DF1C19E237A356CE287FCD",
+    "python.exe": "28D2965D061656ABBE3A46100BD3342D1152185289445D489782A21A8CFE9B57"
+  }
+}

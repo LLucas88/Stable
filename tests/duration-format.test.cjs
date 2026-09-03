@@ -21,11 +21,12 @@ test('execution duration clamps invalid or negative values to zero', () => {
   assert.equal(formatElapsedTime(Number.NaN), '0秒')
 })
 
-test('execution timer is placed only above the execution disclosure', () => {
+test('execution timer is the compact disclosure label without a separate process heading', () => {
   const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
   const trace = app.slice(app.indexOf('function RunTrace'), app.indexOf('function markdownTableCells'))
   assert.match(trace, /className="trace-elapsed" role="timer"/)
-  assert.match(trace, /trace-elapsed[\s\S]*className="trace-summary"/)
+  assert.match(trace, /className="trace-summary"[\s\S]*className="trace-elapsed"/)
+  assert.doesNotMatch(trace, /<strong>执行过程<\/strong>/)
   assert.equal((app.match(/className="trace-elapsed"/g) || []).length, 1)
   assert.match(trace, /window\.setInterval\(\(\) => setNow\(Date\.now\(\)\), 1000\)/)
   assert.match(trace, /if \(status !== 'running'\) return/)

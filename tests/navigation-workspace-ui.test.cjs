@@ -29,6 +29,7 @@ test('work and lab navigation split existing modules while repository keeps four
 
 test('sidebar width is session-only, pointer resizable, and keyboard accessible', () => {
   assert.match(app, /const \[railWidth, setRailWidth\] = useState\(DEFAULT_RAIL_WIDTH\)/)
+  assert.match(app, /const DEFAULT_RAIL_WIDTH = MIN_RAIL_WIDTH/)
   assert.match(app, /className="rail-resizer"/)
   assert.match(app, /role="separator"/)
   assert.match(app, /aria-valuenow=\{Math\.round\(railWidth\)\}/)
@@ -70,7 +71,7 @@ test('titlebar can fully collapse the rail and search titles plus all conversati
 })
 
 test('conversation task list exposes persistent pinning and a guarded action menu', () => {
-  assert.match(app, /createPortal\(<ConversationTaskSections \/>, conversationTasksTarget\)/)
+  assert.match(app, /createPortal\(ConversationTaskSections\(\), conversationTasksTarget\)/)
   assert.match(app, /className="rail-conversation-tasks-slot"/)
   assert.match(app, /aria-label="任务清单"/)
   assert.match(app, /aria-label="置顶任务"/)
@@ -91,6 +92,16 @@ test('conversation task list exposes persistent pinning and a guarded action men
   assert.match(css, /\.conversation-action-menu\s*\{[^}]*width:\s*11\.9rem[^}]*background:\s*var\(--color-paper\)[^}]*box-shadow:\s*var\(--shadow-float\) !important/)
   assert.match(css, /#root \.conversation-history-card \.conversation-list-item\[data-active="true"\][^{]*\{ background: var\(--color-paper-4\) !important; \}/)
   assert.match(css, /\.conversation-sidebar-mobile\s*\{\s*display:\s*none/)
+})
+
+test('pinned conversations reuse full task rows with direct unpin and the same menu', () => {
+  assert.doesNotMatch(app, /if \(shortcut\)|item=\{item\} shortcut/)
+  assert.match(app, /pinnedConversations\.map\(\(item\) => ConversationRow\(\{ item \}\)\)/)
+  assert.match(app, /onClick=\{\(\) => togglePin\(item\)\} aria-label=\{item.pinned \? `取消置顶/)
+  assert.match(app, /item.pinned \? '取消置顶任务' : '置顶任务'/)
+  assert.match(app, /disabled=\{Boolean\(runningMap\[item.id\]\)\}/)
+  assert.doesNotMatch(css, /\.conversation-pinned-shortcut/)
+  assert.match(app, /querySelector<HTMLButtonElement>\(':scope > button'\)\?\.focus\(\)/)
 })
 
 test('file cards open in Stable and expose a compact context menu with HTML-only external browsing', () => {

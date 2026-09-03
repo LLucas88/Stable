@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "0.91.2",
+  "version": "0.91.7",
   "description": "Stable local agent workbench powered by DeepSeek Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -11,9 +11,12 @@
     "start:team-dev": "node scripts/start-team-dev.cjs",
     "build": "vite build --configLoader runner",
     "typecheck": "tsc --noEmit",
+    "pretest": "node node_modules/electron/install.js",
     "test": "node --test tests/*.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
+    "tools:install": "npm ci --prefix vendor/agent-tools --ignore-scripts --no-audit --no-fund",
+    "tools:verify": "node scripts/verify-builtin-tools.cjs",
     "dist:dir": "npm run build && electron-builder --win --x64 --dir",
     "dist": "npm run build && electron-builder --win --x64",
     "dist:update": "electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
@@ -47,6 +50,7 @@
     "appId": "com.stable.agent",
     "productName": "Stable",
     "asar": true,
+    "beforePack": "scripts/verify-builtin-tools.cjs",
     "compression": "normal",
     "files": [
       "dist/**/*",
@@ -57,17 +61,26 @@
     ],
     "extraResources": [
       {
+        "from": "vendor/agent-tools",
+        "to": "agent-tools",
+        "filter": ["package.json", "package-lock.json", "README.md", "node_modules/**/*"]
+      },
+      {
         "from": "licenses",
         "to": "licenses"
       },
       {
         "from": "runtime",
         "to": "runtime"
+      },
+      {
+        "from": "vendor/wending-cli",
+        "to": "wending-cli"
       }
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.91.2"
+      "output": "release-0.91.7"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",

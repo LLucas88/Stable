@@ -1,5 +1,25 @@
-export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli'
 export type ThemeMode = 'dark' | 'light'
+
+export interface WendingCliStatus {
+  id: 'wending-cli'
+  status: 'checking' | 'bundled' | 'ready' | 'unavailable'
+  version: string
+  detail: string
+  login?: WendingLoginState
+}
+
+export interface WendingLoginState {
+  phase: 'unknown' | 'signed_out' | 'code_sent' | 'choose_account' | 'choose_brand' | 'ready'
+  channel: '0' | '1'
+  detail: string
+  mobileHint?: string
+  brandLabel?: string
+  accounts?: { id: string; label: string }[]
+  brands?: { id: string; label: string }[]
+  retryAfter?: number
+  error?: { code: string; message: string }
+}
 
 export interface DataItem {
   id: string
@@ -227,7 +247,7 @@ export interface AgentAttachment {
 
 export type AgentTraceKind = 'context' | 'reasoning' | 'tool' | 'status' | 'approval'
 export type AgentTraceStatus = 'running' | 'completed' | 'failed' | 'cancelled'
-export type AgentTraceEventType = 'agent/descriptor' | 'agent/start' | 'agent/end' | 'tool/start' | 'tool/end'
+export type AgentTraceEventType = 'agent/descriptor' | 'agent/start' | 'agent/end' | 'agent/answer' | 'tool/start' | 'tool/end'
 
 export interface AgentTraceItem {
   id: string
@@ -235,6 +255,9 @@ export interface AgentTraceItem {
   kind: AgentTraceKind
   title: string
   detail?: string
+  content?: string
+  inputDetail?: string
+  startedAt?: number
   status: AgentTraceStatus
   time: number
   conversationId?: string
@@ -493,6 +516,17 @@ export interface StableBridge {
     setEnabled(id: string, enabled: boolean): Promise<SkillItem[]>
     remove(id: string): Promise<SkillItem[]>
   }
+  extensions: {
+    wendingStatus(): Promise<WendingCliStatus>
+    prepareWending(): Promise<WendingCliStatus>
+    sendWendingCode(mobile: string, channel: '0' | '1'): Promise<WendingLoginState>
+    verifyWendingCode(code: string): Promise<WendingLoginState>
+    selectWendingAccount(id: string): Promise<WendingLoginState>
+    selectWendingBrand(id: string): Promise<WendingLoginState>
+    refreshWendingBrands(): Promise<WendingLoginState>
+    resetWendingLogin(): Promise<WendingLoginState>
+    cancelWendingLogin(): Promise<WendingLoginState>
+  }
   workflows: {
     save(workflow: Partial<WorkflowItem>): Promise<WorkflowItem[]>
     remove(id: string): Promise<WorkflowItem[]>
@@ -523,6 +557,7 @@ export interface StableBridge {
     configureModel(id: string, modelId: string): Promise<AgentState>
     run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
+    steer(conversationId: string, requestId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState>
     answerApproval(conversationId: string, requestId: string, allowed: boolean): Promise<boolean>
     clear(conversationId: string): Promise<AgentState>
     onEvent(handler: (event: AgentEvent) => void): () => void
@@ -580,6 +615,7 @@ export interface StableBridge {
     writeText(text: string): Promise<boolean>
   }
   appearance: {
+    setCompletedCount(count: number): Promise<number>
     setTheme(theme: ThemeMode): Promise<ThemeMode>
     completeLaunch(): Promise<ThemeMode>
     onLaunchStart(handler: () => void): () => void

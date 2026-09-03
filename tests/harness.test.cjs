@@ -227,6 +227,29 @@ test('DeepSeek routes reject image input before starting the runtime', () => {
   )
 })
 
+test('Harness final response excludes earlier streamed commentary and child-agent text', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-final-answer-'))
+  let child
+  const runner = new HarnessRunner({ userData: root, workspace: root, packaged: false, environment: {}, spawn: () => {
+    child = new EventEmitter()
+    child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough()
+    return child
+  } })
+  try {
+    const pending = runner.run('test', { providerId: 'test', model: 'test', baseURL: 'http://localhost' }, 'test-key')
+    const event = (value) => child.stderr.write(`STABLE_EVENT\t${JSON.stringify(value)}\n`)
+    event({ eventType: 'agent/answer-delta', id: 'one', delta: '我先检查数据。' })
+    event({ eventType: 'tool/start' })
+    event({ eventType: 'agent/answer-delta', id: 'child', parentSessionId: 'root', delta: '子任务内容' })
+    event({ eventType: 'agent/answer-delta', id: 'two', delta: '最终' })
+    event({ eventType: 'agent/answer-delta', id: 'two', delta: '结果。' })
+    event({ eventType: 'agent/end', status: 'completed' })
+    child.stdout.write('我先检查数据。\n\n最终结果。')
+    child.emit('close', 0, null)
+    assert.equal(await pending, '最终结果。')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test('bundled Harness sends a workspace image as real multimodal request content', { skip: process.platform !== 'win32' }, async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-harness-image-'))
   const mockEntry = path.join(__dirname, '..', 'runtime', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-llm-mock-server', 'lib', 'index.js')

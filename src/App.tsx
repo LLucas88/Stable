@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert,
@@ -12,14 +12,21 @@ import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceKind, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode } from './types'
+import { buildTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus } from './trace-timeline'
+import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
+import { taskErrorMessage } from './task-feedback'
+import { WendingLoginPanel } from './WendingLoginPanel'
+import { useComposerAutosize } from './use-composer-autosize'
+import { useConversationUnread } from './use-conversation-unread'
+import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode, WendingCliStatus } from './types'
 
 type WorkspaceMode = 'work' | 'lab'
+type ComposerMessage = { prompt: string; attachments: AgentAttachment[]; references: AgentReference[] }
 type RepositoryPageId = Extract<Page, 'data' | 'reports' | 'skills' | 'knowledge'>
 type PrimaryNavId = Page | 'repository'
 
-const DEFAULT_RAIL_WIDTH = 376
 const MIN_RAIL_WIDTH = 280
+const DEFAULT_RAIL_WIDTH = MIN_RAIL_WIDTH
 const MAX_RAIL_WIDTH = 560
 const MIN_MAIN_WIDTH = 640
 
@@ -35,7 +42,10 @@ const WORK_NAV: Array<{ id: PrimaryNavId; label: string; icon: typeof Home }> = 
   { id: 'agent', label: '对话', icon: MessageSquareText },
   { id: 'automations', label: '定时', icon: Clock3 },
   { id: 'repository', label: '仓库', icon: Library },
+  { id: 'mcp-cli', label: 'MCP & CLI', icon: Box },
 ]
+
+const WENDING_CLI_PREFILL = '调用问鼎cli：我需要做...'
 
 const LAB_NAV: Array<{ id: Page; label: string; icon: typeof Home }> = [
   { id: 'workflows', label: '工作流', icon: Workflow },
@@ -99,7 +109,7 @@ export function App() {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('正在读取本地工作区')
   const [confirmation, setConfirmation] = useState<{ title: string; message: string; detail: string } | null>(null)
-  const [conversationNewTarget, setConversationNewTarget] = useState<HTMLDivElement | null>(null)
+  const creatingConversationRef = useRef(false)
   const [conversationTasksTarget, setConversationTasksTarget] = useState<HTMLDivElement | null>(null)
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH)
   const [railCollapsed, setRailCollapsed] = useState(false)
@@ -222,7 +232,18 @@ export function App() {
   }
 
   function navigate(id: PrimaryNavId) {
-    if (id === 'repository') setPage(repositoryTab)
+    if (id === 'agent') {
+      if (creatingConversationRef.current) return
+      creatingConversationRef.current = true
+      void action('正在新建对话', async () => {
+        try {
+          const agent = await window.stable.agent.create()
+          setState(current => current ? { ...current, ...agent } : current)
+          setAgentPrefill('')
+          setPage('agent')
+        } finally { creatingConversationRef.current = false }
+      })
+    } else if (id === 'repository') setPage(repositoryTab)
     else setPage(id)
   }
 
@@ -289,6 +310,16 @@ export function App() {
     })
   }
 
+  async function openWendingConversation() {
+    setError('')
+    const agent = await window.stable.agent.create()
+    setState((current) => current ? { ...current, ...agent } : current)
+    setAgentPrefill(WENDING_CLI_PREFILL)
+    setMode('work')
+    setPage('agent')
+    setStatus('问鼎 CLI 已载入，请确认提示词后发送')
+  }
+
   const launch = showLaunch ? <LaunchSplash running={launchRunning} onFinish={finishLaunch} /> : null
 
   if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div>{launch}</>
@@ -303,11 +334,10 @@ export function App() {
           <button type="button" role="tab" aria-selected={mode === 'work'} data-active={mode === 'work' || undefined} onClick={() => selectMode('work')}><BriefcaseBusiness size={14} aria-hidden="true" /><span>工作</span></button>
           <button type="button" role="tab" aria-selected={mode === 'lab'} data-active={mode === 'lab' || undefined} onClick={() => selectMode('lab')}><FlaskConical size={14} aria-hidden="true" /><span>实验室</span></button>
         </div>
-        {mode === 'work' && <div className="rail-conversation-new-slot" ref={setConversationNewTarget} />}
         <nav className="rail-nav" aria-label={mode === 'work' ? '工作模块' : '实验室模块'}>
           {(mode === 'work' ? WORK_NAV : LAB_NAV).map(({ id, label, icon: Icon }) => {
             const active = id === 'repository' ? isRepositoryPage(page) : page === id
-            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} aria-label={label} aria-current={active ? 'page' : undefined}>
+            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} disabled={id === 'agent' && busy === '正在新建对话'} title={id === 'agent' ? '新建任务对话' : undefined} aria-label={label} aria-current={active ? 'page' : undefined}>
               <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </button>
@@ -337,7 +367,7 @@ export function App() {
 
       <main className="main-frame" id="stable-main-frame">
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => setPage('agent')} conversationNewTarget={conversationNewTarget} conversationTasksTarget={conversationTasksTarget} />
+          <AgentPage active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => setPage('agent')} conversationTasksTarget={conversationTasksTarget} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
@@ -346,6 +376,7 @@ export function App() {
         {page !== 'agent' && page !== 'workflows' && !isRepositoryPage(page) && <div className="page-stage" data-page={page} key={page}>
           {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
+          {page === 'mcp-cli' && <McpCliPage onUseWending={openWendingConversation} />}
         </div>}
 
       </main>
@@ -358,6 +389,112 @@ export function App() {
       {conversationSearchOpen && <ConversationSearch query={conversationSearchQuery} results={conversationSearchResults} loading={conversationSearchLoading} error={conversationSearchError} activeConversationId={state.activeConversationId} onQueryChange={setConversationSearchQuery} onSelect={selectConversationSearchResult} onClose={() => closeConversationSearch()} />}
     </div>{launch}</>
   )
+}
+
+function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
+  const [tab, setTab] = useState<'cli' | 'mcp'>('cli')
+  const [cliStatus, setCliStatus] = useState<WendingCliStatus>({ id: 'wending-cli', status: 'checking', version: '0.9.0.dev9', detail: '正在读取内置服务状态。' })
+  const [using, setUsing] = useState(false)
+  const [localError, setLocalError] = useState('')
+  const [loginOpen, setLoginOpen] = useState(false)
+  const useLock = useRef(false)
+  const alive = useRef(true)
+  const useButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false; void window.stable.extensions.cancelWendingLogin().catch(() => {}) }
+  }, [])
+
+  function closeLogin() {
+    setLoginOpen(false)
+    void window.stable.extensions.cancelWendingLogin().then((login) => {
+      if (alive.current) setCliStatus((current) => ({ ...current, login }))
+    }).catch(() => {})
+    requestAnimationFrame(() => useButton.current?.focus())
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void window.stable.extensions.wendingStatus()
+      .then((value) => { if (!cancelled) setCliStatus(value) })
+      .catch((reason) => { if (!cancelled) setCliStatus({ id: 'wending-cli', status: 'unavailable', version: '0.9.0.dev9', detail: errorMessage(reason) }) })
+    return () => { cancelled = true }
+  }, [])
+
+  async function useWending() {
+    if (useLock.current || loginOpen || cliStatus.status === 'unavailable') return
+    useLock.current = true
+    setUsing(true)
+    setLocalError('')
+    setCliStatus((current) => ({ ...current, status: 'checking', detail: '正在后台验证内置命令。' }))
+    try {
+      const checked = await window.stable.extensions.prepareWending()
+      if (!alive.current) return
+      setCliStatus(checked)
+      if (checked.status !== 'ready') throw new Error(checked.detail)
+      if (checked.login?.phase === 'ready' && !checked.login.error) await onUseWending()
+      else setLoginOpen(true)
+    } catch (reason) {
+      setLocalError(errorMessage(reason))
+    } finally {
+      useLock.current = false
+      if (alive.current) setUsing(false)
+    }
+  }
+
+  const statusLabel = cliStatus.status === 'ready' ? 'CLI 可用' : cliStatus.status === 'bundled' ? '已内置' : cliStatus.status === 'unavailable' ? '不可用' : '检查中'
+  const StatusIcon = cliStatus.status === 'ready' ? Check : cliStatus.status === 'unavailable' ? CircleAlert : LoaderCircle
+
+  return <section className="extension-market page-stage" data-page="mcp-cli">
+    <header className="extension-market-head">
+      <div><span>TOOL CENTER</span><h1>MCP &amp; CLI</h1><p>把可调用的本地服务带入 Stable 对话。首版已内置问鼎 CLI，MCP 暂未开放。</p></div>
+      <div className="extension-market-note"><ShieldCheck size={18} aria-hidden="true" /><span>点击“使用”会先检查登录；进入对话只预填提示词，不会自动发送或执行业务任务。</span></div>
+    </header>
+    <div className="extension-market-body">
+      <div className="extension-tabs" role="tablist" aria-label="工具类型">
+        <button type="button" role="tab" aria-selected={tab === 'cli'} data-active={tab === 'cli' || undefined} onClick={() => setTab('cli')}>CLI <small>1</small></button>
+        <button type="button" role="tab" aria-selected={tab === 'mcp'} data-active={tab === 'mcp' || undefined} onClick={() => { if (loginOpen) closeLogin(); setTab('mcp') }}>MCP <small>0</small></button>
+      </div>
+
+      {tab === 'cli' ? <div className="extension-catalog" role="tabpanel" aria-label="CLI 服务">
+        <div className="extension-section-title"><div><span>内置服务</span><strong>开箱即用，无需另外安装 Python 或 pipx</strong></div><small>Windows x64</small></div>
+        <article className="extension-card" data-status={cliStatus.status}>
+          <div className="extension-card-mark" aria-hidden="true">问</div>
+          <div className="extension-card-copy">
+            <header><h2>问鼎 CLI</h2><span>内置</span></header>
+            <p>面向品牌经营的数据查询与分析命令行服务。在安全表单中登录，再进入 Agent 对话查数和分析。</p>
+            <div className="extension-tags" aria-label="能力标签"><span>经营数据</span><span>会员洞察</span><span>营销分析</span></div>
+            <div className="extension-runtime-status" data-status={cliStatus.status} role="status" aria-live="polite">
+              <StatusIcon className={cliStatus.status === 'checking' ? 'spin' : undefined} size={15} aria-hidden="true" />
+              <span><strong>{statusLabel}</strong>{cliStatus.detail}</span>
+            </div>
+            <p className="extension-login-status">{cliStatus.login?.phase === 'ready' ? `已登录 · ${cliStatus.login.brandLabel || '品牌已验证'}` : cliStatus.login?.phase === 'signed_out' ? '未登录' : cliStatus.login?.phase === 'choose_brand' ? '待选择品牌' : '登录尚未完成核验'}</p>
+            {localError && <p className="extension-card-error" role="alert">{localError}</p>}
+          </div>
+          <div className="extension-card-action">
+            <span>v{cliStatus.version}</span>
+            <button ref={useButton} className="button primary" type="button" disabled={using || loginOpen || cliStatus.status === 'unavailable'} onClick={() => void useWending()}>
+              {using ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <MessageSquareText size={16} aria-hidden="true" />}
+              {using ? '正在准备' : cliStatus.status === 'unavailable' ? '资源不可用' : '使用'}
+            </button>
+          </div>
+        </article>
+        {loginOpen && cliStatus.login && <WendingLoginPanel state={cliStatus.login} onState={(login) => setCliStatus((current) => ({ ...current, login }))} onReady={onUseWending} onClose={closeLogin} />}
+        <div className="extension-use-preview">
+          <div><SquarePromptIcon /><span>进入新对话后将自动填入</span></div>
+          <code>{WENDING_CLI_PREFILL}</code>
+          <ArrowRight size={17} aria-hidden="true" />
+        </div>
+      </div> : <div className="extension-empty" role="tabpanel" aria-label="MCP 服务">
+        <span><Network size={24} aria-hidden="true" /></span><h2>MCP 暂未接入</h2><p>后续接入的 MCP 服务会集中显示在这里。当前版本不会扫描或连接任何 MCP 服务。</p>
+      </div>}
+    </div>
+  </section>
+}
+
+function SquarePromptIcon() {
+  return <span className="extension-prompt-icon" aria-hidden="true"><Box size={15} /></span>
 }
 
 function RepositoryPage({ activeTab, onTabChange, state, update, action }: {
@@ -665,7 +802,7 @@ function emptyPreviewState(): PreviewState {
   return { url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 }
 
-function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationNewTarget, conversationTasksTarget }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationNewTarget: HTMLDivElement | null; conversationTasksTarget: HTMLDivElement | null }) {
+function AgentPage({ active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget }: { active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
   const [prompt, setPrompt] = useState('')
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
@@ -682,13 +819,27 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [modelStatus, setModelStatus] = useState('')
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, string>>({})
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
-  const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { runId: string; turn: number; step: number; content: string } | undefined>>({})
+  const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { id: string; runId: string; turn: number; step: number; time: number; content: string } | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
+  const { unread, markRead, markCompleted } = useConversationUnread(state.activeConversationId, active)
+  const completedUnreadCount = state.conversations.filter((item) => unread.has(item.id) && !runningMap[item.id]).length
+  useEffect(() => {
+    // Optional chaining keeps development/older preview bridges compatible.
+    void window.stable.appearance.setCompletedCount?.(completedUnreadCount).catch(() => {})
+  }, [completedUnreadCount])
+  const [, refreshOutbox] = useState(0)
+  const outboxRef = useRef<MessageOutbox<ComposerMessage>>()
+  if (!outboxRef.current) outboxRef.current = new MessageOutbox({ run: runQueuedMessage, steer: steerQueuedMessage, changed: () => refreshOutbox((value) => value + 1) })
+  const outbox = outboxRef.current
+  const queue = outbox.snapshot(state.activeConversationId)
+  const [queueEdit, setQueueEdit] = useState<{ conversationId: string; id: string; text: string }>()
+  const cancelBeforeDispatchRef = useRef<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const conversationWorkspaceRef = useRef<HTMLDivElement>(null)
   const previewRequestRef = useRef(0)
   const previewViewportRef = useRef<HTMLDivElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  useComposerAutosize(promptRef, prompt, active)
   const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
   const attachmentInputRef = useRef<HTMLInputElement>(null)
   const dataMenuRef = useRef<HTMLDetailsElement>(null)
@@ -708,6 +859,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const imageAttachments = attachments.filter(attachmentIsImage)
   const documentAttachments = attachments.filter((item) => !attachmentIsImage(item))
   const selectedReferences = referenceMap[state.activeConversationId] || []
+  const hasComposerContent = Boolean(prompt.trim() || attachments.length || selectedReferences.length)
+  const showComposerStop = running && !hasComposerContent
   const composerError = composerErrorMap[state.activeConversationId] || ''
   const activeCapability = CAPABILITY_OPTIONS.find((item) => item.id === activeConversation?.capability) || CAPABILITY_OPTIONS[0]
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
@@ -726,6 +879,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   activeConversationIdRef.current = state.activeConversationId
   stateRef.current = state
 
+  useEffect(() => { setPrompt(''); setSidebarOpen(false) }, [state.activeConversationId])
+
   useEffect(() => {
     if (!active || !prefill || running) return
     setPrompt(prefill); consumePrefill()
@@ -736,10 +891,24 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => {
     if (!conversationMenuId) return
+    const menuHost = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-conversation-menu="${conversationMenuId}"]`)).find((element) => element.getClientRects().length)
+    menuHost()?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus()
     const closeMenu = (event: globalThis.PointerEvent) => {
       if (!(event.target as Element).closest(`[data-conversation-menu="${conversationMenuId}"]`)) setConversationMenuId('')
     }
-    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setConversationMenuId('') }
+    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => {
+      const host = menuHost()
+      if (event.key === 'Escape') {
+        setConversationMenuId('')
+        host?.querySelector<HTMLButtonElement>(':scope > button')?.focus()
+      } else if (host?.contains(document.activeElement) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault()
+        const items = Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
+        const index = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+        items[next]?.focus()
+      }
+    }
     document.addEventListener('pointerdown', closeMenu)
     window.addEventListener('keydown', closeFromKeyboard)
     return () => { document.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeFromKeyboard) }
@@ -781,17 +950,19 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     if (event.eventType === 'agent/answer-delta') {
       if (event.delta) setStreamingAnswerMap((all) => {
           const current = all[event.conversationId]
-          const sameStep = current?.runId === event.runId && current.turn === event.turn && current.step === event.step
+          const sameStep = current?.runId === event.runId && current.id === event.id
           return { ...all, [event.conversationId]: {
             runId: event.runId,
+            id: event.id,
             turn: event.turn,
             step: event.step,
+            time: sameStep ? current.time : event.time,
             content: `${sameStep ? current.content : ''}${event.delta}`,
           } }
         })
       return
     }
-    if (event.eventType === 'tool/start' && !event.parentSessionId) {
+    if (event.eventType === 'agent/answer' || (event.eventType === 'tool/start' && !event.parentSessionId)) {
       setStreamingAnswerMap((all) => ({ ...all, [event.conversationId!]: undefined }))
     }
     setTraceMap((all) => {
@@ -818,8 +989,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   useEffect(() => {
     const element = scrollRef.current
     if (!element) return
-    element.scrollTo({ top: element.scrollHeight, behavior: running ? 'smooth' : 'auto' })
-  }, [state.messages.length, pendingPrompt, liveTrace?.items.length, streamingAnswer?.content.length, running])
+    element.scrollTo({ top: element.scrollHeight, behavior: running && !reduceConversationMotion ? 'smooth' : 'auto' })
+  }, [state.messages.length, pendingPrompt, liveTrace?.items.length, Boolean(streamingAnswer?.content), running])
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -1089,23 +1260,25 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     return true
   }
 
-  function ConversationRow({ item, shortcut = false }: { item: ConversationItem; shortcut?: boolean }) {
-    if (shortcut) return <article className="conversation-list-item conversation-pinned-shortcut" data-active={item.id === activeConversation.id || undefined}>
-      <Pin size={14} aria-hidden="true" />
-      <button className="conversation-select" type="button" onClick={() => selectConversation(item)}><strong>{item.title}</strong></button>
-    </article>
+  function ConversationRow({ item }: { item: ConversationItem }) {
     const menuOpen = conversationMenuId === item.id
-    return <article className="conversation-list-item" data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
+    const activity = runningMap[item.id] ? 'running' : unread.has(item.id) ? 'unread' : undefined
+    const activityLabel = activity === 'running' ? '任务执行中' : activity === 'unread' ? '已完成，未读' : ''
+    return <article className="conversation-list-item" data-conversation-id={item.id} data-activity={activity} data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
       <button className="conversation-pin-action" type="button" onClick={() => togglePin(item)} aria-label={item.pinned ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}><span>{item.pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</span></button>
       {editingId === item.id
         ? <input className="conversation-title-input" autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} onBlur={() => commitRename(item.id)} onKeyDown={(event) => { if (event.key === 'Enter') commitRename(item.id); if (event.key === 'Escape') setEditingId('') }} aria-label="对话名称" />
         : <button className="conversation-select" type="button" onClick={() => selectConversation(item)}>
           <strong>{item.title}</strong>
+          {activityLabel && <span className="sr-only">{activityLabel}</span>}
         </button>}
+      {activity && <span className="conversation-activity" title={activityLabel} aria-hidden="true">
+        {activity === 'running' ? <LoaderCircle className="spin" size={15} /> : <span className="conversation-unread-dot" />}
+      </span>}
       <div className="conversation-item-actions" data-conversation-menu={item.id}>
         <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setConversationMenuId((current) => current === item.id ? '' : item.id)}><MoreVertical size={15} aria-hidden="true" /></button>
         {menuOpen && <div className="conversation-action-menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => togglePin(item)}>{item.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{item.pinned ? '取消置顶' : '置顶任务'}</span></button>
+          <button type="button" role="menuitem" onClick={() => togglePin(item)}>{item.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{item.pinned ? '取消置顶任务' : '置顶任务'}</span></button>
           <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); void action('正在打开资源管理器', async () => { await window.stable.agent.openWorkspace() }) }}><FolderOpen size={14} /><span>在资源管理器打开</span></button>
           <button type="button" role="menuitem" disabled aria-disabled="true"><ListTree size={14} /><span>文件管理</span><small>暂不可用</small></button>
           <button type="button" role="menuitem" disabled aria-disabled="true"><Share2 size={14} /><span>分享</span><small>暂不可用</small></button>
@@ -1116,17 +1289,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     </article>
   }
 
-  function ConversationNewButton() {
-    return <div className="conversation-new-zone">
-      <button className="conversation-new" type="button" onClick={() => { openConversation(); replaceConversation(() => window.stable.agent.create(), '正在新建对话') }}><Plus size={17} aria-hidden="true" />新建对话</button>
-    </div>
-  }
-
   function ConversationTaskSections() {
     return <>
       {pinnedConversations.length > 0 && <section className="conversation-pinned" aria-label="置顶任务">
         <div className="conversation-section-head"><span>置顶</span><small>{pinnedConversations.length}</small></div>
-        <div className="conversation-list">{pinnedConversations.map((item) => <ConversationRow item={item} shortcut key={`pinned-${item.id}`} />)}</div>
+        <div className="conversation-list">{pinnedConversations.map((item) => ConversationRow({ item }))}</div>
       </section>}
       <section className="conversation-history-card" aria-label="任务清单">
         <div className="conversation-section-head"><span>任务清单</span></div>
@@ -1135,69 +1302,103 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
             <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
           </article>)}
-          {state.conversations.filter((item) => !item.pinned).map((item) => <ConversationRow item={item} key={`task-${item.id}`} />)}
+          {state.conversations.filter((item) => !item.pinned).map((item) => ConversationRow({ item }))}
         </div>
       </section>
     </>
   }
 
-  async function send() {
-    if ((!prompt.trim() && !attachments.length && !selectedReferences.length) || running) return
+  function send() {
+    if (!prompt.trim() && !attachments.length && !selectedReferences.length) return
     if (deepSeekImageBlocked) {
       setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: 'DeepSeek 暂不支持图片分析，请切换其他模型。' }))
       window.requestAnimationFrame(() => promptRef.current?.focus())
       return
     }
     const conversationId = state.activeConversationId
-    const originalPrompt = prompt
-    const value = prompt.trim() || '请读取并分析本次引用的资源与附件。'
-    const currentAttachments = [...attachments]
-    const currentReferences = [...selectedReferences]
-    const previousMessageIds = new Set(state.messages.map((item) => item.id))
+    try {
+      const pendingQueue = outbox.snapshot(conversationId)
+      if (!pendingQueue.running && !pendingQueue.items.length) outbox.resume(conversationId)
+      outbox.enqueue(conversationId, {
+        prompt: prompt.trim() || '请读取并分析本次引用的资源与附件。',
+        attachments: attachments.map((item) => ({ ...item })),
+        references: selectedReferences.map((item) => ({ ...item })),
+      })
+      copyUndoRef.current[conversationId] = undefined
+      setPrompt(''); setAttachments([]); setReferences([])
+      setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
+      window.requestAnimationFrame(() => promptRef.current?.focus())
+    } catch (error) {
+      setComposerErrorMap((current) => ({ ...current, [conversationId]: errorMessage(error) }))
+    }
+  }
+
+  async function runQueuedMessage(conversationId: string, entry: OutboxEntry<ComposerMessage>): Promise<OutboxResult> {
+    cancelBeforeDispatchRef.current[conversationId] = false
+    const { prompt: value, attachments: currentAttachments, references: currentReferences } = entry.payload
     const messageAttachments: NonNullable<MessageItem['attachments']> = [
       ...currentReferences.map(({ id, kind, name, size, type }) => ({ id, kind, name, size, type })),
       ...currentAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' as const : 'attachment' as const, name: item.name, size: item.size, type: item.type, path: item.path })),
     ]
-    copyUndoRef.current[conversationId] = undefined
     setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
-    setPrompt(''); setAttachments([]); setReferences([])
     setPendingMap((current) => ({ ...current, [conversationId]: { content: value, attachments: messageAttachments } }))
     setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', items: [], status: 'running', startedAt: Date.now() } }))
     setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
     setRunningMap((current) => ({ ...current, [conversationId]: true }))
+    markRead(conversationId)
     let completed = false
+    let terminalStatus: AgentTraceStatus = 'failed'
+    let previousMessageIds: Set<string> | undefined
+    let dispatched = false
     try {
-      await window.stable.agent.configure(conversationId, activeConversation.capability, [])
+      const before = await window.stable.agent.state(conversationId)
+      previousMessageIds = new Set(before.messages.map((item) => item.id))
+      const conversation = before.conversations.find((item) => item.id === conversationId)
+      if (!conversation) throw new Error('找不到这个对话。')
+      await window.stable.agent.configure(conversationId, conversation.capability, [])
+      if (cancelBeforeDispatchRef.current[conversationId]) {
+        terminalStatus = 'cancelled'
+        return { accepted: false, continue: false, error: '已停止发送，消息仍保留在队列中。' }
+      }
+      dispatched = true
       const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences)
       updateAgentForConversation(result, conversationId)
       completed = true
+      const lastAnswer = [...result.messages].reverse().find((item) => item.role === 'assistant')
+      if (lastAnswer && !previousMessageIds.has(lastAnswer.id) && (!lastAnswer.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed')) markCompleted(conversationId)
+      return { accepted: true, continue: !lastAnswer?.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed' }
     } catch (error) {
-      let messageAccepted = true
+      let messageAccepted = dispatched
       try {
         const recovered = await window.stable.agent.state(conversationId)
-        messageAccepted = recovered.messages.some((item) => item.role === 'user' && !previousMessageIds.has(item.id))
+        messageAccepted = Boolean(dispatched && previousMessageIds && recovered.messages.some((item) => item.role === 'user' && !previousMessageIds!.has(item.id)))
         updateAgentForConversation(recovered, conversationId)
-      } catch { /* without confirmed server state, avoid restoring a possibly accepted message */ }
-      if (!messageAccepted) {
-        if (activeConversationIdRef.current === conversationId) setPrompt((current) => current.trim() ? current : originalPrompt)
-        setAttachmentMap((current) => {
-          const existing = current[conversationId] || []
-          const restored = [...currentAttachments, ...existing.filter((item) => !currentAttachments.some((sent) => sent.path === item.path))]
-          return { ...current, [conversationId]: restored }
-        })
-        setReferenceMap((current) => {
-          const existing = current[conversationId] || []
-          const restored = [...currentReferences, ...existing.filter((item) => !currentReferences.some((sent) => sent.kind === item.kind && sent.id === item.id))]
-          return { ...current, [conversationId]: restored }
-        })
-      }
-      setComposerErrorMap((current) => ({ ...current, [conversationId]: errorMessage(error) }))
+      } catch { /* do not resend a possibly accepted message without a confirmed receipt */ }
+      const detail = errorMessage(error)
+      const feedback = taskErrorMessage(detail)
+      if (!feedback) terminalStatus = 'cancelled'
+      setComposerErrorMap((current) => ({ ...current, [conversationId]: feedback }))
+      return { accepted: messageAccepted, continue: false, error: detail }
     } finally {
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
-      setTraceMap((current) => ({ ...current, [conversationId]: completed ? undefined : current[conversationId] }))
+      setTraceMap((current) => {
+        const trace = current[conversationId]
+        return { ...current, [conversationId]: completed || !trace ? undefined : { ...trace, status: trace.status === 'running' ? terminalStatus : trace.status, endedAt: trace.endedAt || Date.now() } }
+      })
       setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
       setRunningMap((current) => ({ ...current, [conversationId]: false }))
     }
+  }
+
+  async function steerQueuedMessage(conversationId: string, entry: OutboxEntry<ComposerMessage>) {
+    const result = await window.stable.agent.steer(conversationId, entry.id, entry.payload.prompt, entry.payload.attachments, entry.payload.references)
+    updateAgentForConversation(result, conversationId)
+  }
+
+  function stopConversation() {
+    cancelBeforeDispatchRef.current[activeConversation.id] = true
+    outbox.pause(activeConversation.id)
+    void window.stable.agent.cancel(activeConversation.id).catch((error) => setComposerErrorMap((current) => ({ ...current, [activeConversation.id]: taskErrorMessage(errorMessage(error)) })))
   }
 
   function updateAgentForConversation(result: AgentState, conversationId: string) {
@@ -1208,11 +1409,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
 
   return <section className="agent-layout reveal" data-sidebar-open={sidebarOpen || undefined}>
-    {conversationNewTarget && createPortal(<ConversationNewButton />, conversationNewTarget)}
-    {conversationTasksTarget && createPortal(<ConversationTaskSections />, conversationTasksTarget)}
+    {conversationTasksTarget && createPortal(ConversationTaskSections(), conversationTasksTarget)}
     <aside className="conversation-sidebar conversation-sidebar-mobile" aria-label="对话任务">
-      <ConversationNewButton />
-      <ConversationTaskSections />
+      {ConversationTaskSections()}
     </aside>
     <div className="conversation-workspace" data-preview-open={Boolean(previewTarget) || undefined} ref={conversationWorkspaceRef} style={previewTarget ? { '--preview-width': `${previewWidth || 320}px` } as CSSProperties : undefined}>
     <div className="conversation" data-empty={conversationIsEmpty || undefined}>
@@ -1224,8 +1423,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         <div className="conversation-stream">
           {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
-          {liveTrace && liveTrace.items.some((item) => item.kind !== 'approval' || item.status !== 'running') && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} />}
-          {streamingAnswer?.content && <article className="assistant-turn streaming-assistant-turn" aria-live="polite"><div className="assistant-answer" data-streaming="true"><div className="assistant-mark" aria-hidden="true">S</div><div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={streamingAnswer.content} /></div></div></article>}
+          {liveTrace && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
           {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
             if (!item.requestId) return
             await window.stable.agent.answerApproval(activeConversation.id, item.requestId, allowed)
@@ -1234,6 +1432,29 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         </div>
       </div>
       <div className="composer">
+        {queue.items.length > 0 && <section className="message-queue" aria-label="待发送消息">
+          <div className="queue-heading"><span role="status" aria-atomic="true">{queue.paused ? '排队已暂停' : '排队中'} · {queue.items.length} 条</span>
+            {queue.paused && <button type="button" disabled={queueEdit?.conversationId === activeConversation.id} onClick={() => outbox.resume(activeConversation.id)}>继续队列</button>}
+          </div>
+          <div className="queue-items">{queue.items.map((item) => <div className="queue-item" key={item.id}>
+            {queueEdit?.conversationId === activeConversation.id && queueEdit.id === item.id ? <div className="queue-edit">
+              <textarea aria-label="编辑排队消息" value={queueEdit.text} autoFocus onChange={(event) => setQueueEdit({ ...queueEdit, text: event.target.value })} onKeyDown={(event) => { if (event.key === 'Escape') setQueueEdit(undefined) }} />
+              <div><button type="button" disabled={!queueEdit.text.trim()} onClick={() => { outbox.edit(activeConversation.id, item.id, { ...item.payload, prompt: queueEdit.text.trim() }); setQueueEdit(undefined) }}>保存</button><button type="button" onClick={() => setQueueEdit(undefined)}>取消</button></div>
+            </div> : <>
+              <div className="queue-copy"><p>{item.payload.prompt}</p>
+                {(item.payload.attachments.length > 0 || item.payload.references.length > 0) && <small>{[...item.payload.attachments, ...item.payload.references].map((resource) => resource.name).join(' · ')}</small>}
+                {item.error && taskErrorMessage(errorMessage(item.error)) && <small className="queue-error" role="alert">{errorMessage(item.error)}</small>}
+              </div>
+              <div className="queue-actions">
+                <button type="button" disabled={item.status === 'steering' || queue.items.some((entry) => entry.status === 'steering')} onClick={() => void outbox.steer(activeConversation.id, item.id)} title="立即补充到当前任务，不中断当前执行；下一模型步骤读取">
+                  {item.status === 'steering' ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <ArrowRight size={14} aria-hidden="true" />}{item.status === 'steering' ? '正在发送' : queue.running ? '调整方向' : '立即发送'}
+                </button>
+                <button type="button" disabled={item.status === 'steering'} aria-label="编辑这条排队消息" onClick={() => { outbox.pause(activeConversation.id); setQueueEdit({ conversationId: activeConversation.id, id: item.id, text: item.payload.prompt }) }}><Pencil size={14} aria-hidden="true" /></button>
+                <button type="button" disabled={item.status === 'steering'} aria-label="删除这条排队消息" onClick={() => outbox.remove(activeConversation.id, item.id)}><Trash2 size={14} aria-hidden="true" /></button>
+              </div>
+            </>}
+          </div>)}</div>
+        </section>}
         <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
           <div className="composer-box">
             {imageAttachments.length > 0 && <div className="composer-image-selections" aria-label="待发送图片">
@@ -1252,8 +1473,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
             <textarea ref={promptRef} id="agent-prompt" value={prompt} onPaste={handlePromptPaste} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
-              if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() }
-            }} placeholder="给 Stable 一个任务，或选择、拖入、粘贴图片与文件" disabled={running} />
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send() }
+            }} placeholder={running ? '继续输入，发送后将排队等待…' : '给 Stable 一个任务，或选择、拖入、粘贴图片与文件'} />
             <div className="composer-actions">
               <div className="composer-tools">
                 <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
@@ -1324,9 +1545,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   </button>)}
                 </div>
               </details>
-              {running
-                ? <button className="composer-stop" type="button" onClick={() => window.stable.agent.cancel(activeConversation.id)} aria-label="停止执行"><CircleStop size={20} /></button>
-                : <button className="composer-send" type="button" onClick={() => void send()} disabled={!prompt.trim() && !attachments.length && !selectedReferences.length} aria-label="发送任务"><ArrowUp size={20} /></button>}
+              <button className={showComposerStop ? 'composer-stop' : 'composer-send'} type="button" onClick={showComposerStop ? stopConversation : send} disabled={!hasComposerContent && !running} aria-label={showComposerStop ? '停止执行' : (hasComposerContent && (running || queue.items.length) ? '加入排队' : '发送任务')} title={showComposerStop ? '停止执行' : (hasComposerContent ? (running ? '加入队列，当前任务结束后自动发送' : '发送任务') : '请输入内容或添加附件后发送')}>
+                <span className="composer-action-visual" aria-hidden="true">
+                  {showComposerStop ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" /></svg> : <ArrowUp size={20} aria-hidden="true" />}
+                </span>
+              </button>
               <span className="sr-only" role="status" aria-live="polite">{modelStatus}</span>
             </div>
           </div>
@@ -1382,7 +1605,7 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
 function MessageTurn({ message, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { message: MessageItem; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} />
   return <article className="assistant-turn">
-    {message.trace?.length ? <RunTrace items={message.trace} status="completed" /> : null}
+    {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} /> : null}
     <div className="assistant-answer">
       <div className="assistant-mark" aria-hidden="true">S</div>
       <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
@@ -1601,135 +1824,65 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
   </article>
 }
 
-const TRACE_MODULES: Record<AgentTraceKind, { label: string; icon: typeof Database }> = {
-  context: { label: '准备上下文', icon: Database },
-  reasoning: { label: 'AI 处理', icon: Activity },
-  tool: { label: '工具调用', icon: Wrench },
-  approval: { label: '权限审批', icon: ShieldCheck },
-  status: { label: 'Stable 运行', icon: Clock3 },
-}
-
-function traceModuleStatus(items: AgentTraceItem[]): AgentTraceStatus {
-  if (items.some((item) => item.status === 'running')) return 'running'
-  if (items.some((item) => item.status === 'failed')) return 'failed'
-  if (items.some((item) => item.status === 'cancelled')) return 'cancelled'
-  return 'completed'
-}
-
-function TraceModuleCard({ kind, items }: { kind: AgentTraceKind; items: AgentTraceItem[] }) {
-  const [index, setIndex] = useState(Math.max(0, items.length - 1))
-  const [paused, setPaused] = useState(false)
-  const module = TRACE_MODULES[kind]
-  const Icon = module.icon
-  const moduleStatus = traceModuleStatus(items)
-  const safeIndex = items.length ? index % items.length : 0
-  const item = items[safeIndex]
-
-  useEffect(() => setIndex(Math.max(0, items.length - 1)), [items.length])
+function TraceText({ content, live = false }: { content: string; live?: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const [overflow, setOverflow] = useState(false)
+  const textRef = useRef<HTMLDivElement>(null)
+  const textId = useId()
   useEffect(() => {
-    if (paused || items.length < 2) return
-    const timer = window.setInterval(() => setIndex((value) => (value + 1) % items.length), 2000)
-    return () => window.clearInterval(timer)
-  }, [items.length, paused])
+    const element = textRef.current
+    if (!element) return
+    const measure = () => setOverflow(element.scrollHeight > parseFloat(getComputedStyle(element).lineHeight) * 2 + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [content])
+  return <div className="trace-text" data-live={live || undefined}>
+    <div ref={textRef} id={textId} className="trace-text-content" data-expanded={expanded}>{renderInline(content, textId)}</div>
+    {(overflow || expanded) && <button type="button" className="trace-text-toggle" aria-expanded={expanded} aria-controls={textId} onClick={() => setExpanded((value) => !value)}>{expanded ? '收起摘要' : '展开摘要'}</button>}
+  </div>
+}
 
-  if (!item) return null
-  return <article
-    className="trace-module-card"
-    data-status={moduleStatus}
-    data-paused={paused || undefined}
-    onMouseEnter={() => setPaused(true)}
-    onMouseLeave={() => setPaused(false)}
-    onFocusCapture={() => setPaused(true)}
-    onBlurCapture={() => setPaused(false)}
-    tabIndex={0}
-  >
-    <header className="trace-card-head">
-      <span className="trace-card-icon"><Icon size={15} aria-hidden="true" /></span>
-      <strong>{module.label}</strong>
-      <small>{safeIndex + 1}/{items.length}</small>
-      <span className="trace-card-state" aria-label={moduleStatus === 'running' ? '运行中' : moduleStatus === 'completed' ? '已完成' : '未完成'}>
-        {moduleStatus === 'running' ? <LoaderCircle className="spin" size={14} /> : moduleStatus === 'completed' ? <Check size={14} /> : <CircleAlert size={14} />}
-      </span>
-    </header>
-    <div className="trace-card-stage">
-      <div className="trace-card-frame" key={`${item.id}-${item.status}-${safeIndex}`}>
-        <strong>{item.title}</strong>
-        {item.detail && <small>{item.detail}</small>}
-      </div>
+function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status: AgentTraceStatus; agentName?: string }) {
+  const itemStatus = traceItemStatus(item, status)
+  const statusLabel = item.status === 'running' && status !== 'running'
+    ? (status === 'cancelled' ? '已取消' : '已结束')
+    : itemStatus === 'running' ? '运行中' : itemStatus === 'completed' ? '已完成' : itemStatus === 'cancelled' ? '已取消' : '执行失败'
+  const Icon = item.entity === 'agent' ? Bot : item.kind === 'approval' ? ShieldCheck : item.kind === 'tool' ? Wrench : CircleAlert
+  return <details className="trace-action" data-status={itemStatus}>
+    <summary>
+      <Icon size={15} aria-hidden="true" />
+      <span>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{traceActionLabel(item)}</span>
+      <span className="trace-action-state">{itemStatus === 'running' && <LoaderCircle className="spin" size={13} aria-hidden="true" />}{statusLabel}</span>
+      <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
+    </summary>
+    <div className="trace-action-detail">
+      {item.inputDetail && <pre>{item.inputDetail}</pre>}
+      {item.detail && item.detail !== item.inputDetail && <pre>{item.detail}</pre>}
+      {!item.detail && !item.inputDetail && <p>{statusLabel}，没有更多详情。</p>}
     </div>
-  </article>
+  </details>
 }
 
-interface SubagentTraceView {
-  id: string
-  name: string
-  status: AgentTraceStatus
-  currentTask: string
-  latestAction: string
-}
-
-function buildSubagentTraceViews(items: AgentTraceItem[]): SubagentTraceView[] {
-  const childSessions = new Set(items
-    .filter((item) => item.entity === 'agent' && item.sessionId && item.parentSessionId)
-    .map((item) => item.sessionId!))
-
-  return Array.from(childSessions).map((sessionId) => {
-    const sessionItems = items.filter((item) => item.sessionId === sessionId).sort((a, b) => a.time - b.time)
-    const descriptor = sessionItems.find((item) => item.eventType === 'agent/descriptor')
-    const start = [...sessionItems].reverse().find((item) => item.eventType === 'agent/start')
-    const lifecycle = [...sessionItems].reverse().find((item) => item.eventType === 'agent/end' || item.eventType === 'agent/start')
-    const latestActionItem = [...sessionItems].reverse().find((item) => item.entity === 'tool' || item.kind === 'reasoning') || sessionItems[sessionItems.length - 1]
-    const status = lifecycle?.status || traceModuleStatus(sessionItems)
-    return {
-      id: sessionId,
-      name: descriptor?.title || start?.title || '子 Agent',
-      status,
-      currentTask: status === 'running'
-        ? (start?.detail || descriptor?.detail || '正在执行委派任务')
-        : (lifecycle?.detail || (status === 'completed' ? '已完成委派任务' : '委派任务未完成')),
-      latestAction: latestActionItem
-        ? `${latestActionItem.title}${latestActionItem.detail ? ` · ${latestActionItem.detail}` : ''}`
-        : '尚未记录动作',
-    }
-  })
-}
-
-function SubagentTraceCard({ agent }: { agent: SubagentTraceView }) {
-  const statusLabel = agent.status === 'running' ? '运行中' : agent.status === 'completed' ? '已完成' : agent.status === 'cancelled' ? '已取消' : '执行失败'
-  return <article className="trace-module-card trace-subagent-card" data-status={agent.status}>
-    <header className="trace-card-head">
-      <span className="trace-card-icon"><Bot size={15} aria-hidden="true" /></span>
-      <strong>{agent.name}</strong>
-      <small>{statusLabel}</small>
-      <span className="trace-card-state" aria-label={statusLabel}>
-        {agent.status === 'running' ? <LoaderCircle className="spin" size={14} /> : agent.status === 'completed' ? <Check size={14} /> : <CircleAlert size={14} />}
-      </span>
-    </header>
-    <div className="trace-subagent-body trace-card-frame" key={`${agent.id}-${agent.status}-${agent.latestAction}`}>
-      <div><small>当前任务</small><strong>{agent.currentTask}</strong></div>
-      <div><small>最新动作</small><span>{agent.latestAction}</span></div>
-    </div>
-  </article>
-}
-
-function RunTrace({ items, status, active = false, startedAt, endedAt }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number }) {
+function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
   const [expanded, setExpanded] = useState(active)
-  const firstEventAt = useMemo(() => Math.min(...items.map((item) => item.time)), [items])
-  const lastEventAt = useMemo(() => Math.max(...items.map((item) => item.time)), [items])
+  const timelineId = useId()
+  const firstEventAt = useMemo(() => items.length ? Math.min(...items.map((item) => item.startedAt ?? item.time)) : Date.now(), [items])
+  const lastEventAt = useMemo(() => items.length ? Math.max(...items.map((item) => item.time)) : Date.now(), [items])
   const timerStartedAt = startedAt ?? firstEventAt
   const timerEndedAt = endedAt ?? (status === 'running' ? undefined : lastEventAt)
   const [now, setNow] = useState(() => Date.now())
-  const subagents = useMemo(() => buildSubagentTraceViews(items), [items])
-  const modules = useMemo(() => {
-    const subagentSessionIds = new Set(subagents.map((agent) => agent.id))
-    const grouped = new Map<AgentTraceKind, AgentTraceItem[]>()
-    items.filter((item) => !item.sessionId || !subagentSessionIds.has(item.sessionId))
-      .forEach((item) => grouped.set(item.kind, [...(grouped.get(item.kind) || []), item]))
-    return Array.from(grouped.entries())
-  }, [items, subagents])
+  const timeline = useMemo(() => {
+    const entries = streaming?.content && !items.some((item) => item.id === streaming.id)
+      ? [...items, { id: streaming.id, runId: '', kind: 'reasoning' as const, eventType: 'agent/answer' as const, title: '', status: 'running' as const, time: streaming.time, content: streaming.content }]
+      : items
+    return buildTraceTimeline(entries, finalContent)
+  }, [items, streaming, finalContent])
+  const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId, item.title]))
   useEffect(() => {
-    if (active) { setExpanded(true); return }
-    if (status === 'completed') setExpanded(false)
+    if (active && status === 'running') { setExpanded(true); return }
+    if (status !== 'running') setExpanded(false)
   }, [active, status])
   useEffect(() => {
     setNow(Date.now())
@@ -1739,15 +1892,17 @@ function RunTrace({ items, status, active = false, startedAt, endedAt }: { items
   }, [status, timerStartedAt])
   const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
-    <div className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}><span>已执行</span><strong>{elapsed}</strong></div>
-    <button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={`执行过程，${expanded ? '已展开' : '已折叠'}`}>
-      <span className="trace-summary-icon">{status === 'running' ? <LoaderCircle className="spin" size={16} /> : status === 'completed' ? <Check size={16} /> : <CircleAlert size={16} />}</span>
-      <strong>执行过程</strong>
-      <ChevronRight className="trace-chevron" data-open={expanded} size={17} />
+    <button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
+      {status === 'running' && <LoaderCircle className="spin" size={14} aria-hidden="true" />}
+      <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status === 'running' ? '思考中 · ' : '用时 '}{elapsed}</span>
+      {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
+      <ChevronRight className="trace-chevron" data-open={expanded} size={15} aria-hidden="true" />
     </button>
-    {expanded && <div className="trace-card-grid">
-      {modules.map(([kind, moduleItems]) => <TraceModuleCard kind={kind} items={moduleItems} key={kind} />)}
-      {subagents.map((agent) => <SubagentTraceCard agent={agent} key={agent.id} />)}
+    {expanded && <div className="trace-timeline" id={timelineId}>
+      {timeline.map((item) => item.eventType === 'agent/answer'
+        ? <TraceText key={item.id} content={item.content!} live={item.id === streaming?.id} />
+        : <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId) || '子 Agent' : undefined} />)}
+      {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在准备任务…' : '本次任务没有额外执行记录。'}</p>}
     </div>}
   </section>
 }

@@ -1,4 +1,7 @@
 node_modules/
+__pycache__/
+*.pyc
+.crm-cli/
 dist/
 runtime/
 release-*/

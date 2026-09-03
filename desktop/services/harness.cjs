@@ -1,10 +1,12 @@
 'use strict'
 
 const { spawn, spawnSync } = require('node:child_process')
+const { randomUUID } = require('node:crypto')
 const { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
 const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
+const { TOOL_SPECS, installBuiltinBridge } = require('./builtin-tool-bridge.cjs')
 
 const ZHIPU_SEARCH_PROVIDER_ID = 'zhipu-official'
 const ZHIPU_SEARCH_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/web_search'
@@ -88,11 +90,12 @@ const ZHIPU_SEARCH_BRIDGE = [
 const STDIN_BRIDGE = [
   "import path from 'node:path';",
   "import { pathToFileURL } from 'node:url';",
+  "import { createInterface } from 'node:readline';",
   "import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';",
-  'const chunks=[];',
-  'for await (const chunk of process.stdin) chunks.push(chunk);',
+  "const inputLines=createInterface({input:process.stdin,crlfDelay:Infinity});",
+  "let receiveControl;inputLines.on('line',(line)=>{if(!receiveControl)return;try{const message=JSON.parse(line);if(builtinBridge?.receive(message))return;receiveControl(message);}catch{}});",
+  "const rawInput=await new Promise((resolve,reject)=>{inputLines.once('line',resolve);inputLines.once('close',()=>reject(new Error('缺少初始任务')));});",
   'const cli=process.argv[1];',
-  "const rawInput=Buffer.concat(chunks).toString('utf8');",
   "let task=rawInput;let imageInputs=[];try{const payload=JSON.parse(rawInput);if(payload&&typeof payload.prompt==='string'){task=payload.prompt;imageInputs=Array.isArray(payload.images)?payload.images:[];}}catch{}",
   "const packageEntry=(name)=>path.join(path.dirname(cli),'..','..',name,'lib','index.js');",
   "const {AgentLoop}=await import(pathToFileURL(packageEntry('dsh-agent-loop')).href);",
@@ -101,7 +104,10 @@ const STDIN_BRIDGE = [
   ZHIPU_SEARCH_BRIDGE,
   "const zhipuSearchKey=String(process.env.STABLE_ZHIPU_SEARCH_API_KEY||'');if(zhipuSearchKey){const zhipuSearchProvider=createZhipuSearchProvider({apiKey:zhipuSearchKey,WebError});WebRuntime.prototype.search=function(request,signal){return zhipuSearchProvider.search(request,signal);};}",
   "const originalCreateAgent=AgentLoop.prototype.createAgent;let imagesClaimed=false;",
-  "AgentLoop.prototype.createAgent=async function(...args){const handle=await originalCreateAgent.apply(this,args);if(imagesClaimed||!imageInputs.length)return handle;imagesClaimed=true;const attachments=handle.agent.ctx.get('attachments');if(!attachments)throw new Error('Harness 图片存储服务不可用。');const refs=[];for(const input of imageInputs){const resolved=path.resolve(String(input.path||''));const relative=path.relative(process.cwd(),resolved);if(!resolved||relative.startsWith('..')||path.isAbsolute(relative))throw new Error('图片只能从 Stable 工作区发送。');const mediaType=String(input.mediaType||'');const ref=await attachments.saveImage({data:readFileSync(resolved),mediaType,name:String(input.name||path.basename(resolved))});refs.push(ref);}const originalFollowup=handle.agent.followup.bind(handle.agent);handle.agent.followup=(message)=>originalFollowup(createUserMessage({content:[...message.content,...refs.map((attachment)=>({type:'image',attachment}))],source:message.source}));return handle;};",
+  "const loadImages=async(agent,inputs)=>{const attachments=agent.ctx.get('attachments');if(!attachments&&inputs.length)throw new Error('Harness 图片存储服务不可用。');const blocks=[];for(const input of inputs){const resolved=path.resolve(String(input.path||''));const relative=path.relative(process.cwd(),resolved);if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw new Error('图片只能从 Stable 工作区发送。');const attachment=await attachments.saveImage({data:readFileSync(resolved),mediaType:String(input.mediaType||''),name:String(input.name||path.basename(resolved))});blocks.push({type:'image',attachment});}return blocks;};",
+  "let rootAgent;let steeringChain=Promise.resolve();",
+  "receiveControl=(payload)=>{steeringChain=steeringChain.then(async()=>{try{if(payload?.type!=='steer'||typeof payload.id!=='string'||typeof payload.prompt!=='string')return;if(!rootAgent||rootAgent.status!=='running')throw new Error('当前模型步骤已经结束或尚未开始，请继续排队发送。');const blocks=await loadImages(rootAgent,Array.isArray(payload.images)?payload.images:[]);if(rootAgent.status!=='running')throw new Error('当前任务已经结束，请继续排队发送。');rootAgent.steer(createUserMessage({content:[{type:'text',text:payload.prompt},...blocks],source:{kind:'user'}}));publish({eventType:'control/steer',requestId:payload.id,accepted:true});}catch(error){publish({eventType:'control/steer',requestId:payload.id,accepted:false,detail:String(error.message||error)});}});};",
+  "AgentLoop.prototype.createAgent=async function(...args){const handle=await originalCreateAgent.apply(this,args);if(!rootAgent&&!handle.agent.session.header.parentSession)rootAgent=handle.agent;builtinBridge?.register(handle.agent);if(imagesClaimed||!imageInputs.length)return handle;imagesClaimed=true;const blocks=await loadImages(handle.agent,imageInputs);const originalFollowup=handle.agent.followup.bind(handle.agent);handle.agent.followup=(message)=>originalFollowup(createUserMessage({content:[...message.content,...blocks],source:message.source}));return handle;};",
   "const sessionPath=path.join(path.dirname(cli),'..','..','dsh-session','lib','index.js');",
   'const {Session}=await import(pathToFileURL(sessionPath).href);',
   'const originalAppend=Session.prototype.append;',
@@ -110,6 +116,8 @@ const STDIN_BRIDGE = [
   "const clean=(value)=>String(value??'').replace(/[\\r\\n\\t]+/g,' ').replace(/\\s+/g,' ').trim().slice(0,180);",
   "const detail=(raw)=>{try{const value=JSON.parse(raw||'{}');const keys=['path','file','command','cmd','query','pattern','url'];for(const key of keys){if(value?.[key])return clean(value[key]);}}catch{}return '';};",
   "const publish=(event)=>process.stderr.write('STABLE_EVENT\\t'+JSON.stringify(event)+'\\n');",
+  "const {defineTool}=await import(pathToFileURL(packageEntry('dsh-tools')).href);",
+  `const builtinBridge=process.env.STABLE_BUILTIN_TOOLS==='1'?(${installBuiltinBridge.toString()})(${JSON.stringify(TOOL_SPECS)},defineTool,publish):null;`,
   "const approvalDir=process.env.STABLE_APPROVAL_DIR;",
   "if(approvalDir){",
   "  mkdirSync(approvalDir,{recursive:true});",
@@ -141,6 +149,7 @@ const STDIN_BRIDGE = [
   "  else if(type==='tool/result'){const key=`${sessionId}:${data.callId}`;const failed=Boolean(data.error);publish({...base,id:`${sessionId}:tool:${data.callId}`,kind:'tool',entity:'tool',eventType:'tool/end',title:`使用工具 ${clean(toolNames.get(key)||'工具')}`,detail:failed?clean(data.error?.message||'执行失败'):'执行完成',status:failed?'failed':'completed'});}",
   "  else if(type==='assistant/message') publish({...base,id:`${sessionId}:reasoning:${data.turn}:${data.step}`,kind:'reasoning',title:'整理回答',detail:parentSessionId?'正在向总控报告结果':'正在生成最终回答',status:'completed'});",
   "  else if(type==='turn/end'){const completed=data.reason?.kind==='completed';const cancelled=data.reason?.kind==='interrupted';publish({...base,id:`${sessionId}:agent`,kind:'status',entity:'agent',eventType:'agent/end',title:agentNames.get(sessionId)||(parentSessionId?'子 Agent':'Stable 总控'),detail:completed?(parentSessionId?'已向总控提交结果':'已完成任务'):clean(data.reason?.error?.message||data.reason?.kind||'执行中断'),status:completed?'completed':cancelled?'cancelled':'failed'});}",
+  "  if(type==='turn/end'&&!parentSessionId){inputLines.close();process.stdin.destroy();}",
   '  return event;',
   '};',
   "process.argv=[process.execPath,cli,'--profile','headless',task];",
@@ -192,7 +201,7 @@ function cleanupHarnessRunDirectory(dshHome, expectedRunsRoot) {
 }
 
 class HarnessRunner {
-  constructor(options) { this.options = options; this.child = undefined; this.cancelled = false; this.approvalDir = undefined }
+  constructor(options) { this.options = options; this.child = undefined; this.cancelled = false; this.approvalDir = undefined; this.steerReady = false; this.steering = new Map() }
 
   runtimePaths() {
     const candidates = []
@@ -252,14 +261,19 @@ class HarnessRunner {
     this.approvalDir = path.join(dshHome, 'approvals', `${Date.now()}-${Math.random().toString(16).slice(2)}`)
     mkdirSync(this.approvalDir, { recursive: true })
     this.cancelled = false
+    this.steerReady = false
     mkdirSync(this.options.workspace, { recursive: true })
     const environment = buildHarnessEnvironment({
       baseEnvironment: this.options.environment ?? process.env,
       model, apiKey, approvalDir: this.approvalDir, dshHome,
       agentsHome: path.join(this.options.userData, 'agents'), sandboxMode,
     })
+    if (this.options.builtinTools) environment.STABLE_BUILTIN_TOOLS = '1'
+    else delete environment.STABLE_BUILTIN_TOOLS
+    this.builtinTools = this.options.builtinTools?.()
     return new Promise((resolve, reject) => {
       let stdout = ''; let stderr = ''; let eventBuffer = ''; let settled = false; let runtimeFailure = ''
+      let answerId = ''; let answerText = ''; let finalAnswer = ''
       let child
       try {
         child = (this.options.spawn || spawn)(paths.node, ['--input-type=module', '--eval', STDIN_BRIDGE, paths.cli], {
@@ -267,6 +281,7 @@ class HarnessRunner {
         })
       } catch (error) {
         try { cleanupHarnessRunDirectory(dshHome, runsRoot) } catch {}
+        this.builtinTools?.dispose(); this.builtinTools = undefined
         reject(error)
         return
       }
@@ -276,8 +291,19 @@ class HarnessRunner {
         : undefined
       const finish = (error, value) => {
         if (settled) return; settled = true; if (timer) clearTimeout(timer); this.child = undefined
+        this.builtinTools?.dispose(); this.builtinTools = undefined
+        this.steerReady = false
+        for (const pending of this.steering.values()) { clearTimeout(pending.timer); pending.reject(Object.assign(new Error('任务已结束，未能确认调整方向是否送达；请检查对话后再操作。'), { code: 'STEER_UNCERTAIN' })) }
+        this.steering.clear()
         if (error) reject(error); else resolve(value)
       }
+      child.stdin.on('error', (error) => {
+        for (const pending of this.steering.values()) {
+          clearTimeout(pending.timer)
+          pending.reject(Object.assign(new Error(`调整方向通道已关闭，未能确认送达：${error.message}`), { code: 'STEER_UNCERTAIN' }))
+        }
+        this.steering.clear()
+      })
       child.stdout.on('data', (chunk) => { stdout = (stdout + chunk.toString('utf8')).slice(-8 * 1024 * 1024) })
       const consumeEventLines = (final = false) => {
         const lines = eventBuffer.split(/\r?\n/)
@@ -286,6 +312,30 @@ class HarnessRunner {
           if (!line.startsWith('STABLE_EVENT\t')) { if (line) stderr = (stderr + line + '\n').slice(-1024 * 1024); continue }
           try {
             const event = JSON.parse(line.slice('STABLE_EVENT\t'.length))
+            if (event.eventType === 'builtin/cancel') { this.builtinTools?.cancel(event.requestId); continue }
+            if (event.eventType === 'builtin/request') {
+              const reply = (payload) => { if (!settled && !child.stdin.destroyed) child.stdin.write(JSON.stringify({ type: 'builtin-result', id: event.requestId, ...payload }) + '\n') }
+              if (!this.builtinTools) reply({ error: '本次运行未提供内置工具服务。' })
+              else void this.builtinTools.execute(event, sandboxMode).then(value => reply({ value }), error => reply({ error: String(error.message || error) }))
+              continue
+            }
+            if (event.eventType === 'control/steer') {
+              const pending = this.steering.get(event.requestId)
+              if (pending) {
+                clearTimeout(pending.timer); this.steering.delete(event.requestId)
+                if (event.accepted) pending.resolve(true)
+                else pending.reject(new Error(event.detail || '调整方向未被当前任务接收。'))
+              }
+              continue
+            }
+            if (!event.parentSessionId && event.eventType === 'agent/start') this.steerReady = true
+            if (!event.parentSessionId && event.eventType === 'agent/end') this.steerReady = false
+            if (event.eventType === 'agent/answer-delta' && !event.parentSessionId) {
+              if (answerId !== event.id) { answerId = event.id; answerText = '' }
+              answerText += String(event.delta || '')
+            }
+            if (event.eventType === 'tool/start' && !event.parentSessionId) { answerId = ''; answerText = ''; finalAnswer = '' }
+            if (event.eventType === 'agent/end' && !event.parentSessionId && event.status === 'completed') finalAnswer = answerText.trim()
             if (event.eventType === 'agent/end' && event.status === 'failed') runtimeFailure = String(event.detail || '')
             onEvent(event)
           }
@@ -304,14 +354,31 @@ class HarnessRunner {
         if (eventBuffer) { eventBuffer += '\n'; consumeEventLines(true) }
         try { cleanupHarnessRunDirectory(dshHome, runsRoot) } catch {}
         if (this.cancelled) finish(new Error('任务已停止。'))
-        else if (code === 0 && stdout.trim()) finish(undefined, stdout.trim())
+        else if (code === 0 && (finalAnswer || stdout.trim())) finish(undefined, finalAnswer || stdout.trim())
         else if (runtimeFailure === 'max-tokens') finish(Object.assign(new Error('本次任务的单次生成内容过长，模型达到输出长度上限。Stable 已停止本轮执行；请缩小单次生成范围或让 Agent 分步骤处理。'), { code: 'HARNESS_MAX_TOKENS' }))
         else finish(new Error(`Harness 执行失败（code ${code ?? 'unknown'}, signal ${signal ?? 'none'}）。${runtimeFailure ? `\n运行时原因：${runtimeFailure}` : ''}${stderr.trim() ? `\n${stderr.trim()}` : ''}`))
       })
-      child.stdin.end(JSON.stringify({
+      child.stdin.write(JSON.stringify({
         prompt,
         images: imageAttachments.map((item) => ({ path: item.path, mediaType: item.mediaType, name: item.name })),
-      }), 'utf8')
+      }) + '\n', 'utf8')
+    })
+  }
+
+  steer(prompt, imageAttachments = []) {
+    const child = this.child
+    if (!child || !this.steerReady || this.cancelled || child.stdin.destroyed || child.stdin.writableEnded) return Promise.reject(new Error('当前任务尚未就绪或已经结束，消息仍保留在队列中。'))
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.steering.delete(id)
+        reject(Object.assign(new Error('未能确认调整方向是否送达，队列已暂停；请检查对话后再操作，避免重复发送。'), { code: 'STEER_UNCERTAIN' }))
+      }, this.options.steerTimeoutMs || 10_000)
+      this.steering.set(id, { resolve, reject, timer })
+      child.stdin.write(JSON.stringify({ type: 'steer', id, prompt, images: imageAttachments.map((item) => ({ path: item.path, mediaType: item.mediaType, name: item.name })) }) + '\n', 'utf8', (error) => {
+        if (!error || !this.steering.has(id)) return
+        clearTimeout(timer); this.steering.delete(id); reject(Object.assign(error, { code: 'STEER_UNCERTAIN' }))
+      })
     })
   }
 
@@ -322,6 +389,7 @@ class HarnessRunner {
   }
 
   cancel() {
+    this.builtinTools?.dispose()
     const child = this.child; this.child = undefined
     if (!child?.pid || child.killed) return false
     this.cancelled = true
