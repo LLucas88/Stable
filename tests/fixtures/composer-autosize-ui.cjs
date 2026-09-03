@@ -27,6 +27,8 @@ async function run() {
   }).outputFiles[0].text
   const css = readFileSync(path.join(root, 'src/styles/tokens.css'), 'utf8') + readFileSync(path.join(root, 'src/styles/app.css'), 'utf8')
   await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="root"></div></html>'))
+  window.webContents.debugger.attach('1.3')
+  await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await window.webContents.insertCSS(css)
   await window.webContents.executeJavaScript(bundle)
   const result = await window.webContents.executeJavaScript(`(async()=>{
@@ -72,8 +74,14 @@ async function run() {
     await set('x'.repeat(2000));expect(input.offsetHeight===2*initial&&input.scrollWidth===input.clientWidth,'Unbroken text sizing/overflow failed');
     window.setActive(false);await tick();await set(long);window.setActive(true);await tick();expect(input.offsetHeight===2*initial,'Returning from hidden page lost sizing');
     await set('');expect(input.offsetHeight===initial,'New draft height did not reset');
-    document.documentElement.style.fontSize='24px';window.dispatchEvent(new Event('resize'));await tick();const enlarged=input.offsetHeight;
-    expect(enlarged>initial,'Baseline must follow font scaling');await set(long);expect(input.offsetHeight===2*enlarged,'Scaled height did not cap at 2x: '+JSON.stringify({initial,enlarged,height:input.offsetHeight,min:getComputedStyle(input).minHeight,max:getComputedStyle(input).maxHeight,inline:input.style.height}));
+    // Reduced-motion CSS also transitions the root font for 150ms. Measure the
+    // final 24px scale, not an intermediate frame after an arbitrary 60ms sleep.
+    document.documentElement.style.fontSize='24px';
+    await wait(()=>getComputedStyle(document.documentElement).fontSize==='24px');
+    window.dispatchEvent(new Event('resize'));
+    await wait(()=>input.offsetHeight===102); // 4.25rem at 24px
+    const enlarged=input.offsetHeight;
+    expect(enlarged>initial,'Baseline must follow font scaling');await set(long);expect(input.offsetHeight===204,'Scaled height did not cap at 2x: '+JSON.stringify({initial,enlarged,height:input.offsetHeight,min:getComputedStyle(input).minHeight,max:getComputedStyle(input).maxHeight,inline:input.style.height}));
     return {initial,max:initial*2,themes:2,explicitAndSoftWraps:true,shrinkClearHiddenResize:true,focusSelectionScrollPreserved:true};
   })()`)
   console.log('COMPOSER_AUTOSIZE_UI_PASSED', JSON.stringify(result))

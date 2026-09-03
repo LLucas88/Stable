@@ -176,12 +176,15 @@ test('PowerShell scripts can read interactive input', { skip: process.platform !
   const events = []
   const runner = new ScriptRunner({ workspace: root, timeoutMs: 60_000 })
   let resultPromise
+  let runError
   try {
     resultPromise = runner.run({ id: 'powershell-1', path: target }, (event) => events.push(event))
-    resultPromise.catch(() => {})
+    resultPromise.catch(error => { runError = error })
     const deadline = Date.now() + 30_000
-    while (!events.some((event) => event.chunk.includes('PS_PROMPT'))) {
-      if (Date.now() >= deadline) throw new Error('未等到 PowerShell 输入提示。')
+    // A pipe may split the prompt across chunks; surface process failures now.
+    while (!events.filter(event => event.stream === 'stdout').map(event => event.chunk).join('').includes('PS_PROMPT')) {
+      if (runError) throw runError
+      if (Date.now() >= deadline) throw new Error('未等到 PowerShell 输入提示。' + JSON.stringify(events))
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     await runner.writeInput('powershell-1', 'stable')
