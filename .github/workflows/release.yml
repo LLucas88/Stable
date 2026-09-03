@@ -28,6 +28,7 @@ jobs:
           Expand-Archive -LiteralPath stable-runtime-win-x64.zip -DestinationPath runtime
           if (-not (Test-Path -LiteralPath runtime/node/node.exe) -or -not (Test-Path -LiteralPath runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
+      - run: npm run tools:install
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -50,10 +51,12 @@ jobs:
         timeout-minutes: 75
         shell: pwsh
         run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to read package version.' }
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller ./release-0.9.39-update/Stable-Update-0.9.39-x64.exe `
-            -ExpectedVersion 0.9.39
+            -UpdateInstaller "./release-$version-update/Stable-Update-$version-x64.exe" `
+            -ExpectedVersion $version
       - name: Upload installer QA evidence
         if: always()
         uses: actions/upload-artifact@v4

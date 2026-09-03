@@ -21,6 +21,9 @@
   --color-focus: oklch(82% 0.16 235);
   --color-error: oklch(67% 0.19 28);
   --color-error-soft: oklch(22% 0.05 28);
+  --color-composer-stop: #000;
+  --color-composer-stop-icon: #fff;
+  --color-composer-scrollbar: oklch(55% 0.01 255);
   --color-success: oklch(72% 0.14 155);
   --color-workflow-edge: oklch(58% 0 0);
   --color-workflow-flow: #fff;
@@ -84,6 +87,7 @@
   --color-rule: oklch(70% 0.018 78);
   --color-rule-2: oklch(85% 0.015 78);
   --color-rule-soft: oklch(90% 0.012 78);
+  --color-composer-scrollbar: oklch(70% 0.008 78);
   --color-accent: oklch(53% 0.22 255);
   --color-accent-hover: oklch(46% 0.21 255);
   --color-accent-soft: oklch(91.5% 0.05 255);

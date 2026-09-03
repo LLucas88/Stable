@@ -52,7 +52,7 @@ test('account menu exposes the global AGENTS.md editor and explains its future-t
   assert.match(app, /仅在之后启动的新任务中读取/)
   assert.match(app, /window\.stable\.settings\.globalInstructions\(\)/)
   assert.match(app, /window\.stable\.settings\.saveGlobalInstructions\(globalDraft\)/)
-  assert.match(main, /path\.join\(app\.getPath\('userData'\), 'AGENTS\.md'\)/)
+  assert.match(main, /readGlobalInstructionsFile\(app\.getPath\('userData'\)\)/)
   assert.match(main, /globalInstructions: readGlobalInstructions\(\)\.content/)
   assert.match(css, /\.global-instructions-settings/)
   assert.match(app, /Agent 对话记录/)

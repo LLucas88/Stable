@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage } = require('electron')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, nativeImage, Tray, Menu } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
@@ -10,12 +10,14 @@ const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
 const { MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/harness.cjs')
+const { BuiltinTools } = require('./services/builtin-tools.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
 const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cjs')
 const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
-const { appendArtifactPaths, artifactSnapshot, changedArtifacts, deliveryRequest } = require('./services/delivery.cjs')
+const { deliveryRequest, revisedDelivery, runWithDeliveryChecks } = require('./services/delivery.cjs')
+const { createStreamTranscript } = require('./services/stream-transcript.cjs')
 const { ScriptRunner } = require('./services/script-runner.cjs')
 const { TeamNetwork } = require('./services/team-network.cjs')
 const { buildConversationSnapshot, normalizeConversationOffer } = require('./services/team-conversation.cjs')
@@ -37,7 +39,11 @@ const {
 } = require('./services/preview.cjs')
 const { automationIntent, automationTemplates, parseProposalOutput, proposalPrompt } = require('./services/automation.cjs')
 const { createUpdateController } = require('./services/updater.cjs')
+const { createWindowPresence, registerCompletedCountIpc } = require('./services/window-presence.cjs')
 const { cleanupStaleInstalls } = require('./services/update-maintenance.cjs')
+const { WendingCliService, isWendingCliPrompt } = require('./services/wending-cli.cjs')
+const { registerWendingLoginIpc } = require('./services/wending-login.cjs')
+const { ensureGlobalInstructions, readGlobalInstructionsFile, saveGlobalInstructionsFile } = require('./services/global-instructions.cjs')
 const {
   SCRIPT_EXTENSIONS,
   cleanupPackage,
@@ -57,6 +63,8 @@ const WINDOW_CHROME = {
   light: { backgroundColor: '#f3eee6', symbolColor: '#172030', height: 40 },
 }
 let mainWindow
+let tray
+const windowPresence = createWindowPresence({ app, nativeImage, isInstalling: () => updateController?.state().status === 'installing' })
 let previewView
 let previewKind
 let previewTemporaryPath
@@ -72,6 +80,7 @@ const automationRunners = new Map()
 let automationTimer
 let updateController
 let scriptRunner
+let wendingCli
 let activeWorkflowRun
 let paths
 let teamNetwork
@@ -106,7 +115,14 @@ function resourcePath(...segments) {
 }
 
 function createHarnessRunner() {
-  return new HarnessRunner({ userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
+  return new HarnessRunner({
+    userData: paths.userData,
+    workspace: paths.workspace,
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    environment: wendingCli ? wendingCli.environment(process.env) : process.env,
+    builtinTools: () => new BuiltinTools({ workspace: paths.workspace, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+  })
 }
 
 function cleanFilename(value) {
@@ -129,23 +145,12 @@ function applyWindowTheme(window, theme) {
   }
 }
 
-function globalInstructionsPath() { return path.join(app.getPath('userData'), 'AGENTS.md') }
-
 function readGlobalInstructions() {
-  const filePath = globalInstructionsPath()
-  if (!existsSync(filePath)) return { path: filePath, content: '', exists: false }
-  const content = readFileSync(filePath, 'utf8')
-  if (Buffer.byteLength(content, 'utf8') > 200_000) throw new Error('全局 AGENTS.md 不能超过 200 KB。')
-  return { path: filePath, content, exists: true }
+  return readGlobalInstructionsFile(app.getPath('userData'))
 }
 
 function saveGlobalInstructions(value) {
-  if (typeof value !== 'string') throw new Error('全局 Agent 对话提醒内容无效。')
-  if (Buffer.byteLength(value, 'utf8') > 200_000) throw new Error('全局 AGENTS.md 不能超过 200 KB。')
-  const filePath = globalInstructionsPath()
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, value.replace(/^\uFEFF/, ''), 'utf8')
-  return { path: filePath, content: value.replace(/^\uFEFF/, ''), exists: true }
+  return saveGlobalInstructionsFile(app.getPath('userData'), value)
 }
 
 function sameFilesystemPath(left, right) {
@@ -398,7 +403,7 @@ async function executeAutomation(id, force = false) {
     publishAgentState(item.conversationId)
     const result = await runAgent(item.prompt, item.conversationId, [], undefined, undefined, true, [], executionRunner, 'full')
     store.addMessage(item.conversationId, 'assistant', result.answer, result.trace)
-    store.finishAutomationRun(id, runId, 'completed', result.answer, null)
+    store.finishAutomationRun(id, runId, result.status || 'completed', result.answer, result.reason || null)
     publishAgentState(item.conversationId)
   } catch (error) {
     store.finishAutomationRun(id, runId, error.message === '任务已停止。' ? 'cancelled' : 'failed', null, error.message)
@@ -583,7 +588,7 @@ async function continueSourceConversation(task) {
     const prompt = `这是已获批准的远端 AI Work 返回结果。请把它作为工具结果继续完成来源对话中的原任务；不要重复请求远端执行。\n\n远端任务：${task.title}\n远端结果：\n${task.result}`
     const result = await runAgent(prompt, conversationId, [], undefined, {}, true, [], executionRunner)
     store.addMessage(conversationId, 'assistant', result.answer, result.trace)
-    auditTeamTask(task.id, 'continuation_completed', '来源对话已基于远端结果继续完成。')
+    auditTeamTask(task.id, result.status === 'failed' ? 'continuation_failed' : 'continuation_completed', result.reason || '来源对话已基于远端结果继续完成。')
   } catch (error) {
     auditTeamTask(task.id, 'continuation_failed', `来源对话续跑失败：${error.message}`)
   } finally {
@@ -607,6 +612,7 @@ async function executeInboundTeamTask(taskId) {
     const selectedScripts = store.listLibrary().filter((item) => item.kind === 'script' && scriptNames.has(item.name)).map(({ id, name, description }) => ({ id, name, description }))
     const safeInstruction = `${task.instruction}\n\n这是经本机策略批准的 Team AI Work，Agent 路径为 ${task.context?.agentPath || '/root'}。只使用本机能力和检索命中的资源；不要删除、覆盖或清空文件。完成后只提交可供上游综合的结果。`
     const result = await runAgent(safeInstruction, null, [], [], { skills: selectedSkills, scripts: selectedScripts }, false, [], executionRunner, 'full')
+    if (result.status === 'failed') throw new Error(result.reason)
     store.updateTeamTask(taskId, 'success', { result: result.answer })
     auditTeamTask(taskId, 'success', '目标设备执行完成，结果已回传。')
     teamNetwork.send(task.sourceDeviceId, { type: 'task:result', taskId, result: result.answer })
@@ -1314,6 +1320,51 @@ function agentState(conversationId = store.activeConversationId()) {
   }
 }
 
+async function prepareAgentMessage(payload, conversationId, modelRoute) {
+  const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
+  const requestedAttachments = rawAttachments.length ? inspectAgentAttachments(rawAttachments.map((item) => item?.path)) : []
+  if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
+  const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
+  const attachments = extractedAttachments.items
+  const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
+  const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
+  const dataIds = idsByKind('data')
+  const skillIds = idsByKind('skill')
+  const scriptIds = idsByKind('script')
+  const knowledgeIds = idsByKind('knowledge')
+  const selectedData = store.dataByIds([...dataIds])
+  const selectedSkills = store.listSkills().filter((item) => item.enabled && skillIds.has(item.id)).map(({ name, content }) => ({ name, content }))
+  const selectedScripts = store.listLibrary().filter((item) => item.kind === 'script' && scriptIds.has(item.id)).map(({ id, name, description }) => ({ id, name, description }))
+  const selectedKnowledge = store.listKnowledge().filter((item) => item.enabled && knowledgeIds.has(item.id)).map((item) => {
+    const document = store.knowledgeItem(item.id)
+    return { name: item.name, excerpt: String(document?.content || item.summary || '').slice(0, 20_000) }
+  })
+  const resourceMetadata = new Map([
+    ...store.listData().map((item) => [`data:${item.id}`, { name: item.name, size: item.size, type: item.type }]),
+    ...store.listSkills().map((item) => [`skill:${item.id}`, { name: item.name, size: Buffer.byteLength(item.content || '', 'utf8'), type: 'skill' }]),
+    ...store.listLibrary().filter((item) => item.kind === 'script').map((item) => [`script:${item.id}`, { name: item.name, size: Buffer.byteLength(item.content || '', 'utf8'), type: item.extension || 'script' }]),
+    ...store.listKnowledge().map((item) => [`knowledge:${item.id}`, { name: item.name, size: item.size, type: 'markdown' }]),
+  ])
+  const selectedReferences = requestedReferences.flatMap((item) => {
+    const kind = String(item?.kind || '')
+    const metadata = resourceMetadata.get(`${kind}:${String(item?.id || '')}`)
+    return metadata ? [{ kind, id: String(item.id), ...metadata }] : []
+  })
+  const messageAttachments = [
+    ...selectedReferences,
+    ...attachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type, path: item.path })),
+  ]
+  return { attachments, extractedAttachments, selectedReferences, messageAttachments, selectedData, selectedSkills, selectedScripts, selectedKnowledge }
+}
+
+function commitAgentMessage(conversationId, query, prepared) {
+  store.addMessage(conversationId, 'user', query, undefined, prepared.messageAttachments)
+  for (const draftPath of prepared.extractedAttachments.consumedDraftImages || []) {
+    try { discardDraftImage(draftPath, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace) } catch {}
+  }
+  publishAgentState(conversationId)
+}
+
 function modelRouteForConversation(conversationId) {
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
@@ -1327,9 +1378,10 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const { model, apiKey } = modelRoute
   const runId = store.startRun('agent', conversationId || null, query)
   const trace = []
+  const transcript = createStreamTranscript()
   const publish = (source) => {
     if (source.eventType === 'agent/answer-delta') {
-      const delta = String(source.delta || '').slice(0, 8_000)
+      const delta = String(source.delta || '')
       if (!delta) return
       const event = {
         id: String(source.id || 'answer'), runId, kind: 'answer', title: 'Stable', status: 'running',
@@ -1338,20 +1390,27 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
         step: Number.isFinite(source.step) ? Math.max(0, Number(source.step)) : 0,
         ...(conversationId ? { conversationId } : {}),
       }
+      const previous = transcript.append(event)
+      if (previous) publish(previous)
       if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
       return
+    }
+    if ((!source.parentSessionId && ['tool/start', 'agent/end'].includes(source.eventType)) || source.id === 'runtime' && source.status !== 'running') {
+      const completedText = transcript.flush()
+      if (completedText) publish(completedText)
     }
     const event = {
       id: String(source.id || `status:${trace.length}`), runId,
       kind: ['context', 'reasoning', 'tool', 'status', 'approval'].includes(source.kind) ? source.kind : 'status',
       title: String(source.title || '执行任务').slice(0, 160),
       ...(source.detail ? { detail: String(source.detail).slice(0, 500) } : {}),
+      ...(source.eventType === 'agent/answer' ? { content: String(source.content || '') } : {}),
       status: ['running', 'completed', 'failed', 'cancelled'].includes(source.status) ? source.status : 'running',
       time: Number.isFinite(source.time) ? source.time : Date.now(),
       ...(source.sessionId ? { sessionId: String(source.sessionId) } : {}),
       ...(source.parentSessionId ? { parentSessionId: String(source.parentSessionId) } : {}),
       ...(Number.isFinite(source.depth) ? { depth: Math.max(0, Number(source.depth)) } : {}),
-      ...(['agent/descriptor', 'agent/start', 'agent/end', 'tool/start', 'tool/end'].includes(source.eventType) ? { eventType: source.eventType } : {}),
+      ...(['agent/descriptor', 'agent/start', 'agent/end', 'agent/answer', 'tool/start', 'tool/end'].includes(source.eventType) ? { eventType: source.eventType } : {}),
       ...(['agent', 'tool'].includes(source.entity) ? { entity: source.entity } : {}),
       ...(['one-shot', 'continuable'].includes(source.mode) ? { mode: source.mode } : {}),
       ...(source.provider ? { provider: String(source.provider).slice(0, 80) } : {}),
@@ -1362,6 +1421,11 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.danger ? { danger: true } : {}),
     }
     const existing = trace.findIndex((item) => item.id === event.id)
+    if (event.kind === 'tool' || event.entity === 'agent' && event.parentSessionId) {
+      const previous = trace[existing]
+      event.startedAt = previous?.startedAt ?? previous?.time ?? event.time
+      if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.eventType === 'tool/start' ? event.detail : undefined)
+    }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
     if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if (source.kind === 'approval' && source.requestId && source.status === 'running') {
@@ -1459,28 +1523,42 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     : effectivePermissionMode === 'auto'
       ? '当前对话使用“帮我审批”；扩大权限时交给独立审批 Agent，若未获批准请改用安全范围内的方法，不要要求用户在消息中回复。'
       : '当前对话使用“请求审批”；超出工作区安全范围时通过权限审批通道请求用户决定，不要让用户在普通消息中回复授权。'
-  const effectiveQuery = installedSkills.length
-    ? `${query}\n\nStable 已完成 Skill 的全局安装与识别：${installedSkills.join('、')}。请用简体中文简要确认安装结果，并说明现在可以在对话中选择调用。不要再次扫描、移动或删除 Stable 内部目录。\n\n${permissionInstruction}`
-    : `${query}\n\n${permissionInstruction}`
+  const installedSkillInstruction = installedSkills.length
+    ? `\n\nStable 已完成 Skill 的全局安装与识别：${installedSkills.join('、')}。请用简体中文简要确认安装结果，并说明现在可以在对话中选择调用。不要再次扫描、移动或删除 Stable 内部目录。`
+    : ''
+  const wendingInstruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.agentInstruction()}` : ''
+  const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
   const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
   const imageAttachments = attachments.filter(isImageAttachment)
+  const activeControl = agentRunners.get(conversationId)
+  const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
   publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${capability} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
-    const beforeArtifacts = artifactSnapshot(paths.workspace, delivery.extensions)
-    let answer = await executionRunner.run(prompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
-    let artifacts = delivery.type === 'artifact' ? changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions)) : []
-    for (let attempt = 1; delivery.type === 'artifact' && !artifacts.length && attempt <= 2; attempt += 1) {
-      publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次结果只有过程文本，尚未检测到目标文件`, status: 'running' })
-      const retryPrompt = `${prompt}\n\n## 续跑要求\n上一轮只返回了过程文本，没有在工作区生成要求的文件。不要重复计划或解释；立即使用工具继续执行，写入并检查目标文件，最终只返回交付摘要和绝对路径。\n\n上一轮过程文本（仅供续跑，不是交付结果）：\n${String(answer).slice(-6_000)}`
-      answer = await executionRunner.run(retryPrompt, model, apiKey, undefined, publish, 'workspace-write', imageAttachments)
-      artifacts = changedArtifacts(beforeArtifacts, artifactSnapshot(paths.workspace, delivery.extensions))
+    const result = await runWithDeliveryChecks({
+      workspace: paths.workspace, delivery, prompt,
+      getDelivery: control ? () => control.directions.reduce(revisedDelivery, delivery) : undefined,
+      getPrompt: control ? () => `${prompt}\n\n${control.directions.length ? `用户在执行中补充的要求（以最新要求为准）：\n${control.steerInputs.map((input) => input.prompt).join('\n')}` : ''}` : undefined,
+      execute: async (task) => {
+        if (control?.cancelled) throw new Error('任务已停止。')
+        const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images)
+        if (control) await Promise.allSettled([...control.steerRequests.values()])
+        if (control?.cancelled) throw new Error('任务已停止。')
+        return answer
+      },
+      onCheck: (attempt) => publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次检查尚未检测到目标文件`, status: 'running' }),
+    })
+    const { answer, artifacts, reused } = result
+    if (result.status === 'failed') {
+      publish({ id: 'delivery-check', kind: 'status', title: '文件交付未完成', detail: result.reason, status: 'failed' })
+      publish({ id: 'runtime', kind: 'status', title: '任务受阻', detail: result.reason, status: 'failed' })
+      store.finishRun(runId, 'failed', answer, result.reason)
+      return { answer, trace, status: 'failed', reason: result.reason }
     }
-    if (delivery.type === 'artifact' && !artifacts.length) throw new Error('Agent 未生成要求的交付文件，Stable 已停止将规划稿作为最终结果。请展开执行过程检查后重试。')
-    if (artifacts.length) answer = appendArtifactPaths(answer, artifacts)
-    publish({ id: 'delivery-check', kind: 'status', title: artifacts.length ? '文件交付已验证' : '文本回答已完成', detail: artifacts.length ? `已确认 ${artifacts.length} 个目标文件` : '本次任务不要求生成文件', status: 'completed' })
+    publish({ id: 'delivery-check', kind: 'status', title: artifacts.length ? '文件交付已验证' : '文本回答已完成', detail: artifacts.length ? `已确认 ${artifacts.length} 个目标文件${reused.length ? `（其中 ${reused.length} 个复用已有文件）` : ''}` : '本次任务不要求生成文件', status: 'completed' })
     publish({ id: 'runtime', kind: 'status', title: 'Stable 已完成', detail: '执行结果已返回 Stable', status: 'completed' })
     publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
     store.finishRun(runId, 'completed', answer, null)
@@ -1855,6 +1933,13 @@ function registerIpc() {
 
   ipcMain.handle('stable:skills:enabled', (_event, payload) => { store.setSkillEnabled(requireText(payload?.id, 'Skill ID', 100), Boolean(payload?.enabled)); return store.listSkills() })
   ipcMain.handle('stable:skills:remove', (_event, payload) => { store.removeSkill(requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
+  ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())
+  const trustedLoginSender = (event) => Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame)
+  ipcMain.handle('stable:extensions:prepareWending', (event) => {
+    if (!trustedLoginSender(event)) throw new Error('此页面无权访问登录接口。')
+    return wendingCli.prepare()
+  })
+  registerWendingLoginIpc(ipcMain, { service: () => wendingCli, isTrusted: trustedLoginSender })
 
   ipcMain.handle('stable:workflows:save', (_event, workflow) => {
     const graph = validateWorkflowGraph(workflow)
@@ -1975,52 +2060,20 @@ function registerIpc() {
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
     const modelRoute = modelRegistry.resolve(conversation.modelId)
-    const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
-    const requestedAttachments = rawAttachments.length ? inspectAgentAttachments(rawAttachments.map((item) => item?.path)) : []
-    if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
-    const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
-    const attachments = extractedAttachments.items
-    const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
-    const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
-    const dataIds = idsByKind('data')
-    const skillIds = idsByKind('skill')
-    const scriptIds = idsByKind('script')
-    const knowledgeIds = idsByKind('knowledge')
-    const selectedData = store.dataByIds([...dataIds])
-    const selectedSkills = store.listSkills().filter((item) => item.enabled && skillIds.has(item.id)).map(({ name, content }) => ({ name, content }))
-    const selectedScripts = store.listLibrary().filter((item) => item.kind === 'script' && scriptIds.has(item.id)).map(({ id, name, description }) => ({ id, name, description }))
-    const selectedKnowledge = store.listKnowledge().filter((item) => item.enabled && knowledgeIds.has(item.id)).map((item) => {
-      const document = store.knowledgeItem(item.id)
-      return { name: item.name, excerpt: String(document?.content || item.summary || '').slice(0, 20_000) }
-    })
-    const resourceMetadata = new Map([
-      ...store.listData().map((item) => [`data:${item.id}`, { name: item.name, size: item.size, type: item.type }]),
-      ...store.listSkills().map((item) => [`skill:${item.id}`, { name: item.name, size: Buffer.byteLength(item.content || '', 'utf8'), type: 'skill' }]),
-      ...store.listLibrary().filter((item) => item.kind === 'script').map((item) => [`script:${item.id}`, { name: item.name, size: Buffer.byteLength(item.content || '', 'utf8'), type: item.extension || 'script' }]),
-      ...store.listKnowledge().map((item) => [`knowledge:${item.id}`, { name: item.name, size: item.size, type: 'markdown' }]),
-    ])
-    const selectedReferences = requestedReferences.flatMap((item) => {
-      const kind = String(item?.kind || '')
-      const metadata = resourceMetadata.get(`${kind}:${String(item?.id || '')}`)
-      return metadata ? [{ kind, id: String(item.id), ...metadata }] : []
-    })
-    const messageAttachments = [
-      ...selectedReferences,
-      ...attachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type, path: item.path })),
-    ]
-    store.updateConversationContext(conversationId, conversation.capability, [])
-    store.addMessage(conversationId, 'user', query, undefined, messageAttachments)
-    for (const draftPath of extractedAttachments.consumedDraftImages || []) {
-      try { discardDraftImage(draftPath, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace) } catch {}
-    }
-    publishAgentState(conversationId)
     const executionRunner = createHarnessRunner()
-    const control = { runner: executionRunner, reviewers: new Set() }
+    const control = { runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
     try {
+      const prepared = await prepareAgentMessage(payload, conversationId, modelRoute)
+      const { attachments, selectedReferences, extractedAttachments, selectedData, selectedKnowledge, selectedSkills, selectedScripts } = prepared
+      if (control.cancelled) throw new Error('任务已停止。')
+      store.updateConversationContext(conversationId, conversation.capability, [])
+      commitAgentMessage(conversationId, query, prepared)
       if (automationIntent(query) && !attachments.length && !selectedReferences.length) {
+        control.phase = 'proposal'
         try {
           const rawProposal = await executionRunner.run(proposalPrompt(query), modelRoute.model, modelRoute.apiKey, 90_000, () => {}, 'read-only')
+          if (control.cancelled) throw new Error('任务已停止。')
           const proposal = parseProposalOutput(rawProposal)
           if (proposal) {
             const automationProposal = { ...proposal, status: 'pending' }
@@ -2031,23 +2084,65 @@ function registerIpc() {
           }
         } catch { /* 解析不明确时交回普通对话，让模型继续询问 */ }
       }
+      if (control.cancelled) throw new Error('任务已停止。')
+      control.phase = 'agent'
       const result = await runAgent(query, conversationId, attachments, undefined, { data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute)
+      control.phase = 'finishing'
+      await Promise.allSettled([...control.steerRequests.values()])
       store.addMessage(conversationId, 'assistant', result.answer, result.trace)
       publishAgentState(conversationId)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
       throw new Error(error.message)
     } finally {
+      control.phase = 'finished'
       for (const reviewer of control.reviewers) reviewer.cancel()
       if (agentRunners.get(conversationId) === control) agentRunners.delete(conversationId)
     }
+  })
+  ipcMain.handle('stable:agent:steer', async (_event, payload) => {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    const requestId = requireText(payload?.requestId, '消息 ID', 100)
+    const query = requireText(payload?.prompt, '消息')
+    const control = agentRunners.get(conversationId)
+    if (!control) throw new Error('当前任务已经结束，消息仍保留在队列中。')
+    if (control.steerRequests?.has(requestId)) return control.steerRequests.get(requestId)
+    if (control.phase !== 'agent' || !control.runner.steerReady || control.cancelled) throw new Error('当前任务尚未进入可调整的模型步骤，请稍后重试或继续排队。')
+    let delivered = false
+    const request = (async () => {
+      const prepared = await prepareAgentMessage(payload, conversationId, control.modelRoute)
+      if (control.cancelled || control.phase !== 'agent' || agentRunners.get(conversationId) !== control) throw new Error('当前任务已经结束，消息仍保留在队列中。')
+      const history = store.listMessages(conversationId)
+      const instruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.agentInstruction()}` : ''
+      const prompt = composeAgentPrompt({
+        identity: store.getSetting('identity'),
+        query: `这是用户对当前任务的即时补充，请结合已有上下文调整后续执行。\n${query}${instruction}`,
+        data: prepared.selectedData, knowledge: prepared.selectedKnowledge, skills: prepared.selectedSkills,
+        scripts: prepared.selectedScripts, attachments: prepared.attachments, history: [],
+        capability: store.conversation(conversationId)?.capability,
+      })
+      await control.runner.steer(prompt, prepared.attachments.filter(isImageAttachment))
+      delivered = true
+      control.directions.push(query)
+      control.steerInputs.push({ prompt, images: prepared.attachments.filter(isImageAttachment) })
+      commitAgentMessage(conversationId, query, prepared)
+      return agentState(conversationId)
+    })()
+    control.steerRequests.set(requestId, request)
+    // A rejected preflight can be retried; accepted or uncertain deliveries must never be sent twice.
+    void request.catch((error) => {
+      if (!delivered && error.code !== 'STEER_UNCERTAIN') control.steerRequests.delete(requestId)
+    })
+    return request
   })
   ipcMain.handle('stable:agent:cancel', (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const control = agentRunners.get(conversationId)
     if (!control) return false
+    control.cancelled = true
     for (const reviewer of control.reviewers) reviewer.cancel()
-    return control.runner.cancel()
+    control.runner.cancel()
+    return true
   })
   ipcMain.handle('stable:agent:answerApproval', (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
@@ -2222,6 +2317,7 @@ function registerIpc() {
     if (mainWindow && !mainWindow.isDestroyed()) applyWindowTheme(mainWindow, theme)
     return theme
   })
+  registerCompletedCountIpc(ipcMain, () => mainWindow, windowPresence)
   ipcMain.handle('stable:appearance:launchComplete', () => {
     const theme = normalizeTheme(store.getSetting('theme'))
     if (mainWindow && !mainWindow.isDestroyed()) applyWindowTheme(mainWindow, theme)
@@ -2277,15 +2373,24 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
   window.setMenuBarVisibility(false)
+  windowPresence.attach(window)
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('file:')) event.preventDefault() })
-  window.on('closed', () => { closePreviewView(); mainWindow = undefined })
+  window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) wendingCli?.login.dispose() })
+  window.on('closed', () => { wendingCli?.login.dispose(); closePreviewView(); mainWindow = undefined })
   return window
 }
 
 async function boot() {
   paths = { userData: app.getPath('userData'), workspace: path.join(app.getPath('userData'), 'workspace') }
   mkdirSync(paths.workspace, { recursive: true })
+  ensureGlobalInstructions(paths.userData)
+  wendingCli = new WendingCliService({
+    appPath: app.getAppPath(),
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    workspace: paths.workspace,
+  })
   store = new StableStore(paths.userData)
   store.recoverInterruptedRuns()
   migrateLegacyLibraryScripts()
@@ -2369,6 +2474,21 @@ async function boot() {
   }
   registerIpc()
   mainWindow = createWindow()
+  // Closing only minimizes. Keep an explicit, discoverable exit route.
+  tray = new Tray(resourcePath('build', 'stable_logo_transparent.png'))
+  tray.setToolTip('Stable · 后台任务继续运行')
+  const showWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show(); mainWindow.focus()
+  }
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示 Stable', click: showWindow },
+    { type: 'separator' },
+    { label: '退出 Stable', click: () => app.quit() },
+  ]))
+  tray.on('double-click', showWindow)
+  app.once('will-quit', () => tray?.destroy())
   await mainWindow.loadFile(resourcePath('dist', 'index.html'), { query: process.env.STABLE_QA_PAGE ? { page: process.env.STABLE_QA_PAGE } : undefined })
   if (app.isPackaged) setTimeout(() => cleanupStaleInstalls(process.execPath), 5_000)
   updateController.start()
@@ -2414,14 +2534,20 @@ async function boot() {
         if (point) mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y })
       }, 800)
     }
+    if (process.env.STABLE_QA_MCP_TAB) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("Array.from(document.querySelectorAll('.extension-tabs button')).find((button) => button.textContent?.includes('MCP'))?.click()") }, 700)
+    }
+    if (process.env.STABLE_QA_WENDING_USE) {
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("Array.from(document.querySelectorAll('.extension-card-action button')).find((button) => button.textContent?.includes('使用'))?.click()") }, 700)
+    }
     if (process.env.STABLE_QA_PIN_FIRST_CONVERSATION) {
-      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not(.conversation-pinned-shortcut) .conversation-pin-action')?.click()") }, 550)
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not([data-pinned=\"true\"]) .conversation-pin-action')?.click()") }, 550)
     }
     if (process.env.STABLE_QA_CONVERSATION_ACTION_MENU) {
-      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not(.conversation-pinned-shortcut) .conversation-item-actions > button')?.click()") }, 900)
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.conversation-list-item:not([data-pinned=\"true\"]) .conversation-item-actions > button')?.click()") }, 900)
     }
     if (process.env.STABLE_QA_OPEN_CONVERSATION_FROM_TAB) {
-      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.rail-conversation-tasks-slot .conversation-list-item:not(.conversation-pinned-shortcut) .conversation-select')?.click()") }, 900)
+      setTimeout(() => { void mainWindow.webContents.executeJavaScript("document.querySelector('.rail-conversation-tasks-slot .conversation-list-item:not([data-pinned=\"true\"]) .conversation-select')?.click()") }, 900)
     }
     if (process.env.STABLE_QA_UPDATE_AVAILABLE) {
       setTimeout(() => { mainWindow.webContents.send('stable:update:event', { status: 'available', currentVersion: app.getVersion(), availableVersion: '9.9.9', progress: 0 }) }, 450)
@@ -2552,6 +2678,18 @@ async function boot() {
             rail: (() => { const shell = document.querySelector('.app-shell'); const main = document.querySelector('.main-frame')?.getBoundingClientRect(); return shell && main ? { collapsed: shell.dataset.railCollapsed === 'true', sidebarVisible: Boolean(document.querySelector('#stable-main-navigation')), mainLeft: Math.round(main.left), mainWidth: Math.round(main.width) } : null })(),
             conversationSearch: (() => { const dialog = document.querySelector('.conversation-search-dialog'); const input = dialog?.querySelector('input'); const rect = dialog?.getBoundingClientRect(); return dialog && input && rect ? { visible: true, query: input.value, resultCount: dialog.querySelectorAll('.conversation-search-result').length, focused: document.activeElement === input, left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null })(),
             currentTask: document.querySelector('.conversation-topbar strong')?.textContent?.trim() || null,
+            composerPrompt: document.querySelector('.composer textarea')?.value || null,
+            extensionMarket: (() => {
+              const page = document.querySelector('.extension-market')
+              const card = page?.querySelector('.extension-card')
+              const activeTab = page?.querySelector('.extension-tabs button[data-active="true"]')
+              return page ? {
+                activeTab: activeTab?.textContent?.replace(/\s+/g, ' ').trim() || null,
+                cardVisible: Boolean(card),
+                cardStatus: card?.dataset.status || null,
+                emptyText: page.querySelector('.extension-empty')?.textContent?.replace(/\s+/g, ' ').trim() || null,
+              } : null
+            })(),
             newConversation: (() => {
               const conversation = document.querySelector('.conversation[data-empty="true"]')
               const intro = conversation?.querySelector('.conversation-empty')?.getBoundingClientRect()
@@ -2635,4 +2773,5 @@ if (updateHealthcheck) {
   app.on('activate', () => { if (!mainWindow) void boot() })
 }
 app.on('window-all-closed', () => app.quit())
+app.on('before-quit', () => wendingCli?.login.dispose())
 app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

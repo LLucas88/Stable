@@ -1,0 +1,8 @@
+{
+  "name": "stable-agent-tools-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned Excel engine for Stable built-in tools; browser uses Electron Chromium",
+  "dependencies": { "exceljs": "4.4.0" },
+  "overrides": { "exceljs": { "uuid": "11.1.1" } }
+}
