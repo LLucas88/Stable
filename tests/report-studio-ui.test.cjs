@@ -29,7 +29,7 @@ test('version is visible in the account menu and the direct launcher accepts iso
   const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-  assert.equal(pkg.version, '0.91.1')
+  assert.equal(pkg.version, '0.91.2')
   assert.match(app, /className="rail-version"/)
   assert.match(app, />Stable v\{state\.appVersion\}</)
   assert.match(main, /--stable-user-data=/)

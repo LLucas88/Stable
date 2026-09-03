@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
     const base = 'http://stable-proxy-probe.invalid'
     await cloudSession.cookies.set({ url: base, name: 'private-cookie', value: 'fake-cookie-secret' })
     const logPath = path.join(qaDirectory, 'cloud-network.jsonl')
-    const cloudFetch = createCloudFetch({ session: cloudSession, logPath, appVersion: '0.9.40-proxy.1' })
+    const cloudFetch = createCloudFetch({ session: cloudSession, logPath, appVersion: require('../package.json').version })
     const login = await cloudFetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer fake-auth-token' }, body: JSON.stringify({ password: 'fake-password' }) })
     assert.equal((await login.json()).device_token, 'fake-result-token')
     assert.equal(requests[0].cookie, undefined)

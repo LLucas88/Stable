@@ -13,7 +13,7 @@ function fixture(t, fetch, resolveProxy = async () => 'DIRECT') {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   const logPath = path.join(directory, 'logs', 'cloud-network.jsonl')
   const session = { fetch, resolveProxy }
-  return { logPath, session, cloudFetch: createCloudFetch({ session, logPath, appVersion: '0.9.40-proxy.1' }) }
+  return { logPath, session, cloudFetch: createCloudFetch({ session, logPath, appVersion: require('../package.json').version }) }
 }
 
 test('Chromium session receives bearer auth, body, abort signal; cookies, caching and redirects are disabled', async (t) => {
