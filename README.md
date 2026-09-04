@@ -1,6 +1,12 @@
 # Stable
 
-Stable 是一个 Windows 本地 Agent 工作台。当前正式发布版本为 **v0.9.34**；源码开发版本为 **v0.9.39（发布准备中）**。项目包含云端内部账号与金额额度、云端多模型切换、对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+Stable 是一个 Windows 本地 Agent 工作台。当前分支 `fast-code-drive` 的开发版本为 **v0.91.2（Codex Harness，未发布）**。项目包含云端内部账号与金额额度、云端多模型切换、对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+
+## v0.91.2 Codex Harness
+
+保留 Stable 界面和账号，默认使用 Codex `app-server` 执行任务，模型请求经本机协议桥继续发往已有 Chat Completions 服务。已接入持久会话、工具审批、流式事件、图片、搜索 MCP 和取消；保留显式切回旧引擎的开发选项。固定使用 Codex `0.142.2`，无需个人 Codex 登录。
+
+开发、架构、验证范围、兼容限制和回退步骤见 [Codex Harness 接入文档](docs/CODEX_HARNESS.md)。下面旧版本段落保留当时的发布与验证记录，不代表本分支已发布。
 
 ## v0.9.39 账号与云端模型（发布准备中）
 
@@ -71,10 +77,11 @@ Stable-Setup-0.9.34-x64.exe
 
 ## 本地开发
 
-要求：Windows、Node.js 20+、npm。
+要求：Windows x64、Node.js 22+、npm。
 
 ```powershell
 npm ci
+npm run runtime:codex
 npm run typecheck
 npm test
 npm run dev
@@ -89,7 +96,7 @@ npm start
 
 ## Harness 运行时
 
-`runtime/` 包含体积较大的本地 Node 与 DeepSeek Harness 二进制，因此不会提交到 Git。完整 Agent 运行和 Windows 打包需要在项目根目录提供已验证的 `runtime/`，也可以通过环境变量 `STABLE_DSH_RUNTIME` 指向 Harness 入口。正式 Release 安装包会捆绑经过验证的运行时。
+运行 `npm run runtime:codex` 从固定的 npm 依赖准备 `runtime/codex`，完整 Agent 默认使用该运行时。`runtime/` 不提交到 Git。完整安装包仍需要原有 Node / DeepSeek Runtime 供回退及既有资源功能使用；可通过 `STABLE_HARNESS=deepseek` 明确切回旧实现。完整包和轻量更新包都会包含 Codex 二进制及沙箱助手。
 
 ## 构建安装包
 

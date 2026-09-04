@@ -249,6 +249,7 @@ export interface AgentTraceItem {
   toolName?: string
   reason?: string
   danger?: boolean
+  approvalRisk?: 'safe' | 'unknown' | 'high'
 }
 
 export interface AgentAnswerDeltaEvent {

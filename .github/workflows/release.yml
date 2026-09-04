@@ -28,8 +28,10 @@ jobs:
           Expand-Archive -LiteralPath stable-runtime-win-x64.zip -DestinationPath runtime
           if (-not (Test-Path -LiteralPath runtime/node/node.exe) -or -not (Test-Path -LiteralPath runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
+      - run: npm run runtime:codex
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:codex-integration
       - run: npm run build
       - name: Build full installer and lightweight updater
         shell: pwsh
@@ -38,6 +40,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Full installer build failed.' }
           npm run dist:update
           if ($LASTEXITCODE -ne 0) { throw 'Lightweight updater build failed.' }
+      - run: npm run test:codex-packaged
       - name: Download previous Stable installer
         shell: pwsh
         env:
@@ -52,8 +55,8 @@ jobs:
         run: |
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller ./release-0.91.1-update/Stable-Update-0.91.1-x64.exe `
-            -ExpectedVersion 0.91.1
+            -UpdateInstaller ./release-0.91.2-update/Stable-Update-0.91.2-x64.exe `
+            -ExpectedVersion 0.91.2
       - name: Upload installer QA evidence
         if: always()
         uses: actions/upload-artifact@v4

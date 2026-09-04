@@ -1,7 +1,7 @@
 {
   "name": "stable-desktop",
-  "version": "0.91.1",
-  "description": "Stable local agent workbench powered by DeepSeek Harness",
+  "version": "0.91.2",
+  "description": "Stable local agent workbench powered by Codex Harness",
   "main": "desktop/main.cjs",
   "private": true,
   "license": "MIT",
@@ -13,10 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
+    "test:codex-integration": "node tests/codex-integration.cjs",
+    "test:codex-packaged": "node tests/codex-packaged.cjs",
+    "runtime:codex": "node scripts/prepare-codex-runtime.cjs",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
-    "dist:dir": "npm run build && electron-builder --win --x64 --dir",
-    "dist": "npm run build && electron-builder --win --x64",
-    "dist:update": "electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
+    "dist:dir": "npm run runtime:codex && npm run build && electron-builder --win --x64 --dir",
+    "dist": "npm run runtime:codex && npm run build && electron-builder --win --x64",
+    "dist:update": "npm run runtime:codex && electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
@@ -35,6 +38,7 @@
     "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "@openai/codex": "0.142.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
@@ -62,12 +66,17 @@
       },
       {
         "from": "runtime",
-        "to": "runtime"
+        "to": "runtime",
+        "filter": ["**/*", "!codex/**/*"]
+      },
+      {
+        "from": "runtime/codex",
+        "to": "codex"
       }
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-0.91.1"
+      "output": "release-0.91.2"
     },
     "win": {
       "icon": "build/stable_logo_transparent.png",
