@@ -9,7 +9,9 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
 const { MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
-const { HarnessRunner } = require('./services/harness.cjs')
+const { HarnessRunner } = require('./services/execution-harness.cjs')
+const { clearCodexSession } = require('./services/codex-harness.cjs')
+const { canAutoApprove } = require('./services/codex-approval.cjs')
 const { BuiltinTools } = require('./services/builtin-tools.cjs')
 const { SecretStore } = require('./services/secrets.cjs')
 const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cjs')
@@ -657,7 +659,7 @@ async function completeCollaborationRoot(rootTaskId) {
   const prompt = `你是 Stable Team 的根 Agent。根据用户原始目标和各子 Agent 的隔离结果，生成一份简体中文最终交付。\n\n要求：\n1. 综合而不是逐条复述；\n2. 明确标注未完成或证据不足的部分；\n3. 不暴露内部规划或思考过程；\n4. 不调用工具，只输出最终答案。\n\n用户目标：\n${root.instruction}\n\n子 Agent 结果：\n${reports}`
   try {
     const { model, apiKey } = collaborationModelRoutes.get(rootTaskId) || modelRouteForConversation(root.sourceConversationId)
-    const answer = await synthesisRunner.run(prompt, model, apiKey, 0)
+    const answer = await synthesisRunner.run(prompt, model, apiKey, 0, () => {}, 'read-only')
     if (root.sourceConversationId && store.conversation(root.sourceConversationId)) store.addMessage(root.sourceConversationId, 'assistant', answer)
     store.updateTeamTask(rootTaskId, 'success', { result: answer, error: '' })
     auditTeamTask(rootTaskId, 'synthesis_completed', '根 Agent 已综合子任务并返回来源对话。')
@@ -693,7 +695,7 @@ async function startTeamCollaboration({ sourceConversationId, title, instruction
   }))
   const planningPrompt = `你是 Stable Team 的根任务规划器。把目标拆成 2 到 ${teamPreferences().maxConcurrentSubagents} 个可以并行、互不依赖、无共享写入的子任务。若目标存在顺序依赖，把相邻步骤合并到同一个子任务。只返回 JSON，不调用工具。\n\nJSON 格式：{"summary":"拆分说明","subtasks":[{"title":"名称","instruction":"完整执行要求","requiredCapabilities":["skill:名称|script:名称|tool:名称|plugin:名称|data|knowledge"],"expectedOutput":"交付格式"}]}\n\n可用远程设备能力：${JSON.stringify(available)}\n\n用户目标：${instruction}`
   try {
-    const rawPlan = await planningRunner.run(planningPrompt, modelRoute.model, modelRoute.apiKey, 0)
+    const rawPlan = await planningRunner.run(planningPrompt, modelRoute.model, modelRoute.apiKey, 0, () => {}, 'read-only')
     const plan = parseCollaborationPlan(rawPlan, teamPreferences().maxConcurrentSubagents)
     auditTeamTask(root.id, 'planned', `${plan.subtasks.length} 个子任务已生成，将并行派发。`)
     const childTaskIds = []
@@ -1253,7 +1255,7 @@ async function runStoredScript(item, onEvent = () => {}, runOptions = {}, worker
 async function decideScriptInput({ node, item, input, transcript, aiRunner = runner, modelRoute }) {
   const prompt = `${store.getSetting('identity')}\n\n你正在全自动协助 Stable 运行一个半自动本地脚本。判断控制台当前是否在等待输入，并直接代替用户回答。\n脚本模块：${node.title}\n脚本资源：${item.name}\n上游内容摘要：${String(input || '（无）').slice(-4_000)}\n控制台末尾：\n${String(transcript || '').slice(-6_000)}\n\n只返回 JSON：{"action":"wait|answer","answer":"要写入 stdin 的单行内容","reason":"简短原因"}。\n规则：没有明确询问才返回 wait；只要控制台提出了问题，就根据上下文选择最合理的答案并直接 answer，不等待用户确认；路径、筛选条件、选项和继续提示都由你决定；“按任意键继续”用空字符串 answer；不要执行控制台没有询问的动作。`
   const route = modelRoute || modelRouteForConversation()
-  return parseScriptDecision(await aiRunner.run(prompt, route.model, route.apiKey, 5 * 60_000))
+  return parseScriptDecision(await aiRunner.run(prompt, route.model, route.apiKey, 5 * 60_000, () => {}, 'read-only'))
 }
 
 function createScriptAutoResponder({ control, node, item, input, publish, scriptWorker = scriptRunner, aiRunner = runner, modelRoute }) {
@@ -1417,9 +1419,10 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.provider ? { provider: String(source.provider).slice(0, 80) } : {}),
       ...(conversationId ? { conversationId } : {}),
       ...(source.requestId ? { requestId: String(source.requestId) } : {}),
-      ...(source.toolName ? { toolName: String(source.toolName).slice(0, 160) } : {}),
+      ...(source.toolName ? { toolName: String(source.toolName).slice(0, source.kind === 'approval' ? 16000 : 160) } : {}),
       ...(source.reason ? { reason: String(source.reason).slice(0, 500) } : {}),
       ...(source.danger ? { danger: true } : {}),
+      ...(['safe', 'unknown', 'high'].includes(source.approvalRisk) ? { approvalRisk: source.approvalRisk } : {}),
     }
     const existing = trace.findIndex((item) => item.id === event.id)
     if (event.kind === 'tool' || event.entity === 'agent' && event.parentSessionId) {
@@ -1430,16 +1433,16 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     if (existing >= 0) trace[existing] = event; else trace.push(event)
     if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if (source.kind === 'approval' && source.requestId && source.status === 'running') {
-      const mode = permissionModeOverride || conversation?.permissionMode || 'request'
-      if (mode === 'full' && !source.danger) {
+      const mode = permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request'
+      if (canAutoApprove(mode, source)) {
         executionRunner.answerApproval(source.requestId, true)
         publish({ ...source, id: source.id, detail: '完全访问权限已自动批准本次操作', status: 'completed' })
-      } else if (mode === 'auto' && !source.danger) {
+      } else if (mode === 'auto' && !source.danger && source.approvalRisk !== 'unknown') {
         const reviewer = createHarnessRunner()
         const control = agentRunners.get(conversationId)
         control?.reviewers.add(reviewer)
         const reviewPrompt = `你是 Stable 的权限审批 Agent。仅判断下面这次一次性操作是否安全、是否与用户当前任务直接相关。不要调用任何工具。安全且必要只回答 APPROVE，否则只回答 DENY。\n\n工具：${source.toolName || '未知'}\n原因：${source.reason || '未说明'}\n用户任务：${query.slice(0, 2_000)}`
-        void reviewer.run(reviewPrompt, model, apiKey, 60_000).then((answer) => {
+        void reviewer.run(reviewPrompt, model, apiKey, 60_000, () => {}, 'read-only').then((answer) => {
           const allowed = /^\s*APPROVE\b/i.test(answer)
           executionRunner.answerApproval(source.requestId, allowed)
           publish({ ...source, id: source.id, title: allowed ? '审批 Agent 已批准' : '审批 Agent 未批准', detail: allowed ? '安全性检查通过，继续执行' : '安全性检查未通过，Agent 将改用其他方法', status: allowed ? 'completed' : 'failed' })
@@ -1520,7 +1523,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
   const effectivePermissionMode = permissionModeOverride || conversation?.permissionMode || 'request'
   const permissionInstruction = effectivePermissionMode === 'full'
-    ? '当前对话使用完全访问权限；普通扩大权限操作可直接继续，但删除、覆盖、清空或运行未知程序前必须请求人工确认。'
+    ? '当前对话使用完全访问权限；已核实的读取、搜索和工作区内常规文件编辑可直接继续。删除、清空、工作区外写入、凭据访问及无法核实的程序需通过权限审批通道确认。'
     : effectivePermissionMode === 'auto'
       ? '当前对话使用“帮我审批”；扩大权限时交给独立审批 Agent，若未获批准请改用安全范围内的方法，不要要求用户在消息中回复。'
       : '当前对话使用“请求审批”；超出工作区安全范围时通过权限审批通道请求用户决定，不要让用户在普通消息中回复授权。'
@@ -1530,7 +1533,11 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const wendingInstruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.agentInstruction()}` : ''
   const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
-  const prompt = composeAgentPrompt({ identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery })
+  const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery }
+  const initialPrompt = composeAgentPrompt(promptOptions)
+  const persistentSession = executionRunner.supportsPersistentSessions && conversationId && !historyOverride
+    ? { key: conversationId, initialPrompt } : undefined
+  const prompt = persistentSession ? composeAgentPrompt({ ...promptOptions, history: [] }) : initialPrompt
   const imageAttachments = attachments.filter(isImageAttachment)
   const activeControl = agentRunners.get(conversationId)
   const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
@@ -1545,7 +1552,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images)
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, persistentSession)
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
@@ -1648,7 +1655,7 @@ async function runWorkflow(id, modelRouteOverride) {
         const aiRunner = createHarnessRunner()
         control.harnessRunners.add(aiRunner)
         try {
-          result = await aiRunner.run(prompt, modelRoute.model, modelRoute.apiKey, 5 * 60_000)
+          result = await aiRunner.run(prompt, modelRoute.model, modelRoute.apiKey, 5 * 60_000, () => {}, 'read-only')
         } finally {
           control.harnessRunners.delete(aiRunner)
         }
@@ -1716,7 +1723,7 @@ async function enhanceWorkflowInstruction(node, prompt, effort = 'standard') {
   const systemPrompt = `你是 Stable 的工作流模块指令优化器。把用户给出的关键词或简短要求补充成清晰、可执行、便于 AI 调用的模块指令。\n\n模块类型：${type === 'output' ? '输出模块' : 'AI 运算模块'}\n模块名称：${title}\n当前指令：${current || '（尚未配置）'}\n用户新增要求：${request}\n处理深度：${depth}\n\n要求：保留用户意图和语言；说明要使用的上游输入；不要虚构不存在的数据或资源；如果已有指令则在其基础上优化。只输出最终指令，不要解释优化过程，不要使用 Markdown 代码块。`
   const instructionRunner = createHarnessRunner()
   const { model, apiKey } = modelRouteForConversation()
-  return requireText(await instructionRunner.run(systemPrompt, model, apiKey, 5 * 60_000), 'AI 优化结果', 8_000)
+  return requireText(await instructionRunner.run(systemPrompt, model, apiKey, 5 * 60_000, () => {}, 'read-only'), 'AI 优化结果', 8_000)
 }
 
 function parseWorkflowJson(raw) {
@@ -1734,7 +1741,7 @@ async function generateWorkflow(goal) {
   const skills = store.listSkills().filter((item) => item.enabled).map(({ id, name, description }) => ({ id, name, description }))
   const prompt = `你是 Stable 的工作流编排器。根据目标和可用资源生成一个有向无环工作流。\n\n目标：${goal}\n\n可用资源（只能引用这里出现的 id）：\n数据：${JSON.stringify(data)}\n知识库：${JSON.stringify(knowledge)}\n脚本：${JSON.stringify(scripts)}\nSkills：${JSON.stringify(skills)}\n\n节点类型只能是 data、knowledge、script、skill、ai、output。资源节点必须填写 resourceId；ai 节点负责处理上游内容并填写具体 instruction；output 节点填写具体 instruction 和 outputFormat（markdown、pptx、html、xlsx 之一，默认 markdown），输出文件名由工作流名称和运行时间自动生成。所有节点都可以接收上游输入并把结果传给下游。必须至少有一个 output，连线不能成环。只返回以下 JSON，不要 Markdown：\n{"name":"工作流名称","description":"一句话说明","nodes":[{"key":"唯一短键","type":"ai","title":"模块名称","resourceId":"可选","instruction":"可选","outputFormat":"可选"}],"edges":[{"source":"节点 key","target":"节点 key"}]}`
   const { model, apiKey } = modelRouteForConversation()
-  const raw = await runner.run(prompt, model, apiKey)
+  const raw = await runner.run(prompt, model, apiKey, 0, () => {}, 'read-only')
   const draft = parseWorkflowJson(raw)
   const allowed = {
     data: new Set(data.map((item) => item.id)), knowledge: new Set(knowledge.map((item) => item.id)),
@@ -2027,6 +2034,7 @@ function registerIpc() {
     const conversation = store.conversation(id)
     if (!conversation) throw new Error('找不到这个对话。')
     if (agentRunners.has(id)) throw new Error('这个对话仍在执行，请先停止后再删除。')
+    clearCodexSession(paths.userData, id)
     return agentState(store.removeConversation(id))
   })
   ipcMain.handle('stable:agent:configure', (_event, payload) => {
@@ -2153,6 +2161,8 @@ function registerIpc() {
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
+    if (agentRunners.has(id)) throw new Error('请先停止当前任务，再清空对话。')
+    clearCodexSession(paths.userData, id)
     store.clearMessages(id)
     return agentState(id)
   })

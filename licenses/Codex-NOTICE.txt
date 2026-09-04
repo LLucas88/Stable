@@ -1,0 +1,11 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from Ratatui (https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+Stable bundles the unmodified @openai/codex 0.142.2 Windows x64 runtime.
+Source: https://github.com/openai/codex
+License and upstream notice retrieved from the official repository on 2026-09-03.
+The Stable protocol and model adapters are maintained separately from Codex.

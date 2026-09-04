@@ -29,8 +29,10 @@ jobs:
           if (-not (Test-Path -LiteralPath runtime/node/node.exe) -or -not (Test-Path -LiteralPath runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
       - run: npm run tools:install
+      - run: npm run runtime:codex
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:codex-integration
       - run: npm run build
       - name: Build full installer and lightweight updater
         shell: pwsh
@@ -39,6 +41,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Full installer build failed.' }
           npm run dist:update
           if ($LASTEXITCODE -ne 0) { throw 'Lightweight updater build failed.' }
+      - run: npm run test:codex-packaged
       - name: Download previous Stable installer
         shell: pwsh
         env:

@@ -763,7 +763,7 @@ const CAPABILITY_OPTIONS: Array<{ id: AgentCapability; label: string; detail: st
 const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; detail: string }> = [
   { id: 'request', label: '请求审批', detail: '超出工作区安全范围时，由你在对话内确认。' },
   { id: 'auto', label: '帮我审批', detail: '交给独立审批 Agent 检查；未通过时自动换方法。' },
-  { id: 'full', label: '完全访问权限', detail: '普通操作直接执行；删除、覆盖和未知程序仍需你确认。' },
+  { id: 'full', label: '完全访问权限', detail: '已核实的读取、搜索和工作区文件操作自动执行；高风险或无法核实的操作仍需确认。' },
 ]
 
 interface AgentTraceRun {
@@ -1580,7 +1580,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 function ApprovalCard({ item, onDecision }: { item: AgentTraceItem; onDecision: (allowed: boolean) => void | Promise<void> }) {
   return <section className="approval-card" role="alertdialog" aria-label="权限审批">
     <div className="approval-card-icon">{item.danger ? <CircleAlert size={20} /> : <ShieldCheck size={20} />}</div>
-    <div className="approval-card-copy"><span>{item.danger ? '高风险操作需要你确认' : 'Agent 请求扩大权限'}</span><h3>{item.toolName || item.title}</h3><p>{item.reason || item.detail || '本次操作需要超出工作区的安全范围。'}</p><small>权限仅对本次操作生效。</small></div>
+    <div className="approval-card-copy"><span>{item.danger ? '高风险操作需要你确认' : item.approvalRisk === 'unknown' ? '无法自动确认此操作，请你复核' : 'Agent 请求扩大权限'}</span><h3>{item.toolName || item.title}</h3><p>{item.reason || item.detail || '本次操作需要超出工作区的安全范围。'}</p><small>权限仅对本次操作生效。</small></div>
     <div className="approval-card-actions"><button className="button" type="button" onClick={() => void onDecision(false)}>不允许</button><button className="button primary" type="button" onClick={() => void onDecision(true)}>允许一次</button></div>
   </section>
 }

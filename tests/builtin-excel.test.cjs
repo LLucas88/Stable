@@ -76,3 +76,21 @@ test('built-in tools are wired into desktop and full/lightweight packaging', () 
   assert.throws(() => require('../scripts/verify-builtin-tools.cjs')({ appDir: path.join(os.tmpdir(), 'stable-missing-tool-deps') }), /tools:install/)
   assert.match(fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8'), /npm run tools:install/)
 })
+
+test('actual builder resource filters ship usable Excel dependencies in full and update layouts', async t => {
+  const { FileMatcher, copyFiles } = require('app-builder-lib/out/fileMatcher.js')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-excel-package-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const configs = [require('../package.json').build, require('../build/update-builder.config.cjs')]
+  for (const [index, config] of configs.entries()) {
+    const resources = path.join(root, String(index)); fs.mkdirSync(resources)
+    const matches = config.extraResources.filter(item => item.to === 'agent-tools' || item.to.startsWith('agent-tools/'))
+      .map(item => new FileMatcher(path.resolve(__dirname, '..', item.from), path.join(resources, item.to), value => value, item.filter))
+    await copyFiles(matches, null, false)
+    const result = await executeExcel({ workspace: resources, dependencyRoot: path.join(resources, 'agent-tools'),
+      args: { action: 'create', output: 'packaged.xlsx', sheets: [{ name: 'Sheet', rows: [['packaged', 170]] }] } })
+    assert.equal(result.verified, true)
+    const book = new ExcelJS.Workbook(); await book.xlsx.readFile(result.path)
+    assert.equal(book.getWorksheet('Sheet').getCell('B1').value, 170)
+  }
+})

@@ -1,7 +1,7 @@
 {
   "name": "stable-desktop",
   "version": "0.91.7",
-  "description": "Stable local agent workbench powered by DeepSeek Harness",
+  "description": "Stable local agent workbench powered by Codex Harness",
   "main": "desktop/main.cjs",
   "private": true,
   "license": "MIT",
@@ -14,12 +14,15 @@
     "pretest": "node node_modules/electron/install.js",
     "test": "node --test tests/*.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
+    "test:codex-integration": "node tests/codex-integration.cjs",
+    "test:codex-packaged": "node tests/codex-packaged.cjs",
+    "runtime:codex": "node scripts/prepare-codex-runtime.cjs",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "tools:install": "npm ci --prefix vendor/agent-tools --ignore-scripts --no-audit --no-fund",
     "tools:verify": "node scripts/verify-builtin-tools.cjs",
-    "dist:dir": "npm run build && electron-builder --win --x64 --dir",
-    "dist": "npm run build && electron-builder --win --x64",
-    "dist:update": "electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
+    "dist:dir": "npm run runtime:codex && npm run build && electron-builder --win --x64 --dir",
+    "dist": "npm run runtime:codex && npm run build && electron-builder --win --x64",
+    "dist:update": "npm run runtime:codex && electron-builder --config build/update-builder.config.cjs --win --x64 --publish never"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
@@ -38,6 +41,7 @@
     "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "@openai/codex": "0.142.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
@@ -63,7 +67,16 @@
       {
         "from": "vendor/agent-tools",
         "to": "agent-tools",
-        "filter": ["package.json", "package-lock.json", "README.md", "node_modules/**/*"]
+        "filter": [
+          "package.json",
+          "package-lock.json",
+          "README.md"
+        ]
+      },
+      {
+        "from": "vendor/agent-tools/node_modules",
+        "to": "agent-tools/node_modules",
+        "filter": ["**/*"]
       },
       {
         "from": "licenses",
@@ -71,11 +84,19 @@
       },
       {
         "from": "runtime",
-        "to": "runtime"
+        "to": "runtime",
+        "filter": [
+          "**/*",
+          "!codex/**/*"
+        ]
       },
       {
         "from": "vendor/wending-cli",
         "to": "wending-cli"
+      },
+      {
+        "from": "runtime/codex",
+        "to": "codex"
       }
     ],
     "directories": {
