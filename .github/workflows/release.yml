@@ -34,6 +34,8 @@ jobs:
       - run: npm test
       - run: npm run test:codex-integration
       - run: npm run build
+      - name: Verify isolated installer runtime migration and rollback
+        run: node tests/installer-runtime-integration.cjs
       - name: Build full installer and lightweight updater
         shell: pwsh
         run: |

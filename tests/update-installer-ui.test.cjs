@@ -11,6 +11,16 @@ const installer = readFileSync(path.join(root, 'build', 'installer.nsi'), 'utf8'
 const installSection = readFileSync(path.join(root, 'build', 'stable-install-section.nsh'), 'utf8')
 const updateConfig = require('../build/update-builder.config.cjs')
 
+test('lightweight packages declare update-only installation and reject a missing target before uninstall', () => {
+  assert.equal(updateConfig.nsis.include, 'build/update-installer.nsh')
+  const include = readFileSync(path.join(root, updateConfig.nsis.include), 'utf8')
+  assert.match(include, /!define STABLE_LIGHTWEIGHT_UPDATE/)
+  assert.match(include, /!include "\$\{__FILEDIR__\}\\installer.nsh"/)
+  assert.match(installSection, /!ifdef STABLE_LIGHTWEIGHT_UPDATE[\s\S]+stableStopUpdate 21[\s\S]+Goto stableAtomicUpdate[\s\S]+!endif/)
+  assert.match(installer, /\$\{ifNot\} \$\{isUpdated\}\s+RMDir \/r "\$stableUninstallRuntimeDir"/)
+  assert.match(installer, /MessageBox MB_OK\|MB_ICONSTOP "\$\{message\}/)
+})
+
 test('update installer overrides legacy silent parameters and uses one progress window', () => {
   assert.match(customInstaller, /GetOptions[^\n]+--updated/)
   assert.match(customInstaller, /SetSilent normal/)

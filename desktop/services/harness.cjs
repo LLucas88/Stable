@@ -2,11 +2,12 @@
 
 const { spawn, spawnSync } = require('node:child_process')
 const { randomUUID } = require('node:crypto')
-const { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } = require('node:fs')
+const { existsSync, mkdirSync, mkdtempSync, writeFileSync } = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
 const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
 const { TOOL_SPECS, installBuiltinBridge } = require('./builtin-tool-bridge.cjs')
+const { removeWithoutFollowingLinks } = require('./safe-remove.cjs')
 
 const ZHIPU_SEARCH_PROVIDER_ID = 'zhipu-official'
 const ZHIPU_SEARCH_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/web_search'
@@ -178,16 +179,6 @@ function buildHarnessEnvironment({ baseEnvironment = process.env, model, apiKey,
   return environment
 }
 
-function removeWithoutFollowingLinks(target) {
-  let stats
-  try { stats = lstatSync(target) }
-  catch (error) { if (error?.code === 'ENOENT') return; throw error }
-  if (stats.isSymbolicLink()) { unlinkSync(target); return }
-  if (!stats.isDirectory()) { rmSync(target, { force: true }); return }
-  for (const name of readdirSync(target)) removeWithoutFollowingLinks(path.join(target, name))
-  rmdirSync(target)
-}
-
 function cleanupHarnessRunDirectory(dshHome, expectedRunsRoot) {
   const resolved = path.resolve(dshHome)
   const resolvedRunsRoot = path.resolve(expectedRunsRoot)
@@ -255,7 +246,9 @@ class HarnessRunner {
     if (!apiKey) throw new Error('请先在“设置”中保存 API Key。')
     if (imageAttachments.length && isDeepSeekModel(model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
     const paths = this.runtimePaths()
-    if (!this.ready()) throw new Error('Stable 的 Harness 运行时不完整，请重新安装。')
+    if (!this.ready()) throw new Error(this.options.packaged
+      ? 'Stable 的 Harness 运行时缺失或不完整。请使用 Stable-Setup 完整安装包覆盖修复，保留现有用户数据；Stable-Update 轻量更新包无法补齐运行时。'
+      : 'Stable 的 Harness 运行时缺失或不完整。请准备项目 runtime/ 目录，或通过 STABLE_DSH_RUNTIME 指定完整运行时。')
     const runsRoot = path.join(this.options.userData, 'harness', 'runs')
     const dshHome = this.writeSettings(model)
     this.approvalDir = path.join(dshHome, 'approvals', `${Date.now()}-${Math.random().toString(16).slice(2)}`)

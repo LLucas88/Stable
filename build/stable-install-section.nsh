@@ -57,8 +57,16 @@ ${if} $isTryToKeepShortcuts == "true"
   ${endIf}
 ${endif}
 
+!ifdef STABLE_LIGHTWEIGHT_UPDATE
+  ${ifNot} ${FileExists} "$appExe"
+    !insertmacro stableStopUpdate 21 "未找到原 Stable 安装。请使用 Stable-Setup 完整安装包修复或首次安装。"
+  ${endif}
+  Goto stableAtomicUpdate
+!endif
 ${if} ${isUpdated}
-${andIf} ${FileExists} "$appExe"
+  ${ifNot} ${FileExists} "$appExe"
+    !insertmacro stableStopUpdate 21 "原 Stable 安装目录无效，更新已停止。请使用 Stable-Setup 完整安装包修复。"
+  ${endif}
   Goto stableAtomicUpdate
 ${endif}
 Goto stableLegacyInstall
@@ -139,7 +147,7 @@ stableRuntimeFailed:
   ${endif}
   RMDir /r "$stableStageDir"
   !insertmacro stableReportProgress "68" "runtime_failed" "failed" "11"
-  !insertmacro stableStopUpdate 11 "本地运行环境准备失败，安装未完成。"
+  !insertmacro stableStopUpdate 11 "本地运行环境缺失或不完整。请使用 Stable-Setup 完整安装包修复；Stable-Update 轻量包不能补齐运行环境。"
 
 stableRuntimeReady:
   ${ifNot} ${FileExists} "$stableRuntimeDir\node\node.exe"

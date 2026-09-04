@@ -149,6 +149,9 @@ FunctionEnd
       Abort "$stableProgressPercent% · ${message}（E${code}）"
     ${endif}
   ${endif}
+  ${ifNot} ${Silent}
+    MessageBox MB_OK|MB_ICONSTOP "${message}（E${code}）"
+  ${endif}
   Quit
 !macroend
 
@@ -348,7 +351,10 @@ FunctionEnd
   ${if} $stableUninstallRuntimeDir == ""
     StrCpy $stableUninstallRuntimeDir "$LOCALAPPDATA\stable-desktop\runtime-v1"
   ${endif}
-  RMDir /r "$stableUninstallRuntimeDir"
+  # Replacement installers pass --updated; preserve the shared runtime for them.
+  ${ifNot} ${isUpdated}
+    RMDir /r "$stableUninstallRuntimeDir"
+  ${endif}
   SetOutPath "$TEMP"
   RMDir /r "$INSTDIR"
   ${if} ${FileExists} "$INSTDIR\*.*"

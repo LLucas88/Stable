@@ -1,7 +1,8 @@
 'use strict'
 
-const { readdirSync, rmSync } = require('node:fs')
+const { readdirSync } = require('node:fs')
 const path = require('node:path')
+const { removeWithoutFollowingLinks } = require('./safe-remove.cjs')
 
 function staleInstallPaths(execPath) {
   const installDir = path.resolve(path.dirname(execPath))
@@ -17,7 +18,7 @@ function cleanupStaleInstalls(execPath) {
   const removed = []
   for (const candidate of staleInstallPaths(execPath)) {
     try {
-      rmSync(candidate, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+      removeWithoutFollowingLinks(candidate)
       removed.push(candidate)
     } catch { /* antivirus or a previous process may still hold the rollback directory */ }
   }

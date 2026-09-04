@@ -41,6 +41,15 @@ npm start
 - 修正资源配置后重新构建免安装包，包内 17 项真实 Codex 集成检查与无界面健康检查通过（退出码 0）。包内报告：`qa-artifacts/codex-integration/1788489605752/report.json`。本轮完整日志和原目录校验记录位于工作区外的 `D:/Codex/qa-artifacts/codex-harness-integration-20260904/`。
 - 本次不发布安装器、标签或 Release。下方旧发布准备与开发记录保留为历史，不能视为本整合分支的发布授权。
 
+## 2026-09-04 Harness 运行时缺失修复（独立分支，未发布）
+
+- 基于远端 main `6659bd1`，在 `Stable-harness-runtime-fix` / `fix/harness-runtime-discovery` 修复更新器降级卸载、替换安装清理持久运行时，以及 Electron 清理旧目录时沿 Junction 误删外部文件的问题。
+- NSIS 10 场景与 Electron 目录链接回归验证了修复前失败、修复后通过；类型检查、构建及本地更新包编译通过。全量 247 项中的 2 项真实 Harness 测试在并发构建时超时，后续串行复测全部通过，详见 `docs/harness-runtime-repair.md`。
+- 故障机确认是应用内更新，但其安装路径、更新前版本和运行时现场尚未获得，不能认定具体触发路径已确认。已缺失的运行时需完整 Setup 覆盖修复并在故障机发送消息验收。
+- 未推送 main、未创建标签或 Release；发布前仍需 hosted 安装升级/回滚门禁。诊断脚本为 `scripts/diagnose-harness-runtime.ps1`，只读且不读取聊天或凭据。
+
+> 最后更新：2026-09-04
+> 文档版本：`2026-09-04.1`
 ## v0.91.7 发布准备（2026-09-04）
 
 - 用户授权合并本分支到远端 main 并发布 GitHub 更新。发布前远端 main 为 `40b034f`，最新正式 Release 为 v0.91.1；本分支当前版本 v0.91.7，尚无同名远端标签。

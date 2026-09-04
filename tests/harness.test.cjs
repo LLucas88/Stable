@@ -153,6 +153,14 @@ test('harness config stores only an environment reference, never the API key', (
   }
 })
 
+test('missing runtime gives recovery instructions for the actual distribution', () => {
+  for (const packaged of [true, false]) {
+    const runner = new HarnessRunner({ packaged })
+    runner.runtimePaths = () => ({ node: '', cli: '' })
+    assert.throws(() => runner.run('hello', {}, 'test-key'), packaged ? /Stable-Setup.*Stable-Update/ : /runtime\/.*STABLE_DSH_RUNTIME/)
+  }
+})
+
 test('each harness run keeps its model settings and credentials isolated', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-harness-isolation-'))
   const runtime = { node: path.join(root, 'node.exe'), cli: path.join(root, 'bin.js') }

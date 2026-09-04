@@ -9,6 +9,7 @@ const http = require('node:http')
 const { BuiltinTools } = require('../../desktop/services/builtin-tools.cjs')
 const { BrowserTool } = require('../../desktop/services/browser-tool.cjs')
 const { HarnessRunner } = require('../../desktop/services/harness.cjs')
+const { removeWithoutFollowingLinks } = require('../../desktop/services/safe-remove.cjs')
 const ExcelJS = require('../../vendor/agent-tools/node_modules/exceljs')
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-builtin-e2e-'))
 app.setPath('userData', path.join(root, 'profile'))
@@ -125,4 +126,4 @@ function cleanup(code) {
   runner?.cancel(); direct?.dispose(); server?.closeAllConnections(); server?.close()
   app.exit(code)
 }
-process.on('exit', () => { try { fs.rmSync(root, { recursive: true, force: true }) } catch {} })
+process.on('exit', () => { try { removeWithoutFollowingLinks(root) } catch {} })

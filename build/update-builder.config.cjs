@@ -8,6 +8,7 @@ module.exports = {
   extraResources: (pkg.build.extraResources || []).filter((item) => item?.to !== 'runtime'),
   nsis: {
     ...pkg.build.nsis,
+    include: 'build/update-installer.nsh',
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     runAfterFinish: false,
