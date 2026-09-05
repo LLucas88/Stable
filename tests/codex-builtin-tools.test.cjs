@@ -29,7 +29,7 @@ for (const mode of ['allow', 'deny', 'read-only', 'cancel']) test(`Codex browser
     const home = sessionDirectory(root, 'old'); fs.mkdirSync(home, { recursive: true })
     fs.writeFileSync(path.join(home, 'stable-thread.json'), JSON.stringify({ threadId: 'legacy', seeded: true, reasoningVersion: 1 }))
     const run = runner.run('NEXT', model, 'unused', 10000, (event) => {
-      if (event.kind !== 'approval') return
+      if (event.kind !== 'approval' || event.status !== 'running') return
       approvals++
       assert.equal(canAutoApprove('full', event), false)
       if (mode === 'cancel') runner.cancel()

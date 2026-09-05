@@ -29,7 +29,8 @@ test('only fresh successful assistant output marks completion, not stream/tool e
 test('pinned and normal rows share spinner/unread indicators with hover and keyboard menu replacement', () => {
   assert.match(app, /runningMap\[item.id\] \? 'running' : unread.has\(item.id\) \? 'unread'/)
   assert.match(app, /<LoaderCircle className="spin" size=\{15\}/)
-  assert.match(app, /className="conversation-unread-dot"/)
+  assert.match(app, /className=\{activity === 'approval' \? 'conversation-approval-dot' : 'conversation-unread-dot'\}/)
+  assert.match(app, /approvalUnread.has\(item.id\) && !\(active && item.id === activeConversation.id\) \? 'approval'/)
   assert.match(css, /\.conversation-list-item:has\(:focus-visible\) \.conversation-activity/)
   assert.match(css, /\.conversation-list-item:has\(:focus-visible\) \.conversation-item-actions/)
   assert.match(css, /prefers-reduced-motion: reduce[^\n]*\.conversation-activity \.spin \{ animation: spin 1\.6s steps\(8, end\) infinite !important;/)

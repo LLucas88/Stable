@@ -15,7 +15,8 @@ import { formatElapsedTime } from './duration'
 import { buildTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus } from './trace-timeline'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { taskErrorMessage } from './task-feedback'
-import { WendingLoginPanel } from './WendingLoginPanel'
+import { ConversationWending } from './ConversationWending'
+import { ApprovalComposer } from './ApprovalComposer'
 import { useComposerAutosize } from './use-composer-autosize'
 import { useConversationUnread } from './use-conversation-unread'
 import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode, WendingCliStatus } from './types'
@@ -396,23 +397,10 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
   const [cliStatus, setCliStatus] = useState<WendingCliStatus>({ id: 'wending-cli', status: 'checking', version: '0.9.0.dev9', detail: '正在读取内置服务状态。' })
   const [using, setUsing] = useState(false)
   const [localError, setLocalError] = useState('')
-  const [loginOpen, setLoginOpen] = useState(false)
   const useLock = useRef(false)
   const alive = useRef(true)
   const useButton = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    alive.current = true
-    return () => { alive.current = false; void window.stable.extensions.cancelWendingLogin().catch(() => {}) }
-  }, [])
-
-  function closeLogin() {
-    setLoginOpen(false)
-    void window.stable.extensions.cancelWendingLogin().then((login) => {
-      if (alive.current) setCliStatus((current) => ({ ...current, login }))
-    }).catch(() => {})
-    requestAnimationFrame(() => useButton.current?.focus())
-  }
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -423,18 +411,17 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
   }, [])
 
   async function useWending() {
-    if (useLock.current || loginOpen || cliStatus.status === 'unavailable') return
+    if (useLock.current || cliStatus.status === 'unavailable') return
     useLock.current = true
     setUsing(true)
     setLocalError('')
     setCliStatus((current) => ({ ...current, status: 'checking', detail: '正在后台验证内置命令。' }))
     try {
-      const checked = await window.stable.extensions.prepareWending()
+      const checked = await window.stable.extensions.wendingStatus()
       if (!alive.current) return
       setCliStatus(checked)
-      if (checked.status !== 'ready') throw new Error(checked.detail)
-      if (checked.login?.phase === 'ready' && !checked.login.error) await onUseWending()
-      else setLoginOpen(true)
+      if (checked.status === 'unavailable') throw new Error(checked.detail)
+      await onUseWending()
     } catch (reason) {
       setLocalError(errorMessage(reason))
     } finally {
@@ -449,12 +436,12 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
   return <section className="extension-market page-stage" data-page="mcp-cli">
     <header className="extension-market-head">
       <div><span>TOOL CENTER</span><h1>MCP &amp; CLI</h1><p>把可调用的本地服务带入 Stable 对话。首版已内置问鼎 CLI，MCP 暂未开放。</p></div>
-      <div className="extension-market-note"><ShieldCheck size={18} aria-hidden="true" /><span>点击“使用”会先检查登录；进入对话只预填提示词，不会自动发送或执行业务任务。</span></div>
+      <div className="extension-market-note"><ShieldCheck size={18} aria-hidden="true" /><span>点击“使用”创建独立任务，再在任务内登录；仅预填提示词，不会自动发送或执行业务任务。</span></div>
     </header>
     <div className="extension-market-body">
       <div className="extension-tabs" role="tablist" aria-label="工具类型">
         <button type="button" role="tab" aria-selected={tab === 'cli'} data-active={tab === 'cli' || undefined} onClick={() => setTab('cli')}>CLI <small>1</small></button>
-        <button type="button" role="tab" aria-selected={tab === 'mcp'} data-active={tab === 'mcp' || undefined} onClick={() => { if (loginOpen) closeLogin(); setTab('mcp') }}>MCP <small>0</small></button>
+        <button type="button" role="tab" aria-selected={tab === 'mcp'} data-active={tab === 'mcp' || undefined} onClick={() => setTab('mcp')}>MCP <small>0</small></button>
       </div>
 
       {tab === 'cli' ? <div className="extension-catalog" role="tabpanel" aria-label="CLI 服务">
@@ -469,18 +456,17 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
               <StatusIcon className={cliStatus.status === 'checking' ? 'spin' : undefined} size={15} aria-hidden="true" />
               <span><strong>{statusLabel}</strong>{cliStatus.detail}</span>
             </div>
-            <p className="extension-login-status">{cliStatus.login?.phase === 'ready' ? `已登录 · ${cliStatus.login.brandLabel || '品牌已验证'}` : cliStatus.login?.phase === 'signed_out' ? '未登录' : cliStatus.login?.phase === 'choose_brand' ? '待选择品牌' : '登录尚未完成核验'}</p>
+            <p className="extension-login-status">每个任务独立绑定账号、渠道和品牌</p>
             {localError && <p className="extension-card-error" role="alert">{localError}</p>}
           </div>
           <div className="extension-card-action">
             <span>v{cliStatus.version}</span>
-            <button ref={useButton} className="button primary" type="button" disabled={using || loginOpen || cliStatus.status === 'unavailable'} onClick={() => void useWending()}>
+            <button ref={useButton} className="button primary" type="button" disabled={using || cliStatus.status === 'unavailable'} onClick={() => void useWending()}>
               {using ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <MessageSquareText size={16} aria-hidden="true" />}
               {using ? '正在准备' : cliStatus.status === 'unavailable' ? '资源不可用' : '使用'}
             </button>
           </div>
         </article>
-        {loginOpen && cliStatus.login && <WendingLoginPanel state={cliStatus.login} onState={(login) => setCliStatus((current) => ({ ...current, login }))} onReady={onUseWending} onClose={closeLogin} />}
         <div className="extension-use-preview">
           <div><SquarePromptIcon /><span>进入新对话后将自动填入</span></div>
           <code>{WENDING_CLI_PREFILL}</code>
@@ -763,7 +749,7 @@ const CAPABILITY_OPTIONS: Array<{ id: AgentCapability; label: string; detail: st
 const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; detail: string }> = [
   { id: 'request', label: '请求审批', detail: '超出工作区安全范围时，由你在对话内确认。' },
   { id: 'auto', label: '帮我审批', detail: '交给独立审批 Agent 检查；未通过时自动换方法。' },
-  { id: 'full', label: '完全访问权限', detail: '已核实的读取、搜索和工作区文件操作自动执行；高风险或无法核实的操作仍需确认。' },
+  { id: 'full', label: '完全访问权限', detail: '允许联网；已核实的读取、搜索和工作区文件操作自动执行；高风险或无法核实的操作仍需确认。' },
 ]
 
 interface AgentTraceRun {
@@ -821,7 +807,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { id: string; runId: string; turn: number; step: number; time: number; content: string } | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
-  const { unread, markRead, markCompleted } = useConversationUnread(state.activeConversationId, active)
+  const { unread, approvalUnread, markRead, markCompleted, markApproval, clearApprovals } = useConversationUnread(state.activeConversationId, active)
   const completedUnreadCount = state.conversations.filter((item) => unread.has(item.id) && !runningMap[item.id]).length
   useEffect(() => {
     // Optional chaining keeps development/older preview bridges compatible.
@@ -854,6 +840,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
+  const pendingApproval = running ? liveTrace?.items.find((item) => item.kind === 'approval' && item.status === 'running' && item.requestId) : undefined
   const streamingAnswer = streamingAnswerMap[state.activeConversationId]
   const attachments = attachmentMap[state.activeConversationId] || []
   const imageAttachments = attachments.filter(attachmentIsImage)
@@ -947,6 +934,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => window.stable.agent.onEvent((event) => {
     if (!event.conversationId) return
+    if (event.kind === 'approval') markApproval(event.conversationId, `${event.runId}:${event.id}`, event.status === 'running')
+    if (event.id === 'complete' || (event.id === 'runtime' && (event.status === 'failed' || event.status === 'cancelled'))) clearApprovals(event.conversationId)
     if (event.eventType === 'agent/answer-delta') {
       if (event.delta) setStreamingAnswerMap((all) => {
           const current = all[event.conversationId]
@@ -1262,8 +1251,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   function ConversationRow({ item }: { item: ConversationItem }) {
     const menuOpen = conversationMenuId === item.id
-    const activity = runningMap[item.id] ? 'running' : unread.has(item.id) ? 'unread' : undefined
-    const activityLabel = activity === 'running' ? '任务执行中' : activity === 'unread' ? '已完成，未读' : ''
+    const activity = approvalUnread.has(item.id) && !(active && item.id === activeConversation.id) ? 'approval' : runningMap[item.id] ? 'running' : unread.has(item.id) ? 'unread' : undefined
+    const activityLabel = activity === 'approval' ? '有待查看的审批请求' : activity === 'running' ? '任务执行中' : activity === 'unread' ? '已完成，未读' : ''
     return <article className="conversation-list-item" data-conversation-id={item.id} data-activity={activity} data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
       <button className="conversation-pin-action" type="button" onClick={() => togglePin(item)} aria-label={item.pinned ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}><span>{item.pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</span></button>
       {editingId === item.id
@@ -1273,7 +1262,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
           {activityLabel && <span className="sr-only">{activityLabel}</span>}
         </button>}
       {activity && <span className="conversation-activity" title={activityLabel} aria-hidden="true">
-        {activity === 'running' ? <LoaderCircle className="spin" size={15} /> : <span className="conversation-unread-dot" />}
+        {activity === 'running' ? <LoaderCircle className="spin" size={15} /> : <span className={activity === 'approval' ? 'conversation-approval-dot' : 'conversation-unread-dot'} />}
       </span>}
       <div className="conversation-item-actions" data-conversation-menu={item.id}>
         <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setConversationMenuId((current) => current === item.id ? '' : item.id)}><MoreVertical size={15} aria-hidden="true" /></button>
@@ -1418,17 +1407,14 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       <header className="conversation-topbar">
         <button className="conversation-sidebar-toggle" type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="打开对话列表"><PanelLeftOpen size={18} /></button>
         <div><span>当前任务</span><strong>{activeConversation.title}</strong></div>
+        <ConversationWending key={state.activeConversationId} conversationId={state.activeConversationId} running={running} active={active} autoOpen={prefill === WENDING_CLI_PREFILL} />
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
           {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
-          {liveTrace && <RunTrace items={liveTrace.items.filter((item) => item.kind !== 'approval' || item.status !== 'running')} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
-          {liveTrace?.items.filter((item) => item.kind === 'approval' && item.status === 'running').map((item) => <ApprovalCard key={item.id} item={item} onDecision={async (allowed) => {
-            if (!item.requestId) return
-            await window.stable.agent.answerApproval(activeConversation.id, item.requestId, allowed)
-            setTraceMap((all) => ({ ...all, [activeConversation.id]: all[activeConversation.id] ? { ...all[activeConversation.id]!, items: all[activeConversation.id]!.items.map((entry) => entry.id === item.id ? { ...entry, title: allowed ? '你已批准本次操作' : '你未批准本次操作', detail: allowed ? '继续执行当前任务' : 'Agent 将改用其他方法', status: allowed ? 'completed' : 'failed' } : entry) } : undefined }))
-          }} />)}
+          {liveTrace && <RunTrace items={liveTrace.items} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
+
         </div>
       </div>
       <div className="composer">
@@ -1455,7 +1441,14 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             </>}
           </div>)}</div>
         </section>}
-        <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
+        {pendingApproval ? <ApprovalComposer key={`${activeConversation.id}:${pendingApproval.id}`} item={pendingApproval} onDecision={(decision) => action('正在处理审批', async () => {
+          const conversationId = activeConversation.id
+          const item = pendingApproval
+          const accepted = await window.stable.agent.answerApproval(conversationId, item.requestId!, decision)
+          if (!accepted) throw new Error('此审批请求已结束，请等待任务状态更新。')
+          markApproval(conversationId, `${liveTrace?.runId}:${item.id}`, false)
+          setTraceMap((all) => ({ ...all, [conversationId]: all[conversationId] ? { ...all[conversationId]!, items: all[conversationId]!.items.map((entry) => entry.id === item.id ? { ...entry, title: decision === 'deny' ? '已拒绝本次操作' : decision === 'conversation' ? '此对话已允许该类操作' : '已允许本次操作', status: 'completed' } : entry) } : undefined }))
+        })} /> : <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
           <div className="composer-box">
             {imageAttachments.length > 0 && <div className="composer-image-selections" aria-label="待发送图片">
               {imageAttachments.map((item, index) => <div className="composer-image-selection" key={item.path}>
@@ -1553,7 +1546,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               <span className="sr-only" role="status" aria-live="polite">{modelStatus}</span>
             </div>
           </div>
-        </DropTarget>
+        </DropTarget>}
       </div>
     </div>
     {previewTarget && <aside className="conversation-preview" aria-label="对话文件预览">
@@ -1577,13 +1570,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   </section>
 }
 
-function ApprovalCard({ item, onDecision }: { item: AgentTraceItem; onDecision: (allowed: boolean) => void | Promise<void> }) {
-  return <section className="approval-card" role="alertdialog" aria-label="权限审批">
-    <div className="approval-card-icon">{item.danger ? <CircleAlert size={20} /> : <ShieldCheck size={20} />}</div>
-    <div className="approval-card-copy"><span>{item.danger ? '高风险操作需要你确认' : item.approvalRisk === 'unknown' ? '无法自动确认此操作，请你复核' : 'Agent 请求扩大权限'}</span><h3>{item.toolName || item.title}</h3><p>{item.reason || item.detail || '本次操作需要超出工作区的安全范围。'}</p><small>权限仅对本次操作生效。</small></div>
-    <div className="approval-card-actions"><button className="button" type="button" onClick={() => void onDecision(false)}>不允许</button><button className="button primary" type="button" onClick={() => void onDecision(true)}>允许一次</button></div>
-  </section>
-}
 
 function ReferenceIcon({ kind }: { kind: AgentReferenceKind }) {
   if (kind === 'skill') return <Braces size={14} aria-hidden="true" />

@@ -54,14 +54,15 @@ contextBridge.exposeInMainWorld('stable', {
   },
   extensions: {
     wendingStatus: () => invoke('stable:extensions:wendingStatus'),
-    prepareWending: () => invoke('stable:extensions:prepareWending'),
-    sendWendingCode: (mobile, channel) => invoke('stable:extensions:sendWendingCode', { mobile, channel }),
-    verifyWendingCode: (code) => invoke('stable:extensions:verifyWendingCode', { code }),
-    selectWendingAccount: (id) => invoke('stable:extensions:selectWendingAccount', { id }),
-    selectWendingBrand: (id) => invoke('stable:extensions:selectWendingBrand', { id }),
-    refreshWendingBrands: () => invoke('stable:extensions:refreshWendingBrands'),
-    resetWendingLogin: () => invoke('stable:extensions:resetWendingLogin'),
-    cancelWendingLogin: () => invoke('stable:extensions:cancelWendingLogin'),
+    wendingBinding: (conversationId) => invoke('stable:extensions:wendingBinding', { conversationId }),
+    prepareWending: (conversationId) => invoke('stable:extensions:prepareWending', { conversationId }),
+    sendWendingCode: (mobile, channel, conversationId) => invoke('stable:extensions:sendWendingCode', { mobile, channel, conversationId }),
+    verifyWendingCode: (code, conversationId) => invoke('stable:extensions:verifyWendingCode', { code, conversationId }),
+    selectWendingAccount: (id, conversationId) => invoke('stable:extensions:selectWendingAccount', { id, conversationId }),
+    selectWendingBrand: (id, conversationId) => invoke('stable:extensions:selectWendingBrand', { id, conversationId }),
+    refreshWendingBrands: (conversationId) => invoke('stable:extensions:refreshWendingBrands', { conversationId }),
+    resetWendingLogin: (conversationId) => invoke('stable:extensions:resetWendingLogin', { conversationId }),
+    cancelWendingLogin: (conversationId) => invoke('stable:extensions:cancelWendingLogin', { conversationId }),
   },
   workflows: {
     save: (workflow) => invoke('stable:workflows:save', workflow),
@@ -98,7 +99,7 @@ contextBridge.exposeInMainWorld('stable', {
     run: (conversationId, prompt, attachments = [], references = []) => invoke('stable:agent:run', { conversationId, prompt, attachments, references }),
     steer: (conversationId, requestId, prompt, attachments = [], references = []) => invoke('stable:agent:steer', { conversationId, requestId, prompt, attachments, references }),
     cancel: (conversationId) => invoke('stable:agent:cancel', { conversationId }),
-    answerApproval: (conversationId, requestId, allowed) => invoke('stable:agent:answerApproval', { conversationId, requestId, allowed }),
+    answerApproval: (conversationId, requestId, decision) => invoke('stable:agent:answerApproval', { conversationId, requestId, ...(typeof decision === 'boolean' ? { allowed: decision } : { decision }) }),
     clear: (conversationId) => invoke('stable:agent:clear', { conversationId }),
     onEvent: (handler) => {
       const listener = (_event, payload) => handler(payload)

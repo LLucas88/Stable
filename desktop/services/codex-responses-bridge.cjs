@@ -8,6 +8,7 @@ const { randomUUID } = require('node:crypto')
 const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
 const { createZhipuSearchProvider } = require('./harness.cjs')
 const { CodexReasoningStore } = require('./codex-reasoning-store.cjs')
+const { normalizeWindowsCall } = require('./windows-command.cjs')
 
 function chatURL(baseURL) {
   const url = new URL(baseURL)
@@ -104,8 +105,9 @@ async function readJSON(request) {
 }
 
 class CodexResponsesBridge {
-  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, search, expectedImages = 0, reasoningFile }) {
+  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, search, expectedImages = 0, reasoningFile, windowsPython }) {
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl
+    this.windowsPython = windowsPython
     this.token = randomUUID(); this.controllers = new Set(); this.reasoning = new CodexReasoningStore(reasoningFile)
     this.onRequest = onRequest; this.search = search
     this.expectedImages = expectedImages
@@ -219,13 +221,14 @@ class CodexResponsesBridge {
       emit('response.output_item.done', { output_index: index, item: message })
     }
     for (const call of calls.values()) {
-      const spec = catalog.get(call.name)
+      let spec = catalog.get(call.name)
       if (!spec || !call.id) throw new Error(`模型返回了未知或不完整的工具调用：${call.name}`)
       // Validate arguments before releasing a tool call to the execution engine.
-      const args = JSON.parse(call.arguments || '{}')
+      let args = JSON.parse(call.arguments || '{}')
+      if (process.platform === 'win32') ({ spec, args } = normalizeWindowsCall(spec, args, catalog, this.windowsPython))
       if (spec.custom && typeof args.input !== 'string') throw new Error('模型返回的自定义工具参数缺少 input。')
       const item = { type: spec.custom ? 'custom_tool_call' : 'function_call', id: `fc_${randomUUID()}`, call_id: call.id,
-        name: spec.name, ...(spec.namespace ? { namespace: spec.namespace } : {}), status: 'completed', ...(spec.custom ? { input: args.input } : { arguments: call.arguments || '{}' }) }
+        name: spec.name, ...(spec.namespace ? { namespace: spec.namespace } : {}), status: 'completed', ...(spec.custom ? { input: args.input } : { arguments: JSON.stringify(args) }) }
       const index = output.push(item) - 1
       emit('response.output_item.added', { output_index: index, item: { ...item, status: 'in_progress', ...(spec.custom ? { input: '' } : { arguments: '' }) } })
       const field = spec.custom ? 'custom_tool_call_input' : 'function_call_arguments'

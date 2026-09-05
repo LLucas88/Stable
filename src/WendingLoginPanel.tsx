@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { LoaderCircle, ShieldCheck, X } from 'lucide-react'
 import type { WendingLoginState } from './types'
 
-export function WendingLoginPanel({ state, onState, onReady, onClose }: {
+export function WendingLoginPanel({ state, onState, onReady, onClose, conversationId }: {
+  conversationId?: string
   state: WendingLoginState
   onState: (value: WendingLoginState) => void
   onReady: () => Promise<void>
@@ -63,22 +64,22 @@ export function WendingLoginPanel({ state, onState, onReady, onClose }: {
       if (!/^1\d{10}$/.test(mobile)) { setError('请输入 11 位手机号。'); return }
       const value = mobile
       setMobile('')
-      void perform(() => window.stable.extensions.sendWendingCode(value, channel))
+      void perform(() => window.stable.extensions.sendWendingCode(value, channel, conversationId))
     } else if (state.phase === 'code_sent') {
       if (!/^\d{4,8}$/.test(code)) { setError('请输入 4 至 8 位数字验证码。'); return }
       const value = code
       setCode('')
-      void perform(() => window.stable.extensions.verifyWendingCode(value))
+      void perform(() => window.stable.extensions.verifyWendingCode(value, conversationId))
     } else if (selecting) {
       if (!choice) { setError('请先选择一个选项。'); return }
       void perform(() => state.phase === 'choose_account'
-        ? window.stable.extensions.selectWendingAccount(choice)
-        : window.stable.extensions.selectWendingBrand(choice))
+        ? window.stable.extensions.selectWendingAccount(choice, conversationId)
+        : window.stable.extensions.selectWendingBrand(choice, conversationId))
     }
   }
 
   async function check() {
-    const checked = await window.stable.extensions.prepareWending()
+    const checked = await window.stable.extensions.prepareWending(conversationId)
     return checked.login || { phase: 'unknown' as const, channel: '0' as const, detail: checked.detail, error: { code: 'UNAVAILABLE', message: checked.detail } }
   }
 
@@ -105,8 +106,8 @@ export function WendingLoginPanel({ state, onState, onReady, onClose }: {
               {busy && <LoaderCircle className="spin" size={16} aria-hidden="true" />}
               {state.phase === 'signed_out' ? remaining > 0 ? `${remaining} 秒后可发送` : '确认发送验证码' : state.phase === 'code_sent' ? '验证并登录' : state.phase === 'choose_account' ? '使用此账号' : '确认品牌并进入对话'}
             </button>}
-        {state.phase === 'choose_brand' && <button className="button" type="button" disabled={busy} onClick={() => void perform(() => window.stable.extensions.refreshWendingBrands())}>刷新品牌</button>}
-        {state.phase !== 'signed_out' && <button className="button" type="button" disabled={busy} onClick={() => { setCode(''); setMobile(''); void perform(() => window.stable.extensions.resetWendingLogin()) }}>重新开始登录</button>}
+        {state.phase === 'choose_brand' && <button className="button" type="button" disabled={busy} onClick={() => void perform(() => window.stable.extensions.refreshWendingBrands(conversationId))}>刷新品牌</button>}
+        {state.phase !== 'signed_out' && <button className="button" type="button" disabled={busy} onClick={() => { setCode(''); setMobile(''); void perform(() => window.stable.extensions.resetWendingLogin(conversationId)) }}>重新开始登录</button>}
         <button className="button" type="button" onClick={onClose}>取消</button>
       </div>
     </form>

@@ -119,7 +119,7 @@ class WendingLoginBridge {
 function registerWendingLoginIpc(ipcMain, { service, isTrusted }) {
   const handle = (channel, action) => ipcMain.handle(channel, (event, payload) => {
     if (!isTrusted(event)) throw new Error('此页面无权访问登录接口。')
-    return action(service(), payload)
+    return action(service(payload?.conversationId, channel), payload)
   })
   handle('stable:extensions:sendWendingCode', (cli, payload) => cli.login.request('send', payload))
   handle('stable:extensions:verifyWendingCode', (cli, payload) => cli.login.request('verify', payload))

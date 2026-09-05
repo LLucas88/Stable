@@ -273,6 +273,7 @@ export interface AgentTraceItem {
   reason?: string
   danger?: boolean
   approvalRisk?: 'safe' | 'unknown' | 'high'
+  approvalCategory?: string
 }
 
 export interface AgentAnswerDeltaEvent {
@@ -519,14 +520,15 @@ export interface StableBridge {
   }
   extensions: {
     wendingStatus(): Promise<WendingCliStatus>
-    prepareWending(): Promise<WendingCliStatus>
-    sendWendingCode(mobile: string, channel: '0' | '1'): Promise<WendingLoginState>
-    verifyWendingCode(code: string): Promise<WendingLoginState>
-    selectWendingAccount(id: string): Promise<WendingLoginState>
-    selectWendingBrand(id: string): Promise<WendingLoginState>
-    refreshWendingBrands(): Promise<WendingLoginState>
-    resetWendingLogin(): Promise<WendingLoginState>
-    cancelWendingLogin(): Promise<WendingLoginState>
+    wendingBinding(conversationId: string): Promise<WendingLoginState>
+    prepareWending(conversationId?: string): Promise<WendingCliStatus>
+    sendWendingCode(mobile: string, channel: '0' | '1', conversationId?: string): Promise<WendingLoginState>
+    verifyWendingCode(code: string, conversationId?: string): Promise<WendingLoginState>
+    selectWendingAccount(id: string, conversationId?: string): Promise<WendingLoginState>
+    selectWendingBrand(id: string, conversationId?: string): Promise<WendingLoginState>
+    refreshWendingBrands(conversationId?: string): Promise<WendingLoginState>
+    resetWendingLogin(conversationId?: string): Promise<WendingLoginState>
+    cancelWendingLogin(conversationId?: string): Promise<WendingLoginState>
   }
   workflows: {
     save(workflow: Partial<WorkflowItem>): Promise<WorkflowItem[]>
@@ -559,7 +561,7 @@ export interface StableBridge {
     run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
     steer(conversationId: string, requestId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState>
-    answerApproval(conversationId: string, requestId: string, allowed: boolean): Promise<boolean>
+    answerApproval(conversationId: string, requestId: string, decision: boolean | 'deny' | 'once' | 'conversation'): Promise<boolean>
     clear(conversationId: string): Promise<AgentState>
     onEvent(handler: (event: AgentEvent) => void): () => void
     onState(handler: (state: AgentState) => void): () => void

@@ -36,7 +36,7 @@ function fakeBridge(options = {}) {
 test('real bundled Python runs offline login sequence and privacy regression suite', { skip: process.platform !== 'win32' }, () => {
   const result = spawnSync(python, ['-B', '-X', 'utf8', path.join(__dirname, 'fixtures/wending-login-flow.py')], { cwd: root, windowsHide: true, encoding: 'utf8', timeout: 30_000 })
   assert.equal(result.status, 0, (result.stdout || '') + (result.stderr || ''))
-  assert.match(result.stderr, /Ran 15 tests/)
+  assert.match(result.stderr, /Ran 20 tests/)
 })
 
 test('real stdin worker checks an empty isolated workspace without reading user login or contacting API', { skip: process.platform !== 'win32' }, () => {
@@ -133,6 +133,11 @@ test('login IPC accepts only trusted main frame and routes a fixed set of operat
   assert.deepEqual(calls[0], ['verify', { code: '654321' }])
   await handlers.get('stable:extensions:cancelWendingLogin')({ trusted: true })
   assert.deepEqual(calls[1], ['cancel'])
+  const scopedHandlers = new Map(), scopes = []
+  registerWendingLoginIpc({ handle: (name, handler) => scopedHandlers.set(name, handler) }, { service: (id, operation) => { scopes.push({ id, operation }); return cli }, isTrusted: () => true })
+  await scopedHandlers.get('stable:extensions:verifyWendingCode')({}, { code: '654321', conversationId: 'task-a' })
+  await scopedHandlers.get('stable:extensions:cancelWendingLogin')({}, { conversationId: 'task-b' })
+  assert.deepEqual(scopes.map(item => item.id), ['task-a', 'task-b'])
   const main = readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8')
   assert.match(main, /event\.sender === mainWindow\.webContents && event\.senderFrame === mainWindow\.webContents\.mainFrame/)
 })

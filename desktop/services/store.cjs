@@ -95,6 +95,11 @@ class StableStore {
         id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL,
         trace_json TEXT, attachments_json TEXT, automation_json TEXT, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS conversation_approvals (
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        scope_key TEXT NOT NULL, label TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, scope_key)
+      );
       CREATE TABLE IF NOT EXISTS run_logs (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT, status TEXT NOT NULL,
         input TEXT NOT NULL, output TEXT, error TEXT, started_at TEXT NOT NULL, ended_at TEXT
@@ -734,7 +739,17 @@ class StableStore {
     this.db.prepare('UPDATE conversations SET title=?,updated_at=? WHERE id=?').run(generatedTitle || '新对话', item.createdAt, conversationId)
     return item
   }
-  clearMessages(conversationId = this.activeConversationId()) { this.db.prepare('DELETE FROM messages WHERE conversation_id=?').run(conversationId) }
+  hasConversationApproval(conversationId, key) {
+    return Boolean(this.db.prepare('SELECT 1 FROM conversation_approvals WHERE conversation_id=? AND scope_key=?').get(conversationId, key))
+  }
+  grantConversationApproval(conversationId, key, label) {
+    if (!this.conversation(conversationId) || !/^[a-f0-9]{64}$/.test(key)) throw new Error('无效的对话授权')
+    this.db.prepare('INSERT OR IGNORE INTO conversation_approvals (conversation_id, scope_key, label) VALUES (?, ?, ?)').run(conversationId, key, label)
+  }
+  clearMessages(conversationId = this.activeConversationId()) {
+    this.db.prepare('DELETE FROM messages WHERE conversation_id=?').run(conversationId)
+    this.db.prepare('DELETE FROM conversation_approvals WHERE conversation_id=?').run(conversationId)
+  }
   updateAutomationProposal(messageId, status, automationId) {
     const row = this.db.prepare('SELECT automation_json FROM messages WHERE id=?').get(messageId)
     if (!row?.automation_json) throw new Error('找不到这条自动化建议。')

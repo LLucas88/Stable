@@ -11,7 +11,10 @@ const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const { id, method, params: p } = JSON.parse(line)
   if (method === 'initialize') send({ id, result: { userAgent: 'fixture' } })
-  else if (method === 'thread/start' || method === 'thread/resume') send({ id, result: { thread: { id: p.threadId || 'root' } } })
+  else if (method === 'thread/start' || method === 'thread/resume') {
+    fs.writeFileSync(path.join(process.env.CODEX_HOME, 'fixture-thread.json'), JSON.stringify({ method, params: p, config: fs.readFileSync(path.join(process.env.CODEX_HOME, 'config.toml'), 'utf8') }))
+    send({ id, result: { thread: { id: p.threadId || 'root' } } })
+  }
   else if (method === 'turn/start') {
     fs.writeFileSync(path.join(process.env.CODEX_HOME, 'fixture-input.json'), JSON.stringify(p))
     send({ id, result: { turn: { id: 'turn' } } })

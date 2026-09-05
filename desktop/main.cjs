@@ -117,13 +117,17 @@ function resourcePath(...segments) {
   return path.join(app.getAppPath(), ...segments)
 }
 
-function createHarnessRunner() {
+function createHarnessRunner(conversationId) {
+  const cli = wendingCli?.forConversation(conversationId)
   return new HarnessRunner({
     userData: paths.userData,
     workspace: paths.workspace,
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
-    environment: wendingCli ? wendingCli.environment(process.env) : process.env,
+    environment: cli ? cli.environment(process.env) : process.env,
+    trustedCli: cli ? { root: cli.root(), environment: cli.environment(process.env) } : undefined,
+    hasConversationApproval: (id, key) => store.hasConversationApproval(id, key),
+    grantConversationApproval: (id, key, label) => store.grantConversationApproval(id, key, label),
     builtinTools: () => new BuiltinTools({ workspace: paths.workspace, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
@@ -1423,6 +1427,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.reason ? { reason: String(source.reason).slice(0, 500) } : {}),
       ...(source.danger ? { danger: true } : {}),
       ...(['safe', 'unknown', 'high'].includes(source.approvalRisk) ? { approvalRisk: source.approvalRisk } : {}),
+      ...(source.approvalCategory ? { approvalCategory: String(source.approvalCategory).slice(0, 300) } : {}),
     }
     const existing = trace.findIndex((item) => item.id === event.id)
     if (event.kind === 'tool' || event.entity === 'agent' && event.parentSessionId) {
@@ -1523,14 +1528,14 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
   const effectivePermissionMode = permissionModeOverride || conversation?.permissionMode || 'request'
   const permissionInstruction = effectivePermissionMode === 'full'
-    ? '当前对话使用完全访问权限；已核实的读取、搜索和工作区内常规文件编辑可直接继续。删除、清空、工作区外写入、凭据访问及无法核实的程序需通过权限审批通道确认。'
+    ? '当前对话使用完全访问权限，允许联网；已核实的读取、搜索和工作区内常规文件编辑可直接继续。删除、清空、工作区外写入、凭据访问及无法核实的程序需通过权限审批通道确认。'
     : effectivePermissionMode === 'auto'
       ? '当前对话使用“帮我审批”；扩大权限时交给独立审批 Agent，若未获批准请改用安全范围内的方法，不要要求用户在消息中回复。'
       : '当前对话使用“请求审批”；超出工作区安全范围时通过权限审批通道请求用户决定，不要让用户在普通消息中回复授权。'
   const installedSkillInstruction = installedSkills.length
     ? `\n\nStable 已完成 Skill 的全局安装与识别：${installedSkills.join('、')}。请用简体中文简要确认安装结果，并说明现在可以在对话中选择调用。不要再次扫描、移动或删除 Stable 内部目录。`
     : ''
-  const wendingInstruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.agentInstruction()}` : ''
+  const wendingInstruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.forConversation(conversationId).agentInstruction()}` : ''
   const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}`
   const delivery = deliveryRequest(query)
   const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery }
@@ -1552,7 +1557,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, persistentSession)
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, permissionMode: effectivePermissionMode })
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
@@ -1943,11 +1948,22 @@ function registerIpc() {
   ipcMain.handle('stable:skills:remove', (_event, payload) => { store.removeSkill(requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
   ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())
   const trustedLoginSender = (event) => Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame)
-  ipcMain.handle('stable:extensions:prepareWending', (event) => {
+  const conversationCli = (id, operation = '') => {
+    if (id === undefined) return wendingCli
+    const conversationId = requireText(id, '对话 ID', 100)
+    if (!store.conversation(conversationId)) throw new Error('找不到这个对话。')
+    if (agentRunners.has(conversationId) && !['snapshot', 'stable:extensions:cancelWendingLogin'].includes(operation)) throw new Error('请先停止此任务，再修改或核验问鼎登录。')
+    return wendingCli.forConversation(conversationId)
+  }
+  ipcMain.handle('stable:extensions:wendingBinding', (event, payload) => {
     if (!trustedLoginSender(event)) throw new Error('此页面无权访问登录接口。')
-    return wendingCli.prepare()
+    return conversationCli(payload?.conversationId, 'snapshot').binding()
   })
-  registerWendingLoginIpc(ipcMain, { service: () => wendingCli, isTrusted: trustedLoginSender })
+  ipcMain.handle('stable:extensions:prepareWending', (event, payload) => {
+    if (!trustedLoginSender(event)) throw new Error('此页面无权访问登录接口。')
+    return conversationCli(payload?.conversationId).prepare()
+  })
+  registerWendingLoginIpc(ipcMain, { service: conversationCli, isTrusted: trustedLoginSender })
 
   ipcMain.handle('stable:workflows:save', (_event, workflow) => {
     const graph = validateWorkflowGraph(workflow)
@@ -2035,6 +2051,7 @@ function registerIpc() {
     if (!conversation) throw new Error('找不到这个对话。')
     if (agentRunners.has(id)) throw new Error('这个对话仍在执行，请先停止后再删除。')
     clearCodexSession(paths.userData, id)
+    wendingCli.removeConversation(id)
     return agentState(store.removeConversation(id))
   })
   ipcMain.handle('stable:agent:configure', (_event, payload) => {
@@ -2069,7 +2086,9 @@ function registerIpc() {
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const query = requireText(payload?.prompt, '消息')
     const modelRoute = modelRegistry.resolve(conversation.modelId)
-    const executionRunner = createHarnessRunner()
+    const taskCli = wendingCli.forConversation(conversationId)
+    if (taskCli.login.pending || ['code_sent', 'choose_account', 'choose_brand'].includes(taskCli.login.snapshot().phase)) throw new Error('请先完成或关闭此任务的问鼎登录表单。')
+    const executionRunner = createHarnessRunner(conversationId)
     const control = { runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
     try {
@@ -2122,7 +2141,7 @@ function registerIpc() {
       const prepared = await prepareAgentMessage(payload, conversationId, control.modelRoute)
       if (control.cancelled || control.phase !== 'agent' || agentRunners.get(conversationId) !== control) throw new Error('当前任务已经结束，消息仍保留在队列中。')
       const history = store.listMessages(conversationId)
-      const instruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.agentInstruction()}` : ''
+      const instruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.forConversation(conversationId).agentInstruction()}` : ''
       const prompt = composeAgentPrompt({
         identity: store.getSetting('identity'),
         query: `这是用户对当前任务的即时补充，请结合已有上下文调整后续执行。\n${query}${instruction}`,
@@ -2156,7 +2175,11 @@ function registerIpc() {
   ipcMain.handle('stable:agent:answerApproval', (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const requestId = requireText(payload?.requestId, '审批 ID', 200)
-    return agentRunners.get(conversationId)?.runner.answerApproval(requestId, Boolean(payload?.allowed)) || false
+    const decision = payload?.decision ?? (payload?.allowed === true ? 'once' : 'deny')
+    if (!['deny', 'once', 'conversation'].includes(decision)) throw new Error('未知的审批决定')
+    const runner = agentRunners.get(conversationId)?.runner
+    if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
+    return runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
   })
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
@@ -2387,8 +2410,8 @@ function createWindow() {
   windowPresence.attach(window)
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('file:')) event.preventDefault() })
-  window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) wendingCli?.login.dispose() })
-  window.on('closed', () => { wendingCli?.login.dispose(); closePreviewView(); mainWindow = undefined })
+  window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) wendingCli?.dispose() })
+  window.on('closed', () => { wendingCli?.dispose(); closePreviewView(); mainWindow = undefined })
   return window
 }
 
@@ -2401,6 +2424,7 @@ async function boot() {
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     workspace: paths.workspace,
+    userData: paths.userData,
   })
   store = new StableStore(paths.userData)
   store.recoverInterruptedRuns()
@@ -2789,5 +2813,5 @@ if (updateHealthcheck) {
   app.on('activate', () => { if (!mainWindow) void boot() })
 }
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => wendingCli?.login.dispose())
+app.on('before-quit', () => wendingCli?.dispose())
 app.on('before-quit', () => { closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

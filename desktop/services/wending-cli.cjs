@@ -1,7 +1,8 @@
 'use strict'
 
 const { spawn } = require('node:child_process')
-const { existsSync, readFileSync } = require('node:fs')
+const { existsSync, readFileSync, mkdirSync, unlinkSync } = require('node:fs')
+const { createHash } = require('node:crypto')
 const path = require('node:path')
 const { WendingLoginBridge } = require('./wending-login.cjs')
 
@@ -24,6 +25,8 @@ function wendingCliFiles(root) {
     click: path.join(root, 'python', 'Lib', 'site-packages', 'click', '__init__.py'),
     login: path.join(root, 'stable-login.py'),
     guide: path.join(root, 'login-guide.md'),
+    scope: path.join(root, 'python', 'Lib', 'site-packages', 'crm_base_cli', 'stable_scope.py'),
+    response: path.join(root, 'python', 'Lib', 'site-packages', 'crm_base_cli', 'stable_response.py'),
   }
 }
 
@@ -51,6 +54,7 @@ function wendingCliAgentInstruction() {
   return [
     '## Stable 内置问鼎 CLI',
     '- 本机已内置 `crm-brand-cli`，直接在当前 Stable 工作区执行；不要安装、升级或下载任何 CLI 包。',
+    '- 直接调用内置 CLI；不要在工作区复制或生成 crm-brand-cli.py 包装脚本，同名脚本不具有内置 CLI 的可信身份。',
     '- 需要结构化结果时优先使用 `crm-brand-cli --json ...`；需要确认能力时先运行 `crm-brand-cli --help`。',
     '- 登录只在「MCP & CLI → 使用」的专用表单完成。不要在聊天中索取手机号或验证码，不要执行 third login 的发码、验证、授权或登出命令。',
     '- 不得输出登录令牌或 `.crm-cli/config.json` 的内容。',
@@ -62,11 +66,45 @@ function wendingCliAgentInstruction() {
 class WendingCliService {
   constructor(options) {
     this.options = options
+    this.conversations = new Map()
     this.login = new WendingLoginBridge({ ...options, root: () => this.root(), environment: () => this.environment() })
   }
 
   root() {
     return wendingCliRoot(this.options)
+  }
+
+  forConversation(id) {
+    if (!id) return this
+    if (!this.conversations.has(id)) {
+      const configDirectory = path.join(this.options.userData || path.dirname(this.options.workspace), 'wending', 'conversations', createHash('sha256').update(String(id)).digest('hex'))
+      mkdirSync(configDirectory, { recursive: true })
+      this.conversations.set(id, new WendingCliService({ ...this.options, configDirectory }))
+    }
+    return this.conversations.get(id)
+  }
+
+  binding() {
+    if (!this.options.configDirectory) return this.login.snapshot()
+    try {
+      const cfg = JSON.parse(readFileSync(path.join(this.options.configDirectory, 'config.json'), 'utf8'))
+      const decode = (key) => typeof cfg[key] === 'string' ? Buffer.from(cfg[key], 'base64').toString('utf8') : ''
+      const channel = decode('third_login_channel') === '1' ? '1' : '0'
+      return { phase: 'unknown', channel, brandLabel: decode('stable_brand_label').slice(0, 200), detail: '此任务的独立登录配置已保存，使用时核验服务端品牌。' }
+    } catch { return this.login.snapshot() }
+  }
+
+  dispose() {
+    this.login.dispose()
+    for (const cli of this.conversations.values()) cli.dispose()
+  }
+
+  removeConversation(id) {
+    const cli = this.forConversation(id)
+    cli.dispose()
+    const file = path.join(cli.options.configDirectory, 'config.json')
+    if (existsSync(file)) unlinkSync(file)
+    this.conversations.delete(id)
   }
 
   status() {
@@ -82,13 +120,18 @@ class WendingCliService {
   }
 
   environment(baseEnvironment = process.env) {
-    return createWendingEnvironment(baseEnvironment, this.root())
+    const environment = createWendingEnvironment(baseEnvironment, this.root())
+    delete environment.WENDING_CONFIG_DIR
+    if (this.options.configDirectory) environment.WENDING_CONFIG_DIR = this.options.configDirectory
+    return environment
   }
 
   agentInstruction() {
     const state = this.login.snapshot()
     const summary = state.phase === 'ready' ? '已核验登录与品牌；不代表拥有所有数据集权限。' : '登录状态尚未完成核验；需要登录时引导用户打开专用表单。'
-    return `${wendingCliAgentInstruction()}\n- 登录状态（脱敏）：${summary}\n\n${readFileSync(wendingCliFiles(this.root()).guide, 'utf8')}`
+    const binding = this.binding()
+    const scope = this.options.configDirectory ? `\n- 此任务使用独立问鼎登录配置；仅在任务顶部「问鼎 CLI」表单登录。绑定品牌：${binding.brandLabel || '尚未绑定'}。不得沿用历史消息中的品牌假设或其他任务的登录配置。不得覆盖 WENDING_CONFIG_DIR，不得读取、复制或切换其他任务的凭据。` : ''
+    return `${wendingCliAgentInstruction()}\n- 登录状态（脱敏）：${summary}\n\n${readFileSync(wendingCliFiles(this.root()).guide, 'utf8')}${scope}`
   }
 
   async prepare() {

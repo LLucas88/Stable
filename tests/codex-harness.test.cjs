@@ -234,3 +234,33 @@ test('process crashes and corrupt session pointers release the runner lock', asy
     assert.equal(await runner.run('RECOVERED', model, 'never-sent', 5000, () => {}, 'read-only', [], { key: 'bad' }), '完成🙂')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
+
+test('full access grants network on new and resumed turns, and downgrades revoke it', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-codex-network-'))
+  const workspace = path.join(root, 'workspace')
+  const options = { userData: root, workspace, executable: process.execPath, executableArgs: [path.join(__dirname, 'fixtures', 'codex-app-server.cjs')] }
+  const home = sessionDirectory(root, 'network')
+  try {
+    const cases = [
+      ['full', 'workspace-write', true], ['request', 'workspace-write', false],
+      ['full', 'workspace-write', true], ['auto', 'workspace-write', false],
+      ['full', 'read-only', false], [undefined, 'workspace-write', false],
+    ]
+    for (const [index, [permissionMode, sandbox, allowed]] of cases.entries()) {
+      await new CodexHarnessRunner(options).run('test', model, 'never-sent', 5000, () => {}, sandbox, [], { key: 'network', permissionMode })
+      const thread = JSON.parse(fs.readFileSync(path.join(home, 'fixture-thread.json')))
+      const turn = JSON.parse(fs.readFileSync(path.join(home, 'fixture-input.json')))
+      assert.equal(thread.method, index === 0 ? 'thread/start' : 'thread/resume')
+      assert.equal(thread.params.config['sandbox_workspace_write.network_access'], allowed)
+      assert.equal(thread.params.sandbox, sandbox)
+      assert.equal(thread.params.approvalPolicy, sandbox === 'read-only' ? 'never' : 'untrusted')
+      assert.match(thread.config, new RegExp(`network_access = ${allowed}`))
+      if (sandbox === 'read-only') assert.deepEqual(turn.sandboxPolicy, { type: 'readOnly' })
+      else {
+        assert.equal(turn.sandboxPolicy.type, 'workspaceWrite')
+        assert.equal(turn.sandboxPolicy.networkAccess, allowed)
+        assert.deepEqual(turn.sandboxPolicy.writableRoots, [workspace])
+      }
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})

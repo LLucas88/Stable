@@ -42,6 +42,8 @@ test('PowerShell assessment handles screenshot reads and workspace editing witho
       "New-Item -Path 'outputs' -ItemType Directory",
       "'report text' | Out-File -FilePath 'report.md' -Encoding utf8",
       "Write-Output 'Remove-Item -Recurse -Force is text, not a command'",
+      "Get-Item -LiteralPath 'qa-activity-effect-raw.json','qa-activity-product-raw.json' | Select-Object FullName,Length,LastWriteTime; Get-Content -LiteralPath 'qa-activity-effect-raw.json' -Raw -Encoding UTF8 | Select-Object -First 1",
+      "Get-Content -LiteralPath 'report.md','sales.csv' -Encoding UTF8",
     ]) {
       const result = await assess(script)
       assert.equal(result.risk, 'safe', `${script}: ${JSON.stringify(result)}`)
@@ -53,6 +55,9 @@ test('PowerShell assessment handles screenshot reads and workspace editing witho
       "Get-Content -LiteralPath '.env'",
       "Get-Content -LiteralPath '.ssh/id_rsa'",
       'git reset --hard HEAD',
+      "Get-Content -LiteralPath 'report.md','.env'",
+      "Set-Content -LiteralPath 'report.md','../outside.txt' -Value 'changed'",
+      "Get-Content -LiteralPath '.crm-cli/config.json'",
     ]) assert.equal((await assess(script)).risk, 'high', script)
     for (const script of [
       "Get-Content 'report.md' > '../outside.txt'",
@@ -70,6 +75,8 @@ test('PowerShell assessment handles screenshot reads and workspace editing witho
       "Write-Output @args",
       "Write-Output $(Start-Process evil)",
       "Get-ChildItem -Path . | Where-Object { [IO.File]::WriteAllText('report.md','bad') }",
+      "Get-Content -LiteralPath 'report.md',($env:USERPROFILE + '/.env')",
+      "Get-Content -LiteralPath:$env:USERPROFILE",
     ]) assert.notEqual((await assess(script)).risk, 'safe', script)
     // Friendly summaries, a harmless first clause, or an encoded wrapper must
     // never be treated as authority to approve arbitrary execution.

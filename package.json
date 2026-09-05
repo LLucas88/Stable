@@ -15,6 +15,7 @@
     "test": "node --test tests/*.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
     "test:codex-integration": "node tests/codex-integration.cjs",
+    "test:codex-network": "node tests/codex-network-integration.cjs",
     "test:codex-packaged": "node tests/codex-packaged.cjs",
     "runtime:codex": "node scripts/prepare-codex-runtime.cjs",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",

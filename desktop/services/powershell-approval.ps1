@@ -7,6 +7,8 @@ $tokens = $null; $parseErrors = $null
 $tree = [System.Management.Automation.Language.Parser]::ParseInput($request.script, [ref]$tokens, [ref]$parseErrors)
 $script:risk = 'safe'; $script:reason = '已识别为读取、筛选或工作区文件操作'
 $script:paths = [Collections.Generic.List[object]]::new()
+$script:external = [Collections.Generic.List[object]]::new()
+$script:commandNames = [Collections.Generic.List[string]]::new()
 $script:values = @{}
 function Review($risk, $reason) {
     if ($script:risk -ne 'high' -and ($risk -eq 'high' -or $script:risk -eq 'safe')) {
@@ -20,7 +22,12 @@ function Literal($node) {
     Review 'unknown' '参数包含无法静态确认的表达式'
     return $null
 }
-$allowedNodes = @('ScriptBlockAst','NamedBlockAst','PipelineAst','CommandAst','CommandParameterAst','CommandExpressionAst','StringConstantExpressionAst','ConstantExpressionAst','ExpandableStringExpressionAst','VariableExpressionAst','AssignmentStatementAst','StatementBlockAst','ScriptBlockExpressionAst','BinaryExpressionAst','MemberExpressionAst','ArrayLiteralAst','ParenExpressionAst')
+function PathLiterals($node) {
+    if ($node -is [System.Management.Automation.Language.ArrayLiteralAst]) {
+        foreach ($entry in $node.Elements) { PathLiterals $entry }
+    } else { Literal $node }
+}
+$allowedNodes = @('ScriptBlockAst','NamedBlockAst','PipelineAst','CommandAst','CommandParameterAst','CommandExpressionAst','StringConstantExpressionAst','ConstantExpressionAst','ExpandableStringExpressionAst','VariableExpressionAst','AssignmentStatementAst','StatementBlockAst','ScriptBlockExpressionAst','BinaryExpressionAst','MemberExpressionAst','ArrayLiteralAst','ParenExpressionAst','MergingRedirectionAst')
 $commands = @{
     'get-content' = 'path,literalpath,totalcount,tail,raw,encoding,erroraction'
     'get-childitem' = 'path,literalpath,filter,include,exclude,force,directory,file,recurse,depth,name,erroraction'
@@ -34,6 +41,7 @@ $commands = @{
     'measure-object' = 'property,sum,average,minimum,maximum,line,word,character'
     'format-list' = 'property'
     'format-table' = 'property,autosize,wrap'
+    'out-string' = 'stream,width'
     'write-output' = 'inputobject,noenumerate'
     'write-host' = 'object,nonewline,foregroundcolor,backgroundcolor,separator'
     'set-content' = 'path,literalpath,value,encoding,nonewline,erroraction'
@@ -45,6 +53,7 @@ if ($parseErrors.Count) { Review 'unknown' '命令语法无法完整解析' }
 foreach ($node in $tree.FindAll({ param($n) $true }, $true)) {
     $type = $node.GetType().Name
     if ($type -notin $allowedNodes) { Review 'unknown' "命令含需复核的语法：$type" }
+    if ($type -eq 'MergingRedirectionAst' -and ([string]$node.FromStream -ne 'Error' -or [string]$node.ToStream -ne 'Output')) { Review 'unknown' '仅标准错误合并到标准输出可直接核实' }
     if ($type -eq 'VariableExpressionAst' -and ($node.VariablePath.UserPath -match ':' -or $node.VariablePath.UserPath -in @('ExecutionContext','PSDefaultParameterValues','OFS'))) { Review 'unknown' '命令访问环境或执行配置变量' }
     if ($type -eq 'MemberExpressionAst' -and ($node.Static -or $node.Expression.Extent.Text -notin @('$_','$PSItem') -or $node.Member.Value -notin @('Name','FullName','Length','LastWriteTime','Extension','PSIsContainer'))) { Review 'unknown' '命令包含需复核的成员访问' }
     if ($type -eq 'BinaryExpressionAst' -and [string]$node.Operator -notin @('Ieq','Ine','Igt','Ige','Ilt','Ile','Ilike','Inotlike','Imatch','Inotmatch','And','Or')) { Review 'unknown' '命令包含需复核的运算' }
@@ -63,9 +72,29 @@ foreach ($node in $tree.FindAll({ param($n) $true }, $true)) {
     $name = $node.GetCommandName()
     if (!$name) { Review 'unknown' '动态命令需要人工确认'; continue }
     $name = $name.ToLowerInvariant()
+    $script:commandNames.Add($name)
     if ($name -in @('remove-item','rm','del','erase','rd','rmdir','clear-content','clear-item','format-volume','format','set-itemproperty','remove-itemproperty','reg','reg.exe','stop-process','stop-computer','restart-computer')) { Review 'high' '命令包含删除、清空或系统修改'; continue }
     if ($name -in @('git','git.exe') -and $node.Extent.Text -match '(?i)\b(reset|clean|push)\b') { Review 'high' '命令包含历史改写、清理或远程推送'; continue }
-    if (!$commands.ContainsKey($name) -or [string]$node.InvocationOperator -ne 'Unknown') { Review 'unknown' '命令包含尚未核实的程序或调用方式'; continue }
+    if (!$commands.ContainsKey($name)) {
+        if ([string]$node.InvocationOperator -notin @('Unknown','Ampersand')) { Review 'unknown' '动态或点调用需要人工确认'; continue }
+        $argv = [Collections.Generic.List[string]]::new()
+        foreach ($element in $node.CommandElements) {
+            if ($element -is [System.Management.Automation.Language.CommandParameterAst] -and !$element.Argument) { $argv.Add($element.Extent.Text) }
+            elseif ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $element -is [System.Management.Automation.Language.ConstantExpressionAst]) { $argv.Add([string]$element.Value) }
+            else { Review 'unknown' '外部程序参数必须为静态字面量' }
+        }
+        $invocation = @{ argv = @($argv.ToArray()) }
+        $pipeline = $node.Parent
+        if ($pipeline -is [System.Management.Automation.Language.PipelineAst] -and $pipeline.PipelineElements.Count -eq 2 -and $pipeline.PipelineElements[1] -eq $node) {
+            $inputNode = $pipeline.PipelineElements[0]
+            if ($inputNode -is [System.Management.Automation.Language.CommandExpressionAst] -and $inputNode.Expression -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                $invocation.stdin = [string]$inputNode.Expression.Value
+            }
+        }
+        $script:external.Add($invocation)
+        continue
+    }
+    if ([string]$node.InvocationOperator -ne 'Unknown') { Review 'unknown' '命令包含尚未核实的调用方式'; continue }
     $parameters = @{}; $positionals = [Collections.Generic.List[object]]::new()
     $switches = @('raw','force','directory','file','recurse','name','relative','simplematch','casesensitive','list','allmatches','quiet','unique','descending','sum','average','minimum','maximum','line','word','character','autosize','wrap','noenumerate','nonewline','append')
     $elements = $node.CommandElements
@@ -86,8 +115,9 @@ foreach ($node in $tree.FindAll({ param($n) $true }, $true)) {
         foreach ($key in @('path','literalpath','filepath')) { if ($parameters.ContainsKey($key)) { if ($target) { Review 'unknown' '多个路径参数需要复核' }; $target = $parameters[$key] } }
         if (!$target -and $positionals.Count -gt 0 -and $name -ne 'select-string') { $target = $positionals[0] }
         if (!$target) { Review 'unknown' '未能确定操作路径' } else {
-            $value = Literal $target
-            if ($null -ne $value) { $script:paths.Add(@{ path = $value; mode = $mode }) }
+            foreach ($value in @(PathLiterals $target)) {
+                if ($null -ne $value) { $script:paths.Add(@{ path = $value; mode = $mode }) }
+            }
         }
         if ($name -eq 'new-item') {
             if (!$parameters.ContainsKey('itemtype') -or (Literal $parameters['itemtype']) -notin @('File','Directory')) { Review 'unknown' '仅普通文件或目录创建可自动批准' }
@@ -97,9 +127,13 @@ foreach ($node in $tree.FindAll({ param($n) $true }, $true)) {
     # Literal values only outside Where-Object: reject interpolation, variable
     # splatting and expression arguments even for otherwise harmless cmdlets.
     foreach ($element in $elements | Select-Object -Skip 1) {
-        if ($element -is [System.Management.Automation.Language.CommandParameterAst] -or $element -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) { continue }
+        if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
+            if ($element.Argument) { $null = PathLiterals $element.Argument }
+            continue
+        }
+        if ($element -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) { continue }
         if ($element -is [System.Management.Automation.Language.ArrayLiteralAst]) { foreach ($entry in $element.Elements) { $null = Literal $entry } }
         else { $null = Literal $element }
     }
 }
-@{ risk = $script:risk; reason = $script:reason; paths = @($script:paths.ToArray()) } | ConvertTo-Json -Depth 8 -Compress
+@{ risk = $script:risk; reason = $script:reason; paths = @($script:paths.ToArray()); external = @($script:external.ToArray()); commandNames = @($script:commandNames.ToArray()) } | ConvertTo-Json -Depth 8 -Compress

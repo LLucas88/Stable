@@ -31,6 +31,7 @@ class FakeAPI:
         self.failures = {}
         self.auth_result = {'authStatus': 1, 'authCode': AUTH}
         self.verify_result = None
+        self.encode_responses = False
 
     def __call__(self, **kwargs):
         self.wnToken = kwargs.get('wnToken')
@@ -55,7 +56,10 @@ class FakeAPI:
             if name == 'third_login_switch_brand': self.active = str(kwargs['brandId']); return True
             if name == 'third_login_login_record': return {'success': True, 'data': {'orgId': self.active}}
             raise AssertionError('Unexpected API call')
-        return call
+        def response(**kwargs):
+            value = call(**kwargs)
+            return json.dumps(value) if self.encode_responses else value
+        return response
 
 
 class LoginTests(unittest.TestCase):
@@ -108,7 +112,7 @@ class LoginTests(unittest.TestCase):
         self.assertEqual(result['phase'], 'ready')
         self.assertEqual(self.api.active, '200')
         cfg = config.load_config()
-        self.assertEqual(cfg, {'wnToken': AUTH, 'third_login_channel': '1'})
+        self.assertEqual(cfg, {'wnToken': AUTH, 'third_login_channel': '1', 'stable_brand_id': '200', 'stable_brand_label': '测试品牌 B'})
         self.assert_private(result)
 
     def test_vendor_cli_bug_reproduced_but_fixed_flow_avoids_it(self):
@@ -173,6 +177,71 @@ class LoginTests(unittest.TestCase):
         self.assertEqual(result['phase'], 'choose_brand')
         self.assertEqual(result['error']['code'], 'NO_BRANDS')
         self.assertFalse(config.CONFIG_FILE.exists())
+
+    def test_hsf_json_text_brands_and_login_record_complete_login(self):
+        # Shape observed from queryBrandNodes: HSF result is JSON text.
+        from crm_base_cli.api import CrmAPI
+        payload = {'canRetry': False, 'data': [
+            {'brandId': '100', 'brandName': '测试品牌 A'},
+            {'brandId': '200', 'brandName': '测试品牌 B'},
+            {'brandId': '300', 'brandName': '测试品牌 C'},
+        ], 'extInfo': {}, 'success': True}
+        raw = CrmAPI(wnToken=AUTH, require_auth=False)._handle_response(
+            {'status': 'success', 'data': {'result': json.dumps(payload)}})
+        self.assertIsInstance(raw, str)
+        self.api.brand_result = raw
+        self.api.encode_responses = True
+        result = self.login()
+        self.assertNotIn('error', result)
+        self.assertEqual(len(result['brands']), 3)
+        self.assertFalse(config.CONFIG_FILE.exists())
+        result = self.flow.handle('brand', {'id': result['brands'][1]['id']})
+        self.assertEqual(result['phase'], 'ready')
+        self.assertEqual(config.load_config()['stable_brand_id'], '200')
+        self.assertEqual(self.flow.handle('check', {})['phase'], 'ready')
+        self.assert_private(result)
+
+    def test_encoded_empty_brand_list_can_retry_without_reauthorizing(self):
+        self.api.brand_result = json.dumps({'success': True, 'data': []})
+        result = self.login()
+        self.assertEqual(result['error']['code'], 'NO_BRANDS')
+        self.api.brand_result = {'result': json.dumps({'data': [
+            {'brandId': '200', 'brandName': '测试品牌 B'}], 'success': True})}
+        result = self.flow.handle('brands', {})
+        self.assertEqual(len(result['brands']), 1)
+        self.assertEqual(sum(name == 'third_login_auth' for name, _ in self.api.calls), 1)
+
+    def test_unrecognized_response_does_not_claim_no_brands_or_reuse_choices(self):
+        result = self.login()
+        previous_id = result['brands'][0]['id']
+        for payload in ('not JSON ' + AUTH, '{}', 'null', 'false',
+                        {'data': [{'unexpectedId': '200', 'name': 'B'}]}):
+            self.api.brand_result = payload
+            result = self.flow.handle('brands', {})
+            self.assertEqual(result['error']['code'], 'INVALID_BRAND_RESPONSE')
+            self.assertEqual(result['brands'], [])
+            self.assertEqual(self.flow.handle('brand', {'id': previous_id})['error']['code'], 'INVALID_BRAND')
+            self.assert_private(result)
+        self.assertFalse(config.CONFIG_FILE.exists())
+
+    def test_encoded_service_rejection_is_not_no_brands(self):
+        for payload in ({'success': False, 'message': '查询失败 ' + AUTH},
+                        {'result': json.dumps({'success': False, 'data': []})}):
+            self.api.brand_result = json.dumps(payload)
+            result = self.login() if self.flow.state['phase'] == 'signed_out' else self.flow.handle('brands', {})
+            self.assertEqual(result['error']['code'], 'SERVICE_REJECTED')
+            self.assert_private(result)
+            self.assertFalse(config.CONFIG_FILE.exists())
+
+    def test_encoded_brand_record_is_checked_without_ignoring_binding(self):
+        from crm_base_cli.stable_scope import active_brand
+        record = json.dumps({'success': True, 'data': json.dumps({'orgId': 200})})
+        self.assertEqual(self.flow.active_brand(record), '200')
+        self.assertEqual(active_brand(record), '200')
+        self.assertIsNone(active_brand('invalid record'))
+        rejected = json.dumps({'success': False, 'data': {'orgId': 200}})
+        self.assertIsNone(active_brand(rejected))
+        self.assertIsNone(self.flow.active_brand(rejected))
 
     def test_invalid_expired_selections_and_cancel_cannot_resume_old_context(self):
         result = self.login()

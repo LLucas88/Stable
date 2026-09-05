@@ -1,7 +1,35 @@
 # Stable 项目状态与开发交接
 
-> 最后更新：2026-09-04
-> 文档版本：`2026-09-04.1`
+> 最后更新：2026-09-05
+> 文档版本：`2026-09-05.1`
+
+## codex-harness-integration 跨设备维护交接（2026-09-05）
+
+- 维护分支：`codex-harness-integration`。本轮更新该分支，版本保持 `0.91.7`，未合并 main、未创建标签或发布安装包。
+- 完全访问权限显式传递网络策略；Windows 命令适配支持 UTF-8 输出、内置 Python 隔离模式及补丁工具调用。内置 CLI 依据实际入口路径识别，区分只读查询、登录/品牌变更及未知命令。Python 自动分类仅覆盖静态可核验的本地数据处理子集，不能视为允许任意 Python 脚本。
+- 审批移入输入区域，支持拒绝、允许一次、该类操作在此对话始终允许。分类授权按对话及执行范围持久化，未知命令保持精确匹配；后台任务新增未读审批黄点，进入任务后消失。
+- 问鼎 CLI 每个任务独立保存渠道、账号会话与已验证品牌；查询前后核验服务端品牌，发现变化即停止。未复制原全局登录态到新任务，服务端是否支持同账号并行独立会话仍需真实验证。
+- 修复 `NO_BRANDS`：真实 HSF 返回的是 JSON 字符串，解码后可得到品牌列表。新增共享有界解码，同时用于登录记录及任务品牌校验；空列表、服务拒绝和结构无法识别分别处理，品牌查询重试不重复发码或授权。
+- 已完成修复后的真实只读品牌检查，以及一品牌活动/商品接口取数和口径对照。完整“两品牌分别由 Stable 生成对话与 Excel”的实机验收未完成：任务独立登录仍需用户在表单完成短信验证。不得把本节的源码/接口验证表述为报表交付完成。
+- 实机入口为 `tests/crm-live-acceptance.cjs`，使用真实应用、模型与 IPC；启动前完全退出现有 Stable。不会自动发送短信、复制登录凭据或自动批准命令。`tests/crm-delivery-acceptance.cjs` 可将生成的 Excel 与本次 CLI 活动/商品 JSON 对照，检查字段、完整行数、排序、逐行指标、合计与 ROI 算术均值；观察内容与视觉布局仍须人工复核。
+- `qa-artifacts/`、用户数据库、业务查询结果、登录配置、API Key、生成的 Excel 与本地运行时不随 Git 同步。测试输入中的模拟凭据不是真实登录信息。
+- 推送前验证：类型检查与生产构建通过。首次并发回归出现 Electron/GPU/超时失败；串行全量回归 288 项中 287 项通过，唯一失败是 `conversation-activity.test.cjs` 仍匹配旧的未读点 class 字面量。断言已随审批黄点分支更新，并保留当前对话不显示审批黄点的检查，该文件 4/4 复测通过；修正后未重复执行全量回归。登录 Python 测试另覆盖 20 个离线场景。
+
+### 在另一台 Windows x64 设备继续开发
+
+```powershell
+git clone --branch codex-harness-integration https://github.com/LLucas88/Stable.git
+cd Stable
+npm ci
+npm run tools:install
+npm run runtime:codex
+npm run typecheck
+npm test
+npm run build
+npm start
+```
+
+已有仓库时先确认工作区干净，再执行 `git fetch origin`、`git switch codex-harness-integration`、`git pull --ff-only origin codex-harness-integration`。模型配置和问鼎登录在新设备重新设置。常规启动使用 `npm start`；继续本轮 CRM 实机验收时改为 `node_modules/electron/dist/electron.exe tests/crm-live-acceptance.cjs`，其请求及结果目录为 `qa-artifacts/crm-acceptance-20260905/live/`。
 
 ## Codex Harness 独立整合分支（2026-09-04）
 

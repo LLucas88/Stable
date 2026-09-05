@@ -11,6 +11,7 @@ import tempfile
 
 from crm_base_cli import config as config_mod
 from crm_base_cli.api import CrmAPI
+from crm_base_cli.stable_response import decode_response
 from crm_base_cli.cli import (
     _generate_third_login_code_verifier,
     _build_third_login_auth_open_request,
@@ -68,6 +69,7 @@ class LoginFlow:
         api = self.api_factory(wnToken=token, require_auth=False)
         # Open login endpoints must not inherit a previously configured token.
         api.wnToken = token
+        api._stable_login_worker = True
         return api
 
     def reset(self, channel='0'):
@@ -79,7 +81,7 @@ class LoginFlow:
         self.state = {"phase": "signed_out", "channel": channel, "detail": "请在此表单完成手机号验证。"}
 
     def invoke(self, api, method, **kwargs):
-        result = getattr(api, method)(channel=self.state['channel'], **kwargs)
+        result = decode_response(getattr(api, method)(channel=self.state['channel'], **kwargs))
         self.remember(result)
         if isinstance(result, dict) and (result.get('success') is False or result.get('succeed') is False):
             raise LoginError('SERVICE_REJECTED', self.redact(result.get('errorMsg') or result.get('message') or result.get('resultMsg') or '服务端拒绝了本次请求。'))
@@ -87,23 +89,42 @@ class LoginFlow:
 
     def brand_options(self, result):
         found = {}
+        self.brands.clear()
+        empty_list = False
+        invalid = False
         def visit(value):
+            nonlocal empty_list, invalid
+            value = decode_response(value)
             if isinstance(value, list):
+                if not value: empty_list = True
                 for item in value: visit(item)
             elif isinstance(value, dict):
+                if value.get('success') is False or value.get('succeed') is False:
+                    raise LoginError('SERVICE_REJECTED', '服务端未确认品牌查询成功，请重试品牌查询。')
                 ident = value.get('orgId', value.get('brandId'))
                 name = value.get('orgName') or value.get('brandName') or value.get('name')
+                recognized = False
                 if ident is not None and name and re.fullmatch(r'\d+', str(ident)):
                     found[str(ident)] = str(name)
+                    recognized = True
                 for key in ('data', 'result', 'nodes', 'brandList', 'brands', 'list', 'children', 'orgList', 'organizationList'):
-                    if key in value: visit(value[key])
+                    if key in value:
+                        recognized = True
+                        visit(value[key])
+                if not recognized: invalid = True
+            else:
+                invalid = True
         visit(result)
+        if not found and (invalid or not empty_list):
+            raise LoginError('INVALID_BRAND_RESPONSE', '品牌查询返回格式无法识别，不能据此判断账号没有品牌。请重试品牌查询。')
         self.brands = {secrets.token_hex(12): {'id': key, 'label': self.redact(name)} for key, name in found.items()}
         return [{'id': key, 'label': value['label']} for key, value in self.brands.items()]
 
     @staticmethod
     def active_brand(record):
+        record = decode_response(record)
         if not isinstance(record, dict): return None
+        if record.get('success') is False or record.get('succeed') is False: return None
         for key in ('orgId', 'brandId', 'currentOrgId', 'currentBrandId'):
             if record.get(key) is not None: return str(record[key])
         for key in ('data', 'result', 'organization', 'org', 'brand', 'loginRecord'):
@@ -133,6 +154,8 @@ class LoginFlow:
             raise LoginError('EMPTY_LOGIN_RECORD', '服务端未返回有效登录记录，请重试检查。')
         self.auth_token = token
         active = self.active_brand(record)
+        if os.environ.get('WENDING_CONFIG_DIR') and cfg.get('stable_brand_id') and active != str(cfg['stable_brand_id']):
+            raise LoginError('BRAND_BINDING_CHANGED', '服务端品牌与此任务绑定的品牌不一致，请重新开始登录；不会自动更换任务品牌。')
         current = next((item for item in self.brands.values() if item['id'] == active), None)
         if current:
             self.state.update(phase='ready', detail='已核验登录态与当前品牌。', brandLabel=current['label'])
@@ -210,6 +233,8 @@ class LoginFlow:
     def refresh_brands(self):
         if not self.auth_token or self.state['phase'] != 'choose_brand':
             raise LoginError('INVALID_STATE', '请先完成手机号验证。')
+        self.brands.clear()
+        self.state['brands'] = []
         options = self.brand_options(self.invoke(self.api(self.auth_token), 'third_login_query_brand_list'))
         self.state['brands'] = options
         if not options: raise LoginError('NO_BRANDS', '账号未返回可用品牌，请联系管理员或重试品牌查询。')
@@ -225,15 +250,17 @@ class LoginFlow:
         record = self.invoke(api, 'third_login_login_record')
         if self.active_brand(record) != brand['id']:
             raise LoginError('BRAND_NOT_CONFIRMED', '登录记录未确认所选品牌，未保存新登录态，请重试或联系管理员。')
-        self.persist()
+        self.persist(brand)
         self.state = {'phase': 'ready', 'channel': self.state['channel'], 'detail': '登录与品牌验证已完成。', 'brandLabel': brand['label']}
         self.brands.clear()
         self.context.clear()
 
-    def persist(self):
+    def persist(self, brand=None):
         # Same encoded format as vendor config; atomic replace, preserving unrelated settings.
         cfg = config_mod.load_config()
         cfg.update(wnToken=self.auth_token, third_login_channel=self.state['channel'])
+        if brand:
+            cfg.update(stable_brand_id=brand['id'], stable_brand_label=brand['label'])
         encoded = {key: config_mod._encode_value(value) if isinstance(value, str) else value for key, value in cfg.items()}
         config_mod.ensure_config_dir()
         destination = Path(config_mod.CONFIG_FILE)
