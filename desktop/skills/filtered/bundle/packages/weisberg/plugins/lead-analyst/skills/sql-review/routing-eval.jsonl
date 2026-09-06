@@ -1,0 +1,4 @@
+{"intent":"review this SQL for join fanout and denominator bugs","expected_skill":"sql-review"}
+{"intent":"is this dbt model calculating retention correctly?","expected_skill":"sql-review"}
+{"intent":"check this query before I use it in an exec readout","expected_skill":"sql-review"}
+

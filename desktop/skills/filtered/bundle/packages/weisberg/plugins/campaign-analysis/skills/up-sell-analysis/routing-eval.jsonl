@@ -1,0 +1,8 @@
+// campaign-analysis plugin routing fixtures — existing-customer campaign measurement. Cross-plugin cases separate campaign lift from generic experiment analysis.
+// skill: up-sell-analysis  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "did the campaign grow deposit balances for existing clients versus the holdout?", "expected_skill": "up-sell-analysis"}
+{"intent": "measure wallet-share and AUM lift from our expansion campaign", "expected_skill": "up-sell-analysis"}
+{"intent": "how much did balances go up for treated customers after the in-book campaign?", "expected_skill": "up-sell-analysis"}
+{"intent": "measure balance and AUM lift for existing customers, treated vs holdout", "expected_skill": "up-sell-analysis", "forbidden_skill": "cross-sell-analysis"}
+{"intent": "did the add-a-product campaign get customers to open a brand-new account?", "expected_skill": "cross-sell-analysis", "forbidden_skill": "up-sell-analysis"}
+{"intent": "plan the sample size and power for a brand-new experiment", "expected_skill": "ab-testing:sample-size", "ambiguous_with": ["experimentation:power-duration-planning"], "forbidden_skill": "up-sell-analysis"}

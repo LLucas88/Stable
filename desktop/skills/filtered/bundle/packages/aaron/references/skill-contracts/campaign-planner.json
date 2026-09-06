@@ -1,0 +1,653 @@
+{
+  "$schema": "../skill-machine-contract.schema.json",
+  "completion_contract": {
+    "clauses": [
+      {
+        "clause_id": "done-01",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 169,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "- The selected mode is explicit: `plan-only` completes §§1–9, `tracker-only` completes only §10 from its required existing inputs, and `both` completes §§1–9 before §10."
+      },
+      {
+        "clause_id": "done-02",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 463,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 172
+        },
+        "text": "- In a plan-authoring mode, objectives, strategy, influencer mix, deliverables, timeline, budget allocation, contingency, and KPIs are concrete only where the user supplied them or a compatible source-dated planning anchor supports them. Every unsupported required choice stays `NEEDS_INPUT`"
+      },
+      {
+        "clause_id": "done-03",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 727,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 465
+        },
+        "text": "the skill never fills it from a repository default. The §8 measurement design is execution-locked only when its campaign/plan binding, immutable plan hash/version, authorization, non-empty creator scope, and unique per-creator/deliverable checkpoints are present"
+      },
+      {
+        "clause_id": "done-04",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 849,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 729
+        },
+        "text": "otherwise report the exact lock inputs as `NEEDS_INPUT`/`DONE_WITH_CONCERNS` and do not create a close-eligible tracker."
+      },
+      {
+        "clause_id": "done-05",
+        "condition_kind": "blocking",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1161,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 852
+        },
+        "text": "- If tracking was requested, each creator has validated source artifacts and one deterministic non-authoritative projection block with stage, next action, due date, rights expiry, evidence references, and external-payment handoff state. The projection carries its source artifact refs/digests and current head"
+      },
+      {
+        "clause_id": "done-06",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1207,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1163
+        },
+        "text": "it is never hand-edited as the state source."
+      },
+      {
+        "clause_id": "done-07",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1269,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1210
+        },
+        "text": "- Each tracker creator uses one stable opaque `creator_ref`"
+      },
+      {
+        "clause_id": "done-08",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1509,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1271
+        },
+        "text": "every identity resolution, publication, terminal-checkpoint resolution, creator close, campaign close, migration, and late event has an immutable ref plus exact campaign/creator scope and a single non-forked current head where applicable."
+      },
+      {
+        "clause_id": "done-09",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1669,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1512
+        },
+        "text": "- Every saved `live_post_ref` is opaque and qualified-resolver-backed. External actions require current exact authority and matching intent/receipt artifacts"
+      },
+      {
+        "clause_id": "done-10",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1845,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1671
+        },
+        "text": "a prior save, plan, gate, path, capability, or projection never grants authority. Raw post locators and reusable blanket approvals never enter the artifact set or projection."
+      },
+      {
+        "clause_id": "done-11",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 1993,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1848
+        },
+        "text": "- A tracked live post has a receipt per required checkpoint, and each checkpoint's latest explicitly unsuperseded receipt controls the close gate"
+      },
+      {
+        "clause_id": "done-12",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2110,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1995
+        },
+        "text": "a mismatch, unknown disclosure, or changed/removed post is evidence for review, never silently treated as approved."
+      },
+      {
+        "clause_id": "done-13",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2359,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2113
+        },
+        "text": "- A closed creator row points to its unique current close-receipt head. A closed campaign points to the unique current campaign-close head, proves exact equality with the locked non-empty creator scope, and passes the strict gates in template §10"
+      },
+      {
+        "clause_id": "done-14",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2420,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2361
+        },
+        "text": "neither `closed` value is treated as a synonym for success."
+      },
+      {
+        "clause_id": "done-15",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2576,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2423
+        },
+        "text": "- A material late event is appended without rewriting prior receipts. A reference correction appends fresh close receipts when corrected gates still pass"
+      },
+      {
+        "clause_id": "done-16",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2727,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2578
+        },
+        "text": "a failed gate cannot receive a passing receipt, and manual reopen is reserved for new campaign-owned work under template §10's stage/action baseline."
+      },
+      {
+        "clause_id": "done-17",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2938,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2730
+        },
+        "text": "- A plan-authoring result names brief generation and open approvals. A tracker-only result instead names the evidence/action owner implied by the current stage, or stops as chain-complete when nothing remains"
+      },
+      {
+        "clause_id": "done-18",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 2996,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 2940
+        },
+        "text": "it never routes backward to brief generation by default."
+      }
+    ],
+    "done_when": "- The selected mode is explicit: `plan-only` completes §§1–9, `tracker-only` completes only §10 from its required existing inputs, and `both` completes §§1–9 before §10.\n  - In a plan-authoring mode, objectives, strategy, influencer mix, deliverables, timeline, budget allocation, contingency, and KPIs are concrete only where the user supplied them or a compatible source-dated planning anchor supports them. Every unsupported required choice stays `NEEDS_INPUT`; the skill never fills it from a repository default. The §8 measurement design is execution-locked only when its campaign/plan binding, immutable plan hash/version, authorization, non-empty creator scope, and unique per-creator/deliverable checkpoints are present; otherwise report the exact lock inputs as `NEEDS_INPUT`/`DONE_WITH_CONCERNS` and do not create a close-eligible tracker.\n  - If tracking was requested, each creator has validated source artifacts and one deterministic non-authoritative projection block with stage, next action, due date, rights expiry, evidence references, and external-payment handoff state. The projection carries its source artifact refs/digests and current head; it is never hand-edited as the state source.\n  - Each tracker creator uses one stable opaque `creator_ref`; every identity resolution, publication, terminal-checkpoint resolution, creator close, campaign close, migration, and late event has an immutable ref plus exact campaign/creator scope and a single non-forked current head where applicable.\n  - Every saved `live_post_ref` is opaque and qualified-resolver-backed. External actions require current exact authority and matching intent/receipt artifacts; a prior save, plan, gate, path, capability, or projection never grants authority. Raw post locators and reusable blanket approvals never enter the artifact set or projection.\n  - A tracked live post has a receipt per required checkpoint, and each checkpoint's latest explicitly unsuperseded receipt controls the close gate; a mismatch, unknown disclosure, or changed/removed post is evidence for review, never silently treated as approved.\n  - A closed creator row points to its unique current close-receipt head. A closed campaign points to the unique current campaign-close head, proves exact equality with the locked non-empty creator scope, and passes the strict gates in template §10; neither `closed` value is treated as a synonym for success.\n  - A material late event is appended without rewriting prior receipts. A reference correction appends fresh close receipts when corrected gates still pass; a failed gate cannot receive a passing receipt, and manual reopen is reserved for new campaign-owned work under template §10's stage/action baseline.\n  - A plan-authoring result names brief generation and open approvals. A tracker-only result instead names the evidence/action owner implied by the current stage, or stops as chain-complete when nothing remains; it never routes backward to brief generation by default.",
+    "extraction_status": "classified",
+    "source": {
+      "path": "influencer/target/campaign-planner/SKILL.md",
+      "section": "Skill Contract/Done when",
+      "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba"
+    }
+  },
+  "context_hints": {
+    "bundle_references": [
+      {
+        "path": "CONNECTORS.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "82551243ae14adb3b28cc21b3122b0ec12fd4d25abb9124678c198af12455c63",
+        "source_line": 50
+      },
+      {
+        "path": "influencer/target/campaign-planner/references/influencer-tiers.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "ba5d4193b31abd27b01148ca9992adfcad0d541519ddb47d0ff58f038560588b",
+        "source_line": 61
+      },
+      {
+        "path": "influencer/target/campaign-planner/references/templates.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "c318da28ede203d457e1ab7bc688a056ab258ba0486a1eec995fde4c40b98325",
+        "source_line": 21
+      },
+      {
+        "path": "references/skill-contract.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c",
+        "source_line": 37
+      },
+      {
+        "path": "references/state-model.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "1e88de7fdc4283df638bfae02860b9dcd71d7abc92fe717d2c8099b905f8b981",
+        "source_line": 89
+      }
+    ],
+    "project_paths": []
+  },
+  "contract_id": "skill:campaign-planner",
+  "control_requirements": [
+    "action-intent",
+    "action-receipt",
+    "artifact-binding",
+    "cycle-retro",
+    "evidence-observation",
+    "measurement-contract"
+  ],
+  "handoff_contract": {
+    "extraction_status": "partially-classified",
+    "items": [
+      {
+        "condition": null,
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-01",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 136,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "target_skills": [
+          "brief-generator"
+        ],
+        "text": "- **Plan-authoring primary**: [brief-generator](../brief-generator/SKILL.md) — convert an approved plan into concrete influencer briefs."
+      },
+      {
+        "condition": null,
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-02",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 245,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 137
+        },
+        "target_skills": [
+          "budget-optimizer"
+        ],
+        "text": "- **Plan-authoring alternates**: [budget-optimizer](../budget-optimizer/SKILL.md) to pressure-test the split"
+      },
+      {
+        "condition": null,
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-03",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 359,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 247
+        },
+        "target_skills": [
+          "influencer-discovery"
+        ],
+        "text": "[influencer-discovery](../../scout/influencer-discovery/SKILL.md) to build or complete the locked creator scope."
+      },
+      {
+        "condition": null,
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-04",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 547,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 360
+        },
+        "target_skills": [
+          "creator-content-auditor"
+        ],
+        "text": "- **Tracker-only, publication/approval blocker**: [creator-content-auditor](../../activate/creator-content-auditor/SKILL.md) — verify the cited live post against the frozen approved asset"
+      },
+      {
+        "condition": null,
+        "extraction_status": "unclassified",
+        "item_id": "handoff-05",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 598,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 549
+        },
+        "target_skills": [],
+        "text": "this does not authorize an edit or amplification."
+      },
+      {
+        "condition": null,
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-06",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 755,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 599
+        },
+        "target_skills": [
+          "performance-analyzer"
+        ],
+        "text": "- **Tracker-only, readback/reconciliation due**: [performance-analyzer](../../report/performance-analyzer/SKILL.md) — produce the dated §8 readback artifact"
+      },
+      {
+        "condition": "after the evidence exists.",
+        "extraction_status": "unclassified",
+        "item_id": "handoff-07",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 830,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 757
+        },
+        "target_skills": [],
+        "text": "final reporting may package that artifact only after the evidence exists."
+      },
+      {
+        "condition": null,
+        "extraction_status": "unclassified",
+        "item_id": "handoff-08",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 950,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 831
+        },
+        "target_skills": [],
+        "text": "- **Tracker-only, open operational item**: hand off only to the named owner/skill required by the current `next_action`"
+      },
+      {
+        "condition": "If every close gate passes and no action remains, stop and report chain-complete.",
+        "extraction_status": "unclassified",
+        "item_id": "handoff-09",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 1085,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 952
+        },
+        "target_skills": [],
+        "text": "do not route back to briefing for a late-stage row. If every close gate passes and no action remains, stop and report chain-complete."
+      },
+      {
+        "condition": "If the applicable next skill has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request.",
+        "extraction_status": "unclassified",
+        "item_id": "handoff-10",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 1336,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 1087
+        },
+        "target_skills": [],
+        "text": "Termination note: keep a visited-set of skills invoked this session. If the applicable next skill has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request."
+      }
+    ],
+    "next_best": "- **Plan-authoring primary**: [brief-generator](../brief-generator/SKILL.md) — convert an approved plan into concrete influencer briefs.\n- **Plan-authoring alternates**: [budget-optimizer](../budget-optimizer/SKILL.md) to pressure-test the split; [influencer-discovery](../../scout/influencer-discovery/SKILL.md) to build or complete the locked creator scope.\n- **Tracker-only, publication/approval blocker**: [creator-content-auditor](../../activate/creator-content-auditor/SKILL.md) — verify the cited live post against the frozen approved asset; this does not authorize an edit or amplification.\n- **Tracker-only, readback/reconciliation due**: [performance-analyzer](../../report/performance-analyzer/SKILL.md) — produce the dated §8 readback artifact; final reporting may package that artifact only after the evidence exists.\n- **Tracker-only, open operational item**: hand off only to the named owner/skill required by the current `next_action`; do not route back to briefing for a late-stage row. If every close gate passes and no action remains, stop and report chain-complete.\n\nTermination note: keep a visited-set of skills invoked this session. If the applicable next skill has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request.",
+    "summary": "> Emit the standard shape from [skill-contract.md §Handoff Summary Format](../../../references/skill-contract.md).",
+    "summary_ref": {
+      "path": "influencer/target/campaign-planner/SKILL.md",
+      "section": "Skill Contract/Handoff Summary",
+      "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba"
+    },
+    "summary_source": "skill-section",
+    "target_skills": [
+      "brief-generator",
+      "budget-optimizer",
+      "creator-content-auditor",
+      "influencer-discovery",
+      "performance-analyzer"
+    ]
+  },
+  "identity": {
+    "class": null,
+    "discipline": "influencer",
+    "name": "campaign-planner",
+    "path": "influencer/target/campaign-planner/SKILL.md",
+    "phase": "target",
+    "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+    "version": "20.1.0"
+  },
+  "input_contract": {
+    "argument_hint": "<brand or product> [budget] [platform] [timeframe]",
+    "clauses": [
+      {
+        "clause_id": "read-01",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 50,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "requested mode (`plan-only | tracker-only | both`)"
+      },
+      {
+        "clause_id": "read-02",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 145,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 52
+        },
+        "text": "brand, product, audience, campaign type, budget, timeline, and constraints for plan authoring"
+      },
+      {
+        "clause_id": "read-03",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 434,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 147
+        },
+        "text": "and, for execution-ready tracking, an existing `campaign_id`, exact versioned campaign-plan reference/hash, locked §8 measurement contract, and locked non-empty creator scope. If `memory-management` is active, prior audience profiles and past-campaign benchmarks load from the hot cache."
+      }
+    ],
+    "extraction_status": "unclassified",
+    "reads": "requested mode (`plan-only | tracker-only | both`); brand, product, audience, campaign type, budget, timeline, and constraints for plan authoring; and, for execution-ready tracking, an existing `campaign_id`, exact versioned campaign-plan reference/hash, locked §8 measurement contract, and locked non-empty creator scope. If `memory-management` is active, prior audience profiles and past-campaign benchmarks load from the hot cache.",
+    "source": {
+      "path": "influencer/target/campaign-planner/SKILL.md",
+      "section": "Skill Contract/Reads",
+      "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba"
+    }
+  },
+  "output_contract": {
+    "clauses": [
+      {
+        "clause_id": "write-01",
+        "extraction_status": "classified",
+        "kind": "project-artifact",
+        "permission_posture": "permission-required",
+        "side_effect": "project-write",
+        "source": {
+          "end_char": 616,
+          "path": "influencer/target/campaign-planner/SKILL.md",
+          "section": "Skill Contract/Writes",
+          "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "the campaign plan inline by default. With exact save authorization, write it to `memory/influencer/campaign-planner/YYYY-MM-DD-<topic>.md`. For execution tracking, emit separate JSON artifacts that validate against the shared five-kind control schema (evidence observations, the locked measurement contract, action intents/receipts only for an actual executor action, and the Cycle Retro), then let the controller bind their exact refs/hashes to the selected run ancestry. The Markdown/YAML tracker in [references/templates.md §10](references/templates.md#10-optional-lightweight-campaign-tracker) is a deterministic"
+      }
+    ],
+    "extraction_status": "classified",
+    "source": {
+      "path": "influencer/target/campaign-planner/SKILL.md",
+      "section": "Skill Contract",
+      "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba"
+    },
+    "summary": "the campaign plan inline by default. With exact save authorization, write it to `memory/influencer/campaign-planner/YYYY-MM-DD-<topic>.md`. For execution tracking, emit separate JSON artifacts that validate against the shared five-kind control schema (evidence observations, the locked measurement contract, action intents/receipts only for an actual executor action, and the Cycle Retro), then let the controller bind their exact refs/hashes to the selected run ancestry. The Markdown/YAML tracker in [references/templates.md §10](references/templates.md#10-optional-lightweight-campaign-tracker) is a deterministic",
+    "summary_source": "writes-fallback",
+    "writes": "the campaign plan inline by default. With exact save authorization, write it to `memory/influencer/campaign-planner/YYYY-MM-DD-<topic>.md`. For execution tracking, emit separate JSON artifacts that validate against the shared five-kind control schema (evidence observations, the locked measurement contract, action intents/receipts only for an actual executor action, and the Cycle Retro), then let the controller bind their exact refs/hashes to the selected run ancestry. The Markdown/YAML tracker in [references/templates.md §10](references/templates.md#10-optional-lightweight-campaign-tracker) is a deterministic"
+  },
+  "provenance": {
+    "control_bindings": {
+      "path": "references/control-bindings.json",
+      "sha256": "70fbf645a095d87676bc77522dd6838a0f9dceb2214cc4c64823f39ecf6bd0f1"
+    },
+    "generator": "generate-skill-contracts-v1",
+    "shared_contract": {
+      "path": "references/skill-contract.md",
+      "section": "Skill Contract",
+      "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c"
+    },
+    "system_catalog": {
+      "path": "references/system-catalog.json",
+      "sha256": "ac5a3d42ccdc98e396c48ead96e8a99e1ba88cf101f9f57d6afd2f6394165f6f",
+      "version": "20.1.0"
+    }
+  },
+  "routing_contract": {
+    "boundary": "Not for individual creator briefs — use brief-generator; not for overall product launches without creators — use launch-tier-planner; not for sending, publishing, amplifying, or paying — use the owning execution workflow. 达人营销策划/种草方案/活动追踪与关账",
+    "description": "Use when the user asks to \"plan an influencer campaign\", \"build a campaign blueprint\", \"track or close a creator campaign\", or \"record a late campaign correction\"; produces the plan and, when requested, a non-canonical evidence tracker with scoped identity, publication, reconciliation, close, and reopen receipts. Not for individual creator briefs — use brief-generator; not for overall product launches without creators — use launch-tier-planner; not for sending, publishing, amplifying, or paying — use the owning execution workflow. 达人营销策划/种草方案/活动追踪与关账",
+    "source": {
+      "path": "influencer/target/campaign-planner/SKILL.md",
+      "section": "frontmatter",
+      "sha256": "a09420e865df9e466adfc41c5e41e17d85a0d929fac65c265db75152dbec7fba"
+    },
+    "trigger_phrases": [
+      "build a campaign blueprint",
+      "plan an influencer campaign",
+      "record a late campaign correction",
+      "track or close a creator campaign"
+    ],
+    "trigger_source": "description-quoted",
+    "when_to_use": "Use when planning a new influencer campaign, launching a product with influencer support, building seasonal or always-on creator programs, or maintaining an existing creator-campaign tracker: recording verified publication checkpoints, deriving exception queues, reconciling payment/measurement evidence, closing creators or the campaign, and handling late evidence or manual reopen. Planning does not write briefs or execute outreach; tracking does not publish, amplify, pay, or mutate external systems."
+  },
+  "schema_version": "1.0"
+}

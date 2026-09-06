@@ -1,0 +1,30 @@
+{
+  "name": "video-account-zh",
+  "displayName": "视频号内容运营",
+  "version": "1.0.0",
+  "description": "为微信视频号做内容选题、直播预热、公众号联动、社群转发和私域沉淀。",
+  "author": "ikun",
+  "license": "MIT",
+  "category": "content",
+  "tags": [
+    "视频号",
+    "微信生态",
+    "短视频",
+    "私域"
+  ],
+  "keywords": [
+    "视频号",
+    "微信生态",
+    "直播预约",
+    "公众号联动",
+    "私域"
+  ],
+  "platforms": [
+    "openclaw",
+    "skillhub",
+    "claude-code",
+    "cursor"
+  ],
+  "language": "zh-CN",
+  "minAgentVersion": "0.1.0"
+}

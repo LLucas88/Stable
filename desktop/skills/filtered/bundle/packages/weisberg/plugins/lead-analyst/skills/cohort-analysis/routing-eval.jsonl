@@ -1,0 +1,4 @@
+{"intent":"run a cohort analysis for retention by signup month","expected_skill":"cohort-analysis"}
+{"intent":"compare activation cohorts before and after the onboarding change","expected_skill":"cohort-analysis"}
+{"intent":"vintage analysis of repeat purchases by first purchase month","expected_skill":"cohort-analysis"}
+

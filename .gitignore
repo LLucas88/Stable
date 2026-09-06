@@ -39,3 +39,5 @@ team-p0a-qa.json
 .local/
 .stable-ops-skills.json
 .stable-tencenthub-skills.json
+
+.stable-filtered-skills.json

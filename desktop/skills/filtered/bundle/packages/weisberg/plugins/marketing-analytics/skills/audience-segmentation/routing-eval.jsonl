@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: audience-segmentation  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "cluster our customers into segments using RFM and K-Means", "expected_skill": "audience-segmentation"}
+{"intent": "which customers should we target — build behavioral segments and personas", "expected_skill": "audience-segmentation"}
+{"intent": "show me segment migration and customer tiers over time", "expected_skill": "audience-segmentation"}
+{"intent": "group our customers with RFM scoring and clustering for targeting", "expected_skill": "audience-segmentation", "forbidden_skill": "marketing-analytics:crm-lead-scoring"}
+{"intent": "design a retention cohort analysis for SaaS activation and churn", "expected_skill": "lead-analyst:cohort-analysis", "ambiguous_with": ["marketing-analytics:audience-segmentation"], "forbidden_skill": "audience-segmentation"}

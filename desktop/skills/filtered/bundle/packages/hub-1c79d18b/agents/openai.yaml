@@ -1,0 +1,7 @@
+interface:
+  display_name: "私域欢迎语｜郭亿易"
+  short_description: "输入用户来源、权益和首个沟通目标，产出分来源欢迎语、首次提问和标签建议。"
+  default_prompt: "使用 $guoyiyi-private-domain-welcome 将用户来源、权益和首个沟通目标整理为分来源欢迎语、首次提问和标签建议。"
+  icon_small: "./assets/icon.png"
+  icon_large: "./assets/icon.png"
+  brand_color: "#00A6A6"

@@ -1,0 +1,4 @@
+{"intent":"define our activation metric so product and marketing stop using different numbers","expected_skill":"metric-contract"}
+{"intent":"write a metric contract for weekly active accounts","expected_skill":"metric-contract"}
+{"intent":"why do these dashboards disagree on conversion rate? reconcile the KPI definition","expected_skill":"metric-contract"}
+{"intent":"what should be the source of truth for retention?","expected_skill":"metric-contract"}

@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: funnel-analysis  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "where are we losing people in the signup funnel?", "expected_skill": "funnel-analysis"}
+{"intent": "find the biggest drop-off in our checkout flow", "expected_skill": "funnel-analysis"}
+{"intent": "compare conversion funnels before and after the redesign", "expected_skill": "funnel-analysis"}
+{"intent": "identify the bottlenecks and abandonment in the onboarding funnel", "expected_skill": "funnel-analysis", "forbidden_skill": "marketing-analytics:web-analytics"}
+{"intent": "design an A/B test for the checkout-redesign CRO hypothesis", "expected_skill": "ab-testing:design-experiment", "forbidden_skill": "funnel-analysis"}

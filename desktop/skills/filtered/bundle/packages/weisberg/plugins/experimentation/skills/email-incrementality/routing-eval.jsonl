@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: email-incrementality  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "design an email holdout to measure true incrementality now that Apple MPP broke open rates", "expected_skill": "email-incrementality"}
+{"intent": "we keep judging email on opens and clicks — how do we measure real incremental lift?", "expected_skill": "email-incrementality"}
+{"intent": "evaluate email fatigue and frequency effects with delayed outcomes for our newsletter", "expected_skill": "email-incrementality"}
+{"intent": "measure the incremental impact of our email program with a proper holdout", "expected_skill": "email-incrementality", "forbidden_skill": "marketing-analytics:email-analytics"}
+{"intent": "our open rate and deliverability dropped — analyze email engagement and check SPF/DKIM", "expected_skill": "marketing-analytics:email-analytics", "forbidden_skill": "email-incrementality"}

@@ -1,0 +1,64 @@
+# ============================================================
+# 销售邮件自动化系统 - 配置文件模板
+# ============================================================
+# 使用方法：
+#   1. 复制本文件为 email_config.yaml
+#   2. 修改下面的 SMTP 配置为你自己的邮箱
+#   3. 修改 company / agent 信息为你的公司和销售信息
+#   4. 运行 python email_automation.py init 初始化
+#
+# 常见邮箱SMTP配置：
+#   QQ邮箱:     smtp.qq.com:587   (需开启SMTP，用授权码不是密码)
+#   163邮箱:    smtp.163.com:587  (需开启SMTP，用授权码)
+#   Gmail:      smtp.gmail.com:587 (需App Password)
+#   Outlook:    smtp-mail.outlook.com:587
+#   阿里企业邮:  smtp.qiye.aliyun.com:465 (SSL)
+#   腾讯企业邮:  smtp.exmail.qq.com:465 (SSL)
+# ============================================================
+
+# SMTP 邮件服务器配置
+smtp:
+  host: smtp.qq.com              # SMTP服务器地址
+  port: 587                      # SMTP端口（587=STARTTLS, 465=SSL）
+  tls: true                      # 是否启用TLS加密
+  email: your_email@qq.com       # 发件邮箱地址
+  password: your_auth_code       # 邮箱授权码（不是登录密码！）
+  name: [你的姓名]                   # 发件人显示名称
+
+# 公司信息
+company:
+  name: 深圳[你的公司简称]技术有限公司    # 公司全称
+  short_name: [你的公司简称]              # 公司简称（邮件标题/正文用）
+  website: [你的公司网站]       # 公司网站
+  address: 深圳市                   # 公司地址
+  phone: 0755-00000000             # 公司电话
+
+# 销售人员信息（邮件签名用）
+agent:
+  name: [你的姓名]                     # 姓名
+  title: 销售总监                   # 职位
+  phone: [你的手机号]               # 手机
+  email: [你的邮箱]           # 邮箱
+  company: 深圳[你的公司简称]技术有限公司   # 公司名称
+  website: [你的公司网站]       # 公司网站
+
+# 调度引擎配置
+scheduler:
+  daily_check_time: "08:00"      # 每日关键日期检查时间
+  timezone: "Asia/Shanghai"      # 时区
+
+# ============================================================
+# 常见邮箱获取授权码方法：
+#
+# QQ邮箱：
+#   设置 → 账户 → POP3/SMTP服务 → 开启 → 获取授权码
+#
+# 163邮箱：
+#   设置 → POP3/SMTP/IMAP → 开启 → 设置授权码
+#
+# Gmail：
+#   账户 → 安全 → 两步验证 → App Passwords → 生成专用密码
+#
+# 腾讯企业邮：
+#   设置 → 客户端 → 开启SMTP → 使用登录密码
+# ============================================================

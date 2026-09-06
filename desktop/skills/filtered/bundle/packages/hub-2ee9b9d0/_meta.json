@@ -1,0 +1,33 @@
+{
+  "name": "private-domain-playbook",
+  "displayName": "私域运营战术库（企微+社群+朋友圈）",
+  "version": "1.0.0",
+  "description": "中国私域运营完整战术手册——加粉、SOP、社群分层、朋友圈节奏、复购触发、流失召回。含合规警告（个微多开、爬虫等)。",
+  "author": "ikun",
+  "license": "MIT",
+  "category": "marketing",
+  "tags": [
+    "私域",
+    "企微",
+    "社群",
+    "运营"
+  ],
+  "keywords": [
+    "私域",
+    "企业微信",
+    "社群运营",
+    "朋友圈 SOP",
+    "用户分层",
+    "复购"
+  ],
+  "platforms": [
+    "openclaw",
+    "skillhub",
+    "claude-code",
+    "cursor"
+  ],
+  "language": "zh-CN",
+  "minAgentVersion": "0.1.0",
+  "homepage": "",
+  "repository": ""
+}

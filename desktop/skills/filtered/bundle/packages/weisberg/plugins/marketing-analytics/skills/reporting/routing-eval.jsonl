@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: reporting  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "build an executive marketing dashboard for the weekly review", "expected_skill": "reporting"}
+{"intent": "summarize our marketing performance into a board deck", "expected_skill": "reporting"}
+{"intent": "build the weekly marketing performance report and KPI scorecard for stakeholders", "expected_skill": "reporting"}
+{"intent": "generate the cross-channel marketing performance report for leadership", "expected_skill": "reporting", "forbidden_skill": "marketing-analytics:data-extraction"}
+{"intent": "audit whether leadership can trust the numbers on this KPI dashboard", "expected_skill": "lead-analyst:dashboard-audit", "ambiguous_with": ["lead-analyst:data-quality-audit"], "forbidden_skill": "reporting"}

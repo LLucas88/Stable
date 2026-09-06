@@ -1,5 +1,7 @@
 # 腾讯 SkillHub 技能迁移
 
+> 以下为 2026-09-06 的 18 项迁移记录。2026-09-07 已追加图示筛选的 617 项，并将分支中全部技能改为仅手动调用；当前安装与调用规则见 [FILTERED_SKILLS.md](FILTERED_SKILLS.md)。
+
 分支 `codex-skill-tencenthub` 基于 `codex-harness-integration` 的 `8afa67c` 创建。原工作区的未提交改动不属于本次迁移。
 
 候选来自 2026-09-05 23:37（北京时间）SkillHub 安装量前100项快照；排序字段为 installs，不是 downloads。95个指定版本可以下载，5个返回404。固定源地址、版本、压缩包及文件 SHA-256 保存在 `desktop/skills/tencenthub/catalog.json`，适配后文件锁保存在同目录 `content-lock.json`。

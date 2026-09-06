@@ -1,0 +1,4 @@
+{"intent":"profile this dataset before we analyze it","expected_skill":"eda-profile"}
+{"intent":"do an EDA pass on this CSV","expected_skill":"eda-profile"}
+{"intent":"what is in this table and what looks weird?","expected_skill":"eda-profile"}
+

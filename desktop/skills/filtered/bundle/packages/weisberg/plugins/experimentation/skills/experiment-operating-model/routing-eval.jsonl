@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: experiment-operating-model  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "design an experimentation center of excellence with a review board and decision rights", "expected_skill": "experiment-operating-model"}
+{"intent": "build a first-year experimentation roadmap and maturity curve for our org", "expected_skill": "experiment-operating-model"}
+{"intent": "set up governance and an earned-autonomy model for our testing program", "expected_skill": "experiment-operating-model"}
+{"intent": "stand up a repeatable experimentation operating model, not a single test plan", "expected_skill": "experiment-operating-model", "forbidden_skill": "ab-testing:design-experiment"}
+{"intent": "design a single A/B test with a hypothesis and guardrails for a button change", "expected_skill": "ab-testing:design-experiment", "forbidden_skill": "experiment-operating-model"}

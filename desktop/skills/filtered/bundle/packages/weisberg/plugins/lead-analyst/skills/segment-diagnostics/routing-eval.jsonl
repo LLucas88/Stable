@@ -1,0 +1,4 @@
+{"intent":"which customer segment drove the churn increase?","expected_skill":"segment-diagnostics"}
+{"intent":"break down the conversion drop and show segment contribution","expected_skill":"segment-diagnostics"}
+{"intent":"where is the opportunity by channel, geo, and lifecycle segment?","expected_skill":"segment-diagnostics"}
+

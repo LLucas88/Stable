@@ -1,0 +1,4 @@
+{"intent":"turn this analysis into an executive readout with a recommendation","expected_skill":"executive-readout"}
+{"intent":"write a decision memo for leadership from these findings","expected_skill":"executive-readout"}
+{"intent":"summarize this dashboard for the operating review","expected_skill":"executive-readout"}
+{"intent":"what should we tell execs about this metric drop?","expected_skill":"executive-readout"}

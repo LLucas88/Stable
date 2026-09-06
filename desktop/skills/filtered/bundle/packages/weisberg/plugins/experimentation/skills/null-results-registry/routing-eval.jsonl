@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: null-results-registry  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "log this flat experiment into our repository so nobody reruns it", "expected_skill": "null-results-registry"}
+{"intent": "build a schema to capture null and inconclusive test results for institutional memory", "expected_skill": "null-results-registry"}
+{"intent": "tag and summarize negative experiment learnings for future meta-analysis", "expected_skill": "null-results-registry"}
+{"intent": "capture this inconclusive experiment into the experiment results knowledge base", "expected_skill": "null-results-registry", "forbidden_skill": "knowledge-base:ingest"}
+{"intent": "ingest this web article into my personal knowledge base vault", "expected_skill": "knowledge-base:ingest", "ambiguous_with": ["knowledge-base:setup", "knowledge-base:vaultli"], "forbidden_skill": "null-results-registry"}

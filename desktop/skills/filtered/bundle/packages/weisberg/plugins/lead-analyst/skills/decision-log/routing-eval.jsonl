@@ -1,0 +1,3 @@
+{"intent":"record this analytics recommendation in the decision log","expected_skill":"decision-log"}
+{"intent":"what did we decide after the churn analysis? log the decision and follow-up","expected_skill":"decision-log"}
+{"intent":"update the decision log with the outcome of last month's recommendation","expected_skill":"decision-log"}

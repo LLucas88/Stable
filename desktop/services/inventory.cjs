@@ -1,5 +1,6 @@
 'use strict'
 
+const { explicitlyNamedSkill } = require('./skill-invocation.cjs')
 const { readdirSync } = require('node:fs')
 const path = require('node:path')
 
@@ -46,12 +47,13 @@ function asksForWorkbenchInventory(query) {
 }
 
 function requestedWorkbenchAction(query, { library = [], workflows = [], skills = [] } = {}) {
+  const manualSkill = explicitlyNamedSkill(query, skills)
+  if (manualSkill) return { type: 'skill', item: manualSkill }
   const text = String(query || '').replace(/\s+/g, '').toLowerCase()
   if (!/(调用|运行|执行|启动|使用|用一下|处理)/.test(text)) return null
   const named = [
     ...library.filter((item) => item.kind === 'script').map((item) => ({ type: 'script', item })),
     ...workflows.map((item) => ({ type: 'workflow', item })),
-    ...skills.filter((item) => item.enabled).map((item) => ({ type: 'skill', item })),
   ].sort((left, right) => String(right.item.name).length - String(left.item.name).length)
   const exact = named.find(({ item }) => text.includes(String(item.name || '').replace(/\s+/g, '').toLowerCase()))
   if (exact) return exact
@@ -62,10 +64,6 @@ function requestedWorkbenchAction(query, { library = [], workflows = [], skills 
   }
   if (text.includes('工作流')) {
     const candidates = named.filter(({ type }) => type === 'workflow')
-    if (candidates.length === 1) return candidates[0]
-  }
-  if (text.includes('skill')) {
-    const candidates = named.filter(({ type }) => type === 'skill')
     if (candidates.length === 1) return candidates[0]
   }
   return null

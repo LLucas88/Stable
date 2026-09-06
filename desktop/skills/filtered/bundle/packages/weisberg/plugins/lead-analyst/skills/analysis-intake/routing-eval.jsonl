@@ -1,0 +1,4 @@
+{"intent":"intake this stakeholder request before we start analysis","expected_skill":"analysis-intake"}
+{"intent":"the VP asked why churn is up, what should we clarify first?","expected_skill":"analysis-intake"}
+{"intent":"turn this vague dashboard ask into an analytics request","expected_skill":"analysis-intake"}
+

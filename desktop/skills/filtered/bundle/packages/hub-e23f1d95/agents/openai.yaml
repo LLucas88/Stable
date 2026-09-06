@@ -1,0 +1,7 @@
+interface:
+  display_name: "用户标签设计｜郭亿易"
+  short_description: "输入业务目标、用户行为和现有字段，产出标签树、定义、取值规则和更新频率。"
+  default_prompt: "使用 $guoyiyi-customer-tag-design 将业务目标、用户行为和现有字段整理为标签树、定义、取值规则和更新频率。"
+  icon_small: "./assets/icon.png"
+  icon_large: "./assets/icon.png"
+  brand_color: "#00A86B"

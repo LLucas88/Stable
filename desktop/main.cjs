@@ -38,6 +38,7 @@ const { collectMarkdownFiles, copyMarkdownDocuments } = require('./services/know
 const { renderReportHtml } = require('./services/reports.cjs')
 const { layoutWorkflowGraph, scheduleWorkflowTasks, topologicalOrder, validateWorkflowGraph } = require('./services/workflow-graph.cjs')
 const { writeWorkflowOutput } = require('./services/workflow-output.cjs')
+const { manualSkillContext, explicitlyNamedSkill, assertWorkflowSkillInvocation } = require('./services/skill-invocation.cjs')
 const { asksForWorkbenchInventory, buildWorkbenchInventory, requestedWorkbenchAction, workbenchInventoryAnswer } = require('./services/inventory.cjs')
 const {
   normalizeWebUrl,
@@ -428,7 +429,7 @@ async function executeAutomation(id, force = false) {
   try {
     store.addMessage(item.conversationId, 'user', item.prompt)
     publishAgentState(item.conversationId)
-    const result = await runAgent(item.prompt, item.conversationId, [], undefined, undefined, true, [], executionRunner, 'full')
+    const result = await runAgent(item.prompt, item.conversationId, [], undefined, { manualSkillInvocation: force }, true, [], executionRunner, 'full')
     store.addMessage(item.conversationId, 'assistant', result.answer, result.trace)
     store.finishAutomationRun(id, runId, result.status || 'completed', result.answer, result.reason || null)
     publishAgentState(item.conversationId)
@@ -489,7 +490,7 @@ function teamCapabilities() {
   const preferences = teamPreferences()
   const role = profile?.role || 'member'
   return {
-    skills: store.listSkills().filter((item) => item.enabled).map((item) => item.name).slice(0, 40),
+    skills: [], // Manual-only skills are not advertised for automatic team allocation.
     scripts: store.listLibrary().filter((item) => item.kind === 'script').map((item) => item.name).slice(0, 40),
     tools: ['Stable Agent', 'Stable Workflow'],
     plugins: Array.isArray(store.getSetting('teamPlugins')) ? store.getSetting('teamPlugins').slice(0, 40) : [],
@@ -633,9 +634,9 @@ async function executeInboundTeamTask(taskId) {
   auditTeamTask(taskId, 'running', '目标设备已开始使用本地能力执行。')
   try {
     const required = task.context?.requiredCapabilities || []
-    const skillNames = new Set(required.filter((item) => item.startsWith('skill:')).map((item) => item.slice(6)))
+    if (required.some((item) => item.startsWith('skill:'))) throw Error('本机 Skill 仅支持用户手动调用，不能由团队自动任务调用。')
     const scriptNames = new Set(required.filter((item) => item.startsWith('script:')).map((item) => item.slice(7)))
-    const selectedSkills = store.listSkills().filter((item) => item.enabled && skillNames.has(item.name)).map(({ name, content }) => ({ name, content }))
+    const selectedSkills = []
     const selectedScripts = store.listLibrary().filter((item) => item.kind === 'script' && scriptNames.has(item.name)).map(({ id, name, description }) => ({ id, name, description }))
     const safeInstruction = `${task.instruction}\n\n这是经本机策略批准的 Team AI Work，Agent 路径为 ${task.context?.agentPath || '/root'}。只使用本机能力和检索命中的资源；不要删除、覆盖或清空文件。完成后只提交可供上游综合的结果。`
     const result = await runAgent(safeInstruction, null, [], [], { skills: selectedSkills, scripts: selectedScripts }, false, [], executionRunner, 'full')
@@ -1527,7 +1528,9 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
   if (installedSkills.length) publish({ id: 'stable-skill-install', kind: 'tool', title: '安装全局 Skill', detail: `已识别并安装：${installedSkills.join('、')}`, status: 'completed' })
   const workbenchAction = conversationId ? requestedWorkbenchAction(query, {
-    library: store.listLibrary(), workflows: store.listWorkflows(), skills: store.listSkills(),
+    library: store.listLibrary(),
+    workflows: store.listWorkflows().filter(item => !item.nodes.some(node => node.type === 'skill') || explicitlyNamedSkill(query, [{ ...item, enabled: true }])),
+    skills: selectedContextOverride?.manualSkillInvocation === true ? store.listSkills() : [],
   }) : null
   if (workbenchAction?.type === 'script') {
     const item = workbenchAction.item
@@ -1553,7 +1556,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     const item = workbenchAction.item
     publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '正在执行已保存的工作流步骤', status: 'running' })
     try {
-      const result = await runWorkflow(item.id, modelRoute)
+      const result = await runWorkflow(item.id, modelRoute, selectedContextOverride?.manualSkillInvocation === true)
       const answer = result.output || `工作流“${item.name}”已完成。`
       publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '执行完成', status: 'completed' })
       publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
@@ -1570,13 +1573,13 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const selectedData = explicitContext.data ?? (conversation?.dataIds?.length ? store.dataByIds(conversation.dataIds) : [])
   const data = selectedData.length ? selectedData : store.retrieveData(query, 5)
   const knowledge = explicitContext.knowledge?.length ? explicitContext.knowledge : store.retrieveKnowledge(query, 4)
-  const skills = explicitContext.skills?.length ? [...explicitContext.skills] : store.retrieveSkills(query, 4)
+  const skills = manualSkillContext(explicitContext)
   const scripts = explicitContext.scripts || []
   if (workbenchAction?.type === 'skill') {
     const selectedIndex = skills.findIndex((item) => item.name === workbenchAction.item.name)
     if (selectedIndex > 0) skills.unshift(...skills.splice(selectedIndex, 1))
     else if (selectedIndex < 0) {
-      const selectedSkill = store.skillContent(workbenchAction.item.name)
+      const selectedSkill = store.skillContent(workbenchAction.item.id)
       if (selectedSkill) skills.unshift(selectedSkill)
     }
     publish({ id: `stable-skill:${workbenchAction.item.id}`, kind: 'tool', title: `调用 Skill ${workbenchAction.item.name}`, detail: '已加载保存的 Skill 说明', status: 'completed' })
@@ -1656,12 +1659,13 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
 }
 
-async function runWorkflow(id, modelRouteOverride) {
+async function runWorkflow(id, modelRouteOverride, manualSkillInvocation = true) {
   if (activeWorkflowRun) throw new Error('已有工作流正在执行，请先停止。')
   const workflow = store.workflow(id)
   if (!workflow) throw new Error('找不到这个工作流。')
   const modelRoute = modelRouteOverride || modelRouteForConversation()
   const graph = validateWorkflowGraph(workflow, { requireRunnable: true })
+  assertWorkflowSkillInvocation(graph, manualSkillInvocation)
   const orderedNodeIds = topologicalOrder(graph)
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
   const outputNodeCount = graph.nodes.filter((node) => node.type === 'output').length
@@ -1816,7 +1820,8 @@ async function generateWorkflow(goal) {
   const data = store.listData().filter((item) => item.enabled).map(({ id, name, type }) => ({ id, name, type }))
   const knowledge = store.listKnowledge().filter((item) => item.enabled).map(({ id, name, summary }) => ({ id, name, summary }))
   const scripts = store.listLibrary().filter((item) => item.kind === 'script').map(({ id, name, description }) => ({ id, name, description }))
-  const skills = store.listSkills().filter((item) => item.enabled).map(({ id, name, description }) => ({ id, name, description }))
+  const namedSkill = explicitlyNamedSkill(goal, store.listSkills())
+  const skills = namedSkill ? [{ id: namedSkill.id, name: namedSkill.name, description: namedSkill.description }] : []
   const prompt = `你是 Stable 的工作流编排器。根据目标和可用资源生成一个有向无环工作流。\n\n目标：${goal}\n\n可用资源（只能引用这里出现的 id）：\n数据：${JSON.stringify(data)}\n知识库：${JSON.stringify(knowledge)}\n脚本：${JSON.stringify(scripts)}\nSkills：${JSON.stringify(skills)}\n\n节点类型只能是 data、knowledge、script、skill、ai、output。资源节点必须填写 resourceId；ai 节点负责处理上游内容并填写具体 instruction；output 节点填写具体 instruction 和 outputFormat（markdown、pptx、html、xlsx 之一，默认 markdown），输出文件名由工作流名称和运行时间自动生成。所有节点都可以接收上游输入并把结果传给下游。必须至少有一个 output，连线不能成环。只返回以下 JSON，不要 Markdown：\n{"name":"工作流名称","description":"一句话说明","nodes":[{"key":"唯一短键","type":"ai","title":"模块名称","resourceId":"可选","instruction":"可选","outputFormat":"可选"}],"edges":[{"source":"节点 key","target":"节点 key"}]}`
   const { model, apiKey } = modelRouteForConversation()
   const raw = await runner.run(prompt, model, apiKey, 0, () => {}, 'read-only')
@@ -2314,7 +2319,7 @@ function registerIpc() {
       }
       if (control.cancelled) throw new Error('任务已停止。')
       control.phase = 'agent'
-      const result = await runAgent(taskQuery, conversationId, attachments, undefined, { data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute)
+      const result = await runAgent(taskQuery, conversationId, attachments, undefined, { manualSkillInvocation: true, data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute)
       if (result.status === 'waiting') {
         const card = result.clarification || await formatClarification(result.answer, askClarification, taskQuery)
         if (control.cancelled) throw new Error('任务已停止。')
@@ -2704,6 +2709,7 @@ async function boot() {
   }
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/ops-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/tencenthub-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
+  if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/filtered-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
   browserSession = new (require('./services/browser-session.cjs').BrowserSessionService)({ electron: require('electron'), store, getWindow: () => mainWindow, onChange: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:browser:changed') } })
   conversationLifecycle = new (require('./services/conversation-lifecycle.cjs').ConversationLifecycle)(store,{userData:paths.userData,workspace:paths.workspace,executable:createHarnessRunner().runtimePaths().cli})
   conversationLifecycle.interrupted()

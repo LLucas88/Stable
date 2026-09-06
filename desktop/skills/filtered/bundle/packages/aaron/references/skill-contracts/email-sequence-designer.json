@@ -1,0 +1,400 @@
+{
+  "$schema": "../skill-machine-contract.schema.json",
+  "completion_contract": {
+    "clauses": [
+      {
+        "clause_id": "done-01",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 86,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "every flow has a trigger, per-step timing, a goal, and explicit branch/exit conditions"
+      },
+      {
+        "clause_id": "done-02",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 181,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 88
+        },
+        "text": "each step names the segment-definition version and exact creative/HTML version when available"
+      },
+      {
+        "clause_id": "done-03",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 250,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 183
+        },
+        "text": "a global send cap + quiet hours + a fatigue guardrail are specified"
+      },
+      {
+        "clause_id": "done-04",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 286,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 252
+        },
+        "text": "a re-engagement/sunset path exists"
+      },
+      {
+        "clause_id": "done-05",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 319,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 288
+        },
+        "text": "the SEND **N** score is emitted"
+      },
+      {
+        "clause_id": "done-06",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 416,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 321
+        },
+        "text": "and the output distinguishes local plan, ESP create result, send intent, and real send receipt."
+      }
+    ],
+    "done_when": "every flow has a trigger, per-step timing, a goal, and explicit branch/exit conditions; each step names the segment-definition version and exact creative/HTML version when available; a global send cap + quiet hours + a fatigue guardrail are specified; a re-engagement/sunset path exists; the SEND **N** score is emitted; and the output distinguishes local plan, ESP create result, send intent, and real send receipt.",
+    "extraction_status": "classified",
+    "source": {
+      "path": "email/nurture/email-sequence-designer/SKILL.md",
+      "section": "Skill Contract/Done when",
+      "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c"
+    }
+  },
+  "context_hints": {
+    "bundle_references": [
+      {
+        "path": "CONNECTORS.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "82551243ae14adb3b28cc21b3122b0ec12fd4d25abb9124678c198af12455c63",
+        "source_line": 36
+      },
+      {
+        "path": "SECURITY.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "5600d9d70c61e34e09dfedc0d21c28994fa2aacbbab2b8802c800a61da047f09",
+        "source_line": 42
+      },
+      {
+        "path": "email/nurture/email-sequence-designer/references/send-control.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "907b65e5cd8475090f39a46bec8f70ae052389161dc9b749b6662f10378b2c5a",
+        "source_line": 38
+      },
+      {
+        "path": "references/send-benchmark.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "1e2aaee64edbeafd828883c72a9bb9a986d2473234af0c3f8df1704fcd1a4351",
+        "source_line": 44
+      },
+      {
+        "path": "references/skill-contract.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c",
+        "source_line": 32
+      },
+      {
+        "path": "scripts/connectors/README.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "755816582373b846b95783c125c6d9cd57d5c20bbf4af97bc00aecdbaa557c56",
+        "source_line": 38
+      }
+    ],
+    "project_paths": []
+  },
+  "contract_id": "skill:email-sequence-designer",
+  "control_requirements": [
+    "action-intent",
+    "action-receipt",
+    "artifact-binding",
+    "evidence-observation"
+  ],
+  "handoff_contract": {
+    "extraction_status": "partially-classified",
+    "items": [
+      {
+        "condition": null,
+        "extraction_status": "classified",
+        "item_id": "handoff-01",
+        "kind": "primary",
+        "source": {
+          "end_char": 164,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "target_skills": [
+          "email-creative-builder"
+        ],
+        "text": "- **Primary**: [email-creative-builder](../../engage/email-creative-builder/SKILL.md) — fill each step of the designed flows with subject, preheader, body, and CTA."
+      },
+      {
+        "condition": "If the flow map is ready for the gate**: [email-quality-auditor](../../deliver/email-quality-auditor/SKILL.md) — score the profile-weighted EQS and enforce N1 (unsubscribe integrity) and the other vetoes.",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-02",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 373,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 165
+        },
+        "target_skills": [
+          "email-quality-auditor"
+        ],
+        "text": "- **If the flow map is ready for the gate**: [email-quality-auditor](../../deliver/email-quality-auditor/SKILL.md) — score the profile-weighted EQS and enforce N1 (unsubscribe integrity) and the other vetoes."
+      },
+      {
+        "condition": "If a defined lapsed cohort needs a closed-loop win-back / re-consent program**: [reactivation-specialist](../reactivation-specialist/SKILL.md) — the recovery-or-retire program with a re-permission capture step and sunset-confirm rule",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-03",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 611,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 374
+        },
+        "target_skills": [
+          "reactivation-specialist"
+        ],
+        "text": "- **If a defined lapsed cohort needs a closed-loop win-back / re-consent program**: [reactivation-specialist](../reactivation-specialist/SKILL.md) — the recovery-or-retire program with a re-permission capture step and sunset-confirm rule"
+      },
+      {
+        "condition": null,
+        "extraction_status": "unclassified",
+        "item_id": "handoff-04",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 654,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 613
+        },
+        "target_skills": [],
+        "text": "recovered subjects return to these flows."
+      },
+      {
+        "condition": "If the opt-down ladder / preference center is the gap**: [preference-frequency-manager](../preference-frequency-manager/SKILL.md) — designs the preference-center / frequency-options sub-item this rollup references.",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-05",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 873,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 655
+        },
+        "target_skills": [
+          "preference-frequency-manager"
+        ],
+        "text": "- **If the opt-down ladder / preference center is the gap**: [preference-frequency-manager](../preference-frequency-manager/SKILL.md) — designs the preference-center / frequency-options sub-item this rollup references."
+      },
+      {
+        "condition": "If the program is an owned-audience / newsletter economy question**: [newsletter-monetization-planner](../newsletter-monetization-planner/SKILL.md) — plan paid-sub / sponsorship / referral economics (SEND-D) for the nurtured audience.",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-06",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 1112,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 874
+        },
+        "target_skills": [
+          "newsletter-monetization-planner"
+        ],
+        "text": "- **If the program is an owned-audience / newsletter economy question**: [newsletter-monetization-planner](../newsletter-monetization-planner/SKILL.md) — plan paid-sub / sponsorship / referral economics (SEND-D) for the nurtured audience."
+      },
+      {
+        "condition": "If the primary next skill (email-creative-builder) has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request. When routing between the creative-builder and the auditor is ambiguous, stop and present both options instead of auto-following. The auditor's verdict is terminal for this chain — if it returns BLOCK on N1, route back here to add the opt-out path rather than chaining onward.",
+        "extraction_status": "unclassified",
+        "item_id": "handoff-07",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 1661,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 1114
+        },
+        "target_skills": [],
+        "text": "Termination note: keep a visited-set of skills invoked this session. If the primary next skill (email-creative-builder) has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request. When routing between the creative-builder and the auditor is ambiguous, stop and present both options instead of auto-following. The auditor's verdict is terminal for this chain — if it returns BLOCK on N1, route back here to add the opt-out path rather than chaining onward."
+      }
+    ],
+    "next_best": "- **Primary**: [email-creative-builder](../../engage/email-creative-builder/SKILL.md) — fill each step of the designed flows with subject, preheader, body, and CTA.\n- **If the flow map is ready for the gate**: [email-quality-auditor](../../deliver/email-quality-auditor/SKILL.md) — score the profile-weighted EQS and enforce N1 (unsubscribe integrity) and the other vetoes.\n- **If a defined lapsed cohort needs a closed-loop win-back / re-consent program**: [reactivation-specialist](../reactivation-specialist/SKILL.md) — the recovery-or-retire program with a re-permission capture step and sunset-confirm rule; recovered subjects return to these flows.\n- **If the opt-down ladder / preference center is the gap**: [preference-frequency-manager](../preference-frequency-manager/SKILL.md) — designs the preference-center / frequency-options sub-item this rollup references.\n- **If the program is an owned-audience / newsletter economy question**: [newsletter-monetization-planner](../newsletter-monetization-planner/SKILL.md) — plan paid-sub / sponsorship / referral economics (SEND-D) for the nurtured audience.\n\nTermination note: keep a visited-set of skills invoked this session. If the primary next skill (email-creative-builder) has already run this session, stop and report the chain complete rather than re-invoking. Do not chain deeper than 3 hops from the originating request. When routing between the creative-builder and the auditor is ambiguous, stop and present both options instead of auto-following. The auditor's verdict is terminal for this chain — if it returns BLOCK on N1, route back here to add the opt-out path rather than chaining onward.",
+    "summary": "> Emit the standard shape from [skill-contract.md §Handoff Summary Format](../../../references/skill-contract.md).",
+    "summary_ref": {
+      "path": "email/nurture/email-sequence-designer/SKILL.md",
+      "section": "Skill Contract/Handoff Summary",
+      "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c"
+    },
+    "summary_source": "skill-section",
+    "target_skills": [
+      "email-creative-builder",
+      "email-quality-auditor",
+      "newsletter-monetization-planner",
+      "preference-frequency-manager",
+      "reactivation-specialist"
+    ]
+  },
+  "identity": {
+    "class": null,
+    "discipline": "email",
+    "name": "email-sequence-designer",
+    "path": "email/nurture/email-sequence-designer/SKILL.md",
+    "phase": "nurture",
+    "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+    "version": "20.1.0"
+  },
+  "input_contract": {
+    "argument_hint": "<flow type or lifecycle goal> [platform/ESP] [trigger event] [audience/segment]",
+    "clauses": [
+      {
+        "clause_id": "read-01",
+        "extraction_status": "classified",
+        "kind": "evidence-input",
+        "requirement": "optional",
+        "source": {
+          "end_char": 449,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "the flow type or lifecycle goal, the trigger event, a versioned segment definition (from the user or from [list-segment-builder](../../setup/list-segment-builder/SKILL.md) when present), current consent/suppression snapshot refs, the versioned creative/HTML bindings for each step when available, an ESP flow/automation export (own data) and current cadence/complaint signals, and one SEND profile (`promotional|retention|cold-outbound|newsletter`)."
+      }
+    ],
+    "extraction_status": "classified",
+    "reads": "the flow type or lifecycle goal, the trigger event, a versioned segment definition (from the user or from [list-segment-builder](../../setup/list-segment-builder/SKILL.md) when present), current consent/suppression snapshot refs, the versioned creative/HTML bindings for each step when available, an ESP flow/automation export (own data) and current cadence/complaint signals, and one SEND profile (`promotional|retention|cold-outbound|newsletter`).",
+    "source": {
+      "path": "email/nurture/email-sequence-designer/SKILL.md",
+      "section": "Skill Contract/Reads",
+      "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c"
+    }
+  },
+  "output_contract": {
+    "clauses": [
+      {
+        "clause_id": "write-01",
+        "extraction_status": "classified",
+        "kind": "project-artifact",
+        "permission_posture": "permission-required",
+        "side_effect": "project-write",
+        "source": {
+          "end_char": 140,
+          "path": "email/nurture/email-sequence-designer/SKILL.md",
+          "section": "Skill Contract/Writes",
+          "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "a user-facing flow map + cadence plan and a reusable handoff summary to `memory/email/email-sequence-designer/YYYY-MM-DD-<flow-or-goal>.md`."
+      }
+    ],
+    "extraction_status": "classified",
+    "source": {
+      "path": "email/nurture/email-sequence-designer/SKILL.md",
+      "section": "Skill Contract",
+      "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c"
+    },
+    "summary": "a set of lifecycle flow maps (trigger, per-step timing, branch/exit conditions, goal per flow), a frequency-governance block (global send cap, quiet hours, fatigue guardrail), a re-engagement/sunset path, a SEND **N** dimension score with sub-item notes and the typed profile named, and the standard handoff summary.",
+    "summary_source": "expected-output",
+    "writes": "a user-facing flow map + cadence plan and a reusable handoff summary to `memory/email/email-sequence-designer/YYYY-MM-DD-<flow-or-goal>.md`."
+  },
+  "provenance": {
+    "control_bindings": {
+      "path": "references/control-bindings.json",
+      "sha256": "70fbf645a095d87676bc77522dd6838a0f9dceb2214cc4c64823f39ecf6bd0f1"
+    },
+    "generator": "generate-skill-contracts-v1",
+    "shared_contract": {
+      "path": "references/skill-contract.md",
+      "section": "Skill Contract",
+      "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c"
+    },
+    "system_catalog": {
+      "path": "references/system-catalog.json",
+      "sha256": "ac5a3d42ccdc98e396c48ead96e8a99e1ba88cf101f9f57d6afd2f6394165f6f",
+      "version": "20.1.0"
+    }
+  },
+  "routing_contract": {
+    "boundary": "Not for the closed-loop win-back / re-consent (re-permission) program on a lapsed cohort — use reactivation-specialist; not for writing each email's copy — use email-creative-builder; not for computing EQS or the N1 unsubscribe veto — use email-quality-auditor. 邮件自动化流程设计/购物车挽回/流失召回序列",
+    "description": "Use when the user asks to \"design a welcome flow\", \"set up an abandoned-cart sequence\", \"build a light re-engagement branch inside a lifecycle flow\", or \"plan a cold-outbound sequence\"; produces general lifecycle automation flows (welcome, cart, browse-abandon, post-purchase, in-flow re-engagement, B2B cold outbound) with trigger, step timing, branch/exit conditions, goal, frequency governance (send caps, quiet hours, fatigue guardrail), a sunset path, and a SEND N-dimension score. Not for the closed-loop win-back / re-consent (re-permission) program on a lapsed cohort — use reactivation-specialist; not for writing each email's copy — use email-creative-builder; not for computing EQS or the N1 unsubscribe veto — use email-quality-auditor. 邮件自动化流程设计/购物车挽回/流失召回序列",
+    "source": {
+      "path": "email/nurture/email-sequence-designer/SKILL.md",
+      "section": "frontmatter",
+      "sha256": "c6461154d48b4af76ae0013513c0d282c7b3e462404aeb78974b7dd86dedab2c"
+    },
+    "trigger_phrases": [
+      "build a light re-engagement branch inside a lifecycle flow",
+      "design a welcome flow",
+      "plan a cold-outbound sequence",
+      "set up an abandoned-cart sequence"
+    ],
+    "trigger_source": "description-quoted",
+    "when_to_use": "Use when designing or restructuring general email lifecycle automation before writing the individual emails: a welcome onboarding series, an abandoned-cart or browse-abandon flow, a post-purchase / replenishment sequence, a light in-flow re-engagement branch, a B2B cold-outbound multi-step sequence, or the program's overall frequency governance and sunset policy. Activate when the user has a lifecycle stage, trigger event, or list-fatigue problem and wants the flow map, cadence, and branch/exit logic before creative or send-testing begins. Not for the closed-loop win-back / re-consent (re-permission) program on a defined lapsed cohort — that self-contained recovery-or-retire program is reactivation-specialist's."
+  },
+  "schema_version": "1.0"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "ecommerce-data-zh",
+  "displayName": "电商运营数据看板",
+  "version": "1.0.0",
+  "description": "把淘宝、天猫、抖店、快手小店、视频号小店的经营数据整理成运营看板和诊断结论。",
+  "author": "ikun",
+  "license": "MIT",
+  "category": "analytics",
+  "tags": [
+    "电商",
+    "数据分析",
+    "看板",
+    "淘宝",
+    "抖店"
+  ],
+  "keywords": [
+    "电商数据",
+    "GMV",
+    "转化率",
+    "客单价",
+    "复购率",
+    "看板",
+    "运营分析"
+  ],
+  "platforms": [
+    "openclaw",
+    "skillhub",
+    "claude-code",
+    "cursor"
+  ],
+  "language": "zh-CN",
+  "minAgentVersion": "0.1.0"
+}

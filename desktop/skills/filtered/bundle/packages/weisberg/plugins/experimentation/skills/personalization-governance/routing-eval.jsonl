@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: personalization-governance  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "is our subgroup uplift strong enough to safely target this segment in a regulated setting?", "expected_skill": "personalization-governance"}
+{"intent": "should we deploy CATE-based personalization or is the heterogeneous evidence too weak?", "expected_skill": "personalization-governance"}
+{"intent": "govern whether we can suppress or personalize based on these experiment subgroups", "expected_skill": "personalization-governance"}
+{"intent": "decide if personalization from uplift evidence is safe to deploy in a high-trust journey", "expected_skill": "personalization-governance", "forbidden_skill": "advanced-experiment-analysis"}
+{"intent": "fit an uplift model and estimate CATE from this experiment's data", "expected_skill": "advanced-experiment-analysis", "forbidden_skill": "personalization-governance"}

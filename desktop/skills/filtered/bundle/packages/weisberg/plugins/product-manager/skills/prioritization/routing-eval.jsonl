@@ -1,0 +1,8 @@
+// product-manager plugin routing fixtures - prioritization scorecards vs roadmaps, PRDs, plans, and experiment analysis.
+// skill: prioritization (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent":"prioritize these product features with RICE scoring","expected_skill":"prioritization"}
+{"intent":"rank this backlog by reach impact confidence and effort","expected_skill":"prioritization"}
+{"intent":"make an impact effort matrix for these roadmap candidates","expected_skill":"prioritization"}
+{"intent":"build a quarterly roadmap from these prioritized initiatives","expected_skill":"roadmap","forbidden_skill":"prioritization"}
+{"intent":"decompose this finished PRD into a PLAN.md with phases, tasks, dependencies, and validation gates","expected_skill":"prd-to-plan","forbidden_skill":"prioritization"}
+{"intent":"calculate the sample size and MDE for this A/B test","expected_skill":"ab-testing:sample-size","forbidden_skill":"prioritization"}

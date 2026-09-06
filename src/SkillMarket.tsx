@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Bot, Braces, Check, MessageSquareText, MoreHorizontal, Plus, RefreshCw, Search, Settings2, Trash2, X, Box } from 'lucide-react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Bot, Braces, ChevronDown, ChevronUp, PlugZap, Check, MessageSquareText, MoreHorizontal, Plus, RefreshCw, Search, Settings2, Trash2, X, Box } from 'lucide-react'
 import type { AgentState, MarketItem } from './types'
 function MarketDialog({ children, label, close }: { children: ReactNode; label: string; close: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -9,6 +9,18 @@ function MarketDialog({ children, label, close }: { children: ReactNode; label: 
 export function SkillMarket({ onUse, renderContent }: { onUse: (state: AgentState) => void; renderContent: (content: string) => ReactNode }) {
   const [items, setItems] = useState<MarketItem[]>([]), [tab, setTab] = useState<MarketItem['kind']>('skill'), [mine, setMine] = useState(false), [query, setQuery] = useState('')
   const [group, setGroup] = useState('全部')
+  const [groupsExpanded, setGroupsExpanded] = useState(false)
+  const groupsRef = useRef<HTMLElement>(null), groupsId = useId()
+  useEffect(() => {
+    const nav = groupsRef.current
+    if (!nav || groupsExpanded) return
+    const active = nav.querySelector<HTMLElement>('[aria-current="page"]')
+    if (active) {
+      const bounds = nav.getBoundingClientRect(), selected = active.getBoundingClientRect()
+      if (selected.left < bounds.left) nav.scrollLeft += selected.left - bounds.left
+      else if (selected.right > bounds.right) nav.scrollLeft += selected.right - bounds.right
+    }
+  }, [groupsExpanded, group, tab, mine])
   const [selected, setSelected] = useState(''), [draft, setDraft] = useState<Partial<MarketItem>>(), [update, setUpdate] = useState<Partial<MarketItem> & { available: boolean; currentVersion: string }>()
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   useEffect(() => { void run(async () => setItems(await window.stable.market.list())) }, [])
@@ -19,12 +31,17 @@ export function SkillMarket({ onUse, renderContent }: { onUse: (state: AgentStat
   async function run(action: () => Promise<void>) { setBusy(true); setError(''); try { await action() } catch (error) { setError(error instanceof Error ? error.message : '操作失败，请重试') } finally { setBusy(false) } }
   function use(item: MarketItem) { void run(async () => { onUse(await window.stable.market.use(item.id)) }) }
   return <section className="skill-market" aria-label="技能市场">
-    <header className="skill-market-top"><nav aria-label="市场类型">{([['skill','Skill技能'],['connector','cli&mcp连接器'],['expert','Agent专家']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setGroup('全部'); setNotice('') }}>{label}</button>)}</nav>
+    <header className="skill-market-top"><nav aria-label="市场类型">{([['skill','Skill技能',Braces],['connector','cli&mcp连接器',PlugZap],['expert','Agent专家',Bot]] as const).map(([id,label,Icon]) => <button key={id} role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setGroup('全部'); setNotice('') }}><Icon size={18} strokeWidth={1.8} aria-hidden="true"/><span>{label}</span></button>)}</nav>
       <label className="market-search"><Search size={18}/><input aria-label="搜索技能市场" placeholder="搜索技能" value={query} onChange={event => setQuery(event.target.value)}/></label>
       <button className="button" aria-pressed={mine} onClick={() => { setMine(!mine); setGroup('全部') }}><Settings2 size={16}/>我的技能</button><button className="button" onClick={() => setDraft({ kind: tab === 'expert' ? 'expert' : 'skill', name: '', description: '', content: '', version: '1.0.0' })}><Plus size={18}/>新建</button>
     </header>
-    <nav className="market-groups" aria-label="市场分组">{groups.map(name => <button key={name} aria-current={group === name ? 'page' : undefined} onClick={() => setGroup(name)}>{name}</button>)}</nav>
-    {available.some(item => item.bundled) && <p className="market-feedback" role="status">已入库 {available.length} 个技能版本 · 启用 {available.filter(item => item.enabled).length} 个 · 飞书相关技能暂不启用</p>}
+    <div className="market-groups-bar" data-expanded={groupsExpanded}>
+      <nav id={groupsId} ref={groupsRef} className="market-groups" aria-label="市场分组">{groups.map(name => <button key={name} aria-current={group === name ? 'page' : undefined} title={name} onClick={() => setGroup(name)}>{name}</button>)}</nav>
+      <button className="market-groups-toggle" aria-expanded={groupsExpanded} aria-controls={groupsId} aria-label={groupsExpanded ? '收纳分类标签' : '展开全部分类标签'} onClick={() => setGroupsExpanded(value => !value)}>
+        <span>{groupsExpanded ? '收纳' : '展开'}</span>{groupsExpanded ? <ChevronUp size={17} aria-hidden="true"/> : <ChevronDown size={17} aria-hidden="true"/>}
+      </button>
+    </div>
+    {<p className="market-feedback" role="status">已入库 {available.length} 个技能版本 · 启用 {available.filter(item => item.enabled).length} 个 · 仅手动调用，不会自动匹配</p>}
     {error && <p className="market-feedback" role="alert">{error}</p>}{notice && <p className="market-feedback" role="status">{notice}</p>}
     <div className="market-grid">{visible.map(item => <article className="market-row" key={item.id}>
       <span className="market-avatar" data-kind={item.kind}>{item.kind === 'connector' ? <Box/> : item.kind === 'expert' ? <Bot/> : <Braces/>}</span>

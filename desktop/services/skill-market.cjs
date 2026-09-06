@@ -7,7 +7,7 @@ class SkillMarket {
   constructor(store, root) { this.store = store; this.root = root }
   entries() {
     const meta = this.store.getSetting('skillMarketMeta') || {}
-    return [{ ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills().filter(item => item.id !== 'wending-market-reference').map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: true, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && meta[item.id]?.compatibility !== 'local-workflow') }))]
+    return [{ ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills().filter(item => item.id !== 'wending-market-reference').map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: true, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
   }
   save(value) {
     const name=String(value.name || '').trim(), content=String(value.content || ''), kind=value.kind === 'expert' ? 'expert' : 'skill'

@@ -1,0 +1,7 @@
+// ab-testing plugin routing fixtures — hands-on experiment lifecycle (design, sizing, analysis, review, reporting). Cross-plugin cases separate it from experimentation governance and marketing-workspace stats.
+// skill: experiment-report  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "write the stakeholder readout for this analyzed test with a single recommendation", "expected_skill": "experiment-report"}
+{"intent": "draft the post-test writeup for leadership from the analysis directory", "expected_skill": "experiment-report"}
+{"intent": "generate an exec summary of the experiment to share with the team", "expected_skill": "experiment-report"}
+{"intent": "compose the experiment readout report from the analyzed numbers", "expected_skill": "experiment-report", "forbidden_skill": "experimentation:executive-evidence-brief"}
+{"intent": "turn this evidence into a calibrated board memo that won't overstate certainty", "expected_skill": "experimentation:executive-evidence-brief", "forbidden_skill": "experiment-report"}

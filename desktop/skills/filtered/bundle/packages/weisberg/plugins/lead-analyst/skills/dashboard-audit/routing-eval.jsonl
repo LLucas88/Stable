@@ -1,0 +1,4 @@
+{"intent":"audit this dashboard before the exec review","expected_skill":"dashboard-audit"}
+{"intent":"can leadership trust this KPI scorecard?","expected_skill":"dashboard-audit"}
+{"intent":"review this dashboard for stale data, bad definitions, and misleading charts","expected_skill":"dashboard-audit"}
+

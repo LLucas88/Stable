@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: voc-analytics  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "analyze our NPS and CSAT survey results", "expected_skill": "voc-analytics"}
+{"intent": "extract themes from open-text customer feedback verbatims", "expected_skill": "voc-analytics"}
+{"intent": "what are customers saying — run sentiment on the survey comments", "expected_skill": "voc-analytics"}
+{"intent": "analyze NPS, CSAT, and open-text survey feedback themes", "expected_skill": "voc-analytics", "forbidden_skill": "marketing-analytics:social-analytics"}
+{"intent": "run social listening and sentiment on our brand mentions on X", "expected_skill": "marketing-analytics:social-analytics", "forbidden_skill": "voc-analytics"}

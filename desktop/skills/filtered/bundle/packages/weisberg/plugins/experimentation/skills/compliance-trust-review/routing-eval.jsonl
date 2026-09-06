@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: compliance-trust-review  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "review this customer-facing test for conduct risk and dark patterns before we launch in a regulated market", "expected_skill": "compliance-trust-review"}
+{"intent": "does this experiment create trust erosion or advice-vs-marketing boundary problems?", "expected_skill": "compliance-trust-review"}
+{"intent": "check this test for fairness, disclosures, and auditability in financial services", "expected_skill": "compliance-trust-review"}
+{"intent": "screen this experiment for regulatory conduct and model risk, not ad-copy marketing rules", "expected_skill": "compliance-trust-review", "forbidden_skill": "marketing-analytics:compliance-review"}
+{"intent": "check this ad copy against SEC and FINRA marketing rules and required disclaimers", "expected_skill": "marketing-analytics:compliance-review", "forbidden_skill": "compliance-trust-review"}

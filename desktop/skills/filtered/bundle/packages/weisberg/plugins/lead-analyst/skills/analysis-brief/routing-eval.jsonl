@@ -1,0 +1,3 @@
+{"intent":"lead analyst, can you analyze this CSV and tell me what we should do?","expected_skill":"analysis-brief"}
+{"intent":"why did activation drop last week? write a decision brief","expected_skill":"analysis-brief"}
+{"intent":"what does this data say about churn by customer segment?","expected_skill":"analysis-brief"}

@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: executive-evidence-brief  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "turn these experiment results into a board-ready decision memo without overstating certainty", "expected_skill": "executive-evidence-brief"}
+{"intent": "write a calibrated exec summary of this test to justify the budget ask", "expected_skill": "executive-evidence-brief", "ambiguous_with": ["ab-testing:experiment-report", "lead-analyst:executive-readout"]}
+{"intent": "draft an uncertainty-aware leadership narrative from this experiment's evidence", "expected_skill": "executive-evidence-brief"}
+{"intent": "compose an executive decision brief from experiment evidence and keep the statistics honest", "expected_skill": "executive-evidence-brief", "forbidden_skill": "ab-testing:experiment-report"}
+{"intent": "write the stakeholder readout of this A/B test from the analysis directory", "expected_skill": "ab-testing:experiment-report", "forbidden_skill": "executive-evidence-brief"}

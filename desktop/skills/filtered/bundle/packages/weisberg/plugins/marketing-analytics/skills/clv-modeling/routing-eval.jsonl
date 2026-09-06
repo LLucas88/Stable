@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: clv-modeling  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "predict customer lifetime value with BG/NBD and Gamma-Gamma", "expected_skill": "clv-modeling"}
+{"intent": "which customers are most valuable over their lifetime?", "expected_skill": "clv-modeling"}
+{"intent": "forecast future customer revenue and our CLV:CAC ratio", "expected_skill": "clv-modeling"}
+{"intent": "model CLV with BG/NBD to identify high-value customers", "expected_skill": "clv-modeling", "forbidden_skill": "marketing-analytics:audience-segmentation"}
+{"intent": "score which leads sales should prioritize by conversion propensity", "expected_skill": "marketing-analytics:crm-lead-scoring", "forbidden_skill": "clv-modeling"}

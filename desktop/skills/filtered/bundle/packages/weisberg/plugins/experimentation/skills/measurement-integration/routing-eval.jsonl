@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: measurement-integration  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "our MMM and experiment results disagree — how do I reconcile them for the budget decision?", "expected_skill": "measurement-integration"}
+{"intent": "calibrate incrementality from a geo-lift test against our attribution model", "expected_skill": "measurement-integration"}
+{"intent": "integrate a global holdout with our marketing measurement governance", "expected_skill": "measurement-integration"}
+{"intent": "reconcile conflicting measurement systems to calibrate spend decisions", "expected_skill": "measurement-integration", "forbidden_skill": "marketing-analytics:attribution-analysis"}
+{"intent": "build a marketing mix model and optimize budget allocation across channels", "expected_skill": "marketing-analytics:attribution-analysis", "forbidden_skill": "measurement-integration"}

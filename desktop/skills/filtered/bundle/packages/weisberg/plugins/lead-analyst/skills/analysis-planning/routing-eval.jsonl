@@ -1,0 +1,4 @@
+{"intent":"senior analyst, help me plan this analysis before we pull data","expected_skill":"analysis-planning"}
+{"intent":"how should we analyze why conversion dropped last month?","expected_skill":"analysis-planning"}
+{"intent":"write an analysis plan for measuring whether the new onboarding flow caused activation to improve","expected_skill":"analysis-planning"}
+{"intent":"what data do we need to size this opportunity?","expected_skill":"analysis-planning"}

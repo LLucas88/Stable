@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: crm-lead-scoring  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "score and rank our leads so sales knows who to call first", "expected_skill": "crm-lead-scoring"}
+{"intent": "analyze pipeline velocity and win rates by stage", "expected_skill": "crm-lead-scoring"}
+{"intent": "why are we losing deals — run a win/loss analysis", "expected_skill": "crm-lead-scoring"}
+{"intent": "build a predictive lead score and a pipeline velocity report", "expected_skill": "crm-lead-scoring", "forbidden_skill": "marketing-analytics:clv-modeling"}
+{"intent": "predict the lifetime value of these customers with BG/NBD", "expected_skill": "marketing-analytics:clv-modeling", "forbidden_skill": "crm-lead-scoring"}

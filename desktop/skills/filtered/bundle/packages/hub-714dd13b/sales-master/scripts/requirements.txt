@@ -1,0 +1,5 @@
+# 销售邮件自动化系统依赖
+# 安装：pip install -r requirements.txt
+
+pyyaml>=6.0
+apscheduler>=3.10

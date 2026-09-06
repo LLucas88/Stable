@@ -1,0 +1,8 @@
+// product-manager plugin routing fixtures - roadmap sequencing vs scoring, PRDs, plans, and reporting.
+// skill: roadmap (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent":"build a product roadmap for the next two quarters","expected_skill":"roadmap"}
+{"intent":"turn these product themes into a now next later roadmap","expected_skill":"roadmap"}
+{"intent":"sequence these initiatives across platform and growth for an executive roadmap","expected_skill":"roadmap"}
+{"intent":"score these feature ideas with RICE and rank them","expected_skill":"prioritization","forbidden_skill":"roadmap"}
+{"intent":"write a PRD for this feature idea","expected_skill":"prd-writer","forbidden_skill":"roadmap"}
+{"intent":"create a marketing KPI dashboard for leadership","expected_skill":"marketing-analytics:reporting","forbidden_skill":"roadmap"}

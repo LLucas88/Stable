@@ -1,0 +1,13 @@
+{
+  "author": "User",
+  "description": "Turn a finalized Chinese narration or article excerpt into a 9:16 faceless editorial motion-graphics video with semantic one-line captions, narration-driven timing, conservative cross-platform safe zones, an independently designed 3:4 cover, and a verified three-file release package. Use for Chinese knowledge, opinion, tutorial, or AI explainer videos; do not use for talking-head recuts or footage-first edits.",
+  "detail_describe": "将定稿中文口播/文章片段制作为 9:16 竖屏语义动效视频\n按语义逐行生成单行字幕，以口播音频为节奏基准\n内置保守的跨平台安全区与设计规范\n独立设计 3:4 封面，输出可发布的三文件发布包",
+  "display_description": "把定稿中文口播制作为带语义字幕的竖屏动效短视频",
+  "display_name": "semantic-motion-explainer",
+  "name": "semantic-motion-explainer",
+  "scope": [
+    "main"
+  ],
+  "type": "视频创作",
+  "version": "1.0.0"
+}

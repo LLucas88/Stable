@@ -1,0 +1,253 @@
+{
+  "generated_by": "scripts/sync_experimentation_notebook.py",
+  "config": "knowledge/experimentation/notebook-sync.json",
+  "source_root": "knowledge/experimentation",
+  "target_root": "plugins/experimentation/references/notebook",
+  "source_glob": "*.md",
+  "transforms": [
+    "strip_yaml_frontmatter"
+  ],
+  "preserve_unmanaged_target_files": true,
+  "managed_files": [
+    {
+      "source": "01. Experimentation in Regulated Finance.md",
+      "target": "01. Experimentation in Regulated Finance.md",
+      "sha256": "c3c813abc0e3087b83400fe15a4a3fd48a3b757226a59b1b4f56448c319f22f2",
+      "bytes": 564823
+    },
+    {
+      "source": "02. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "target": "02. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "sha256": "7692b54ba81c6566e51166a0ae8cf5e0dd5717310a1d216f3e619c80500c3251",
+      "bytes": 34653
+    },
+    {
+      "source": "02c. When Is an Experiment Done -Decision Thresholds Beyond Statistical Significance.md",
+      "target": "02c. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "sha256": "bb0ec7487e580d920ccc44c24bd53a97c4928b4b6726d03ff583b1ca67d5fd3a",
+      "bytes": 233359
+    },
+    {
+      "source": "02g. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.docx.md",
+      "target": "02g. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "sha256": "19fb945d53f178f39a754cc34efeeae553ea8edf898131dd2f8ca01acb5bac54",
+      "bytes": 808468
+    },
+    {
+      "source": "02m. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "target": "02m. When Is an Experiment Done - Decision Thresholds Beyond Statistical Significance.md",
+      "sha256": "6edb2590149199b58318179f645d81a10daf8626e389589921600f0b64686741",
+      "bytes": 68138
+    },
+    {
+      "source": "03. The Role of Null Results in Mature Experimentation Programs.md",
+      "target": "03. The Role of Null Results in Mature Experimentation Programs.md",
+      "sha256": "d7d4c82c0d4b97b7abfc1c93d69b846a40cebc25bf941a47991054b9bfb63817",
+      "bytes": 18595
+    },
+    {
+      "source": "03c. The Role of Null Results in Mature Experimentation Programs.md",
+      "target": "03c. The Role of Null Results in Mature Experimentation Programs.md",
+      "sha256": "2842bfd7204a24fe29acd0b36c81b15e1ace5b8918a9a02d6f839a10c924aa39",
+      "bytes": 41544
+    },
+    {
+      "source": "03g. The Role of Null Results in Mature Experimentation Programs.md",
+      "target": "03g. The Role of Null Results in Mature Experimentation Programs.md",
+      "sha256": "50b9d08b7b55fd28ca5a4048d75c5fd7a51848b56402e0746f376c0ea7075a08",
+      "bytes": 807662
+    },
+    {
+      "source": "03m. The Role of Null Results in Mature Experimentation Programs.md",
+      "target": "03m. The Role of Null Results in Mature Experimentation Programs.md",
+      "sha256": "00fdb63de817273385917a9b3abf65eb585268135a76b1f3c3e63fa528076d3c",
+      "bytes": 68048
+    },
+    {
+      "source": "04. Power, MDE, and Practical Feasibility in Low-Velocity Channels.md",
+      "target": "04. Power, MDE, and Practical Feasibility in Low-Velocity Channels.md",
+      "sha256": "e94ea45e2d88fb1263696150048cc4d1a37c33b4e174db3abb02eceec836ba62",
+      "bytes": 449435
+    },
+    {
+      "source": "05. Sequential Testing Methods in Business Experiments.md",
+      "target": "05. Sequential Testing Methods in Business Experiments.md",
+      "sha256": "6e5eeff1e02840903468d65504c4bc6db4fb219895b8ce300359f614720bbb81",
+      "bytes": 400657
+    },
+    {
+      "source": "06. Variance Reduction Techniques_ CUPED, CUPAC, and Beyond.md",
+      "target": "06. Variance Reduction Techniques_ CUPED, CUPAC, and Beyond.md",
+      "sha256": "c477085ceb0bf24f344daef4c6fe24a1e31a71b29f6cccabd451ac4e8db0e8a8",
+      "bytes": 276527
+    },
+    {
+      "source": "07. Ratio Metrics and Correlated User Behavior in Experiments.md",
+      "target": "07. Ratio Metrics and Correlated User Behavior in Experiments.md",
+      "sha256": "ee477a6983f9a38ad9c6b50108c31a35bbdb1a332628b2a65c9dc0e2b9e8dac8",
+      "bytes": 404361
+    },
+    {
+      "source": "08. Email Experimentation in the Post-Apple Mail Privacy Era.md",
+      "target": "08. Email Experimentation in the Post-Apple Mail Privacy Era.md",
+      "sha256": "0ff43b601027c7ffae50fe22862ef10de61334117a6a6ac15e4b9b6447ed1866",
+      "bytes": 601388
+    },
+    {
+      "source": "09. Measuring Incrementality in Email Marketing.md",
+      "target": "09. Measuring Incrementality in Email Marketing.md",
+      "sha256": "c61349c2053d4d89f1a76158ce723fe3d50ba16cb10daf43e99af6ea9166ee35",
+      "bytes": 797619
+    },
+    {
+      "source": "10. Email Fatigue, Frequency, and Long-Term Effects.md",
+      "target": "10. Email Fatigue, Frequency, and Long-Term Effects.md",
+      "sha256": "38c4e5eb1f340f7b921d4c217f50e9f5142a1193acd7971f96dc27a16cbf7655",
+      "bytes": 570688
+    },
+    {
+      "source": "11. From ATE to CATE_ Extracting Value from Flat Experiments.md",
+      "target": "11. From ATE to CATE_ Extracting Value from Flat Experiments.md",
+      "sha256": "fc1275d2df170b605f8e1b1d4775189baacdb23e0c541ba844df4c150e7b0522",
+      "bytes": 1015061
+    },
+    {
+      "source": "12. When (and When Not) to Personalize Based on Experimental Results.md",
+      "target": "12. When (and When Not) to Personalize Based on Experimental Results.md",
+      "sha256": "ef9196ee261fe6e964b133a1c8095de5da972bd88d41af703db4b7dde03c3ec8",
+      "bytes": 859736
+    },
+    {
+      "source": "13. Multi-Armed Bandits vs Controlled Experiments.md",
+      "target": "13. Multi-Armed Bandits vs Controlled Experiments.md",
+      "sha256": "8c5b0978d03e415e6dd0bfb11b3f55a37d75c15a970a3ebed3df8c4478509654",
+      "bytes": 224423
+    },
+    {
+      "source": "14. Building an Experimentation Operating Model.md",
+      "target": "14. Building an Experimentation Operating Model.md",
+      "sha256": "27a9f83272dce9f3f7dae3043b39d804ebdf9dcf7cb58725b9e6cf5072e922a3",
+      "bytes": 599003
+    },
+    {
+      "source": "15. Experimentation Metrics That Align with Business Strategy.md",
+      "target": "15. Experimentation Metrics That Align with Business Strategy.md",
+      "sha256": "7dbf746026d105b3f8ff762f4243fb6c9288a65afe19de1eef4f692d4433f796",
+      "bytes": 404675
+    },
+    {
+      "source": "16. Communicating Experiment Results to Senior Stakeholders.md",
+      "target": "16. Communicating Experiment Results to Senior Stakeholders.md",
+      "sha256": "6c782e86069db65647a23619501d00be96f9c980c3304d360559a0f48dc22af2",
+      "bytes": 584309
+    },
+    {
+      "source": "17. Experimentation, Trust, and Consumer Perception.md",
+      "target": "17. Experimentation, Trust, and Consumer Perception.md",
+      "sha256": "592a8d89091694d0ea922b3f753215952b5c22b7f908425b4fcaaed7cb68a0d7",
+      "bytes": 482373
+    },
+    {
+      "source": "18. Legal and Compliance Considerations in Marketing Experiments.md",
+      "target": "18. Legal and Compliance Considerations in Marketing Experiments.md",
+      "sha256": "1d5d2c30621111f49ce4ca9e49608901d93d717de03acd535d4c6077085a19ec",
+      "bytes": 658074
+    },
+    {
+      "source": "19. Unified Measurement_ How Experiments Fit with MMM and Attribution.md",
+      "target": "19. Unified Measurement_ How Experiments Fit with MMM and Attribution.md",
+      "sha256": "f7128307c7702b0367ae00c509b4906802e6d04b03085af01b700869b4c0998b",
+      "bytes": 737478
+    },
+    {
+      "source": "20. The Future of Experimentation in Marketing (2025–2030).md",
+      "target": "20. The Future of Experimentation in Marketing (2025–2030).md",
+      "sha256": "c47487d811f006dabf7b5696a66830cf18170b201be94e028b646a81b9ac1fa8",
+      "bytes": 629026
+    },
+    {
+      "source": "21. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "target": "21. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "sha256": "53f6f4d20c7c421396902587a4faa6a2c2633aabe8b242fa0a3aae5e6c8acef7",
+      "bytes": 16858
+    },
+    {
+      "source": "21c. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "target": "21c. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "sha256": "8e93ca79c4b8df474c2afcceeafc6f45599b07b6493a6bbf2770a6c26a0de24b",
+      "bytes": 122549
+    },
+    {
+      "source": "21g. From Holdouts to Experimentation_ The First-Year Maturity Curve.md",
+      "target": "21g. From Holdouts to Experimentation_ The First-Year Maturity Curve.md",
+      "sha256": "6b475cbd6ea2a9ad455c27533f659a9abc0a72951fab34b798421354e80009f8",
+      "bytes": 346037
+    },
+    {
+      "source": "21m. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "target": "21m. From Holdouts to Experimentation - The First-Year Maturity Curve.md",
+      "sha256": "9192805080aaf32ea636416e4017ce9f98030d6abd6df0eca575fdd8cb22e8e3",
+      "bytes": 67358
+    },
+    {
+      "source": "22. Designing “Safe First Experiments” in High-Trust Organizations.md",
+      "target": "22. Designing “Safe First Experiments” in High-Trust Organizations.md",
+      "sha256": "42b6408091550ac8f9a192fc32066c8bef222020f5e94fa2d73f197a62646f34",
+      "bytes": 456001
+    },
+    {
+      "source": "23. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "target": "23. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "sha256": "2220b8c2d36ae9535cfb3e26acb33212af005a75b7d21dd739b7f0da36352c6d",
+      "bytes": 15577
+    },
+    {
+      "source": "23c. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "target": "23c. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "sha256": "555c7ae11e71cbfa435de13c617c5faabb12ddeb201f32d7a29736d0eb3323b1",
+      "bytes": 136655
+    },
+    {
+      "source": "23g. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "target": "23g. What Can Be Learned in the First 48 Hours of an Experiment.md",
+      "sha256": "1a991448321a5b8c831bb69bbb0df13155b5e4497811151f798779081a6df525",
+      "bytes": 590514
+    },
+    {
+      "source": "23m. Identifying Reliable Signals in Early Marketing Experiments.md",
+      "target": "23m. Identifying Reliable Signals in Early Marketing Experiments.md",
+      "sha256": "7d6a485c39822ad224b75ed5b69762716fcd2b48c53123ae223f62e4c584fbd6",
+      "bytes": 66557
+    },
+    {
+      "source": "24. Temporal Dynamics of Experiment Data_ Early, Middle, and Late Signals.md",
+      "target": "24. Temporal Dynamics of Experiment Data_ Early, Middle, and Late Signals.md",
+      "sha256": "6158aea4047d2f998608ea7597c08d1c131a21aca73e45f275028cc6ee2e7a69",
+      "bytes": 318847
+    },
+    {
+      "source": "25. Debunking the 30-Day-Experiment Myth.md",
+      "target": "25. Debunking the 30-Day-Experiment Myth.md",
+      "sha256": "d127fc424c78c8821d53dc11601f2533ab6744fc6f78077252bdb841d232c1aa",
+      "bytes": 17029
+    },
+    {
+      "source": "25c. Debunking the 30-Day-Experiment Myth.md",
+      "target": "25c. Debunking the 30-Day-Experiment Myth.md",
+      "sha256": "bbbf454d0cab37476074368093c36a900c1eef37e057f6a16f998a54b73740eb",
+      "bytes": 100655
+    },
+    {
+      "source": "25g. Debunking the 30-Day-Experiment Myth.md",
+      "target": "25g. Debunking the 30-Day-Experiment Myth.md",
+      "sha256": "c0a7800d8ee4c4795e1174032394fdb39a5da617703849522daa3f7a215942b2",
+      "bytes": 452247
+    },
+    {
+      "source": "25m. Debunking the 30-Day-Experiment Myth.md",
+      "target": "25m. Debunking the 30-Day-Experiment Myth.md",
+      "sha256": "28c90589179c4cca8dd057e7340a9400eb5b4a75ac728a8792673b40cd5cd9bd",
+      "bytes": 70995
+    }
+  ]
+}
