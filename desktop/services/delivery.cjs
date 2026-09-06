@@ -2,6 +2,7 @@
 
 const { readdirSync, statSync } = require('node:fs')
 const path = require('node:path')
+const { waitingAnswer, waitingCard, WAIT_MARKER } = require('./clarification.cjs')
 
 const FORMAT_RULES = [
   { extensions: ['.html', '.htm'], pattern: /(?:html|网页|网站)/i },
@@ -115,6 +116,10 @@ async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onC
     const reason = deliveryBlocker(answer)
     const reused = !reason ? referencedExistingArtifacts(answer, before, after) : []
     const artifacts = [...new Set([...created, ...reused])]
+    const question = waitingAnswer(answer)
+    if (question && (String(answer).trim().startsWith(WAIT_MARKER) || !artifacts.length)) {
+      return { answer: question, clarification: waitingCard(answer), artifacts: [], reused: [], status: 'waiting', reason: '等待用户补充信息。' }
+    }
     if (delivery.type !== 'artifact' || artifacts.length) {
       return { answer: appendArtifactPaths(answer, artifacts), artifacts, reused, status: 'completed' }
     }

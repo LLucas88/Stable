@@ -81,7 +81,7 @@ test('missing input is preserved without retry; a plan still retries and never c
     const base = { workspace: root, delivery: deliveryRequest('请导出 Excel'), prompt: 'test' }
     const blocked = await runWithDeliveryChecks({ ...base, execute: async () => { calls += 1; return '请提供源文件再生成 Excel。' } })
     assert.equal(calls, 1)
-    assert.equal(blocked.status, 'failed')
+    assert.equal(blocked.status, 'waiting')
     calls = 0
     const unfinished = await runWithDeliveryChecks({ ...base, execute: async () => { calls += 1; return '我计划下一步生成文件。' } })
     assert.equal(calls, 3)

@@ -64,7 +64,7 @@ test('renderer, preload and main process wire the MCP and CLI catalog to a fresh
   assert.match(app, /id: 'mcp-cli', label: 'MCP & CLI'/)
   assert.match(app, /<McpCliPage onUseWending=\{openWendingConversation\}/)
   assert.match(app, /<ConversationWending key=\{state.activeConversationId\}/)
-  assert.match(app, /每个任务独立绑定账号、渠道和品牌/)
+  assert.match(app, /首次登录后全局记住账号，品牌按对话分别保存/)
   assert.match(app, /setAgentPrefill\(WENDING_CLI_PREFILL\)/)
   assert.match(app, /MCP 暂未接入/)
   assert.match(app, /不会自动发送或执行/)

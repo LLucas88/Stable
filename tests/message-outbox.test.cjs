@@ -84,3 +84,17 @@ test('idle send-now promotes the chosen message and queue has a bounded length',
   assert.throws(() => queue.enqueue('a', 21), /20/)
   queue.pause('a'); runs[0](success)
 })
+
+test('clarification replies run before unrelated queued tasks without concurrent dispatch', async () => {
+  const { queue, calls, runs } = setup()
+  queue.enqueue('a', 'original'); queue.enqueue('a', 'unrelated')
+  runs[0]({ accepted: true, continue: false }); await tick()
+  assert.equal(queue.snapshot('a').paused, true)
+  const answer = queue.reply('a', 'clarification answer')
+  assert.deepEqual(calls[1], ['a', 'clarification answer'])
+  await assert.rejects(queue.reply('a', 'duplicate'), /仍在运行/)
+  queue.enqueue('a', 'another'); assert.equal(calls.length, 2)
+  runs[1](success); await answer; await tick()
+  assert.deepEqual(calls[2], ['a', 'unrelated'])
+  runs[2](success); await tick(); runs[3](success); await tick()
+})

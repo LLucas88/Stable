@@ -4,6 +4,7 @@ import '@fontsource-variable/space-grotesk'
 import '@fontsource-variable/ibm-plex-sans'
 import './styles/tokens.css'
 import './styles/app.css'
+import './styles/codex-surfaces.css'
 import { App } from './App'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

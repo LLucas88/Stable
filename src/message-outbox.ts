@@ -27,6 +27,22 @@ export class MessageOutbox<T> {
     void this.drain(id)
     return entry.id
   }
+  // A clarification reply must precede unrelated queued tasks, while retaining
+  // the same per-conversation dispatch lock and pause semantics.
+  async reply(id: string, payload: T, retainOnFailure = true) {
+    const state = this.state(id)
+    if (state.active || state.steering) throw new Error('当前对话仍在运行，请稍后回答。')
+    const entry: OutboxEntry<T> = { id: crypto.randomUUID(), payload, status: 'queued' }
+    state.active = entry; state.paused = true; this.callbacks.changed()
+    let result: OutboxResult
+    try { result = await this.callbacks.run(id, entry) }
+    catch (error) { result = { accepted: false, continue: false, error: String(error) } }
+    if (!result.accepted && retainOnFailure) { entry.error = result.error || '消息尚未发送，请检查后重试。'; state.items.unshift(entry) }
+    state.active = undefined
+    state.paused = !result.accepted || !result.continue
+    this.callbacks.changed(); void this.drain(id)
+    return result
+  }
   edit(id: string, entryId: string, payload: T) {
     const entry = this.state(id).items.find((item) => item.id === entryId)
     if (!entry || entry.status !== 'queued') return false

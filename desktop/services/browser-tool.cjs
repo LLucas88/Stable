@@ -25,7 +25,7 @@ function pageAction(action, ref, value, snapshotId) {
     }
     return { actionPerformed: action }
   }
-  const elements = [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select,[role=button]')].filter(visible).slice(0, 120)
+  const elements = [...document.querySelectorAll('a[href],button,input:not([type=hidden]),textarea,select,[role=button]')].filter(element=>{const r=element.getBoundingClientRect();return visible(element)&&r.bottom>0&&r.top<(innerHeight||900)&&r.right>0&&r.left<(innerWidth||1280)}).slice(0, 120)
   globalThis.__stableElements = new Map()
   const controls = elements.map((element, i) => {
     const id = `${snapshotId}:${i + 1}`; globalThis.__stableElements.set(id, element)
@@ -36,7 +36,7 @@ function pageAction(action, ref, value, snapshotId) {
   })
   const body = document.body?.innerText || ''
   const tables = [...document.querySelectorAll('table')].filter(visible).slice(0, 5).map(table => [...table.rows].slice(0, 100).map(row => [...row.cells].slice(0, 30).map(cell => cell.innerText.slice(0, 1000))))
-  return { title: document.title, url: location.href, text: body.slice(0, 20000), textTruncated: body.length > 20000, controls, tables, limits: '最多120个元素、5张表，每表100行30列；只读取主文档，iframe需单独打开允许的URL。', untrustedContent: true }
+  return { title: document.title, url: location.href, text: body.slice(0, 20000), textTruncated: body.length > 20000, controls, tables, limits: '最多120个元素、5张表，每表100行30列；当前文档；iframe 可通过 frames 获取 frameId 后单独读取。原生按键和拖拽需要展开浏览器。', untrustedContent: true }
 }
 
 class BrowserTool {
@@ -119,4 +119,4 @@ class BrowserTool {
   }
 }
 
-module.exports = { BrowserTool }
+module.exports = { BrowserTool, pageAction }

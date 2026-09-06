@@ -29,3 +29,8 @@ animation-current-contact*.jpg
 team-p0a-qa.png
 team-p0a-qa.json
 
+
+.stable-local-model.json
+.stable-local-model-status.json
+
+.stable-history-recovery*

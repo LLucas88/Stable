@@ -121,3 +121,17 @@ Codex 的 Apache-2.0 LICENSE 与 NOTICE 随安装包置于 `resources/licenses`�
 2026-09-03 本机验证：178 项自动化测试、类型检查、生产构建、完整免安装目录打包通过。源码及打包后运行真实 Codex 对接本机模拟模型的 7 项集成检查通过；包内搜索 MCP 可启动；更新健康检查退出码为 0。最终打包集成证据：`qa-artifacts/codex-integration/1788402932523/report.json`。
 
 真实 DeepSeek / 智谱 / Stable Cloud 的多轮工具调用、流式错误、额度结算；真实图片模型；真实子 Agent 协作；长对话压缩；实际旧设备升级与失败回滚。模拟接口成功不等于这些项目已验收。本分支尚未发布安装器、标签或 GitHub Release。
+
+### 本地模型启动配置
+
+源码开发模式可在仓库根目录放置 `.stable-local-model.json`，使用 `version: 2`、`protection: "windows-dpapi-current-user"`、`profile`（`id`、`providerId`、`displayName`、`baseURL`、`model`）和 `encryptedApiKey` 字段。密钥由 `desktop/services/windows-user-protection.cjs` 使用 Windows CurrentUser DPAPI 加密后保存为 Base64；不依赖 Electron 配置目录的 Local State，不允许明文，也不能跨 Windows 账号或机器复制。仍兼容 version 1 的 Electron safeStorage 密文，但它依赖生成密文时的加密配置，不能把“相同 Windows 账号”当成可复制到任意 Electron 配置目录的保证。
+
+普通 `npm start` 会在前端加载前导入该模型。首次导入、配置内容变化或目录中缺少该模型时，会设为默认并切换当前对话；后续启动保留用户手动选择的模型。导入后的模型及密钥存入正常用户数据目录。配置文件和不含密钥的 `.stable-local-model-status.json` 启动记录均已加入 Git 忽略规则，不进入提交或安装包；安装版和云端模式不加载此配置。状态文件可核对实际启动进程、用户数据目录和模型选择。
+
+本地配置读取、解密或导入失败时，应用继续启动，并在终端和状态文件中给出不含密钥的提示，不清除已有模型配置。状态文件写入失败也不会中断启动。导入成功仍通过当前 Electron 实例的安全存储保存运行时密钥。
+
+### 本地历史恢复包
+
+开发模式可使用明确放置的 `.stable-history-recovery.json` 与 `.stable-history-recovery.db` 进行一次历史恢复。清单包含 `version: 1`、恢复库的 `sha256` 和可选 `preferredConversationId`。安装版忽略该包。恢复在 StableStore 打开数据库之前，由当前客户端进程执行；先保存原数据库与 WAL/SHM，再在临时数据库中合并。当前库完整时保留其全部内容并补回缺失历史；当前库损坏时以校验过的恢复副本为基础，补入仍可读取的对话和消息，原文件始终保留在用户目录的 `history-recovery-backups` 中。消息 ID 内容冲突时停止，不静默覆盖。
+
+只有恢复库完整性、消息内容，以及客户端打开后的实际对话和消息 ID 均通过校验，才将清单改名为 `.stable-history-recovery.applied.json`，防止后来主动删除的对话被反复恢复。`.stable-history-recovery-status.json` 记录当前客户端的 PID、数据目录、实际对话条目和消息数量，不含消息正文。恢复包和报告均被 Git 忽略；没有显式恢复包时不更改正常启动行为。

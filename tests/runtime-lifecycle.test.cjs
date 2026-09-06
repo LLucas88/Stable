@@ -1,0 +1,11 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os')
+const {StableStore}=require('../desktop/services/store.cjs'),{ConversationLifecycle}=require('../desktop/services/conversation-lifecycle.cjs'),{CodexHarnessRunner}=require('../desktop/services/codex-harness.cjs')
+const executable=path.resolve(__dirname,'../runtime/codex/bin/codex.exe')
+test('pinned real runtime reads, archives, restores and deletes a thread with a local fake model', {skip:process.platform!=='win32'||!fs.existsSync(executable),timeout:35000},async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-native-lifecycle-')),store=new StableStore(root),id=store.activeConversationId();t.after(()=>store.close());let requests=0
+ const runner=new CodexHarnessRunner({userData:root,workspace:root,executable,fetchImpl:async()=>{requests++;return new Response('data: '+JSON.stringify({choices:[{index:0,delta:{role:'assistant',content:'协议测试完成'},finish_reason:null}]})+'\n\ndata: '+JSON.stringify({choices:[{index:0,delta:{},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}})}})
+ const response=await runner.run('回复一句确认即可，不调用工具。',{id:'fixture',providerId:'fixture',model:'fixture',baseURL:'https://fixture.invalid/v1'},'fixture-only',20000,()=>{},'workspace-write',[],{key:id,cwd:root})
+ assert.equal(response,'协议测试完成');const life=new ConversationLifecycle(store,{userData:root,workspace:root,executable});const read=await life.rpc(id,(rpc,threadId)=>rpc.request('thread/read',{threadId,includeTurns:true}));assert.equal(read.thread.turns.length,1)
+ const archive=await life.sync(id,'archive'),unarchive=await life.sync(id,'unarchive'),deleted=await life.sync(id,'delete');for(const result of [archive,unarchive,deleted])assert.equal(result.pending,false,JSON.stringify(result))
+ assert(!store.conversation(id));const report={version:'0.142.2',actualRuntime:true,modelUpstream:'local fixture only',response,readTurns:read.thread.turns.length,archive,unarchive,deleted,nativeThirdPartyReviewer:'not verified; compatibility reviewer selected',requests};fs.mkdirSync(path.resolve(__dirname,'../qa-artifacts/feature-v2'),{recursive:true});fs.writeFileSync(path.resolve(__dirname,'../qa-artifacts/feature-v2/runtime-probe.json'),JSON.stringify(report,null,2))
+})

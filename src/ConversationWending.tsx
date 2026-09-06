@@ -40,15 +40,20 @@ export function ConversationWending({ conversationId, running, active, autoOpen 
     try {
       const checked = await window.stable.extensions.prepareWending(conversationId)
       if (current !== generation.current) return
-      acceptState(checked.login || { phase: 'unknown', channel: '0', detail: checked.detail })
+      if (checked.login?.phase === 'ready' && !checked.login.error) setBinding(checked.login)
+      const login = checked.login?.phase === 'ready' && !checked.login.error
+        ? await window.stable.extensions.refreshWendingBrands(conversationId)
+        : checked.login
+      if (current !== generation.current) return
+      acceptState(login || { phase: 'unknown', channel: '0', detail: checked.detail })
     } catch (error) {
       if (current === generation.current) setState({ phase: 'unknown', channel: '0', detail: '登录检查未完成。', error: { code: 'CHECK_FAILED', message: error instanceof Error ? error.message : '请稍后重试。' } })
     } finally { if (current === generation.current) setBusy(false) }
   }
   return <>
-    <button ref={button} className="conversation-wending-button" type="button" disabled={running} title={running ? '停止此任务后可修改登录绑定' : '此任务独立使用的账号、渠道和品牌'} onClick={() => void prepare()}>问鼎 CLI · {binding.brandLabel ? `${binding.channel === '1' ? '云claw' : '悟空'} · ${binding.brandLabel}` : '绑定账号与品牌'}</button>
+    <button ref={button} className="conversation-wending-button" type="button" disabled={running} title={running ? '停止此任务后可修改登录绑定' : '登录状态全局共用，品牌按对话保存'} onClick={() => void prepare()}>问鼎 CLI · {binding.brandLabel ? `${binding.channel === '1' ? '云claw' : '悟空'} · ${binding.brandLabel}` : '绑定账号与品牌'}</button>
     <dialog ref={dialog} className="conversation-wending-dialog" aria-label="此任务的问鼎 CLI 登录" onCancel={event => { event.preventDefault(); close() }}>
-      <p className="conversation-wending-scope">此表单仅保存当前任务的登录配置。{binding.brandLabel && ` 已绑定：${binding.brandLabel}`}</p>
+      <p className="conversation-wending-scope">登录状态全局共用，重启后保留；品牌选择仅用于当前对话。{binding.brandLabel && ` 已绑定：${binding.brandLabel}`}</p>
       {busy ? <div className="conversation-wending-loading"><p role="status">正在核验此任务的登录状态…</p><button type="button" className="button" onClick={close}>取消</button></div> : open && <WendingLoginPanel conversationId={conversationId} state={state} onState={acceptState} onReady={async () => close()} onClose={close} />}
     </dialog>
   </>

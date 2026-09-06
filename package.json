@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit",
     "pretest": "node node_modules/electron/install.js",
     "test": "node --test tests/*.test.cjs",
+    "test:feature-v2": "node --test tests/conversation-state.test.cjs tests/project-ipc.test.cjs tests/project-controls-ui.test.cjs tests/sidebar-controls-ui.test.cjs tests/feature-v2-services.test.cjs tests/browser-downloads.test.cjs tests/shared-browser.test.cjs tests/runtime-lifecycle.test.cjs tests/conversation-tools-ui.test.cjs tests/skill-market-ui.test.cjs tests/codex-harness.test.cjs tests/codex-approval.test.cjs tests/conversation-approval.test.cjs tests/agent-steer-ipc.test.cjs tests/store.test.cjs tests/catch-and-conversation-tools.test.cjs tests/file-location.test.cjs tests/model-switching-ui.test.cjs tests/navigation-workspace-ui.test.cjs tests/feature-v2-startup.test.cjs",
+    "test:clarification": "node --test tests/clarification.test.cjs tests/clarification-ipc.test.cjs tests/clarification-interaction.test.cjs tests/clarification-card-ui.test.cjs tests/clarification-agent-page-ui.test.cjs tests/message-outbox.test.cjs",
     "test:integration": "node tests/harness-integration.cjs",
     "test:codex-integration": "node tests/codex-integration.cjs",
     "test:codex-network": "node tests/codex-network-integration.cjs",

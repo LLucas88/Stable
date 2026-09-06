@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..')
 const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
 const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
 const preload = readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8')
+const menu = readFileSync(path.join(root,'src','SidebarActionMenu.tsx'),'utf8')
 const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
 
 test('work and lab navigation split existing modules while repository keeps four real pages', () => {
@@ -44,8 +45,8 @@ test('account dock stays at the bottom and main content has a rounded top-left j
   assert.match(css, /\.rail-account-dock\s*\{[^}]*margin-block-start:\s*auto/)
   assert.match(css, /\.main-frame\s*\{[^}]*border-start-start-radius:\s*var\(--radius-lg\)[^}]*background:\s*var\(--color-paper\)/)
   assert.match(app, /if \(!onToggleRail \|\| !onSearch\) return <div className="window-titlebar" aria-hidden="true" \/>/)
-  assert.match(main, /dark: \{ backgroundColor: '#060d15'/)
-  assert.match(main, /light: \{ backgroundColor: '#f3eee6'/)
+  assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /dark: \{ backgroundColor: '#141414'/)
+  assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /light: \{ backgroundColor: '#f6f6f6'/)
 })
 
 test('titlebar can fully collapse the rail and search titles plus all conversation messages', () => {
@@ -65,9 +66,9 @@ test('titlebar can fully collapse the rail and search titles plus all conversati
   assert.match(css, /\.app-shell\[data-rail-collapsed="true"\]\s*\{[^}]*grid-template-columns:\s*0 minmax\(0, 1fr\)/)
   assert.match(css, /\.main-frame\s*\{[^}]*grid-column:\s*2/)
   assert.match(css, /\.conversation-search-dialog\s*\{[^}]*width:\s*min\(31rem/)
-  assert.match(preload, /search:\s*\(query\) => invoke\('stable:agent:search'/)
+  assert.match(preload, /search:\s*\(query, offset = 0\) => invoke\('stable:agent:search'/)
   assert.match(main, /ipcMain\.handle\('stable:agent:search'/)
-  assert.match(main, /store\.searchConversations\(payload\.query, 30\)/)
+  assert.ok(main.includes("store.searchConversations(payload.query, 30, Math.max(0, Math.floor(Number(payload.offset)||0)))"))
 })
 
 test('conversation task list exposes persistent pinning and a guarded action menu', () => {
@@ -79,8 +80,8 @@ test('conversation task list exposes persistent pinning and a guarded action men
   assert.match(app, /openConversation=\{\(\) => setPage\('agent'\)\}/)
   assert.match(app, /function selectConversation\(item: ConversationItem\)/)
   assert.match(main, /STABLE_QA_OPEN_CONVERSATION_FROM_TAB/)
-  assert.match(app, /className="conversation-action-menu" role="menu"/)
-  assert.match(app, /state\.conversations\.filter\(\(item\) => !item\.pinned\)\.map/)
+  assert.match(menu, /className="conversation-action-menu sidebar-action-menu" role="menu"/)
+  assert.match(app, /className="recent-toggle"/);assert.doesNotMatch(app, /showArchived/)
   assert.match(app, /在资源管理器打开/)
   assert.match(app, /<span>文件管理<\/span><small>暂不可用<\/small>/)
   assert.match(app, /<span>分享<\/span><small>暂不可用<\/small>/)
@@ -96,12 +97,12 @@ test('conversation task list exposes persistent pinning and a guarded action men
 
 test('pinned conversations reuse full task rows with direct unpin and the same menu', () => {
   assert.doesNotMatch(app, /if \(shortcut\)|item=\{item\} shortcut/)
-  assert.match(app, /pinnedConversations\.map\(\(item\) => ConversationRow\(\{ item \}\)\)/)
+  assert.match(app, /pinnedConversations\.map\(\(item\) => ConversationRow\(\{ item, mobile \}\)\)/)
   assert.match(app, /onClick=\{\(\) => togglePin\(item\)\} aria-label=\{item.pinned \? `取消置顶/)
   assert.match(app, /item.pinned \? '取消置顶任务' : '置顶任务'/)
   assert.match(app, /disabled=\{Boolean\(runningMap\[item.id\]\)\}/)
   assert.doesNotMatch(css, /\.conversation-pinned-shortcut/)
-  assert.match(app, /querySelector<HTMLButtonElement>\(':scope > button'\)\?\.focus\(\)/)
+  assert.match(menu, /anchor\.focus\(\{preventScroll:true\}\)/)
 })
 
 test('file cards open in Stable and expose a compact context menu with HTML-only external browsing', () => {

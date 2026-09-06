@@ -1,4 +1,4 @@
-export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market'
 export type ThemeMode = 'dark' | 'light'
 
 export interface WendingCliStatus {
@@ -162,6 +162,7 @@ export interface WorkflowArtifact {
 }
 
 export interface MessageItem {
+  seq?: number
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -205,7 +206,15 @@ export interface AgentReference {
 export type AgentCapability = 'auto' | 'fast' | 'reasoning' | 'analysis'
 export type AgentPermissionMode = 'request' | 'auto' | 'full'
 
+export interface MarketItem { id: string; name: string; kind: 'skill' | 'connector' | 'expert'; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; installed: boolean; enabled: boolean }
+export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
+
 export interface ConversationItem {
+  networkAccess?: boolean
+  projectId?: string | null
+  cwd?: string
+  archivedAt?: string | null
+  deletionState?: string
   id: string
   title: string
   capability: AgentCapability
@@ -230,6 +239,15 @@ export interface ConversationSearchResult {
 }
 
 export interface AgentState {
+  recoveryText?: string
+  recoveryDiagnostic?: string
+  syncNotice?: string
+  deliveries?: {id:string;state:string;error?:string}[]
+  paths?: { userData: string; workspace: string }
+  draftReference?: AgentReference | null
+  beforeCursor?: number | null
+  projects?: ProjectItem[]
+  catchAttachments?: AgentAttachment[]
   conversations: ConversationItem[]
   activeConversationId: string
   messages: MessageItem[]
@@ -249,7 +267,22 @@ export type AgentTraceKind = 'context' | 'reasoning' | 'tool' | 'status' | 'appr
 export type AgentTraceStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 export type AgentTraceEventType = 'agent/descriptor' | 'agent/start' | 'agent/end' | 'agent/answer' | 'tool/start' | 'tool/end'
 
+export interface ClarificationQuestion {
+  id: string
+  status: 'waiting'
+  question: string
+  hint: string
+  options: Array<{ label: string; description: string }>
+}
+export interface ClarificationResponse {
+  id: string
+  source: 'choice' | 'custom' | 'timeout' | 'skip' | 'close'
+  option?: number
+  text?: string
+}
+export interface ClarificationTimer { id: string; deadline: number; interacted: boolean }
 export interface AgentTraceItem {
+  clarification?: ClarificationQuestion
   id: string
   runId: string
   kind: AgentTraceKind
@@ -453,6 +486,13 @@ export interface CloudState {
 }
 
 export interface BootstrapData {
+  deliveries?: {id:string;state:string;error?:string}[]
+  recoveryText?:string
+  recoveryDiagnostic?:string
+  draftReference?: AgentReference | null
+  beforeCursor?: number | null
+  projects?: ProjectItem[]
+  catchAttachments?: AgentAttachment[]
   appVersion: string
   identity: string
   theme: ThemeMode
@@ -539,7 +579,24 @@ export interface StableBridge {
     generate(goal: string): Promise<WorkflowItem>
     onEvent(handler: (event: WorkflowRunEvent) => void): () => void
   }
+  editor: {
+    onPasteIntoComposer(handler: (text: string) => void): () => void
+    onSelectAllMessages(handler: () => void): () => void
+  }
+  browser: { command(payload: Record<string, unknown>): Promise<any>; onChanged(callback: () => void): () => void }
+  market: {
+    list(): Promise<MarketItem[]>; save(value: Partial<MarketItem>): Promise<MarketItem[]>;
+    toggle(id: string, enabled: boolean): Promise<MarketItem[]>; remove(id: string): Promise<MarketItem[]>;
+    checkUpdate(id: string): Promise<Partial<MarketItem> & { available: boolean; currentVersion: string }>; use(id: string): Promise<AgentState>
+  }
+  projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
+    lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
+    configureNetwork(id: string, enabled: boolean): Promise<AgentState>
+    grants(id: string): Promise<Array<{key: string; label: string; expiresAt: string}>>
+    revokeGrants(id: string, key?: string): Promise<Array<{key: string; label: string; expiresAt: string}>>
+    messages(id: string, beforeCursor?: number): Promise<{ messages: MessageItem[]; beforeCursor: number | null }>
+    viewState(id: string, value?: { anchor?: string; seq?: number; offset?: number; top?: number; following?: boolean }): Promise<{ anchor?: string; seq?: number; offset?: number; top?: number; following?: boolean }>
     inspectAttachments(paths: string[]): Promise<AgentAttachment[]>
     savePastedImage(conversationId: string, name: string, mediaType: string, data: Uint8Array): Promise<AgentAttachment>
     discardDraftImage(path: string): Promise<boolean>
@@ -548,17 +605,20 @@ export interface StableBridge {
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>
+    catchReply(conversationId: string, messageId: string): Promise<AgentState>
+    discardCatch(conversationId: string): Promise<AgentState>
     state(id: string): Promise<AgentState>
-    search(query: string): Promise<ConversationSearchResult[]>
+    search(query: string, offset?: number): Promise<ConversationSearchResult[]>
     select(id: string): Promise<AgentState>
     rename(id: string, title: string): Promise<AgentState>
     pin(id: string, pinned: boolean): Promise<AgentState>
-    openWorkspace(): Promise<boolean>
+    openWorkspace(id?:string): Promise<boolean>
     remove(id: string): Promise<AgentState>
     configure(id: string, capability: AgentCapability, dataIds: string[]): Promise<AgentState>
     configurePermission(id: string, permissionMode: AgentPermissionMode): Promise<AgentState>
     configureModel(id: string, modelId: string): Promise<AgentState>
-    run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
+    clarificationTimer(conversationId: string, id: string, action: 'start' | 'interact'): Promise<ClarificationTimer>
+    run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[], clientRequestId?: string, clarificationResponse?: ClarificationResponse): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
     steer(conversationId: string, requestId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState>
     answerApproval(conversationId: string, requestId: string, decision: boolean | 'deny' | 'once' | 'conversation'): Promise<boolean>

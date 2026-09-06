@@ -65,11 +65,16 @@ async function run() {
     step='brand';
     await wait(()=>window.testResult.ready===1);
     expect(window.testResult.verified===1&&window.testResult.selected===1,'Unexpected calls');
+    step='switch-brand-without-sms';
+    Array.from(document.querySelectorAll('button')).find(button=>button.textContent==='切换品牌').click();
+    await wait(()=>document.querySelector('h3')?.textContent==='选择品牌');
+    expect(!document.querySelector('input[type=tel]')&&!document.querySelector('input[autocomplete=one-time-code]'),'Brand switching reopened SMS login');
+    expect(window.testResult.sent===1&&window.testResult.verified===1,'Brand switching repeated authentication');
     const stored=JSON.stringify(window.testResult.states);
     expect(!/13800000000|654321/.test(stored),'Credentials leaked into public state');
     window.setTestState({phase:'signed_out',channel:'0',detail:'测试状态',retryAfter:2});
     step='cooldown';
-    await wait(()=>document.querySelector('button[type=submit]')?.disabled);
+    await wait(()=>document.querySelector('input[type=tel]') && document.querySelector('button[type=submit]')?.disabled);
     const labels=Array.from(document.querySelectorAll('input,select')).every(el=>document.querySelector('label[for="'+el.id+'"]'));
     expect(labels,'Every field needs a visible label');
     const style=getComputedStyle(document.querySelector('input'));

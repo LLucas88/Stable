@@ -30,7 +30,7 @@ test('once, deny and persistent category grants survive restart and remain conve
     await run(a, 'crm-brand-cli --help', 'once', 1)
     await run(a, 'crm-brand-cli --help', 'conversation', 1)
     store.db.close(); store = new StableStore(root)
-    await run(a, 'crm-brand-cli data-analysis --help', 'once', 0)
+    await run(a, 'crm-brand-cli data-analysis --help', 'once', 1)
     await run(b, 'crm-brand-cli --help', 'once', 1)
     await run(a, 'crm-brand-cli member-marketing update-member-card-template', 'deny', 1)
     await run(a, 'unreviewed-tool --inspect', 'conversation', 1)
@@ -39,7 +39,7 @@ test('once, deny and persistent category grants survive restart and remain conve
     const dataScript = code => `@'\n${code}\n'@ | & '${python}' -I -X utf8 -`
     await run(a, dataScript('import json\nprint(json.load(open("input.json", encoding="utf-8-sig")))'), 'conversation', 1)
     store.db.close(); store = new StableStore(root)
-    await run(a, dataScript('import json\nrows=json.load(open("second.json", encoding="utf-8-sig"))\nprint(len(rows))'), 'once', 0)
+    await run(a, dataScript('import json\nrows=json.load(open("second.json", encoding="utf-8-sig"))\nprint(len(rows))'), 'once', 1)
     await run(b, dataScript('print(2)'), 'once', 1)
     await run(a, dataScript('print(3)'), 'once', 1, 'full')
     await run(a, dataScript('import os\nos.remove("input.json")'), 'deny', 1)

@@ -22,7 +22,7 @@ function query(cli, cwd, scenario = 'ok') {
     child.on('error', reject); child.on('close', code => { try { assert.equal(code, 0, error); resolve(JSON.parse(output)) } catch (error) { reject(error) } })
   })
 }
-test('task profiles keep concurrent accounts separate across cwd, restart and deletion; brand drift fails closed', { skip: process.platform !== 'win32' }, async () => {
+test('task brands remain separate across cwd, restart and deletion with shared authentication; drift fails closed', { skip: process.platform !== 'win32' }, async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-task-cli-'))
   const options = { appPath: root, workspace: directory, userData: directory, packaged: false }
   const service = new WendingCliService(options)
@@ -36,6 +36,7 @@ test('task profiles keep concurrent accounts separate across cwd, restart and de
     assert.equal(first.result.brand, '100'); assert.equal(second.result.brand, '200')
     const otherCwd = path.join(directory, 'changed-cwd'); fs.mkdirSync(otherCwd)
     assert.equal((await query(a, otherCwd)).result.brand, '100')
+    assert.equal((await query(a, otherCwd, 'restore')).result.brand, '100')
     const restored = new WendingCliService(options).forConversation('a')
     assert.equal((await query(restored, directory)).result.brand, '100')
     assert.equal(restored.binding().brandLabel, '品牌 100')
