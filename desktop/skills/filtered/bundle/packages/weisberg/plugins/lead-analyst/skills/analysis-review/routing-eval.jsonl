@@ -1,0 +1,3 @@
+{"intent":"review this analysis and tell me if the conclusion holds up","expected_skill":"analysis-review"}
+{"intent":"senior analyst review: poke holes in this dashboard before I send it","expected_skill":"analysis-review"}
+{"intent":"does this KPI claim hold up? audit the SQL and notebook","expected_skill":"analysis-review"}

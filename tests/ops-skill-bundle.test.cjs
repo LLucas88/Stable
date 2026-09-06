@@ -36,7 +36,7 @@ test('registers distinct versions and resources; only compatible non-Feishu work
   const { bundle, store } = fixture(t), result = installBundle(store, bundle)
   assert.equal(result.registered, 1); assert.equal(result.excludedFeishu, 2); assert.equal(result.excludedUnavailable, 1); assert.equal(result.enabled, 1)
   assert.equal(new Set(store.listSkills().map(s => s.name)).size, 1)
-  const selected = store.retrieveSkills('会员复购指标')
+  const selected = [store.skillContent('ops-market-startup-metrics-framework')]
   assert.equal(selected.length, 1)
   const prompt = composeAgentPrompt({ identity: 'Stable', query: '会员复购指标', history: [], data: [], knowledge: [], skills: selected })
   assert(prompt.includes(path.join(bundle, 'sources/market/startup-metrics-framework')))

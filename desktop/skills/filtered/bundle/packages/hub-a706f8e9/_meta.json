@@ -1,0 +1,30 @@
+{
+  "name": "community-operation-zh",
+  "displayName": "社群运营SOP",
+  "version": "1.0.0",
+  "description": "为微信群、企微群、训练营、付费社群设计入群、破冰、内容节奏、活跃、转化和流失召回 SOP。",
+  "author": "ikun",
+  "license": "MIT",
+  "category": "marketing",
+  "tags": [
+    "社群",
+    "运营",
+    "SOP",
+    "私域"
+  ],
+  "keywords": [
+    "社群运营",
+    "SOP",
+    "微信群",
+    "用户分层",
+    "活跃"
+  ],
+  "platforms": [
+    "openclaw",
+    "skillhub",
+    "claude-code",
+    "cursor"
+  ],
+  "language": "zh-CN",
+  "minAgentVersion": "0.1.0"
+}

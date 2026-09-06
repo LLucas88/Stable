@@ -1,0 +1,7 @@
+// ab-testing plugin routing fixtures — hands-on experiment lifecycle (design, sizing, analysis, review, reporting). Cross-plugin cases separate it from experimentation governance and marketing-workspace stats.
+// skill: sample-size  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "how many users per arm do I need to detect a 3% lift?", "expected_skill": "sample-size"}
+{"intent": "calculate the MDE if we can only run the test for two weeks", "expected_skill": "sample-size"}
+{"intent": "do we have enough traffic for this test? run the power calculation", "expected_skill": "sample-size"}
+{"intent": "compute required sample size and duration with a CUPED adjustment", "expected_skill": "sample-size", "forbidden_skill": "marketing-analytics:experimentation"}
+{"intent": "plan sample size and duration for a standalone product test", "expected_skill": "sample-size", "forbidden_skill": "experimentation:power-duration-planning"}

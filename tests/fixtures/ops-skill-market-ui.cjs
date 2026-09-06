@@ -17,6 +17,24 @@ await win.loadURL('data:text/html,<html data-theme="light"><body><div id="root">
 for(const name of ['tokens.css','app.css','codex-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',name),'utf8'))
 await win.webContents.executeJavaScript(js)
 await win.webContents.executeJavaScript(`(async()=>{
+const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Error(m)};
+await tick();const market=document.querySelector('.skill-market'),bar=document.querySelector('.market-groups-bar'),nav=document.querySelector('.market-groups'),toggle=document.querySelector('.market-groups-toggle');
+market.style.width='480px';await tick();
+expect(toggle.getAttribute('aria-expanded')==='false','Groups must start collapsed');
+expect(document.querySelectorAll('.skill-market-top [role="tab"] svg').length===3,'Tab icons missing');
+const rowHeight=nav.firstElementChild.getBoundingClientRect().height;
+expect(nav.getBoundingClientRect().height<=rowHeight+1,'Collapsed groups occupy multiple rows');
+expect(nav.scrollWidth>nav.clientWidth,'Fixture must exercise overflow');
+const firstToggle=toggle.getBoundingClientRect();expect(firstToggle.left>=nav.getBoundingClientRect().right,'Toggle must stay at right of first row');
+toggle.click();await tick();expect(nav.getBoundingClientRect().height>rowHeight+5,'Expanded groups did not wrap');
+expect(Math.abs(toggle.getBoundingClientRect().top-firstToggle.top)<1,'Toggle moved off first row');
+nav.lastElementChild.click();await tick();toggle.click();await tick();
+const active=nav.querySelector('[aria-current="page"]').getBoundingClientRect(),viewport=nav.getBoundingClientRect();
+expect(active.left>=viewport.left-1&&active.right<=viewport.right+1,'Selected group hidden after collapse');
+expect(document.querySelectorAll('.market-row').length===1,'Collapse changed selected filter');
+nav.firstElementChild.click();toggle.click();await tick();market.style.width='';
+})()`)
+await win.webContents.executeJavaScript(`(async()=>{
 const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Error(m)},button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent===t);
 const clean=()=>expect(!/work[\\s_-]*buddy|trae[\\s_-]*work|豆包|doubao/i.test(document.body.innerText),'Platform branding visible');
 await tick();expect(document.querySelectorAll('.market-row').length===3,'Imported catalog missing');clean();expect(document.querySelector('[role="status"]').textContent.includes('启用 2'),'Enabled count missing');expect(!document.body.innerText.includes('飞书'),'Obsolete Feishu notice');

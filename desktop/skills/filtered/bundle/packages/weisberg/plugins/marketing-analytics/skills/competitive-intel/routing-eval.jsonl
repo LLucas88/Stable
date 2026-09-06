@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: competitive-intel  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "what are our competitors doing on keywords and ad creative?", "expected_skill": "competitive-intel"}
+{"intent": "benchmark our share of voice against competitor X", "expected_skill": "competitive-intel"}
+{"intent": "track competitor ads and pricing intelligence in our market", "expected_skill": "competitive-intel"}
+{"intent": "analyze competitor keywords, ad spy, and market positioning", "expected_skill": "competitive-intel", "forbidden_skill": "marketing-analytics:seo-content"}
+{"intent": "audit our own organic keyword rankings and content in Search Console", "expected_skill": "marketing-analytics:seo-content", "forbidden_skill": "competitive-intel"}

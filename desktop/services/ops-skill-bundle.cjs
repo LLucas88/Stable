@@ -161,7 +161,7 @@ function installBundle(store, root, { applyPolicy = false } = {}) {
 function setSkillEnabled(store, id, enabled) {
   const meta = store.getSetting('skillMarketMeta') || {}, item = meta[id]
   if (enabled && item?.policyPaused) throw new Error('飞书相关技能已按当前安装策略停用。修改安装策略后才能启用。')
-  if (enabled && item?.bundle && item.compatibility !== 'local-workflow') throw new Error(item.compatibilityReason || '请先完成此技能依赖适配。')
+  if (enabled && item?.bundle && !['local-workflow', 'manual-resource'].includes(item.compatibility)) throw new Error(item.compatibilityReason || '请先完成此技能依赖适配。')
   if (enabled && item?.originalId) {
     const conflict = store.listSkills().find(s => s.enabled && s.id !== id && meta[s.id]?.originalId === item.originalId)
     if (conflict) throw new Error('请先停用同名版本：' + conflict.name)

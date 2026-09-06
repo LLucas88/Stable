@@ -1,0 +1,4 @@
+{"intent":"can we trust this CSV for the churn analysis? profile it and audit quality","expected_skill":"data-quality-audit"}
+{"intent":"check this SQL for join loss and duplicate customer rows","expected_skill":"data-quality-audit"}
+{"intent":"data quality audit: the dashboard numbers look wrong","expected_skill":"data-quality-audit"}
+{"intent":"validate freshness, missingness, and duplicates before I use this extract","expected_skill":"data-quality-audit"}

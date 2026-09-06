@@ -1,0 +1,394 @@
+{
+  "$schema": "../skill-machine-contract.schema.json",
+  "completion_contract": {
+    "clauses": [
+      {
+        "clause_id": "done-01",
+        "condition_kind": "blocking",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 182,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "the spec names a measurable hypothesis and pass threshold, target panel, precommitted measurement contract, exact canon/stimulus hashes, selected current head, and a stop/revise rule"
+      },
+      {
+        "clause_id": "done-02",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 218,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 184
+        },
+        "text": "every claim is approved or pending"
+      },
+      {
+        "clause_id": "done-03",
+        "condition_kind": "success",
+        "extraction_status": "classified",
+        "requirement": "required",
+        "source": {
+          "end_char": 470,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Done when",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 220
+        },
+        "text": "and the result cannot be applied unless its shared `evidence-observation` references the same [Narrative Truth, Stimulus, and Retro Binding](references/stimulus-binding.md). Any changed canon, stimulus, panel, protocol, or contract starts a new test."
+      }
+    ],
+    "done_when": "the spec names a measurable hypothesis and pass threshold, target panel, precommitted measurement contract, exact canon/stimulus hashes, selected current head, and a stop/revise rule; every claim is approved or pending; and the result cannot be applied unless its shared `evidence-observation` references the same [Narrative Truth, Stimulus, and Retro Binding](references/stimulus-binding.md). Any changed canon, stimulus, panel, protocol, or contract starts a new test.",
+    "extraction_status": "classified",
+    "source": {
+      "path": "narrative/evaluate/message-test-designer/SKILL.md",
+      "section": "Skill Contract/Done when",
+      "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74"
+    }
+  },
+  "context_hints": {
+    "bundle_references": [
+      {
+        "path": "CONNECTORS.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "82551243ae14adb3b28cc21b3122b0ec12fd4d25abb9124678c198af12455c63",
+        "source_line": 38
+      },
+      {
+        "path": "SECURITY.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "5600d9d70c61e34e09dfedc0d21c28994fa2aacbbab2b8802c800a61da047f09",
+        "source_line": 44
+      },
+      {
+        "path": "narrative/evaluate/message-test-designer/references/stimulus-binding.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "4acf5b2b7e15cfeaff6a9fda2de08b14a92c11a80499af5a2216a54baefd878f",
+        "source_line": 29
+      },
+      {
+        "path": "references/skill-contract.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c",
+        "source_line": 34
+      },
+      {
+        "path": "references/tale-benchmark.md",
+        "reason_code": "authored-reference",
+        "requirement": "optional",
+        "sha256": "ee3a3b810a5226ce382b3deed0dff4240aaeb7993d6955e566dade6bf63d0d52",
+        "source_line": 4
+      }
+    ],
+    "project_paths": [
+      {
+        "access": "read",
+        "authority": "working",
+        "kind": "file",
+        "path": "memory/claims/claims-ledger.md",
+        "reason_code": "explicit-skill-read",
+        "sensitivity": "confidential"
+      }
+    ]
+  },
+  "contract_id": "skill:message-test-designer",
+  "control_requirements": [
+    "artifact-binding",
+    "evidence-observation",
+    "measurement-contract"
+  ],
+  "handoff_contract": {
+    "extraction_status": "partially-classified",
+    "items": [
+      {
+        "condition": "after the tested message ships, measure echo rate and AI-answer perception in-market.",
+        "extraction_status": "classified",
+        "item_id": "handoff-01",
+        "kind": "primary",
+        "source": {
+          "end_char": 173,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "target_skills": [
+          "narrative-resonance-monitor"
+        ],
+        "text": "- **Primary**: [narrative-resonance-monitor](../narrative-resonance-monitor/SKILL.md) — after the tested message ships, measure echo rate and AI-answer perception in-market."
+      },
+      {
+        "condition": "If the test is ready to run now**: [send-experiment-designer](../../../email/deliver/send-experiment-designer/SKILL.md) or [ad-test-designer](../../../ad/orchestrate/ad-test-designer/SKILL.md) — execute the panel/experiment this spec designed.",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-02",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 421,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 174
+        },
+        "target_skills": [
+          "ad-test-designer",
+          "send-experiment-designer"
+        ],
+        "text": "- **If the test is ready to run now**: [send-experiment-designer](../../../email/deliver/send-experiment-designer/SKILL.md) or [ad-test-designer](../../../ad/orchestrate/ad-test-designer/SKILL.md) — execute the panel/experiment this spec designed."
+      },
+      {
+        "condition": "If 3+ claims are pending as proposals**: [offer-claims-registry](../../../protocol/offer-claims-registry/SKILL.md) — substantiate or reject the stimulus claims before any test ships the wording.",
+        "extraction_status": "partially-classified",
+        "item_id": "handoff-03",
+        "kind": "unclassified",
+        "source": {
+          "end_char": 620,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 422
+        },
+        "target_skills": [
+          "offer-claims-registry"
+        ],
+        "text": "- **If 3+ claims are pending as proposals**: [offer-claims-registry](../../../protocol/offer-claims-registry/SKILL.md) — substantiate or reject the stimulus claims before any test ships the wording."
+      },
+      {
+        "condition": "when the test design spec is saved and the stop/revise rule is set.",
+        "extraction_status": "classified",
+        "item_id": "handoff-04",
+        "kind": "termination",
+        "source": {
+          "end_char": 967,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Next Best Skill",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 622
+        },
+        "target_skills": [],
+        "text": "**Termination**: inherits the global rules in [skill-contract.md §Termination rules](../../../references/skill-contract.md) — visited-set check (skip any target already run this chain), `max-depth: 3`, and an ambiguity stop (present the options instead of auto-following). Stop when the test design spec is saved and the stop/revise rule is set."
+      }
+    ],
+    "next_best": "- **Primary**: [narrative-resonance-monitor](../narrative-resonance-monitor/SKILL.md) — after the tested message ships, measure echo rate and AI-answer perception in-market.\n- **If the test is ready to run now**: [send-experiment-designer](../../../email/deliver/send-experiment-designer/SKILL.md) or [ad-test-designer](../../../ad/orchestrate/ad-test-designer/SKILL.md) — execute the panel/experiment this spec designed.\n- **If 3+ claims are pending as proposals**: [offer-claims-registry](../../../protocol/offer-claims-registry/SKILL.md) — substantiate or reject the stimulus claims before any test ships the wording.\n\n**Termination**: inherits the global rules in [skill-contract.md §Termination rules](../../../references/skill-contract.md) — visited-set check (skip any target already run this chain), `max-depth: 3`, and an ambiguity stop (present the options instead of auto-following). Stop when the test design spec is saved and the stop/revise rule is set.",
+    "summary": "> Emit the standard shape from [skill-contract.md §Handoff Summary Format](../../../references/skill-contract.md).",
+    "summary_ref": {
+      "path": "narrative/evaluate/message-test-designer/SKILL.md",
+      "section": "Skill Contract/Handoff Summary",
+      "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74"
+    },
+    "summary_source": "skill-section",
+    "target_skills": [
+      "ad-test-designer",
+      "narrative-resonance-monitor",
+      "offer-claims-registry",
+      "send-experiment-designer"
+    ]
+  },
+  "identity": {
+    "class": null,
+    "discipline": "narrative",
+    "name": "message-test-designer",
+    "path": "narrative/evaluate/message-test-designer/SKILL.md",
+    "phase": "evaluate",
+    "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+    "version": "20.1.0"
+  },
+  "input_contract": {
+    "argument_hint": "<message / tagline / surface> [target panel] [candidate variants]",
+    "clauses": [
+      {
+        "clause_id": "read-01",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 70,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "the durable message house and exact canon ID/version/hash/current head"
+      },
+      {
+        "clause_id": "read-02",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 147,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 72
+        },
+        "text": "the exact candidate stimulus-set ref/hash or per-surface message-match spec"
+      },
+      {
+        "clause_id": "read-03",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 172,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 149
+        },
+        "text": "panel/cohort definition"
+      },
+      {
+        "clause_id": "read-04",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 182,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 174
+        },
+        "text": "protocol"
+      },
+      {
+        "clause_id": "read-05",
+        "extraction_status": "unclassified",
+        "kind": "unclassified",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 213,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 184
+        },
+        "text": "measurement-contract ref/hash"
+      },
+      {
+        "clause_id": "read-06",
+        "extraction_status": "partially-classified",
+        "kind": "project-resource",
+        "requirement": "unclassified",
+        "source": {
+          "end_char": 278,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Reads",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 215
+        },
+        "text": "and approved claim wording in `memory/claims/claims-ledger.md`."
+      }
+    ],
+    "extraction_status": "partially-classified",
+    "reads": "the durable message house and exact canon ID/version/hash/current head; the exact candidate stimulus-set ref/hash or per-surface message-match spec; panel/cohort definition; protocol; measurement-contract ref/hash; and approved claim wording in `memory/claims/claims-ledger.md`.",
+    "source": {
+      "path": "narrative/evaluate/message-test-designer/SKILL.md",
+      "section": "Skill Contract/Reads",
+      "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74"
+    }
+  },
+  "output_contract": {
+    "clauses": [
+      {
+        "clause_id": "write-01",
+        "extraction_status": "classified",
+        "kind": "project-artifact",
+        "permission_posture": "permission-required",
+        "side_effect": "project-write",
+        "source": {
+          "end_char": 65,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Writes",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 0
+        },
+        "text": "the test design spec to `memory/narrative/message-test-designer/`"
+      },
+      {
+        "clause_id": "write-02",
+        "extraction_status": "classified",
+        "kind": "mixed",
+        "permission_posture": "permission-required",
+        "side_effect": "mixed",
+        "source": {
+          "end_char": 295,
+          "path": "narrative/evaluate/message-test-designer/SKILL.md",
+          "section": "Skill Contract/Writes",
+          "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74",
+          "span_basis": "field-text",
+          "start_char": 67
+        },
+        "text": "any unverifiable claim found in a stimulus to `memory/events/claims.ndjson` via an authorized `operation: propose` request to `registry-events.py` tagged `[needs source]` — never to the claims ledger, and never adjudicated here."
+      }
+    ],
+    "extraction_status": "classified",
+    "source": {
+      "path": "narrative/evaluate/message-test-designer/SKILL.md",
+      "section": "Skill Contract",
+      "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74"
+    },
+    "summary": "a message-test design spec — the hypothesis, panel/cohort, protocol, an immutable canon/stimulus/measurement binding, the stimulus set drawn verbatim from canon, success thresholds, panel-size note, stop/revise rule, result-observation requirements, and the standard handoff summary naming the execution builder.",
+    "summary_source": "expected-output",
+    "writes": "the test design spec to `memory/narrative/message-test-designer/`; any unverifiable claim found in a stimulus to `memory/events/claims.ndjson` via an authorized `operation: propose` request to `registry-events.py` tagged `[needs source]` — never to the claims ledger, and never adjudicated here."
+  },
+  "provenance": {
+    "control_bindings": {
+      "path": "references/control-bindings.json",
+      "sha256": "70fbf645a095d87676bc77522dd6838a0f9dceb2214cc4c64823f39ecf6bd0f1"
+    },
+    "generator": "generate-skill-contracts-v1",
+    "shared_contract": {
+      "path": "references/skill-contract.md",
+      "section": "Skill Contract",
+      "sha256": "fe1e93a2bf475ba3cf915aa0274080b98cea259514e8c873266231929c884b4c"
+    },
+    "system_catalog": {
+      "path": "references/system-catalog.json",
+      "sha256": "ac5a3d42ccdc98e396c48ead96e8a99e1ba88cf101f9f57d6afd2f6394165f6f",
+      "version": "20.1.0"
+    }
+  },
+  "routing_contract": {
+    "boundary": "Not for running the panel or A/B experiment — use send-experiment-designer or ad-test-designer; not for analyzing the results — use performance-analyzer; not for authoring the message itself — use message-system-architect. 消息测试/理解度测试/面板设计/五秒测试/消息市场契合",
+    "description": "Use when the user asks to \"test our messaging before we scale it\", \"design a message-market-fit panel\", or \"run a 5-second comprehension test on our new tagline\"; produces a message-test design spec — hypothesis, panel and recruit criteria, comprehension / 5-second / message-market-fit (Wynter-style) protocols, stimulus set drawn from the canon, success thresholds, and a stop/revise decision rule — for the TALE Evaluate phase so the message is validated before any paid scale. It designs the test; it never runs the experiment or adjudicates a claim. Not for running the panel or A/B experiment — use send-experiment-designer or ad-test-designer; not for analyzing the results — use performance-analyzer; not for authoring the message itself — use message-system-architect. 消息测试/理解度测试/面板设计/五秒测试/消息市场契合",
+    "source": {
+      "path": "narrative/evaluate/message-test-designer/SKILL.md",
+      "section": "frontmatter",
+      "sha256": "ec7ffb03a792ecadfa1aea7acc8bff0ab8e67b9a8d1ce77b1cb13f79e1249d74"
+    },
+    "trigger_phrases": [
+      "design a message-market-fit panel",
+      "run a 5-second comprehension test on our new tagline",
+      "test our messaging before we scale it"
+    ],
+    "trigger_source": "description-quoted",
+    "when_to_use": "Use when you have a candidate message (tagline, one-liner, value pillars, or a per-surface message-match spec) and want to validate it with a target panel before spending on scale: designing the comprehension test, the 5-second recall test, or the Wynter-style message-market-fit panel — hypothesis, recruit criteria, stimulus set from the canon, success thresholds, and the stop/revise rule. The design layer of the TALE Evaluate phase; execution is handed to the experiment builders and analysis to performance-analyzer. Not for running the test and not for authoring the message."
+  },
+  "schema_version": "1.0"
+}

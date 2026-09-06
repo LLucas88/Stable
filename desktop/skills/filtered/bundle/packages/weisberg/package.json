@@ -1,0 +1,14 @@
+{
+  "name": "agile-agentic-analytics-marketplace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node scripts/render-marketplace.mjs",
+    "render:check": "node scripts/render-marketplace.mjs --check",
+    "validate": "node scripts/validate-marketplace.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

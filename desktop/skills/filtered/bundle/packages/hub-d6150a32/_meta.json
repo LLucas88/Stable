@@ -1,0 +1,33 @@
+{
+  "name": "ai-poster-deck",
+  "displayName": "AI 海报式 PPT（朋友圈/小红书可发）",
+  "version": "1.0.0",
+  "description": "生成 1-12 张海报式幻灯片，专为朋友圈/小红书/视频号封面设计。竖图 9:16 + 方图 1:1 + 横图 16:9 三种比例可选。",
+  "author": "ikun",
+  "license": "MIT",
+  "category": "presentation",
+  "tags": [
+    "海报",
+    "PPT",
+    "朋友圈",
+    "小红书"
+  ],
+  "keywords": [
+    "海报",
+    "朋友圈封面",
+    "小红书封面",
+    "九宫格",
+    "AI 配图",
+    "竖屏 PPT"
+  ],
+  "platforms": [
+    "openclaw",
+    "skillhub",
+    "claude-code",
+    "cursor"
+  ],
+  "language": "zh-CN",
+  "minAgentVersion": "0.1.0",
+  "homepage": "",
+  "repository": ""
+}

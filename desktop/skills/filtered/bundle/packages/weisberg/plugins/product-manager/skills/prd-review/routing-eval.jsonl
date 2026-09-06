@@ -1,0 +1,8 @@
+// product-manager plugin routing fixtures - PRD critique vs writing, planning, and implementation review.
+// skill: prd-review (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent":"review this PRD against the product requirements quality bar","expected_skill":"prd-review"}
+{"intent":"critique my product spec and list required changes before approval","expected_skill":"prd-review","forbidden_skill":"prd-writer"}
+{"intent":"red-team this PR/FAQ and find evidence gaps, weak metrics, and non-goal issues","expected_skill":"prd-review"}
+{"intent":"turn this product idea into a first draft PRD","expected_skill":"prd-writer","forbidden_skill":"prd-review"}
+{"intent":"convert this approved PRD into an agentic execution plan","expected_skill":"prd-to-plan","forbidden_skill":"prd-review"}
+{"intent":"review this A/B test implementation code before launch","expected_skill":"ab-testing:review-experiment","forbidden_skill":"prd-review"}

@@ -1,0 +1,5 @@
+# Adaptation files participate in the pinned bundle's content hashes.
+scripts/tencenthub-overrides/** text eol=lf
+
+# Preserve vendored skill bytes for integrity checks on every platform.
+/desktop/skills/filtered/bundle/** -text

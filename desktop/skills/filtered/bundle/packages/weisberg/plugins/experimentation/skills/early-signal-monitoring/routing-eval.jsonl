@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: early-signal-monitoring  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "it's the first 48 hours of the test — does the SRM and exposure look healthy?", "expected_skill": "early-signal-monitoring"}
+{"intent": "stakeholders want to interpret early results but I'm worried about novelty effects", "expected_skill": "early-signal-monitoring"}
+{"intent": "monitor operational guardrails and proxy signals in the opening days of this experiment", "expected_skill": "early-signal-monitoring"}
+{"intent": "watch early experiment health and exposure validation — don't write the exec brief yet", "expected_skill": "early-signal-monitoring", "forbidden_skill": "executive-evidence-brief"}
+{"intent": "review my assignment and exposure-logging code for the bug that's causing SRM", "expected_skill": "ab-testing:review-experiment", "forbidden_skill": "early-signal-monitoring"}

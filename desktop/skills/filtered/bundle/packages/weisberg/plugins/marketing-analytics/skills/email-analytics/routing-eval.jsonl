@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: email-analytics  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "how are our emails performing on open, click, bounce, and unsubscribe?", "expected_skill": "email-analytics"}
+{"intent": "diagnose our email deliverability and check SPF, DKIM, and DMARC", "expected_skill": "email-analytics"}
+{"intent": "optimize send-time and subject lines for our drip campaign", "expected_skill": "email-analytics"}
+{"intent": "analyze email open and click performance plus deliverability", "expected_skill": "email-analytics", "forbidden_skill": "experimentation:email-incrementality"}
+{"intent": "measure the true incremental lift of our email program with a holdout post-MPP", "expected_skill": "experimentation:email-incrementality", "forbidden_skill": "email-analytics"}

@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: social-analytics  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "how are we doing on LinkedIn and Instagram engagement?", "expected_skill": "social-analytics"}
+{"intent": "track brand mentions and social sentiment across platforms", "expected_skill": "social-analytics"}
+{"intent": "what content is going viral and what's our social reach?", "expected_skill": "social-analytics"}
+{"intent": "analyze social engagement, reach, and sentiment by platform", "expected_skill": "social-analytics", "forbidden_skill": "marketing-analytics:competitive-intel"}
+{"intent": "benchmark our competitive share of voice and pricing against competitor Y", "expected_skill": "marketing-analytics:competitive-intel", "forbidden_skill": "social-analytics"}

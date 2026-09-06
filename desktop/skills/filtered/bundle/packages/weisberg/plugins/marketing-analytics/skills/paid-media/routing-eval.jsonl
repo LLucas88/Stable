@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: paid-media  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "how are our Google and Meta ads performing on ROAS and CPA?", "expected_skill": "paid-media"}
+{"intent": "are we pacing our ad budget correctly this month?", "expected_skill": "paid-media"}
+{"intent": "detect creative fatigue and find negative keywords to add", "expected_skill": "paid-media"}
+{"intent": "analyze paid ad performance, CPC, and budget pacing", "expected_skill": "paid-media", "forbidden_skill": "marketing-analytics:attribution-analysis"}
+{"intent": "across all channels, which media mix maximizes ROI — build the MMM", "expected_skill": "marketing-analytics:attribution-analysis", "forbidden_skill": "paid-media"}

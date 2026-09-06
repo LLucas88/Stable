@@ -1,0 +1,7 @@
+// ab-testing plugin routing fixtures — hands-on experiment lifecycle (design, sizing, analysis, review, reporting). Cross-plugin cases separate it from experimentation governance and marketing-workspace stats.
+// skill: design-experiment  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "help me write a test plan and hypothesis for a new checkout button", "expected_skill": "design-experiment"}
+{"intent": "pre-register this experiment with an OEC, guardrails, and an analysis plan", "expected_skill": "design-experiment"}
+{"intent": "what should we measure and what's a good hypothesis for this feature test?", "expected_skill": "design-experiment"}
+{"intent": "design and pre-register a standard product A/B test", "expected_skill": "design-experiment", "forbidden_skill": "experimentation:safe-experiment-design"}
+{"intent": "design a governed experiment with kill switches and an audit trail for a regulated flow", "expected_skill": "experimentation:safe-experiment-design", "forbidden_skill": "design-experiment"}

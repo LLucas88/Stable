@@ -1,0 +1,4 @@
+{"intent":"what data sources do we have for the renewal analysis?","expected_skill":"source-inventory"}
+{"intent":"catalog the relevant tables, dashboards, and notebooks for churn","expected_skill":"source-inventory"}
+{"intent":"build a source inventory before planning this analysis","expected_skill":"source-inventory"}
+

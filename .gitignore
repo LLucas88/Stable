@@ -38,3 +38,6 @@ team-p0a-qa.json
 # Local exported skills and user-specific installation state
 .local/
 .stable-ops-skills.json
+.stable-tencenthub-skills.json
+
+.stable-filtered-skills.json

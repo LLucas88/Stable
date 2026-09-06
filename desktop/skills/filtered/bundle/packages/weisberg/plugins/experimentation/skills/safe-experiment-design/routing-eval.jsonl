@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: safe-experiment-design  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "design a governed experiment with pre-registration and kill switches for a regulated customer journey", "expected_skill": "safe-experiment-design"}
+{"intent": "we're testing investor-facing content — set up risk tiers, guardrails, and an audit trail", "expected_skill": "safe-experiment-design"}
+{"intent": "plan a first safe experiment touching a high-trust financial services flow", "expected_skill": "safe-experiment-design"}
+{"intent": "design a compliance-constrained, pre-registered experiment for a regulated journey", "expected_skill": "safe-experiment-design", "forbidden_skill": "ab-testing:design-experiment"}
+{"intent": "write a standard A/B test plan with OEC and randomization for a website button", "expected_skill": "ab-testing:design-experiment", "forbidden_skill": "safe-experiment-design"}

@@ -1,0 +1,4 @@
+{"intent":"build a forecast scenario for next quarter revenue","expected_skill":"forecast-scenario"}
+{"intent":"what if churn improves by 10 percent? show upside and downside cases","expected_skill":"forecast-scenario"}
+{"intent":"review this capacity forecast and assumptions model","expected_skill":"forecast-scenario"}
+

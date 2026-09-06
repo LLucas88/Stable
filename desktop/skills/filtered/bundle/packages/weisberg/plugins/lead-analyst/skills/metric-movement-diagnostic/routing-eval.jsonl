@@ -1,0 +1,4 @@
+{"intent":"why did activation drop last week?","expected_skill":"metric-movement-diagnostic"}
+{"intent":"diagnose what drove the conversion rate increase","expected_skill":"metric-movement-diagnostic"}
+{"intent":"root cause this KPI movement and tell me where to look first","expected_skill":"metric-movement-diagnostic"}
+

@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: experiment-decision-review  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "the result is statistically significant but tiny — should we ship, kill, or iterate?", "expected_skill": "experiment-decision-review"}
+{"intent": "help me decide whether to extend, retest, or escalate this flat experiment", "expected_skill": "experiment-decision-review"}
+{"intent": "positive result but a guardrail regressed — what's the right ship decision?", "expected_skill": "experiment-decision-review"}
+{"intent": "recommend a ship/kill/iterate call from these results beyond just the p-value", "expected_skill": "experiment-decision-review", "forbidden_skill": "executive-evidence-brief"}
+{"intent": "is variant B statistically significant and what is the lift?", "expected_skill": "ab-testing:analyze-results", "forbidden_skill": "experiment-decision-review"}

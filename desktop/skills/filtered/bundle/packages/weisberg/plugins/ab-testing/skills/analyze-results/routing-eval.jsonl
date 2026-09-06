@@ -1,0 +1,7 @@
+// ab-testing plugin routing fixtures — hands-on experiment lifecycle (design, sizing, analysis, review, reporting). Cross-plugin cases separate it from experimentation governance and marketing-workspace stats.
+// skill: analyze-results  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "here's my variant / visitors / conversions table — is B significantly better?", "expected_skill": "analyze-results"}
+{"intent": "run the readout on this experiment CSV and give me the lift and CI", "expected_skill": "analyze-results"}
+{"intent": "did B win? I need effect size and any diagnostic flags", "expected_skill": "analyze-results"}
+{"intent": "analyze these A/B results with significance and confidence intervals", "expected_skill": "analyze-results", "forbidden_skill": "marketing-analytics:experimentation"}
+{"intent": "read this experiment with a sequential test and Bayesian rule on a ratio metric", "expected_skill": "advanced-experiment-analysis", "forbidden_skill": "analyze-results"}

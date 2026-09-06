@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: power-duration-planning  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "given our scarce traffic, is this test even feasible and what MDE is realistic?", "expected_skill": "power-duration-planning"}
+{"intent": "outcomes are delayed and stakeholders want to stop early — plan a defensible duration", "expected_skill": "power-duration-planning"}
+{"intent": "what low-velocity alternatives do we have when we can't reach power in 30 days?", "expected_skill": "power-duration-planning"}
+{"intent": "is this test feasible given our low traffic, and what MDE could we realistically detect?", "expected_skill": "power-duration-planning", "forbidden_skill": "ab-testing:sample-size"}
+{"intent": "how long should I run this test to detect a 2% lift?", "expected_skill": "ab-testing:sample-size", "forbidden_skill": "power-duration-planning"}

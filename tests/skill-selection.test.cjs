@@ -1,3 +1,4 @@
+const { manualSkillContext, explicitlyNamedSkill } = require('../desktop/services/skill-invocation.cjs')
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm')
@@ -54,20 +55,21 @@ test('real runAgent skill assembly never retrieves by relevance or infers a Skil
   // Execute the production resource-selection block, with the actual prompt composer.
   const source = main.slice(main.indexOf('  const history = historyOverride ||'), main.indexOf('  const capability = conversation?.capability'))
   const assemble = (id, context) => vm.runInNewContext(source + '\nresult = composeAgentPrompt({query,history,data,knowledge,skills,scripts})', {
-    store: env.store, conversationId: id, conversation: {}, query:'使用分析技能帮我研究', historyOverride: [], selectedContextOverride: context,
-    skillReferences, selectedSkillContext, composeAgentPrompt,
+    store: env.store, conversationId: id, conversation: {}, query:'使用分析技能帮我研究', historyOverride: [], selectedContextOverride: { manualSkillInvocation: true, ...context },
+    skillReferences, selectedSkillContext, composeAgentPrompt, manualSkillContext,
   })
   assert.doesNotMatch(assemble(env.id), /SKILL_ONE_SECRET_BODY|SKILL_TWO_SECRET_BODY/)
   saveSkillReferences(env.store, env.id, ['one'])
   assert.match(assemble(env.id), /SKILL_ONE_SECRET_BODY/)
   assert.doesNotMatch(assemble(env.id), /SKILL_TWO_SECRET_BODY/)
+  assert.doesNotMatch(assemble(env.id, {manualSkillInvocation:false}), /SKILL_ONE_SECRET_BODY|SKILL_TWO_SECRET_BODY/)
   assert.doesNotMatch(assemble(env.other), /SKILL_ONE_SECRET_BODY|SKILL_TWO_SECRET_BODY/)
   assert.doesNotMatch(assemble(env.id, {skills:[]}), /SKILL_ONE_SECRET_BODY/)
   saveSkillReferences(env.store, env.id, [])
   assert.doesNotMatch(assemble(env.id), /SKILL_ONE_SECRET_BODY/)
   const actionSource = main.slice(main.indexOf('  const workbenchAction ='), main.indexOf("  if (workbenchAction?.type === 'script')"))
   let offered
-  vm.runInNewContext(actionSource, { conversationId:env.id, query:'使用分析技能', store:env.store, requestedWorkbenchAction:(_query, resources)=>{offered=resources.skills} })
+  vm.runInNewContext(actionSource, { conversationId:env.id, query:'使用分析技能', store:env.store, explicitlyNamedSkill, requestedWorkbenchAction:(_query, resources)=>{offered=resources.skills} })
   assert.equal(offered.length, 0)
 })
 

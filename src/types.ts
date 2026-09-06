@@ -108,6 +108,7 @@ export interface ScriptLogEvent {
 }
 
 export interface SkillItem {
+  invocationMode?: 'manual'
   id: string
   name: string
   description: string

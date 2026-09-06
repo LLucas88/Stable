@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: data-extraction  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "pull my Google Ads export into the workspace and normalize it", "expected_skill": "data-extraction"}
+{"intent": "load this CSV into workspace/raw and clean it for analysis", "expected_skill": "data-extraction"}
+{"intent": "connect and refresh our campaign data source", "expected_skill": "data-extraction"}
+{"intent": "extract and normalize the raw platform exports into the workspace", "expected_skill": "data-extraction", "forbidden_skill": "marketing-analytics:reporting"}
+{"intent": "profile this new table for grain, null rates, and anomalies before I analyze it", "expected_skill": "lead-analyst:eda-profile", "forbidden_skill": "data-extraction"}

@@ -634,7 +634,7 @@ class StableStore {
   }
 
   listSkills() {
-    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().map((row) => ({ ...row, enabled: Boolean(row.enabled), createdAt: row.created_at }))
+    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().map((row) => ({ ...row, enabled: Boolean(row.enabled), invocationMode: 'manual', createdAt: row.created_at }))
   }
 
   upsertSkill(item) {
@@ -647,9 +647,12 @@ class StableStore {
 
   setSkillEnabled(id, enabled) { this.db.prepare('UPDATE skills SET enabled=?,updated_at=? WHERE id=?').run(enabled ? 1 : 0, new Date().toISOString(), id) }
   removeSkill(id) { this.db.prepare('DELETE FROM skills WHERE id=?').run(id) }
-  enabledSkillContent() { return this.db.prepare('SELECT name,content FROM skills WHERE enabled=1 ORDER BY created_at DESC').all() }
+  enabledSkillContent() { return [] } // No ambient skill content, including legacy callers.
 
-  retrieveSkills(query, limit = 4) {
+  retrieveSkills() { return [] }
+
+  // Explicit catalogue search only; results must not enter execution automatically.
+  searchSkills(query, limit = 4) {
     const terms = searchTerms(query)
     if (!terms.length) return []
     return this.db.prepare('SELECT name,description,content FROM skills WHERE enabled=1').all()

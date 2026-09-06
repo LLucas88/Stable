@@ -32,7 +32,7 @@ test('store persists resources, retrieval, workflow and messages', () => {
     assert.equal(store.removeKnowledge(knowledgeId).id, knowledgeId)
 
     const weeklySkillId = store.upsertSkill({ name: 'weekly-review', description: '会员周复盘', path: 'C:\\Stable\\skills\\weekly-review', content: '# 周复盘\n分析会员复购和第二单。' })
-    assert.equal(store.retrieveSkills('请使用 weekly-review skill')[0].name, 'weekly-review')
+    assert.equal(store.skillContent(weeklySkillId).name, 'weekly-review')
     store.setSkillEnabled(weeklySkillId, false)
     assert.equal(store.retrieveSkills('weekly-review').length, 0)
 

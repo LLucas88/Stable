@@ -1,0 +1,7 @@
+// ab-testing plugin routing fixtures — hands-on experiment lifecycle (design, sizing, analysis, review, reporting). Cross-plugin cases separate it from experimentation governance and marketing-workspace stats.
+// skill: review-experiment  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "review my bucketing and assignment code before we launch", "expected_skill": "review-experiment"}
+{"intent": "audit the feature-flag logic and exposure event logging for this test", "expected_skill": "review-experiment"}
+{"intent": "why might this experiment be showing SRM — check the implementation code", "expected_skill": "review-experiment"}
+{"intent": "code-review the experiment assignment and logging plumbing in this PR", "expected_skill": "review-experiment", "forbidden_skill": "experimentation:early-signal-monitoring"}
+{"intent": "monitor early SRM and exposure health during the first 48 hours of the run", "expected_skill": "experimentation:early-signal-monitoring", "forbidden_skill": "review-experiment"}

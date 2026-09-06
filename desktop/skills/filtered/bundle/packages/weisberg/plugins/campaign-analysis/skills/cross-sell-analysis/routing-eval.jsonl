@@ -1,0 +1,8 @@
+// campaign-analysis plugin routing fixtures — existing-customer campaign measurement. Cross-plugin cases separate campaign lift from generic experiment analysis.
+// skill: cross-sell-analysis  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "did our checking-to-savings campaign drive new account opens?", "expected_skill": "cross-sell-analysis"}
+{"intent": "measure the account open rate and funded balance from the credit-card cross-sell", "expected_skill": "cross-sell-analysis"}
+{"intent": "compare treated vs holdout on new-product conversion for existing customers", "expected_skill": "cross-sell-analysis"}
+{"intent": "what was the conversion rate on the add-a-product campaign to existing customers?", "expected_skill": "cross-sell-analysis", "forbidden_skill": "up-sell-analysis"}
+{"intent": "did the campaign move balances on existing accounts for treated clients?", "expected_skill": "up-sell-analysis", "forbidden_skill": "cross-sell-analysis"}
+{"intent": "analyze this website A/B experiment's conversion significance and lift", "expected_skill": "ab-testing:analyze-results", "forbidden_skill": "cross-sell-analysis"}

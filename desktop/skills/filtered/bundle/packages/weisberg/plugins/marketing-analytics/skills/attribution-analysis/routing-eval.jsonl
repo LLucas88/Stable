@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: attribution-analysis  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "build a marketing mix model to see which channels actually drive ROAS", "expected_skill": "attribution-analysis"}
+{"intent": "where should we shift budget across channels for the best return?", "expected_skill": "attribution-analysis"}
+{"intent": "estimate adstock and saturation curves for our media spend", "expected_skill": "attribution-analysis"}
+{"intent": "run an MMM and optimize budget allocation across our paid channels", "expected_skill": "attribution-analysis", "forbidden_skill": "experimentation:measurement-integration"}
+{"intent": "our MMM and a geo experiment disagree — reconcile them for the budget call", "expected_skill": "experimentation:measurement-integration", "forbidden_skill": "attribution-analysis"}

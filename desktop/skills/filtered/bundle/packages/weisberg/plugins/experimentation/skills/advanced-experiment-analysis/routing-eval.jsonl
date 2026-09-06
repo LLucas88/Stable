@@ -1,0 +1,7 @@
+// experimentation plugin routing fixtures — regulated / high-trust experimentation governance. Cross-plugin cases encode the Phase 2.1 ownership split (ab-testing = hands-on lifecycle; marketing-analytics/experimentation = scripted workspace stats).
+// skill: advanced-experiment-analysis  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "my simple two-proportion test isn't adequate — users are clustered and the metric is a ratio, how should I analyze it?", "expected_skill": "advanced-experiment-analysis"}
+{"intent": "should I apply a Bayesian decision rule or a sequential test to read this experiment?", "expected_skill": "advanced-experiment-analysis"}
+{"intent": "estimate heterogeneous treatment effects and build an uplift model from this experiment", "expected_skill": "advanced-experiment-analysis", "ambiguous_with": ["personalization-governance"]}
+{"intent": "this needs CATE and a bandit-vs-controlled tradeoff, not a plain significance readout", "expected_skill": "advanced-experiment-analysis", "forbidden_skill": "ab-testing:analyze-results"}
+{"intent": "just give me significance and confidence intervals for variant B", "expected_skill": "ab-testing:analyze-results", "forbidden_skill": "advanced-experiment-analysis"}

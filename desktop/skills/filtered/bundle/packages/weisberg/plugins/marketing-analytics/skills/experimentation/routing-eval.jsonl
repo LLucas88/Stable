@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: experimentation  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "run CUPED variance reduction on our workspace experiment data", "expected_skill": "marketing-analytics:experimentation"}
+{"intent": "check our marketing experiment for SRM and apply CUPED variance reduction", "expected_skill": "marketing-analytics:experimentation"}
+{"intent": "run a sequential split-test analysis with variance reduction on our marketing experiment", "expected_skill": "marketing-analytics:experimentation"}
+{"intent": "apply CUPED and an SRM check to the experiment pipeline in our workspace", "expected_skill": "marketing-analytics:experimentation", "forbidden_skill": "ab-testing:analyze-results"}
+{"intent": "advise whether to ship this experiment given a significant but small result", "expected_skill": "experimentation:experiment-decision-review", "forbidden_skill": "marketing-analytics:experimentation"}

@@ -1,0 +1,7 @@
+// marketing-analytics plugin routing fixtures. Cross-plugin cases separate scripted marketing-workspace work from lead-analyst diagnostics and experimentation governance.
+// skill: compliance-review  (>=3 positive, >=1 negative/forbidden, >=1 cross-plugin)
+{"intent": "check this ad copy for SEC and FINRA marketing-rule compliance", "expected_skill": "compliance-review"}
+{"intent": "does this performance claim need a past-performance disclaimer?", "expected_skill": "compliance-review"}
+{"intent": "review this investment advertisement for fair-and-balanced disclosures", "expected_skill": "compliance-review"}
+{"intent": "screen this customer-facing marketing content for regulatory disclosure issues", "expected_skill": "compliance-review", "forbidden_skill": "experimentation:compliance-trust-review"}
+{"intent": "review this experiment for conduct risk, fairness, and trust erosion", "expected_skill": "experimentation:compliance-trust-review", "forbidden_skill": "compliance-review"}

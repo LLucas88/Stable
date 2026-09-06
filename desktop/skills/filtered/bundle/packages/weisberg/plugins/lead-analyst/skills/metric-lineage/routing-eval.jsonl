@@ -1,0 +1,4 @@
+{"intent":"trace where this activation KPI comes from in the dashboard","expected_skill":"metric-lineage"}
+{"intent":"why do two reports disagree on conversion rate? map the metric lineage","expected_skill":"metric-lineage"}
+{"intent":"show source-to-dashboard lineage for weekly active accounts","expected_skill":"metric-lineage"}
+
