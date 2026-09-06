@@ -1,0 +1,1778 @@
+[
+  {
+    "file": "definitions/expert-wb-ContentCreator.json",
+    "sha256": "81059d7e007f10a44188cccbe7d29a68bb38726fcb578bd5c215b008b6eea526"
+  },
+  {
+    "file": "definitions/expert-wb-DataAnalyticsReporter.json",
+    "sha256": "c4bed8a624b2c7279b7112be20f7f6115a2a9f3d95519a456caf9534871ecf54"
+  },
+  {
+    "file": "definitions/expert-wb-ChinaEcommerceOperationsExpert.json",
+    "sha256": "ee1d0d259e52abcf37677bf608c4d67322fb967e3d22b7f620eb1b832cb6bb86"
+  },
+  {
+    "file": "definitions/expert-wb-DouyinStrategist.json",
+    "sha256": "f7002051acff4d64c132d88ba3da34e020cdabf55e12556fb6d3f6f2f0bd563d"
+  },
+  {
+    "file": "definitions/expert-wb-UiDesigner.json",
+    "sha256": "dffbee6c7c0e77382cec3f16e7018ea0bc046d332d3f5cb06c56fa3b758e8ef8"
+  },
+  {
+    "file": "definitions/expert-wb-SalesCoach.json",
+    "sha256": "3f1ece3e6d97f0224423813665bdd3de992500b20797a8407ecc0f576a3cdbde"
+  },
+  {
+    "file": "definitions/expert-wb-BrandGuardian.json",
+    "sha256": "818bdc546a8f1a2706f929444d94ad84f2541c30d1631f0b78d3f166131bd0ab"
+  },
+  {
+    "file": "definitions/expert-wb-XiaohongshuOperationsExpert.json",
+    "sha256": "56ce5c0d09089f51c1438a904d214890e10cced63cb0cdbd8305965a1eef238f"
+  },
+  {
+    "file": "definitions/expert-wb-RecruitmentExpert.json",
+    "sha256": "d9df37974df78531f55953b7e7fecba419799ddba9f3f797ff714c2bf088d01e"
+  },
+  {
+    "file": "definitions/expert-wb-GrowthHacker.json",
+    "sha256": "0c3a6f36461fe2bbbb4f96969aac8025871bb6586ff8f700530c65e6822fe59d"
+  },
+  {
+    "file": "definitions/expert-wb-AdCreativeStrategist.json",
+    "sha256": "26be5b4692dcfc020c4b2de10ca92acbe8742e1efdd02d1c1127f346d019e2d6"
+  },
+  {
+    "file": "definitions/expert-wb-LivestreamEcommerceCoach.json",
+    "sha256": "4eea86926a9d7337bc177f7ae6dc3dc828fbecf733558fbc317415c06d64a8cf"
+  },
+  {
+    "file": "definitions/expert-wb-ExecutiveSummaryGenerator.json",
+    "sha256": "9928842752274d60c3aeebb6380f6eaaa07aa3b79fd50f6b68f1064be7bacc69"
+  },
+  {
+    "file": "definitions/expert-wb-SocialMediaStrategist.json",
+    "sha256": "12c60343f20eb99c651d6d439759c82535bc199339a6e426eb3bda67ab63f781"
+  },
+  {
+    "file": "definitions/expert-wb-ShortVideoEditingCoach.json",
+    "sha256": "70e4382b641077fd6a05e03daec73845e57058dd90bd78e6e2cd13d63d2fb858"
+  },
+  {
+    "file": "definitions/expert-wb-SeniorProjectManager.json",
+    "sha256": "1f4142a8236cd7a32b001144ac0eeccd7a2f1c39d6c1bb1c30ff85134b48b410"
+  },
+  {
+    "file": "definitions/expert-wb-AiImagePromptEngineer.json",
+    "sha256": "f2e2404d0a6bfb6ddec075d689e66cbad39a8782e5aead8e71b8bd2da8875fec"
+  },
+  {
+    "file": "definitions/expert-wb-DocumentGenerationExpert.json",
+    "sha256": "0e32d77879ef9bd1ecd47e22c30abe63d27384867bea7dda1162c515c468f801"
+  },
+  {
+    "file": "definitions/expert-wb-SeoExpert.json",
+    "sha256": "311282568e0c9147d7f5c9f6710b1b7b169023702cc28a37ddcf9fc4d455b2cd"
+  },
+  {
+    "file": "definitions/expert-wb-WechatOfficialAccountExpert.json",
+    "sha256": "ee8d012624cf486a8190a7b2f5d028763bcc898117b8e86de132761ac5fc10f2"
+  },
+  {
+    "file": "definitions/expert-wb-CrossBorderEcommerceExpert.json",
+    "sha256": "a8677ea7ede6b2a7174837871ed2c6d6b83a2f82b913402cd516c3d6252d9a2b"
+  },
+  {
+    "file": "definitions/expert-wb-PrivateDomainOperationsExpert.json",
+    "sha256": "0408e92b63e244678d1b063afe0543f91fdd1bae2e3976c2cfe2a6cc312f386f"
+  },
+  {
+    "file": "definitions/expert-wb-CustomerSupportExpert.json",
+    "sha256": "189bfbfc0f7520027793712c0728e6e66099c738aeccb7cc9440bea5b6f9261b"
+  },
+  {
+    "file": "definitions/expert-wb-FinancialTracker.json",
+    "sha256": "b6699c807cf29a40f316355144ff425ae7bd3e69bd1302a5731b017488554f5b"
+  },
+  {
+    "file": "definitions/expert-wb-ProposalStrategist.json",
+    "sha256": "f46e3b8c1c2113751947ef8e2ee2d7d2b331b8b681a8ca5cddefb01aca6607c6"
+  },
+  {
+    "file": "definitions/expert-wb-UserExperienceArchitect.json",
+    "sha256": "8540a9f80da378a5f4e6fc2c31c794fc7e6785bc1b34666b84d48fc8f9378371"
+  },
+  {
+    "file": "definitions/expert-wb-TrendResearcher.json",
+    "sha256": "f5398dc1dc26f98a9b44e00d3e7d5c02ae13b81a258d1f717c887238b8981f54"
+  },
+  {
+    "file": "definitions/expert-wb-CorporateTrainingDesigner.json",
+    "sha256": "b6bf0e63a43bc6a4e5b50a631318447a924ffbdded0301eb3d8318693a8f72b5"
+  },
+  {
+    "file": "definitions/expert-wb-BilibiliContentStrategist.json",
+    "sha256": "47bfc4c85c473914e7d7f96acfa931b1161a1d6e403f96c4c41f9682976e693c"
+  },
+  {
+    "file": "definitions/expert-wb-VisualStorytellingExpert.json",
+    "sha256": "5e2b5f9c882eaafefac8ae271e4bae172b0b9722d8d255d73a7824b6ca7e8c59"
+  },
+  {
+    "file": "definitions/expert-wb-WorkflowOptimizationExpert.json",
+    "sha256": "fc840d24cd336f8cd566d461871e471dda8223fc507fc6e291b53adf33e20ab2"
+  },
+  {
+    "file": "definitions/expert-wb-UserExperienceResearcher.json",
+    "sha256": "a277fcf6d55bb6af7677248a3a3292467b979e2cdef154794f0440e9b21c3f57"
+  },
+  {
+    "file": "definitions/expert-wb-BaiduSeoExpert.json",
+    "sha256": "099d471ffdb263a6eaf75ab01c169793ed3c57ec94f4ef6c209553352150dd78"
+  },
+  {
+    "file": "definitions/expert-wb-PpcBiddingStrategist.json",
+    "sha256": "7a933f196bc1b9faabcb6f41cc9d9d4ae126dff2fdb7e08f1aba9db56f7e708f"
+  },
+  {
+    "file": "definitions/expert-wb-TikTokStrategist.json",
+    "sha256": "3b239dab996506e7b585afafcfb6b8ada3208aac674892b8110ba511607b0e4d"
+  },
+  {
+    "file": "definitions/expert-wb-LegalComplianceReviewer.json",
+    "sha256": "382a101b81c40bd69e6f1afb19631df5be276a13853ac3074deb91f12a047648"
+  },
+  {
+    "file": "definitions/expert-wb-TencentCharityExpert.json",
+    "sha256": "9611612250e800b340cd2ad0d0567478be79deea64064da44a29329cd74034df"
+  },
+  {
+    "file": "definitions/expert-wb-StudyAbroadConsultant.json",
+    "sha256": "e10e4a51ff2f9851e645a1091a6d8b5fdaedb1c23a58a9c9a345d7d1e53f2f15"
+  },
+  {
+    "file": "definitions/expert-wb-MultiCloudManagementExpert.json",
+    "sha256": "1241b4070d61f210dae3387e2d9f1e00af4cc968f3c9aaa47e3e5778e6b62eff"
+  },
+  {
+    "file": "definitions/expert-wb-CloudOpsTeam.json",
+    "sha256": "69e40306af647492287083d708cbea87ad424a0179befd6299a4e98264fdff4c"
+  },
+  {
+    "file": "definitions/expert-wb-AndonQExpert.json",
+    "sha256": "1e5185d4383cf70751a57f4685bcbc9e6fe6e7aeb5d436ac69f93495b4557529"
+  },
+  {
+    "file": "definitions/expert-wb-TencentSecurityExpert.json",
+    "sha256": "dae38573d9f1f1305b5b63279b333ba21cf4d8e1c44e0aad580136ddf2bfba85"
+  },
+  {
+    "file": "definitions/expert-wb-AiEngineer.json",
+    "sha256": "3e6ae9b7e5b62b2224e103a5861d2e7f3e96480cc89508918755ff3fa64a3015"
+  },
+  {
+    "file": "definitions/expert-wb-SeniorDeveloper.json",
+    "sha256": "6e8a5ce81c92fb0594ef29fb7f438f431b727b971e64be3315cf1e6714659cc7"
+  },
+  {
+    "file": "definitions/expert-wb-FrontendDeveloper.json",
+    "sha256": "60bd773948452e2b71adb5c14fadbb8a6f8f93b52d8f4391309ec1f83d143804"
+  },
+  {
+    "file": "definitions/expert-wb-BackendArchitect.json",
+    "sha256": "e161ab09283782c101a2522314eb456423b92dd58faad7864aa8bf29ccd6e281"
+  },
+  {
+    "file": "definitions/expert-wb-SoftwareArchitect.json",
+    "sha256": "2f8246c81d3c01eac74684ca3eeb2ce87b320abb1b5e4fee71c9e62a0848f758"
+  },
+  {
+    "file": "definitions/expert-wb-MobileApplicationDeveloper.json",
+    "sha256": "9e7978a0432313519365d3cbdfc4122bd9185465c8c0f88a6b21de87e7751500"
+  },
+  {
+    "file": "definitions/expert-wb-WeChatMiniProgramDeveloper.json",
+    "sha256": "78c28c596f65bf72c1f9c9d9086bf3ec65aabf1507a1acb16fad8ef9d2d41cd5"
+  },
+  {
+    "file": "definitions/expert-wb-CodeReviewExpert.json",
+    "sha256": "4d4f503590ce81a032c4b654b489a17933022925ab46aa59ab4352bc70f806dc"
+  },
+  {
+    "file": "definitions/expert-wb-SecurityEngineer.json",
+    "sha256": "b2abc0c0e444bfee5f84e28c0ea23d211e87404a606f14904c0e1daffc0c8181"
+  },
+  {
+    "file": "definitions/expert-wb-DevOpsAutomationEngineer.json",
+    "sha256": "506f82ce5697e8dacb2a65efe7b8be555d5768d79f11c90fd3921f34591e55b3"
+  },
+  {
+    "file": "definitions/expert-wb-TechnicalDocumentationEngineer.json",
+    "sha256": "48737fbd2ed4b855a930a7ac99554e0660ecb1e7fbf27a868620bc1462a9a078"
+  },
+  {
+    "file": "definitions/expert-wb-DatabaseOptimizationExpert.json",
+    "sha256": "211ee3fdcb60e39ca62f2f8183229b82592f2ccd0d4a786725a87c889e988dd7"
+  },
+  {
+    "file": "definitions/expert-wb-DataEngineer.json",
+    "sha256": "2ad8865d15ea7abab34f1570b10627d5287895839f50822c130d4f0ce40fbe8d"
+  },
+  {
+    "file": "definitions/expert-wb-RapidPrototypingEngineer.json",
+    "sha256": "fd9716b6a6b5b0c0e18486a5dd045a30e803c5ab8284f87bf55435c6119a8245"
+  },
+  {
+    "file": "definitions/expert-wb-GitWorkflowExpert.json",
+    "sha256": "c22d8a4acac54397022bbb3d68bdbddf1b1f8ac82b8ea8f21ac9645908b994c5"
+  },
+  {
+    "file": "definitions/expert-wb-LinkedInContentCreator.json",
+    "sha256": "0594b1ea30a777cb88380d61ddca4d0fc8cfd82b6894ebb03d7d1c1a32fc9bd5"
+  },
+  {
+    "file": "definitions/expert-wb-WeiboStrategist.json",
+    "sha256": "7e27d5f39e3a824c1704614f23b1967f5902812ef796536cedbd9f4eddd5d65b"
+  },
+  {
+    "file": "definitions/expert-wb-InstagramOperationsExpert.json",
+    "sha256": "dc3cd1864836f3a5118b2dc0e66e97beacdb4dbe79abf2495525b33a1ef15e46"
+  },
+  {
+    "file": "definitions/expert-wb-TwitterOperationsExpert.json",
+    "sha256": "a0d8a9af9af5a4b155ed87dae975ab443682ee6a2ab42e0de8e4a62fd1f25e10"
+  },
+  {
+    "file": "definitions/expert-wb-SocialAdStrategist.json",
+    "sha256": "594415d41636b744955072893ebc847234079b16f9f83a223ee02ae3370defb2"
+  },
+  {
+    "file": "definitions/expert-wb-CarouselContentGrowthExpert.json",
+    "sha256": "beb5f4c255939c5ec6a597969a2deda105d18020f1647475829250d00c5c8c20"
+  },
+  {
+    "file": "definitions/expert-wb-AppStoreOptimizationExpert.json",
+    "sha256": "f35e09b35ef5f541616749b6bba5249c3af1d09f6bfed1c54ea8a0057d47a81d"
+  },
+  {
+    "file": "definitions/expert-wb-BookCoCreator.json",
+    "sha256": "2cd8e55f830616953547f51915dbb1d9573c6aba517acafcde5ee4f72d7c8b99"
+  },
+  {
+    "file": "definitions/expert-wb-AgentOrchestrator.json",
+    "sha256": "ae536ae2b27f5f819f4f596dd560693e1d13848522ffac844085e820a8d164c5"
+  },
+  {
+    "file": "definitions/expert-wb-EnterpriseAccountStrategist.json",
+    "sha256": "428150d5182418b0f48ef63267dcf9e37c5a1b1f4684af7c2395a7776eb368a9"
+  },
+  {
+    "file": "definitions/expert-wb-DealStrategist.json",
+    "sha256": "0264db2048eeca73ad49b5b4fc6b77462c9b3a5fd497685134e12e681effaeb8"
+  },
+  {
+    "file": "definitions/expert-wb-PresalesTechnicalConsultant.json",
+    "sha256": "321c88fc993e35636c4cf68c080f6b172ef13173f51f16b3241ae38389a2b094"
+  },
+  {
+    "file": "definitions/expert-wb-SalesPipelineAnalyst.json",
+    "sha256": "e72dc3e55d2f90b084eea1d791d62e0df245999dda12231862244d831da39394"
+  },
+  {
+    "file": "definitions/expert-wb-DiscoveryCoach.json",
+    "sha256": "2c2ed0685c20264707ffb75ba9a6008db3e41f68ec53cce39b458176635f0ee2"
+  },
+  {
+    "file": "definitions/expert-wb-OutboundStrategist.json",
+    "sha256": "faa4c9961d5c3c337851aa4512a1175e8a607ba705f1a69235b4f0d7e4185670"
+  },
+  {
+    "file": "definitions/expert-wb-SprintPriorityManager.json",
+    "sha256": "3ec9cdcbc09fdd349fd84ffe7be7d2b89ec5efa9bfb4340c82503d57140688e5"
+  },
+  {
+    "file": "definitions/expert-wb-FeedbackSynthesisAnalyst.json",
+    "sha256": "adfefc4fe3af2c62a7d17e7426a8b5824bf10564adbf1588e7d4c609fa00c57d"
+  },
+  {
+    "file": "definitions/expert-wb-PodcastStrategist.json",
+    "sha256": "cf329db9f8a2ff1effd9cd1c607422ac5508368e4823b71dc6dff0ade4f457a0"
+  },
+  {
+    "file": "definitions/expert-wb-ZhihuStrategist.json",
+    "sha256": "14c7bd2d5ff648e8e244b22744e95761630e3f3ce9e3b05b152babcbf602d9d6"
+  },
+  {
+    "file": "definitions/expert-wb-KuaishouStrategist.json",
+    "sha256": "2ae78116cb3b838989b9f129b17e3229b720b0f8b0b2aa23e321a73b115d0dae"
+  },
+  {
+    "file": "definitions/expert-wb-RedditCommunityBuilder.json",
+    "sha256": "1ab9a4a923cfae1ccda0ac90ea4252bbb426153708877193bc3b17618c122fc5"
+  },
+  {
+    "file": "definitions/expert-wb-PaidMediaAuditor.json",
+    "sha256": "4059fa7abc20189ca7bb283de676bb15c5a3d5e1023d85bb13e9759724f33f93"
+  },
+  {
+    "file": "definitions/expert-wb-AdTrackingExpert.json",
+    "sha256": "f78175cfbad1c750ce83236790b5877cdf9ab8ca2eccb9e1b9f3813390bd157b"
+  },
+  {
+    "file": "definitions/expert-wb-SearchTermAnalyst.json",
+    "sha256": "b98731fc5abc1ff564d9b59b901722bc276b89aefae86955efa0f268a685cac4"
+  },
+  {
+    "file": "definitions/expert-wb-ProgrammaticAdBuyer.json",
+    "sha256": "ef2b45f98eeae5c72aaa9b7746112bf0ee8bf681f296f8d9d5bcff78438762eb"
+  },
+  {
+    "file": "definitions/expert-wb-SiteReliabilityEngineer.json",
+    "sha256": "334383db1572545cee3af689386eceb4c160e523e5afe047f9fb9babd7e2602b"
+  },
+  {
+    "file": "definitions/expert-wb-PerformanceTestingExpert.json",
+    "sha256": "2cf293ade42bef065c0d4b874365b120711c883069ccd24e6c8b8d3a4bb94d82"
+  },
+  {
+    "file": "definitions/expert-wb-ApiTestingExpert.json",
+    "sha256": "458286575d9411fcda7671988c8d1317e5cf0947385e468395dce60d661e4d92"
+  },
+  {
+    "file": "definitions/expert-wb-IncidentResponseCommander.json",
+    "sha256": "91d21f2ff44d912babb57f8e166f5d00cdffda9840150abea286e20b47cd6361"
+  },
+  {
+    "file": "definitions/expert-wb-InfrastructureOperationsExpert.json",
+    "sha256": "66d24eb437fd11b19d57e48e6fa483cae52327c2dbbae0612b687665d9faea8d"
+  },
+  {
+    "file": "definitions/expert-wb-JiraWorkflowAdmin.json",
+    "sha256": "75544e21cb4b62f85d0d3c1cd1e747da627a09eda993aa41338a3e145c172030"
+  },
+  {
+    "file": "definitions/expert-wb-ProjectShepherd.json",
+    "sha256": "875ec16e6615f8d4ffd023ee4fa36b2c6fe66c9a0816d3ae97e68c7880292cb8"
+  },
+  {
+    "file": "definitions/expert-wb-StudioOperationsManager.json",
+    "sha256": "3d915a74a465a760f5dcb419f70828f9eb374a042f9c8172ef5e7c14f85b8596"
+  },
+  {
+    "file": "definitions/expert-wb-StudioProducer.json",
+    "sha256": "ccffd9240df8f0a60a8e609e8c66b7712c8978d4d3cc184663c051628c5728d7"
+  },
+  {
+    "file": "definitions/expert-wb-ComplianceAuditor.json",
+    "sha256": "c17505c7a737e6e085b7a6c1f456e68bd4642fcabf66527be5f0ab6a3ea5e92c"
+  },
+  {
+    "file": "definitions/expert-wb-ToolEvaluationExpert.json",
+    "sha256": "f3f49344e7cd1228d762ae232cb0a347e12d860eabf040d8a27ce0731f64ed0e"
+  },
+  {
+    "file": "definitions/expert-wb-TestResultsAnalyst.json",
+    "sha256": "b99295a7e04fbc8b7d7cf4e58bce39d7129f57b31fccc1001bbad104b7181664"
+  },
+  {
+    "file": "definitions/expert-wb-DeveloperEvangelist.json",
+    "sha256": "6770122e26797b1b9a0150bacc186f6bc2fba7d5abf7e648521b6c19fde90a80"
+  },
+  {
+    "file": "definitions/expert-wb-McpBuildExpert.json",
+    "sha256": "b1082f057aeb028c5fc9048712760bdf19219bbd4c1bbc87d89a909ea56cae8b"
+  },
+  {
+    "file": "definitions/expert-wb-SupplyChainStrategist.json",
+    "sha256": "d9f82da4f59ec60fd5e73bdb820e8f6ebf9431234ea6ac559b0be62c7c6579fc"
+  },
+  {
+    "file": "definitions/expert-wb-GameDesigner.json",
+    "sha256": "84cb1f81af23eb3b22b721313b4f940549b1a620514e97dac6db458232c3ef80"
+  },
+  {
+    "file": "definitions/expert-wb-ExperimentTrackingManager.json",
+    "sha256": "f631c3ef79a65e79887d86c589354a72e698897daa04a66013b918c06d14d7e1"
+  },
+  {
+    "file": "definitions/expert-wb-DelightfulExperienceDesigner.json",
+    "sha256": "ba1697bb1fa08e28f29805c5fdc9da44894238d49f5aa9e35ca29ec823205726"
+  },
+  {
+    "file": "definitions/expert-wb-BehavioralNudgeEngine.json",
+    "sha256": "d737a2934c3b4e9dec1b8d06694af283b07bfef665124a39883d9c7131eb0785"
+  },
+  {
+    "file": "definitions/expert-wb-DataIntegrationAgent.json",
+    "sha256": "a8f7265edf75a84808d0808ffa6e24d8686ae8714a81ca3a1d0dbb5765a27282"
+  },
+  {
+    "file": "definitions/expert-wb-AccountsPayableAgent.json",
+    "sha256": "5b76973c8da2cbaebde789f06ea927b1cbea35b966bb388d23e2d2e282861202"
+  },
+  {
+    "file": "definitions/expert-wb-SalesDataExtractionAgent.json",
+    "sha256": "d14c3a8ef15a6485f08bf66701be3b9a1a40124b26aa5522525bbd52a553d694"
+  },
+  {
+    "file": "definitions/expert-wb-CulturalIntelligenceStrategist.json",
+    "sha256": "28df5db4dc23b08df037a57a866dd9feac2a3660aad45c12022d862878ca323f"
+  },
+  {
+    "file": "definitions/expert-wb-GovernmentDigitalPresalesConsultant.json",
+    "sha256": "07a448f64e6bddbe58141495ad7153b37999d106653ee5c3d192a60729d26ef1"
+  },
+  {
+    "file": "definitions/expert-wb-HealthcareMarketingComplianceExpert.json",
+    "sha256": "ea843b91178d2a30b875ca3df34837b28022e46f199fbf43d996b16cf38d3a80"
+  },
+  {
+    "file": "definitions/expert-wb-AutonomousOptimizationArchitect.json",
+    "sha256": "4ce83cce4ea52666157bfb08cfbe268b9abb5278ae7fb3962bfa171d6ca73054"
+  },
+  {
+    "file": "definitions/expert-wb-IdentityGraphOperator.json",
+    "sha256": "529f352a792a4d404ce1679d114354948272bdb91a054d5398af506031813b88"
+  },
+  {
+    "file": "definitions/expert-wb-ModelQualityAssuranceExpert.json",
+    "sha256": "062c7eea42a4e6337669877de28807818e044afb4f94ecfce8c94f099108a910"
+  },
+  {
+    "file": "definitions/expert-wb-ThreatDetectionEngineer.json",
+    "sha256": "c14138ac8c5ed8328c8537851e0d5abc1d89edbdeab4dc5d0e050a2caf56c97a"
+  },
+  {
+    "file": "definitions/expert-wb-EmbeddedFirmwareEngineer.json",
+    "sha256": "f73822697f317e3599ce08c72371b79a72634226375596e30c64e7b7693f2017"
+  },
+  {
+    "file": "definitions/expert-wb-LspIndexEngineer.json",
+    "sha256": "2e6e7d6f8891ef7b6812d270ba28deb377b8ac627d76d58522e2f282048eface"
+  },
+  {
+    "file": "definitions/expert-wb-SoliditySmartContractEngineer.json",
+    "sha256": "0d922b12db25024f7e97f879176c78b7150e98833f379edd24ec864de5425db9"
+  },
+  {
+    "file": "definitions/expert-wb-BlockchainSecurityAuditor.json",
+    "sha256": "461d071a264a6439fd21ac54de946dee6be8cf542f508c74c53cc0cd65d33388"
+  },
+  {
+    "file": "definitions/expert-wb-AgentIdentityTrustExpert.json",
+    "sha256": "92c7da1c711cc3f25c1ff591c66134146ec4292393e8497e40708f5d748b3264"
+  },
+  {
+    "file": "definitions/expert-wb-ZeroKnowledgeProofAdmin.json",
+    "sha256": "953e5e32e7df605b26a6b89ff480d2e509d2fef043b264d73ce721b6236238a6"
+  },
+  {
+    "file": "definitions/expert-wb-DiversityVisualExpert.json",
+    "sha256": "b5d921c03a3fa7459bdec85d8f101f80e8052137d0564649e323a10d5e277c74"
+  },
+  {
+    "file": "definitions/expert-wb-AdortDesignExpert.json",
+    "sha256": "21351f1b2112cac89177a0c3c254b1b385f155af6cf40c69816ba37f441cfcba"
+  },
+  {
+    "file": "definitions/expert-wb-TechnicalArtist.json",
+    "sha256": "4917f9b1c90bd72ccd0454dc623e05c7fb9c9a4b8f1c2af9f71b10d26d6820ca"
+  },
+  {
+    "file": "definitions/expert-wb-NarrativeDesigner.json",
+    "sha256": "fc476de1d4d373468e5ff67b84d0de6cd3bdef251893d7fbcc0da652e79bd66f"
+  },
+  {
+    "file": "definitions/expert-wb-LevelDesigner.json",
+    "sha256": "6fd758214a6702e8df1004febc6c8f68ee20d48447da801afd83cabec90404ff"
+  },
+  {
+    "file": "definitions/expert-wb-GameAudioEngineer.json",
+    "sha256": "c62288444af80f73799f58382e50c2964d0219a148bf3ca51a9b6423b5527c9d"
+  },
+  {
+    "file": "definitions/expert-wb-AccessibilityAuditor.json",
+    "sha256": "24f72ec483efe195b8bb956fd7d40461e76a7743a7a4bcc72ad79c2e66946f52"
+  },
+  {
+    "file": "definitions/expert-wb-EvidenceCollector.json",
+    "sha256": "ba85b4924c90d576a088ecd0d8a24b66f5cc7f9335fdba1281026c0bb7f15fcf"
+  },
+  {
+    "file": "definitions/expert-wb-UnityArchitect.json",
+    "sha256": "44321e603d0cf24afc6dffdcbdb206d8861716feffa0aff4db4a925c994ccf15"
+  },
+  {
+    "file": "definitions/expert-wb-UnrealSystemEngineer.json",
+    "sha256": "254aa1dce2dfb487be995bcb2d9cffe47a6abc415b45cbfa7a1b3716d58abf71"
+  },
+  {
+    "file": "definitions/expert-wb-UnrealWorldBuilder.json",
+    "sha256": "e4d7ec0969397eaa8d325be25044b8814020b32ae85879031ae322b411b9e86d"
+  },
+  {
+    "file": "definitions/expert-wb-UnrealMultiplayerArchitect.json",
+    "sha256": "adff1a7849b46d35703bed7c7d8cd2bc0adedb8b54bdbce32c7175cc6e0c9464"
+  },
+  {
+    "file": "definitions/expert-wb-UnrealTechnicalArtist.json",
+    "sha256": "862b51beb919fa707c04676fccc5ac2121c5341f716fc03c03a3d168692d90b1"
+  },
+  {
+    "file": "definitions/expert-wb-UnityMultiplayerEngineer.json",
+    "sha256": "5cb55ae5139fae474291dd1549dfbf652e251cae661e8d89497eee7cfa33fda2"
+  },
+  {
+    "file": "definitions/expert-wb-UnityShaderGraphArtist.json",
+    "sha256": "6e4b5d7fe525baa0627b8bacb16849a3c5cb29cea89a6f5eecc6962856d15ad9"
+  },
+  {
+    "file": "definitions/expert-wb-UnityEditorToolDeveloper.json",
+    "sha256": "dea2d48e06cf21a86b63fd3f32d77a9ff99cd0b5f289de39fbdf4495bf6afcb5"
+  },
+  {
+    "file": "definitions/expert-wb-GodotGameScriptEngineer.json",
+    "sha256": "396fa9a8609e9b0fdcb04faa0bcab0c5fcda217618a6343f3bf5698276d6bca0"
+  },
+  {
+    "file": "definitions/expert-wb-GodotMultiplayerEngineer.json",
+    "sha256": "5ee9366bc990239b272246f60c5aecf29016b3e9dd059591407e44053db602fb"
+  },
+  {
+    "file": "definitions/expert-wb-GodotShaderDeveloper.json",
+    "sha256": "1c6d02deb32eb70e44f63d818afcae9b529a5684f4aeaa2a1aa12fdaf11a183f"
+  },
+  {
+    "file": "definitions/expert-wb-RobloxExperienceDesigner.json",
+    "sha256": "ec657d082f572390a9fdebc368facd4ad8d1f530dad98ffd24c6b401ee75bbc2"
+  },
+  {
+    "file": "definitions/expert-wb-RobloxSystemScriptEngineer.json",
+    "sha256": "9e77bc86d890ee4f3b5d6e531b5ab3e6975f02750f8a9f8ebe0b6034a73ef7c3"
+  },
+  {
+    "file": "definitions/expert-wb-RobloxAvatarCreator.json",
+    "sha256": "50e6e4dc7e4d6833d9dee7b5cf5a3257e4a4c7f81e61b9e80eb44dbd63060677"
+  },
+  {
+    "file": "definitions/expert-wb-VisionOsSpatialEngineer.json",
+    "sha256": "59ff0ccaf622b570981c691cac4c55a65cebb86e867f969cb1b422d4c7e76654"
+  },
+  {
+    "file": "definitions/expert-wb-MacOsSpatialMetalEngineer.json",
+    "sha256": "206a9993ada37956d0ed595d08b6424fc2170f58ab44a78e7d0b3e86f51caf4d"
+  },
+  {
+    "file": "definitions/expert-wb-XrImmersiveDeveloper.json",
+    "sha256": "73d6f0bcd6f14e798237ff5faab910e9e78b6cd864097ce1ff1b926efb6a5439"
+  },
+  {
+    "file": "definitions/expert-wb-XrInterfaceArchitect.json",
+    "sha256": "4bd58a1edbcf6662927790b95ef5e0a26d354e644da2826b6535d02c4d383228"
+  },
+  {
+    "file": "definitions/expert-wb-XrCockpitInteractionExpert.json",
+    "sha256": "5488c9ce01d1be37a32a8e435a1428376933066dfd45d2bf9e544d021cdc89b7"
+  },
+  {
+    "file": "definitions/expert-wb-TerminalIntegrationExpert.json",
+    "sha256": "2274a2af1096e374dc6b696fc8f3b95a20f0be937030cfa467c10ab3cbf034b1"
+  },
+  {
+    "file": "definitions/expert-wb-RealityChecker.json",
+    "sha256": "9b90956e5b1964c28ed25969fdb1559fe1d40d3c265542549ddfa8c914132b0a"
+  },
+  {
+    "file": "definitions/expert-wb-LlmWiki.json",
+    "sha256": "26da04c78e94eed353c6da13d57452745d68e5947fa3930ebcdf49eaaf63b18c"
+  },
+  {
+    "file": "definitions/expert-wb-SoftwareCompany.json",
+    "sha256": "815bb0e252001047f4ffa5ca4ea319967a1ecdd2c643d79dc79942e04876644c"
+  },
+  {
+    "file": "definitions/expert-wb-DesignMdArchitect.json",
+    "sha256": "22733df8c3bd94331ea0b05309425714e3915ad2b056217f80d617f398a27fb3"
+  },
+  {
+    "file": "definitions/expert-wb-TradingAgentTeam.json",
+    "sha256": "268a308fa1947fa3d50d6a6f8868fa9f014b2cd8ca718a1b2f2df2ddd3698f7b"
+  },
+  {
+    "file": "definitions/expert-wb-DeepResearchExpert.json",
+    "sha256": "6336e9e8804f7719b1d9b3118a4b5678f722b9d82883e1b22b192190516fb32c"
+  },
+  {
+    "file": "definitions/expert-wb-CATNetworkQualityAnalyst.json",
+    "sha256": "c2895f11f2c726c83f73d35cdba6bc060993b4e7e6f9cbd53556e77d8195ce80"
+  },
+  {
+    "file": "definitions/expert-wb-PrivateDomainMarketingExpert.json",
+    "sha256": "b0656f9191c434c008bf0b0046343b25ff7522fbb3e3dc85ff77c22968c7d8bd"
+  },
+  {
+    "file": "definitions/expert-wb-APMPerformanceExpert.json",
+    "sha256": "0adb40a72a281a8c2648b04f880f2b6ecf37bcdf9d7863abd602628e03097e4e"
+  },
+  {
+    "file": "definitions/expert-wb-MarketingCampaignExpert.json",
+    "sha256": "e423bc4f0fdd830ac58ff801205e506541d3e8be2eb9e9163464cbdcfc0af3df"
+  },
+  {
+    "file": "definitions/expert-wb-ProductManagementExpert.json",
+    "sha256": "3fcab35c890cb74853a251ceae8c14300fa3b585582815f84a855983fb461f60"
+  },
+  {
+    "file": "definitions/expert-wb-DesignToCodeExpert.json",
+    "sha256": "2320e1e93b83ba8ea4bb57e8d0a68dd123c6d9637a14af49d2badaa634cde11a"
+  },
+  {
+    "file": "definitions/expert-wb-DataAnalysisExpert.json",
+    "sha256": "9e7590addd0aac31f8556f65c8dbb3263c39ead2970c6969ef57ff7465b077c0"
+  },
+  {
+    "file": "definitions/expert-wb-DataExplorationExpert.json",
+    "sha256": "b924f78e0ca3b339754dc00df9d51279ecafa3d69e13e217fa379a2be207404e"
+  },
+  {
+    "file": "definitions/expert-wb-FinanceAccountingExpert.json",
+    "sha256": "860e4ed4ff34cf766e124e008787813f56588e630db51af71d8552f2a576a913"
+  },
+  {
+    "file": "definitions/expert-wb-FinancialModelingExpert.json",
+    "sha256": "f5a0b1b922bb0aa4eaf244e48c4afed09580854ece19bab8adde81f5bd0f98ca"
+  },
+  {
+    "file": "definitions/expert-wb-EquityResearchExpert.json",
+    "sha256": "a98ff6a87478db2199450c572863de3ced9078e81e90c0ca635ffddb8cbb3bf3"
+  },
+  {
+    "file": "definitions/expert-wb-InvestmentBankingExpert.json",
+    "sha256": "26943bcbb10da88a7934109e43210e28bb7afa4b727447525e6bd2cd72d6e824"
+  },
+  {
+    "file": "definitions/expert-wb-PrivateEquityExpert.json",
+    "sha256": "5ae1eefa3bef1b7429e0b7414eae60306450cae05d9484e5a4f34cf8ee7a5ee8"
+  },
+  {
+    "file": "definitions/expert-wb-WealthManagementExpert.json",
+    "sha256": "8438e55c44aef6b3216a37af8bcb5fa6787fbf5f9fcd2e1e7ffcc20054200dd4"
+  },
+  {
+    "file": "definitions/expert-wb-DocumentProcessingExpert.json",
+    "sha256": "cdd792c9f7b2c052cd61ecaaaa61b8de3cee44a5fbee326dec94c1a6576a3b2d"
+  },
+  {
+    "file": "definitions/expert-wb-PptCreationExpert.json",
+    "sha256": "da1c8b9ef261dfeeb289e24eecd7a156753713c31f1ddb625048fef97744ce06"
+  },
+  {
+    "file": "definitions/expert-wb-ModernWebappExpert.json",
+    "sha256": "a2f0e2ef7cf936067e25d18bd7351f45537ccd65459cb1f3c12bd92756283c5a"
+  },
+  {
+    "file": "definitions/expert-wb-FinanceDataExpert.json",
+    "sha256": "169c904226ad117b6034a2c60071793d2e7586b0272aa0cdb53d8584283797a0"
+  },
+  {
+    "file": "definitions/expert-wb-DockerfileGenExpert.json",
+    "sha256": "1ea2a6e60dc42d3c6339bd7d9ce57bced52900327469061a3b207783991aa588"
+  },
+  {
+    "file": "definitions/expert-wb-WebappTestingExpert.json",
+    "sha256": "3aef81624e6f91d33fe81bdf5c7a4a119c123e01544b07287e5621610d2f7245"
+  },
+  {
+    "file": "definitions/expert-wb-InternalCommsExpert.json",
+    "sha256": "bdea7932eee0a2ddd1cb99483bc37dcf370d583eac2fb6708bf5041857cf4941"
+  },
+  {
+    "file": "definitions/expert-wb-RemotionVideoExpert.json",
+    "sha256": "622495e8ca5b32a1bd758e12327b1504e6809bc1559b1dd942a429be92b5b38d"
+  },
+  {
+    "file": "definitions/expert-wb-OpenSpecDocTeam.json",
+    "sha256": "5fee708e06d9907ca26e3ca74e8ab59f479fc60199541287e07acc2d7ea0d157"
+  },
+  {
+    "file": "definitions/expert-wb-GPTResearcherTeam.json",
+    "sha256": "2db61e8292e8a48e3efaba7839424dc584403e9f0fec8286e7e361ea09b836ee"
+  },
+  {
+    "file": "definitions/expert-wb-StockPartnerTeam.json",
+    "sha256": "ad24e2a3f7c0afe7b15e5d4dd849f923f12924c40102c2e1c9a668153984941c"
+  },
+  {
+    "file": "definitions/expert-wb-InvestmentMastersTeam.json",
+    "sha256": "5b365ba1280745de385c5935ce4fadcdb96d940d5c45f8b62962c0beb9104bde"
+  },
+  {
+    "file": "definitions/expert-wb-EngineeringAssuranceTeam.json",
+    "sha256": "36e70a8cb4676ac498bccb21a3c0e81f68e720f1507ff85d2e7f9eff08bf1db8"
+  },
+  {
+    "file": "definitions/expert-wb-HrOperationsTeam.json",
+    "sha256": "93cfaac8c4d476c46839a5b3a7d6b29aaabaf2b01e53737bf3d77720af075fd6"
+  },
+  {
+    "file": "definitions/expert-wb-MarketingCampaignTeam.json",
+    "sha256": "935d4171bd84ae1e33527078a5a902d7cb97aee43bfa22e9b6b385b829997259"
+  },
+  {
+    "file": "definitions/expert-wb-ProductStrategyTeam.json",
+    "sha256": "1b18a00d8e8d751cd69c351c234a60c30f87fda788e75d25f46a122cd60f10f3"
+  },
+  {
+    "file": "definitions/expert-wb-SalesBattleTeam.json",
+    "sha256": "d7e233a9be0e143e8cc107243fddb09d93718c15989afea31262033e0aeb6ac0"
+  },
+  {
+    "file": "definitions/expert-wb-ChatLawTeam.json",
+    "sha256": "c2627178ed188deb5be1190074ace8c4128d23ac7382f43e2815692af76ffc09"
+  },
+  {
+    "file": "definitions/expert-wb-EntrepreneurshipCoach.json",
+    "sha256": "0e76f0cba9085475cad6ff52b4f9b430f16bc84f914eeaaa65ffd9b7c4819426"
+  },
+  {
+    "file": "definitions/expert-wb-SoftwareWorkshop.json",
+    "sha256": "32e7890e3a2872cd566b0ab37b9117a2e8a9fecb99e71301fb6f9787e7c546f5"
+  },
+  {
+    "file": "definitions/expert-wb-AShareAnalysis.json",
+    "sha256": "4c2c1e3e152533d2ba45e268c5e2771b7360ca14beb60f5cf655ee04579e6c67"
+  },
+  {
+    "file": "definitions/expert-wb-TripStarAgent.json",
+    "sha256": "50888a1cb341afe5766719d08627e886a44bae51ad5214347f61fb91a8d7cf44"
+  },
+  {
+    "file": "definitions/expert-wb-KdocsDataTable.json",
+    "sha256": "2b3f7cb0c1a2dbc8b38ae23a1978a228ec2054c6c966082bd818de093d7a4c17"
+  },
+  {
+    "file": "definitions/expert-wb-KdocsDocButler.json",
+    "sha256": "2047d687ea37a9737f731c1c780bc29d1423635dd8abe8d58d54f57eabeebe33"
+  },
+  {
+    "file": "definitions/expert-wb-KdocsKnowledgeCollector.json",
+    "sha256": "b505d94d633badb5407eee70eddcfd175d901e0b4d6633b7125291ae1cbc0709"
+  },
+  {
+    "file": "definitions/expert-wb-KdocsPdfToolbox.json",
+    "sha256": "0fd52c88379747a8aa7f30c7345d4ce4ed90d7d9720dce3f806e0a9480ead12b"
+  },
+  {
+    "file": "definitions/expert-wb-KdocsPptCreator.json",
+    "sha256": "a22cabbb661d488b0a476c459369faebfb9026a5f0f93d1e1d90be084d0c4179"
+  },
+  {
+    "file": "definitions/expert-wb-AIShifuExpert.json",
+    "sha256": "641055b14a505bd9a986b99e541e785849382a6b9c4b012587c3304361b9bdd5"
+  },
+  {
+    "file": "definitions/expert-wb-RumFullstackTeam.json",
+    "sha256": "d20f3687e6bfa59effcb93b4abba5f0ff5db60a33cf852926baf3cfac28b4ec3"
+  },
+  {
+    "file": "definitions/expert-wb-DesignEngineTeam.json",
+    "sha256": "425c59832485d7c9d7f275b1ece82acc59497d69df735416a7ae8df502cc19b1"
+  },
+  {
+    "file": "definitions/expert-wb-AiDataCopilot.json",
+    "sha256": "37b0151c1cfcf95d6e418c538a40cab068c9fe9777c17399a0be9a0f673be844"
+  },
+  {
+    "file": "definitions/expert-wb-AiContentCreatorTeam.json",
+    "sha256": "dd49c524976e733dfa762deb27422ace9b8236f9170ac1f455e3771c3e67c170"
+  },
+  {
+    "file": "definitions/expert-wb-ContentMonetizationTeam.json",
+    "sha256": "917df7a86e4fa423baaa0a3c72c19246276ee4cdafdf9276e9ec7b18c4fdbf9b"
+  },
+  {
+    "file": "definitions/expert-wb-ContentDistributionTeam.json",
+    "sha256": "e9a97a78a320fd95109a449165402f5dfec4cf274dfc73e736f7444c6267d8bd"
+  },
+  {
+    "file": "definitions/expert-wb-SocialEngagementTeam.json",
+    "sha256": "269b66e84c29d024109c013a28674942395b6a880611d6e06617f1335270bdf5"
+  },
+  {
+    "file": "definitions/expert-wb-SeoContentTeam.json",
+    "sha256": "534be287e85a4b9a55fbee93fadcae4943c3d82eeecfe2b4da58ef18b30f913e"
+  },
+  {
+    "file": "definitions/expert-wb-TaxComplianceTeam.json",
+    "sha256": "63bf29bb2ba988802135c56784eb1bcd40d5c6fd8232bc881df8fd61830f00a6"
+  },
+  {
+    "file": "definitions/expert-wb-VocabCraftExpert.json",
+    "sha256": "2a399593d38a2bc5e5336766af690e8752381888eda05da4f2999caa5a27d194"
+  },
+  {
+    "file": "definitions/expert-wb-IndieFounderCoach.json",
+    "sha256": "12a0298701d4b2379187463a6d8135b9771d0750d3c66f13d4ad17fe944c8e0d"
+  },
+  {
+    "file": "definitions/expert-wb-EngineeringWorkflowSkills.json",
+    "sha256": "20ef80f23586a46309bf2ed3fcc3cbbd1ac3ef6bf0d2dbef769e866fb8905f64"
+  },
+  {
+    "file": "definitions/expert-wb-MermaidDiagramExpert.json",
+    "sha256": "86cfb9ab03e96261317735e03cd89418ee7e9ae2bf41313a22a9e48fb72850d2"
+  },
+  {
+    "file": "definitions/expert-wb-EarningsReviewer.json",
+    "sha256": "024acfc48e4db17c347b124862e5509db0cf410398f3c20fefc948f55dbce323"
+  },
+  {
+    "file": "definitions/expert-wb-GlReconciler.json",
+    "sha256": "27a74eae129bf337a65f105b2a51fc4256e2b1008972f22ef18b0447615f86b8"
+  },
+  {
+    "file": "definitions/expert-wb-KycScreener.json",
+    "sha256": "bef988e1e56ca956f5f67cb47a69591e2b124c22a826c56635ac87d1aa99d9c1"
+  },
+  {
+    "file": "definitions/expert-wb-FsiMarketResearcher.json",
+    "sha256": "24e3cf910e25fc256d5ff576537511819341219b101b54341e7d7606c352a554"
+  },
+  {
+    "file": "definitions/expert-wb-MeetingPrepAgent.json",
+    "sha256": "bf70f63536f3cf3c0075077e2d0bd21981008e452c4b57b3681c98b43fcb1eb0"
+  },
+  {
+    "file": "definitions/expert-wb-ModelBuilder.json",
+    "sha256": "a83203923b02f55a0ebe8683a768e8266e2d854349cbce66c4ec08e934412402"
+  },
+  {
+    "file": "definitions/expert-wb-MonthEndCloser.json",
+    "sha256": "fdcb735746ee4e22ad5998250af3158899b028a0182a919060ca50d87f590ed0"
+  },
+  {
+    "file": "definitions/expert-wb-PitchAgent.json",
+    "sha256": "b80e6741df82d65ffa0cbe1cecf2353d4e1ff69f3572da58fc3f704160c11ef7"
+  },
+  {
+    "file": "definitions/expert-wb-StatementAuditor.json",
+    "sha256": "72b36291bc1ad6872fd531bf21b653a3032913505f9a67557f0906585d6256ac"
+  },
+  {
+    "file": "definitions/expert-wb-ValuationReviewer.json",
+    "sha256": "f41d4d5d1f70827330d3b8498a946eb441cb69b50ef61eb25cb183a7c55419af"
+  },
+  {
+    "file": "definitions/expert-wb-CharityDocFinanceExpert.json",
+    "sha256": "3e5763ff0b874dc782ee7724e2630cd6290656bc8355af82d3192131cf3375f0"
+  },
+  {
+    "file": "definitions/expert-wb-AskLiuxiaopai.json",
+    "sha256": "8488757cb50ec970369ad932fe8d995dd0d0634295fba601aad42f8825274978"
+  },
+  {
+    "file": "definitions/expert-wb-FortuneConsultant.json",
+    "sha256": "72c809d72b58245270937fa3d65a2687c2753935d750e25f4fd0b8cf4b424b0a"
+  },
+  {
+    "file": "definitions/expert-wb-OpcTeam.json",
+    "sha256": "c26b3a41239bd5bfdca0885f4759714b34e13f44002447ec510c838c0272763e"
+  },
+  {
+    "file": "definitions/expert-wb-AiHot.json",
+    "sha256": "1f63d938ef0fce94ce4f971a18383ef40c52b3f3e5e70c833a37d2a1c1961a2e"
+  },
+  {
+    "file": "definitions/expert-wb-HuashuDocReviewer.json",
+    "sha256": "af99cd78b095edd460f04d85e7afeb48101069ebe5f607cdb9a419144b656ef2"
+  },
+  {
+    "file": "definitions/expert-wb-HuashuDataPro.json",
+    "sha256": "71431a218f49358b929453d5c1a9daa04333151703ea4858266c8145972cfb7e"
+  },
+  {
+    "file": "definitions/expert-wb-VideoGenTeam.json",
+    "sha256": "0a5f7fe0db9ce545fee8bb9c60ecbf5b71412c3d39c818466463449c34e1e5de"
+  },
+  {
+    "file": "definitions/expert-wb-VideoDissection.json",
+    "sha256": "bb3ea44f369db4ed71b7ab2671949aab5df4dc6cbbc9ff5cf94ee22e55225fdd"
+  },
+  {
+    "file": "definitions/expert-wb-PromoCreatorTeam.json",
+    "sha256": "d33e3924d5e97b048349ef85d8fb4875cc6fc9f712d2dbdea12523d464feab0d"
+  },
+  {
+    "file": "definitions/expert-wb-EnterpriseLegalTeam.json",
+    "sha256": "021121adbb7a729f942b773e3f06ff87f47c5bcaba824a1e4dc7a4bb4d954efa"
+  },
+  {
+    "file": "definitions/expert-wb-LitigationLegalExpert.json",
+    "sha256": "c3bb0b1499a732fb0be9d7915625418dc8e650fe965f507d185804bd6b123ef0"
+  },
+  {
+    "file": "definitions/expert-wb-LawStudentCoach.json",
+    "sha256": "140e324041ed455ae58f9ccadd5760428632897440f64c89ca0d73a6216e408c"
+  },
+  {
+    "file": "definitions/expert-wb-LegalClinicSupervisor.json",
+    "sha256": "08a0bcf7bf2887323f60576d62ab419e75ba5c7c4e4ee8311afe36eefc8b9f00"
+  },
+  {
+    "file": "definitions/expert-wb-LegalBuilderHubExpert.json",
+    "sha256": "680e835704b869cb534aa34eea6f10ce22a93123de4f6c634e09c58376e86837"
+  },
+  {
+    "file": "definitions/expert-wb-HumanizePptTeam.json",
+    "sha256": "98a8387c49862c99e4c7986c6ea3eb2fb801565885e5718d2c9c96467bb4c3e9"
+  },
+  {
+    "file": "definitions/expert-wb-YunzhiQaAssistant.json",
+    "sha256": "06c3e9cd4e61f68741e40e43e0f11c661365a5a8926aab066fb80fdf022898fb"
+  },
+  {
+    "file": "definitions/expert-wb-CapacityExpert.json",
+    "sha256": "5ba7d4f787a10cc0ce73dbe8bbe2647aa1b63f16ea2b788ccbd5a16029c32c48"
+  },
+  {
+    "file": "definitions/expert-wb-ChaosExpert.json",
+    "sha256": "46aa0e2c130401c006c7c381f652ce6587dc3fe2670866b352c41f8d8ea948fd"
+  },
+  {
+    "file": "definitions/expert-wb-FinopsExpert.json",
+    "sha256": "527a191dd9667294927a7cf1819a2049b7631007b6d025cc1ff060b996cc5fcf"
+  },
+  {
+    "file": "definitions/expert-wb-InspectionExpert.json",
+    "sha256": "58151a086d5b0fe071f612d7f056835c781add651a652070c605c3381b513c32"
+  },
+  {
+    "file": "definitions/expert-wb-SreExpert.json",
+    "sha256": "80a79476542ea358e527b4ff2105f868d78c1124af1a53955bcdf3f3b95a82f2"
+  },
+  {
+    "file": "definitions/expert-wb-WellArchExpert.json",
+    "sha256": "21f487b3f9261485fea9113e37605949aa9667765a53f17d0086bce763156eea"
+  },
+  {
+    "file": "definitions/expert-wb-StrategyBacktestExpert.json",
+    "sha256": "fa8157f5df46891fa2cb7c5ad0671e0f064c2f8f5369e14608d341b0ad8bb2c9"
+  },
+  {
+    "file": "definitions/expert-wb-IndustrySreTeam.json",
+    "sha256": "cca0895fee113e99e928b970fb5a2641ad1f18e0883880fb38f316e5fde3eb5e"
+  },
+  {
+    "file": "definitions/expert-wb-TencentRtcExpert.json",
+    "sha256": "16af1825bd59e6582a0a2a393dd384bfc65a7269e4eb3c3bc430cde29c9598e2"
+  },
+  {
+    "file": "definitions/expert-wb-SmbFinance.json",
+    "sha256": "22206a10eb4406150de09567465dfd7c9c68b2cb9ca128aad05142047b94a75d"
+  },
+  {
+    "file": "definitions/expert-wb-SmbRevenue.json",
+    "sha256": "2d359a82ff048d9b8668ac0de48324004f87a0a8bc7b2856943eeaa50f70667c"
+  },
+  {
+    "file": "definitions/expert-wb-SmbCompliance.json",
+    "sha256": "d45c2cb1dc816ca7c5c27322705a729044ea228cfc302d2b10c96c43f6e8be2d"
+  },
+  {
+    "file": "definitions/expert-wb-SmbOperations.json",
+    "sha256": "b6e0096df1040bae3130a1fbafc87795486fa9007c9afd1a73426979c8f84635"
+  },
+  {
+    "file": "definitions/expert-wb-SmbTeam.json",
+    "sha256": "2de81d19f149c690f25c35bd577a463d6212b650bf37b069066a628819603290"
+  },
+  {
+    "file": "definitions/expert-wb-ViralTopicMaster.json",
+    "sha256": "44214033db2247a33e64ee2d3713652fd921339dadba6ece8b09fa81b036edb8"
+  },
+  {
+    "file": "definitions/expert-wb-Citongshuopro.json",
+    "sha256": "9d6d1daf296225f4b501a80c160491fffe60e3de85dae36102b2674115cc90fc"
+  },
+  {
+    "file": "definitions/expert-wb-InvoiceVerifyWorkbuddy.json",
+    "sha256": "b53a7fb1de8b0fbdcaba6a65cb88ce7115b3a22f8a87bfcc2aad2e0ccd49a0c2"
+  },
+  {
+    "file": "definitions/expert-wb-JiayiAdsAnalyticsExpert.json",
+    "sha256": "33aa6f23098247c6a9e9c76900dcb89789471fdaee2a7c1556b660268c074d07"
+  },
+  {
+    "file": "definitions/expert-wb-KiddContentExpert.json",
+    "sha256": "7e5e80e78e4d91228f49e1dd96724e7d8e2f8700e9cf0ede86efd8f67e704455"
+  },
+  {
+    "file": "definitions/expert-wb-ChaogeekKongming.json",
+    "sha256": "008b382d0cddab006b13780ec91bb835f7cac000d3cf30bc51745d27a1ce0ed8"
+  },
+  {
+    "file": "definitions/expert-wb-NcreExpert.json",
+    "sha256": "85076f7f849bb49aec588d0caa32cfbec22266fc208beaec4c11f19dd0bb1a61"
+  },
+  {
+    "file": "definitions/expert-wb-MvpDevExpertTeam.json",
+    "sha256": "00afbd0ff47f4a79e1acdf0a11824c2bb8af2fde8e75630a3f493288012059f2"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirIndustrySceneResearcher.json",
+    "sha256": "998b73daba778dcb2122b16bedbb86a334e28533b17a3c1d831968e17dc031f0"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirBoardSecretaryAssistant.json",
+    "sha256": "aeb21a7e47918d7c71cbd67b61f687d2ecd2aee42b9770160cb3bdf65a363427"
+  },
+  {
+    "file": "definitions/expert-wb-GaokaoAdvisor.json",
+    "sha256": "ea1f597f20210d95be8deb6b706c93ddba5878c9b1af322177141a2412b0fec8"
+  },
+  {
+    "file": "definitions/expert-wb-AcademicJournalSelector.json",
+    "sha256": "feac6b8189d356adddb02ec37b47c42d9fadc5ebc0a30a84fcd887137c71e5de"
+  },
+  {
+    "file": "definitions/expert-wb-KetPrepTeam.json",
+    "sha256": "af3e1b86d12ba62c26d45fa9ddceb2549ffca0ab6eed01861bf9126d57ec57fd"
+  },
+  {
+    "file": "definitions/expert-wb-TdxStockDiagnostician.json",
+    "sha256": "452be61896ab78d31fc5f15a08913475c275d314608255409686c32dcc91dda9"
+  },
+  {
+    "file": "definitions/expert-wb-TdxStockHunter.json",
+    "sha256": "ffe8497cb7daf670f32051ec30b0bcc0882b9ae78b141a822bd2e3d15f4199a8"
+  },
+  {
+    "file": "definitions/expert-wb-TdxValueAssessor.json",
+    "sha256": "af004f8392b9593a62a1de3adf51d3530ae5f239cc385e732a8359288019d876"
+  },
+  {
+    "file": "definitions/expert-wb-AntiScamAgent.json",
+    "sha256": "8311e3db1d0d1207e0d396adbcf2446eec6f19b24ebe24ce84a140024c70f318"
+  },
+  {
+    "file": "definitions/expert-wb-MeituanLivingAssistant.json",
+    "sha256": "a23a73d0922f3e178099b189ed77ca445ec55fa4d8e72e91b94a8ba3be0b19dc"
+  },
+  {
+    "file": "definitions/expert-wb-TopicEvaluator.json",
+    "sha256": "97441ba2a096fb1f1b606f021bc968d611074a6da183175fd1f6d012d47a0946"
+  },
+  {
+    "file": "definitions/expert-wb-TencentcloudApi.json",
+    "sha256": "8dc3ce1ed4a3592607900a232b4366b79503569d519105295b6bb9126c1ab6e1"
+  },
+  {
+    "file": "definitions/expert-wb-LongManuscriptExpert.json",
+    "sha256": "3203ffd729bed9d0d7a1365fd1057cbf989f0591d0896971e0926e3c247dbd78"
+  },
+  {
+    "file": "definitions/expert-wb-GeoDiagnosisExpert.json",
+    "sha256": "2ddd32dbbbb62cab2517962f7bf55c2708619d7f4ff0e2786448262cebbd35bc"
+  },
+  {
+    "file": "definitions/expert-wb-XiaofaLitigationAssistant.json",
+    "sha256": "0a6263a29e85eb5acfcf565d44b57f6009ba3cfdd5194ef6850525a25ae0bd44"
+  },
+  {
+    "file": "definitions/expert-wb-ContractLegalExpert.json",
+    "sha256": "599d1ff2b57f4733ffd63fd30961f13c98bd75c950ab95b2c541a5517eb417ae"
+  },
+  {
+    "file": "definitions/expert-wb-TianyuMarketingGuardian.json",
+    "sha256": "b2e6830f165eb525d60f41b0d3b4e403f5e4bcb2c0f7e2319acef8f3fb862dcf"
+  },
+  {
+    "file": "definitions/expert-wb-TianyuAccountGuardian.json",
+    "sha256": "486cddd565759b11029ea4263ebcdf690c17bdaf01dd69330759b49e8f187920"
+  },
+  {
+    "file": "definitions/expert-wb-IhrConference.json",
+    "sha256": "af55e8e0bfcb83e84fe4413faa363adccc07bdde602b9fe7cb60f2a806416563"
+  },
+  {
+    "file": "definitions/expert-wb-FamilyEducationMa.json",
+    "sha256": "0db4a9d4286bd3f0c29585dca052f2d4362f47a4b76342d292659eac9e64fec4"
+  },
+  {
+    "file": "definitions/expert-wb-EdgeoneMakersExperts.json",
+    "sha256": "c19b0577354b9e0e34ed942526c38a0ea05635571eb980a3891b0a5bb194fc1f"
+  },
+  {
+    "file": "definitions/expert-wb-TcSec.json",
+    "sha256": "c8a112d18b534d3449fd6496359297db258b7a85796de5fab102e25a876ecb56"
+  },
+  {
+    "file": "definitions/expert-wb-AutoConsultant.json",
+    "sha256": "b36d697aa0ebba6747a712eb6854a0e92feb910891750921d15ddc469f4b8ec5"
+  },
+  {
+    "file": "definitions/expert-wb-MetamorphosisPractitioner.json",
+    "sha256": "e1f2d49bbe45ec8f6587b40897371ac13604a6cc59e7edbb87a7505363e22cd9"
+  },
+  {
+    "file": "definitions/expert-wb-LegalSearchPro.json",
+    "sha256": "85378188330fa091a806eb20f2d237f51cfcffccee15e77b1a167c4eda6d90c2"
+  },
+  {
+    "file": "definitions/expert-wb-NewsBuddy.json",
+    "sha256": "0c686038caabf4342cd0d60eae837cc1409fd20e4bfe484e51c7986d8fbdc116"
+  },
+  {
+    "file": "definitions/expert-wb-LiuxueYanxueExpert.json",
+    "sha256": "878ee78feac90f60c1c6bdc1b16d045a1efc9033922439a2e5282c5c51e2adf4"
+  },
+  {
+    "file": "definitions/expert-wb-ContractExpert.json",
+    "sha256": "91ece2e78449506b1207fd0b8efd24a5e54d2631404aca7749efffb9943cdc2b"
+  },
+  {
+    "file": "definitions/expert-wb-MarketingReviewer.json",
+    "sha256": "dcad0a1b643d0a8fd968d85b683f1994b4d4f3fb2bc3e21b576210582cb3a6d4"
+  },
+  {
+    "file": "definitions/expert-wb-MigraqTeam.json",
+    "sha256": "ee03fd35702b8e3a8a48a2d677fc555b5483f0e509bfc576720d2cae81091407"
+  },
+  {
+    "file": "definitions/expert-wb-SmartStockAnalyst.json",
+    "sha256": "7abef22161cf2e2026a9184b397262847680c3acdc53f75f32c8fa905c7a2c34"
+  },
+  {
+    "file": "definitions/expert-wb-EgyptMarketing.json",
+    "sha256": "22a66ab20a48cd40d36dc9b1f8ff595b2fabef4f22a14ac8be9c515b221a1f8f"
+  },
+  {
+    "file": "definitions/expert-wb-ContentCreationExpertProd.json",
+    "sha256": "a2ddd96f1fc996aff5ca4953686fd7b98df142f8492f93b394ff2c540dfb66b5"
+  },
+  {
+    "file": "definitions/expert-wb-SgFinanceTax.json",
+    "sha256": "45f8c5e0a80737e604e64846ab86508c964945e63999f0adbde9500ddf39f1b1"
+  },
+  {
+    "file": "definitions/expert-wb-BrazilCompanyQuery.json",
+    "sha256": "5d7503f9664b984e5bc26b095ba256565377785d67548ad6cec7f9320e73bd9d"
+  },
+  {
+    "file": "definitions/expert-wb-MalaysiaHrAdmin.json",
+    "sha256": "03aa7c20c2fe804069691512101571c009f8cbd17555c677a08f429504e89294"
+  },
+  {
+    "file": "definitions/expert-wb-VibeknowHanddraw.json",
+    "sha256": "d482e62aef44163bc712174a9780b681a9c07d1387b0a44b6885057a00cb9e8d"
+  },
+  {
+    "file": "definitions/expert-wb-YahooFinanceCli.json",
+    "sha256": "9d946ef7dcb84ee5fde9b7e8092ea0dba712b725f4e5d5ab3db74c654c8f312e"
+  },
+  {
+    "file": "definitions/expert-wb-SgBizDev.json",
+    "sha256": "b19b2165d11b5e13d9bebe7a18c3af4a391b0c170d7f81753247da14630ffb58"
+  },
+  {
+    "file": "definitions/expert-wb-ResumeAssistant.json",
+    "sha256": "e7111512bb786191f4cb6b3c4b9b48c7b6e1d1f6dc62f57527d88d808f518ad7"
+  },
+  {
+    "file": "definitions/expert-wb-ApiDev.json",
+    "sha256": "cceaf1adb837cdf61bc1442c455958b727333eeb87a7338b594b6981c334dbe1"
+  },
+  {
+    "file": "definitions/expert-wb-PromptEngineeringExpert.json",
+    "sha256": "212ab5eb6a8082d64fe73680bd49d1c1925b8cc2e1c1b0bf36813c25bd6338c0"
+  },
+  {
+    "file": "definitions/expert-wb-InterviewSimulator.json",
+    "sha256": "3fdbb6cf476b8ac302d71ad9ae4c03ad7637231ce159fd97fdf46247f39b799b"
+  },
+  {
+    "file": "definitions/expert-wb-DevPipelineOrchestrator.json",
+    "sha256": "99bda8a703aea9fdfd3894365699aca7279a1354850e5977adfc1940222bf9dc"
+  },
+  {
+    "file": "definitions/expert-wb-GameDevelopmentStudio.json",
+    "sha256": "519882d7cb104c90da7f4c6f6dd2bb343d20b2d8dd2d7c7505fa747ef7bef759"
+  },
+  {
+    "file": "definitions/expert-wb-Eno.json",
+    "sha256": "7aebbd727792cd33d06fbf2a837cd2c18673450cca678322a03f87f02d5a8489"
+  },
+  {
+    "file": "definitions/expert-wb-SuperpowersZh.json",
+    "sha256": "c2b0f696123ec5b9c69946a4e67576c1b5ae8a03718c972a7d9b0afe41229563"
+  },
+  {
+    "file": "definitions/expert-wb-AiHumanizer.json",
+    "sha256": "8b1de410c27f68107dd10d293e8556311745cde2b1136fbe15dd65985a888c7a"
+  },
+  {
+    "file": "definitions/expert-wb-AiShifu.json",
+    "sha256": "bcb34ad3eb02fb3f1b65cce9300741544930f65a4899a70528d3ed1af24aeae1"
+  },
+  {
+    "file": "definitions/expert-wb-MaiDealAdvisor.json",
+    "sha256": "2b1a27487e72085de028df74e7b7d676349852c0c0bb82ba2b6349e3141d75e3"
+  },
+  {
+    "file": "definitions/expert-wb-HskDevopsExpert.json",
+    "sha256": "3e6665ac41732963ccca71448d1cc91d42529e3809381a39d58379b30ddcc456"
+  },
+  {
+    "file": "definitions/expert-wb-TerminalVeteran.json",
+    "sha256": "ac7380de3daf2220f0cde8fe954fa2526637ef7d4d9dd47a58ea287a6ea6a6df"
+  },
+  {
+    "file": "definitions/expert-wb-CordysCrm.json",
+    "sha256": "e078dd7e58a13a929ab4cc1baa26e224bbcb16a4010d6d4524eb7c799e0f7974"
+  },
+  {
+    "file": "definitions/expert-wb-SgHrAdminExpert.json",
+    "sha256": "b6e9306c8c9b01959406066ac3cd5ae60c2b21227ad5e36fe6dde6a12b1d89ba"
+  },
+  {
+    "file": "definitions/expert-wb-FinResearchExpert.json",
+    "sha256": "480f1a12b1a9a2106bb44929cb7bdfca4961cb335f1f2b66f6e5097ba059a477"
+  },
+  {
+    "file": "definitions/expert-wb-BrazilRfbExpert.json",
+    "sha256": "1997955c10343ad1a587e9b7e1ad764c6b2473682a7ebcd86ffd1a71aeecb78d"
+  },
+  {
+    "file": "definitions/expert-wb-UaePublicAffairs.json",
+    "sha256": "c907a34c2aa14587cdcc46386efa090fc14c563f7e97d4f9266eee826e4f1d4f"
+  },
+  {
+    "file": "definitions/expert-wb-EgyptPublicAffairs.json",
+    "sha256": "145a37c1aad3dbed301f771bec659475700ec01f1d42b48f9b624a9d0dccf722"
+  },
+  {
+    "file": "definitions/expert-wb-BrazilLegal.json",
+    "sha256": "d3bb21246306c84473cfaf04aa379bf0b8eb37246a405447473c4b4871c60c91"
+  },
+  {
+    "file": "definitions/expert-wb-UaeMarketingAdvisor.json",
+    "sha256": "af77754434f603e9009b287c0fe1300d2b7aa5d7615c4759a121c8a8938d64fa"
+  },
+  {
+    "file": "definitions/expert-wb-IndonesiaDigitalLawExpert.json",
+    "sha256": "1c9fb7925b63fe7deadbea4da2a812e6540356a1751ebfc6fa1d15252d59f484"
+  },
+  {
+    "file": "definitions/expert-wb-ThaiMarketingCreative.json",
+    "sha256": "e423be1c8858261074c698e99f1fe700969857cd1b51cdbee52cf241dc113e0e"
+  },
+  {
+    "file": "definitions/expert-wb-MalaysiaMarketing.json",
+    "sha256": "8db8c72445c2371bf44563a8782d6a3cad7491d13272852da1c461e04d531143"
+  },
+  {
+    "file": "definitions/expert-wb-MalaysiaLegal.json",
+    "sha256": "00a34adc041fb4bc1c4fc5a7b03a1529f478d8c17880136739b7f5f09656d430"
+  },
+  {
+    "file": "definitions/expert-wb-IpExpert.json",
+    "sha256": "61c329e191bb696513a1c81fce0fc20c148d59a0b563943ec27187d773e5967c"
+  },
+  {
+    "file": "definitions/expert-wb-IndonesiaBdExpert.json",
+    "sha256": "a94137079e70dcbf57a2eef9de41d02573357674d501fc1d58b16d4116a73851"
+  },
+  {
+    "file": "definitions/expert-wb-DatabrainAgentV2.json",
+    "sha256": "b1f642e12fe7277718cd7d153f158e1412e0b0357e9c1e072c53a506db7b4544"
+  },
+  {
+    "file": "definitions/expert-wb-IndonesiaPaExpert.json",
+    "sha256": "acac011c404e69c289dde4c1eb364df586b5b1f5b328ef63a07458c8dd6902da"
+  },
+  {
+    "file": "definitions/expert-wb-ThailandHrAdmin.json",
+    "sha256": "39d503a5d16a25cfbceea58b2a96d283161a47c3f7e9131370c99ca7c9b29876"
+  },
+  {
+    "file": "definitions/expert-wb-UaeStrategicAdvisor.json",
+    "sha256": "be19cade30edb65e2801c643065dc3bc738a903d24654f52a8f72cd227171325"
+  },
+  {
+    "file": "definitions/expert-wb-MalaysiaFinanceTax.json",
+    "sha256": "e6eba232c26c6c120987acf4cfc86779368bcbf72c4ccf1a600da7510ff220dc"
+  },
+  {
+    "file": "definitions/expert-wb-EgyptStrategicAdvisory.json",
+    "sha256": "88b2491740ac44a67972bf360578dd9a5414b58a543bf08a7c52e86ea3fb3b1a"
+  },
+  {
+    "file": "definitions/expert-wb-NgesHealthcareMarketingTeam.json",
+    "sha256": "3bbe3e5d33e39321923428a6ff1070fb7daf29bc7880388065864308a8b79d5e"
+  },
+  {
+    "file": "definitions/expert-wb-MultiCloudExpert.json",
+    "sha256": "037087d7b04fc3d2d53ae0ca386c9129949a9281d9f65eb1d247a339ce2f88bd"
+  },
+  {
+    "file": "definitions/expert-wb-DesignPrototypeExpert.json",
+    "sha256": "bbf86b7e569b3bda6c8a28249d29d4950fdfb85288bbf5b360b2605814faaa04"
+  },
+  {
+    "file": "definitions/expert-wb-Code.json",
+    "sha256": "85694c7457508682534dccaab2953c4c165903c1bfa97e176926dea33ea89ed3"
+  },
+  {
+    "file": "definitions/expert-wb-Soe.json",
+    "sha256": "f0982caae172783797391b749a81d783948da99729209a4e6562e5223ee64c0b"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirSuperPartner.json",
+    "sha256": "fc6e7ab6281b38baa8b9a823384c2aec056ad883ad2785626a95e3e0c70ac1fa"
+  },
+  {
+    "file": "definitions/expert-wb-Frontend.json",
+    "sha256": "658ca7c36a3e403e7171659d46bb5754b0bdbc7457d2f02289f6ecfea5b2701e"
+  },
+  {
+    "file": "definitions/expert-wb-AiMeetingNotes.json",
+    "sha256": "4ec3f443913186f2f6c125abc6217d3177a10a917017177ccc00b0e1a633f1b3"
+  },
+  {
+    "file": "definitions/expert-wb-MarketAnalysisCn.json",
+    "sha256": "da83652dd65340db45e403c7decdecf5ac04432535d93ba05712bf6903c25739"
+  },
+  {
+    "file": "definitions/expert-wb-DatabaseOperations.json",
+    "sha256": "7f01961805fe7b52856588a3e760d0144fb331c81b7edd3af70cbf844fcbc498"
+  },
+  {
+    "file": "definitions/expert-wb-ChatcutVideoEditor.json",
+    "sha256": "ea30f0da6e15f85f78e9db89f69da5cb3d46bd41d1ead57914318fd7b49cc95f"
+  },
+  {
+    "file": "definitions/expert-wb-NovelGenerator.json",
+    "sha256": "5951ab3cf7b54ba3f5488acf1a7bf62fe81a012ecbc9271902f065c2521f2dfb"
+  },
+  {
+    "file": "definitions/expert-wb-FundusDiseaseAnalysis.json",
+    "sha256": "284080278c2e4d8632cc2098e443b732e97e571896d7f4ee323b5ac51b5c53e9"
+  },
+  {
+    "file": "definitions/expert-wb-ContentWriter.json",
+    "sha256": "02c82f73a78ec4c842bec92722510d270e4ca6cace14db9c06973414bfdd9f83"
+  },
+  {
+    "file": "definitions/expert-wb-AiVideoScript.json",
+    "sha256": "77128bbc4a45a8a751e7037af53a856f5e7c67bc9bfc09ff61f69863b2fb54eb"
+  },
+  {
+    "file": "definitions/expert-wb-ArxivWatcher.json",
+    "sha256": "4d86bff147582c8b0faafb4844412f5e1d2951f25a27ff82afa649d256f94620"
+  },
+  {
+    "file": "definitions/expert-wb-FrontendSlides.json",
+    "sha256": "96b3d3e8633bf1a7ad4642cb36623a74aede48d159e32512973da89f911d1c47"
+  },
+  {
+    "file": "definitions/expert-wb-PaperTopicSelection.json",
+    "sha256": "3ac3f6777c4c3deceb2f196b934b99eebaa384f8c8c29e49076922292722d07f"
+  },
+  {
+    "file": "definitions/expert-wb-PatientEducationContentReviewWordAssistant.json",
+    "sha256": "6d4f2a69c8a31ffe97b45e85f79b4ccb43092e4a5e7594efdb8e7fb5696bea76"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirEightSeatBoard.json",
+    "sha256": "8951b5d6289e262f4ceed307bd4c5f6bd169b0703d0d2cc00d2f154a3a815988"
+  },
+  {
+    "file": "definitions/expert-wb-UuptDelivery.json",
+    "sha256": "8ab900774b87d31db16d6776b484ff94c09f519eacc7c5dae569ac033569cf03"
+  },
+  {
+    "file": "definitions/expert-wb-JinshujuExpert.json",
+    "sha256": "0121f4ce1d8f337743b5794fd40fdeab6ef1e8f7225d08f0db6cea200de23d98"
+  },
+  {
+    "file": "definitions/expert-wb-SkillhubCharityExpertTeam.json",
+    "sha256": "ee1c06c5523348cf15b40a0e556112843e6d26a048d8b9f45ca8c349b102ec5c"
+  },
+  {
+    "file": "definitions/expert-wb-SdkLogExpert.json",
+    "sha256": "b23a3fe62896425c8bb810cb6fa6ac91a2b6c6867c8188315853c69367311176"
+  },
+  {
+    "file": "definitions/expert-wb-DatabrainOpinionExpert.json",
+    "sha256": "702d684a9a4f5aa92ffc14bec2f44d338cd59efe7b62be800d4de6278694cb07"
+  },
+  {
+    "file": "definitions/expert-wb-VibeknowPptExplain.json",
+    "sha256": "f6354e665bda877ca601ae20fc141ac56fa2c1785d1c1591eca06a30dbd01a49"
+  },
+  {
+    "file": "definitions/expert-wb-VibeknowDesignVideo.json",
+    "sha256": "0d58ca59a4cff4d22b39354c174b19f9ec93acfbb053bdc76c9bf7b8bc69880e"
+  },
+  {
+    "file": "definitions/expert-wb-IhrAiInterviewer.json",
+    "sha256": "e22f0c31e7e1aab946902b8616fd4e64806c7d9ebd1be11039e9c14ca9cd731a"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsBioinfoExpert.json",
+    "sha256": "49c1ca5b8d023864248b99e9b97028bf29b6e4bffed843a0b262769e72b27d50"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsCdgptExpert.json",
+    "sha256": "bf049ef126575d277a82190b4fa99ff1180eae8f76aac22ee6dd16fb54aa92cf"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsDiagnosisExpert.json",
+    "sha256": "c83cb0757d42c9d9a1e7a17791849b2344c87924677cad7f57fd82e08ba6a6db"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsHpcExpert.json",
+    "sha256": "6f7dd370adc8559abfdfa012748b8360e049fb7e17f4992d0081b536b2584844"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsIggmExpert.json",
+    "sha256": "a5d37d8f64b215ab0713ef160720802209560435afa16301aa0fe036740d651b"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsOriExpert.json",
+    "sha256": "5790e2583f657f3047c7361d6b94c714ff5b0520edf52b3c98b01ff4dddc50bd"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsScbertExpert.json",
+    "sha256": "78984dfc0e285e551f793899d32d471633a5ff580412ae36abd8865a1e5052a0"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsScproteinExpert.json",
+    "sha256": "742e133f486b125e279c1c2f10f7714ebaec79d382ee9376ea2a361ff1b49e5b"
+  },
+  {
+    "file": "definitions/expert-wb-OmicsTfoldExpert.json",
+    "sha256": "d206e5ba7639c94494bd624e48e7d6c0b3329be65c8dc5563ea4dd36565caa54"
+  },
+  {
+    "file": "definitions/expert-wb-Nuwa.json",
+    "sha256": "705a3f613406bcfc674484b8ad7801c00998a8c10ee241b70da977194db24e2b"
+  },
+  {
+    "file": "definitions/expert-wb-BiddingStrategist.json",
+    "sha256": "98f13badff10d981ac2526becc60f7231fee76f90dbf1f282db9c47ab14640d5"
+  },
+  {
+    "file": "definitions/expert-wb-FortuneMaster.json",
+    "sha256": "9ef7ae51c65e7f7451791f4c6c46dec828169b925a3aa7bafa439629f04561ad"
+  },
+  {
+    "file": "definitions/expert-wb-LazyTravelPlanner.json",
+    "sha256": "727f66f5bad5f45c8f6f455c2b21cf235d7a871caef3bcadcd8b4ceaf52339cd"
+  },
+  {
+    "file": "definitions/expert-wb-NewsBriefingExpert.json",
+    "sha256": "6750cdf50754a21f58125764ba4d46f295d03390ccb1f52b819b90a40b9a2036"
+  },
+  {
+    "file": "definitions/expert-wb-NovelCreator.json",
+    "sha256": "7d5d4558f4d29fb0f17897462ee85b049a8d5b117f7ce96f5592628e41d88417"
+  },
+  {
+    "file": "definitions/expert-wb-PersonalFitnessCoach.json",
+    "sha256": "22be7118409b3137762642dc669820086acfb9169e01b7aa3cfe8a40a973f67a"
+  },
+  {
+    "file": "definitions/expert-wb-PersonalKnowledgeArchitect.json",
+    "sha256": "13d8afde4916ded1c9261172abf0c53e260a5fdf8ff8f94f4548cb8d090234d2"
+  },
+  {
+    "file": "definitions/expert-wb-PromptEngineer.json",
+    "sha256": "43dce412636625737dd028efcac941c53d10fd04fcccec88ee58056917398c55"
+  },
+  {
+    "file": "definitions/expert-wb-StudyPlanner.json",
+    "sha256": "533c8a4f648d7676fbdcca455ea85fdb36d612d9496202e866db214ff2d7be0b"
+  },
+  {
+    "file": "definitions/expert-wb-WorldcupBuddy.json",
+    "sha256": "de540cff055689a5961dd4c9203d1ba37a2d34837ad940dd06f77ac1f78d02a5"
+  },
+  {
+    "file": "definitions/expert-wb-FundResearchAnalyst.json",
+    "sha256": "b708259b2443815f971a3fed5fdf98e0d83f7500a879f0a459ce9e68afc91171"
+  },
+  {
+    "file": "definitions/expert-wb-PythonFullstackEngineer.json",
+    "sha256": "e10b2cfecc4dd2c88e4b67ddbd89de805281dbdd2c8ffdb2f17ee88f3ed72d87"
+  },
+  {
+    "file": "definitions/expert-wb-TrendHunter.json",
+    "sha256": "712506bf37a13dad0b9103a7d914c9af430410fffa546b7a330d477e8afcb55d"
+  },
+  {
+    "file": "definitions/expert-wb-WechatChannelsStrategist.json",
+    "sha256": "f18c52f2eaf163d67829f20861e1bad9efcdf1f8f07d46207989690e4efebaff"
+  },
+  {
+    "file": "definitions/expert-wb-TanyuanCulturalHeritageExpert.json",
+    "sha256": "adff6eba3363e7380c5b80f62f5cdd17fcce9836580370c43f8e94a97298381a"
+  },
+  {
+    "file": "definitions/expert-wb-BelieveInLight.json",
+    "sha256": "eb2509d0e4a27ad31b959c1ba6773b1db7f5aa674e8d2353819f559fa7a1fa75"
+  },
+  {
+    "file": "definitions/expert-wb-ConsultingPartners.json",
+    "sha256": "9907dbac2fe653878c83f4e499cfcbb17230fbb668973361a6f2611f6bc82f63"
+  },
+  {
+    "file": "definitions/expert-wb-CareerBroker.json",
+    "sha256": "2939df83bf265a19e05ab84ed14aef389b483a249ea59f05c24f4592a56b6b80"
+  },
+  {
+    "file": "definitions/expert-wb-JinshujuFormExpert.json",
+    "sha256": "224bd041f21b159663840f8b6440ac55fec345c69549b3ddb041e8b9019541e4"
+  },
+  {
+    "file": "definitions/expert-wb-JinshujuTableExpert.json",
+    "sha256": "34206bf3bbd18350fdacdb128cc890c7fc6105faf2ca4afa7ffcf252e1245a7e"
+  },
+  {
+    "file": "definitions/expert-wb-PneumoniaAiAnalyst.json",
+    "sha256": "11dd7dbaab3015fe2a694e57f73bda520508938df3830bca6993c32d9129f6f7"
+  },
+  {
+    "file": "definitions/expert-wb-NgoChallengeAdvisor.json",
+    "sha256": "66c00b8d1d77972f801efd1840026a5ae1c798bf88651d87036317bf9da7b158"
+  },
+  {
+    "file": "definitions/expert-wb-NewShareExpert.json",
+    "sha256": "06d336976c89a487a4f7a9c1f98e162a5ba29425c7c7fbf4d0f7fae17b9a225d"
+  },
+  {
+    "file": "definitions/expert-wb-InvoiceVerifyExpert.json",
+    "sha256": "43d3650d7d901267d8f3d879f11def617e1cb94a6144b76a09f9e57db0b68dd8"
+  },
+  {
+    "file": "definitions/expert-wb-RoadshowResearchTeam.json",
+    "sha256": "baa6961035d1913b4a98e6b686cd367b978eb01592bd27ce8f5c873b20a7cb2a"
+  },
+  {
+    "file": "definitions/expert-wb-TideriderSentiment.json",
+    "sha256": "9343709e13614a3dd1646f0c2f756f567195090f587127ddd6d28f4361946bb1"
+  },
+  {
+    "file": "definitions/expert-wb-IndustrialParkInvestmentAttractionExpert.json",
+    "sha256": "a4231b22afc2fe57098930451b850e3e3a1c07b31e6b198e1ecf331d2b2bea22"
+  },
+  {
+    "file": "definitions/expert-wb-JobCompanionTeam.json",
+    "sha256": "7518cafa444de80feb5fea098137cfb738e4457116ae3e7d25dead535fb72b39"
+  },
+  {
+    "file": "definitions/expert-wb-CorpCreditDueDiligence.json",
+    "sha256": "1eaefc1437067ad3816019a68a018ff7dec6420ace671ca0cf12e9b9d3cdbd43"
+  },
+  {
+    "file": "definitions/expert-wb-QingflowHrExpert.json",
+    "sha256": "598c901fa2cc7626abfebdac99a34259737e28a5958bef693a887536a782bb66"
+  },
+  {
+    "file": "definitions/expert-wb-MentougouBusinessGuide.json",
+    "sha256": "6fbf9ada37b78d84234f66ad065705e46e77d9c8b74541fcc227a85f15170c2d"
+  },
+  {
+    "file": "definitions/expert-wb-PanshiCustomerVisitAgent.json",
+    "sha256": "7bc507f1209115d7c4527e7bcaab9a69ec7b183004d90973636cf491db97336b"
+  },
+  {
+    "file": "definitions/expert-wb-EmpiricalResearchTeam.json",
+    "sha256": "a9f9f0dfd3d24a20d7f98f8f2e3547ea9b01dae88372dc69e2d043d482cabbd1"
+  },
+  {
+    "file": "definitions/expert-wb-WorkspaceBuilder.json",
+    "sha256": "6f4d59a7ff0e61fe763bf5b9fdcfa9dd32b41cd762fbc024e85c1dc465ab77b5"
+  },
+  {
+    "file": "definitions/expert-wb-SouthAfricaStrategyAdvisor.json",
+    "sha256": "2bfd495ce81c519c501486760ef02445a62a6725fc9eca401cf298b4e22ffb55"
+  },
+  {
+    "file": "definitions/expert-wb-SouthAfricaHrAdmin.json",
+    "sha256": "ed116f22e808c34e1802b6fbaa86200aa4d6fd66651d1ad4c94d1d5fe173212f"
+  },
+  {
+    "file": "definitions/expert-wb-VietnamFinanceTaxExpert.json",
+    "sha256": "26d22f6ffe153110addb4b3a98fa60ca9c89d5edceb1d27dd2474dee25d97a97"
+  },
+  {
+    "file": "definitions/expert-wb-VietnamPublicAffairs.json",
+    "sha256": "1bdc2f4b778b13130455d1c006d175730173a3272e2e4dfe23d50ab719460bdc"
+  },
+  {
+    "file": "definitions/expert-wb-SaLegalCompliance.json",
+    "sha256": "ed07a5bd6bbeb2730f8a072e9eb23c1874d607b8004f80c18ccb812bda734837"
+  },
+  {
+    "file": "definitions/expert-wb-MarketingGrowthTeam.json",
+    "sha256": "32635ecee0a5e49b4db556d3bb272f21da207456356727c67624f4852dcfd303"
+  },
+  {
+    "file": "definitions/expert-wb-SkillSmith.json",
+    "sha256": "388364e323d15e9bae8f76d26585d3a733c7ae6abb24568e5434592d76e222f6"
+  },
+  {
+    "file": "definitions/expert-wb-TencentCloudQuoteAssistant.json",
+    "sha256": "cda4c63eba4d84a127d1bf21bd5495201ed2281b1b7b69b82a6593f38790dc21"
+  },
+  {
+    "file": "definitions/expert-wb-InnovationStartupMentor.json",
+    "sha256": "815f4df4c7c310ce7b0fb51c29f1ee68b18c74d9f700ea10200d69f49a451cbf"
+  },
+  {
+    "file": "definitions/expert-wb-HrDigitalExpert.json",
+    "sha256": "d59ea4c1160a737de8ca24e562e126109631fa97aaddef79cb34cb71d03f7a8c"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirAigcComplianceRedTeam.json",
+    "sha256": "4585bfdcb1812037f709f90af31c1b90656c86e187a4dc468c08a992659bc280"
+  },
+  {
+    "file": "definitions/expert-wb-CampusConversationCoach.json",
+    "sha256": "a634e23279897da623ef46b92d016689d3cb52d2f04f373a73116c6cf7047c96"
+  },
+  {
+    "file": "definitions/expert-wb-CampusEventNavigator.json",
+    "sha256": "546a4aee9ff9c40cebe1e387e7c20561335239177e38611f30fc5ca2997dfa38"
+  },
+  {
+    "file": "definitions/expert-wb-CampusJobSearchCoach.json",
+    "sha256": "ff75e4d80d2b4ed9d8ab47fe410f1f50783b110d44c9e91d643ebfadebee0b6a"
+  },
+  {
+    "file": "definitions/expert-wb-CareerNavigator.json",
+    "sha256": "6b8df041769dd17ed0cf8c49e36b7a80a4fe5b3680dd3510ff247ab42bbe1230"
+  },
+  {
+    "file": "definitions/expert-wb-ComputerOperationsAdvisor.json",
+    "sha256": "8c368e4b22da0df643214c48393e0f151a9022e040da7e7f2119b53584f735c8"
+  },
+  {
+    "file": "definitions/expert-wb-EnglishWritingCoach.json",
+    "sha256": "412e9a5f3fde0d78ac72b34c7581e1e4b994dac338ced1f64c549e6b6b2e32df"
+  },
+  {
+    "file": "definitions/expert-wb-ExamPreparationPlanner.json",
+    "sha256": "34856fd2865994b317168fe26061fae82227a78537724e11028a6349f42383ca"
+  },
+  {
+    "file": "definitions/expert-wb-NoteClassRepresentative.json",
+    "sha256": "bc37ca6bad65e18391ad71a29333557598fab5df9723b537a08eadc655bf0874"
+  },
+  {
+    "file": "definitions/expert-wb-StudyFortuneCompass.json",
+    "sha256": "f97099b121106e961f77e889dcc14cce27e2cbae90d1d852f37a7c7424914192"
+  },
+  {
+    "file": "definitions/expert-wb-ThesisWritingMentor.json",
+    "sha256": "e7a09a24904b23fbbae508a130ba5f459b78597f0778f532bb0a606e62a624fe"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirSuperIndependentBoard.json",
+    "sha256": "22a182b3fc53eeaa7f867bc358487664f275faf4c435eb4cb81c0b14482d40b9"
+  },
+  {
+    "file": "definitions/expert-wb-WorkbuddyUniversalMentor.json",
+    "sha256": "f64d20561cbaa0aa3196c71c6c8be08b8ff4b5dd4072412bf3a8ea620e0e497e"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirMomDialogueExpert.json",
+    "sha256": "7713e159cb09644df96ea1b4da604988875205dba18030ec2ad48f9a1700efc8"
+  },
+  {
+    "file": "definitions/expert-wb-MibaoMediaArchivist.json",
+    "sha256": "94146e200d1eb7490c0c42bbb286d490166ab4ddd8c3edf3aa872b211b618221"
+  },
+  {
+    "file": "definitions/expert-wb-TietuToutiao.json",
+    "sha256": "7e9a77a78cbb44d8166eb183cea458fafcc36c5ee37e323b903458c67ae8e2b2"
+  },
+  {
+    "file": "definitions/expert-wb-FbsirBeikeYi.json",
+    "sha256": "2ce41ef0f37d1269b22bb30cf070d6b28a7d659a66ab246a6d5c6400cbcd4716"
+  },
+  {
+    "file": "definitions/expert-wb-LinkfoxExpertAmazonListingSpecialist.json",
+    "sha256": "142814ac932500e5350eb34c6f6290974d7c4b6dd5560a747c93cf0b553abd44"
+  },
+  {
+    "file": "definitions/expert-wb-ReportDistributionAgent.json",
+    "sha256": "7d75e93a18c62ba196e35efa224f8019fe31f96b1ea74b2839405112b405ffe0"
+  },
+  {
+    "file": "definitions/expert-wb-MigraQExpert.json",
+    "sha256": "495ba9271c9500c39dddf27fe420f2a894143512bb179e826f11b58f796b2ab6"
+  },
+  {
+    "file": "definitions/expert-db-agent_4ker93wfm7v0e8f.json",
+    "sha256": "a6d0157e9413aea65631469af009f3271897ec561e863af4570029e20333fef1"
+  },
+  {
+    "file": "definitions/expert-db-template_6.json",
+    "sha256": "121ca24ef59ead386853d4e7c3e786239d8e4c8cd2e9637a656e21804e35f75e"
+  },
+  {
+    "file": "definitions/expert-db-template_3.json",
+    "sha256": "271c30ed97221c34803cbf5898dd632b2513d8d087e87d9b04c75ba55140810b"
+  },
+  {
+    "file": "definitions/expert-db-template_1.json",
+    "sha256": "c5ff32eb760a4e94c25cf8a76a799822acddc56e11c5f8dfd2722dbd4ea60490"
+  },
+  {
+    "file": "definitions/expert-db-template_4.json",
+    "sha256": "46085a68d02fd68bfadc36960cc7b45849971edca966063ae58038a337c05503"
+  },
+  {
+    "file": "definitions/expert-db-template_2.json",
+    "sha256": "8e83fe81696cbadb4ddd267ad9ab6eb86e0532d473a604d1f0ba015874e2c246"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kec27qsdec2wcb.json",
+    "sha256": "9e1512890d4cc1b6ae28d618d27bc23a19568a916e34866d0857391262eaa2fb"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kec2vvxteg3044.json",
+    "sha256": "87c136ed8e9f146e8c4d3aae370faa3c25a34ecfa37239a288fdaf7abf7ac24d"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kec0bgg2f6bysu.json",
+    "sha256": "e95e372ae4b04bb10178748514b67ab6c73832677205db11dd2d637d7a0fc337"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kebwbsdystzavq.json",
+    "sha256": "877730174182e10438a00da1447e079f3f393e379adb97adbb336e011df02753"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kebw9cwnceubzt.json",
+    "sha256": "6775126f5899dc31429cda0f496e9d443e0346404138b7c5d36f67f087ee3e6d"
+  },
+  {
+    "file": "definitions/expert-db-agent_4kebmcm1e6vw8sb.json",
+    "sha256": "764b98b983c336a20a55ad93065bc42e9aeb2631705c806c04c7d0f8ec7d9aad"
+  },
+  {
+    "file": "definitions/expert-db-template_5.json",
+    "sha256": "71f4f4bb3a7651181bada74357d7bb0580c66e0299dc4234bfa7787b4c52350a"
+  },
+  {
+    "file": "definitions/expert-db-agent_4k7qagrkj2dma.json",
+    "sha256": "9bb58315c5145a79fbf62438f3d350c287790972941b23cfa6afda34160f159a"
+  },
+  {
+    "file": "definitions/expert-db-88f157ea-7070-4088-96aa-826c6cd5b153.json",
+    "sha256": "0a60bb94c3e445f9516f0b2d49fbf60a34fab6f25402183cfe05b6fb42bd4f6a"
+  }
+]

@@ -206,7 +206,7 @@ export interface AgentReference {
 export type AgentCapability = 'auto' | 'fast' | 'reasoning' | 'analysis'
 export type AgentPermissionMode = 'request' | 'auto' | 'full'
 
-export interface MarketItem { id: string; name: string; kind: 'skill' | 'connector' | 'expert'; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
+export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert'; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
 export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
 
 export interface ConversationItem {
@@ -585,7 +585,7 @@ export interface StableBridge {
   }
   browser: { command(payload: Record<string, unknown>): Promise<any>; onChanged(callback: () => void): () => void }
   market: {
-    list(): Promise<MarketItem[]>; save(value: Partial<MarketItem>): Promise<MarketItem[]>;
+    list(): Promise<MarketItem[]>; detail(id: string): Promise<MarketItem>; save(value: Partial<MarketItem>): Promise<MarketItem[]>;
     toggle(id: string, enabled: boolean): Promise<MarketItem[]>; remove(id: string): Promise<MarketItem[]>;
     checkUpdate(id: string): Promise<Partial<MarketItem> & { available: boolean; currentVersion: string }>; use(id: string): Promise<AgentState>
   }

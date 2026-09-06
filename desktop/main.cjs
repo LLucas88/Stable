@@ -2023,6 +2023,7 @@ function registerIpc() {
 
   const market = () => new SkillMarket(store, paths.userData)
   ipcMain.handle('stable:market:list', () => market().entries())
+  ipcMain.handle('stable:market:detail', (_event, value) => market().detail(requireText(value?.id, '条目 ID', 100)))
   ipcMain.handle('stable:market:save', (_event, value) => market().save(value))
   ipcMain.handle('stable:market:toggle', (_event, value) => market().toggle(requireText(value?.id, '条目 ID', 100), Boolean(value.enabled)))
   ipcMain.handle('stable:market:remove', (_event, value) => market().remove(requireText(value?.id, '条目 ID', 100)))
