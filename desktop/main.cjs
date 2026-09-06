@@ -2703,6 +2703,7 @@ async function boot() {
     return
   }
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/ops-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
+  if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/tencenthub-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
   browserSession = new (require('./services/browser-session.cjs').BrowserSessionService)({ electron: require('electron'), store, getWindow: () => mainWindow, onChange: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:browser:changed') } })
   conversationLifecycle = new (require('./services/conversation-lifecycle.cjs').ConversationLifecycle)(store,{userData:paths.userData,workspace:paths.workspace,executable:createHarnessRunner().runtimePaths().cli})
   conversationLifecycle.interrupted()

@@ -1,0 +1,2 @@
+# Adaptation files participate in the pinned bundle's content hashes.
+scripts/tencenthub-overrides/** text eol=lf

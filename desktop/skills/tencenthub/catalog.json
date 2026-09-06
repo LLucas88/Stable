@@ -1,0 +1,1898 @@
+{
+  "schemaVersion": 1,
+  "bundle": "tencenthub-20260906",
+  "snapshot": "2026-09-05T15:37:23+00:00",
+  "rankingURL": "https://api.skillhub.cn/api/skills?page=1&pageSize=100&sortBy=installs&order=desc",
+  "items": [
+    {
+      "rank": 1,
+      "slug": "self-improving-agent",
+      "namespace": "clawhub_pskoett",
+      "version": "3.0.24",
+      "installs": 86140,
+      "pageURL": "https://skillhub.cn/skills/clawhub_pskoett/self-improving-agent",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=self-improving-agent&namespace=clawhub_pskoett&version=3.0.24",
+      "decision": "migrate",
+      "reason": "使用工作区日志；移除自动钩子、人格改写和跨会话传播。",
+      "name": "工作经验与纠错日志",
+      "group": "通用工具与依赖支持",
+      "description": "记录工具错误、用户纠正和已验证经验，追加工作区学习日志。",
+      "packageSha256": "46bebc277672bf2980b97a17c2584324ac14aef2405c919232d093c2b98f88ac",
+      "packageBytes": 27405,
+      "sourceFiles": [
+        {
+          "path": "README.md",
+          "sha256": "e443cd023483788f41b3118bf258d4b5ddce1e6f87ba5a4b489feece4c0cb2ba"
+        },
+        {
+          "path": "skill-card.md",
+          "sha256": "d0f8a8dd25d7de09937fb86245c3924c82fcf9158979aed17108b374f73c3cc6"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "55cb775de57edd8dc9f6ebd1edfefe1a3e77fa0408cd4f42e0394bf6703dfd95"
+        },
+        {
+          "path": "assets/ERRORS.md",
+          "sha256": "731f4a26fee7074d11e999920e5c3ca63b0e025b75a4d9966429ee88a2cb5988"
+        },
+        {
+          "path": "assets/FEATURE_REQUESTS.md",
+          "sha256": "a6291573936034efaad57b43b6f57bdb35ed627f01ce9309b2c781da63563c37"
+        },
+        {
+          "path": "assets/LEARNINGS.md",
+          "sha256": "33b0de6f4243ea31d913fab017ded852f13443fd1eb84c0983a670334260ff46"
+        },
+        {
+          "path": "assets/SKILL-TEMPLATE.md",
+          "sha256": "3ee008f80d53e0e576f7e747ac4c4e040ff659f02d3f5689a95524a3696e4881"
+        },
+        {
+          "path": "hooks/openclaw/handler.js",
+          "sha256": "4debdfb3e5a10488a89040f18fe3b8e7445bcc42c7e57e18cb24eaaeb3718112"
+        },
+        {
+          "path": "hooks/openclaw/handler.ts",
+          "sha256": "6fe72d61617fcb39f67eda471a993c83d91a491787ba38c83258c4c435f259f7"
+        },
+        {
+          "path": "hooks/openclaw/HOOK.md",
+          "sha256": "13294242f2fac134af2dcfcda7c273be98e57d26192989afb7a9ebcb5a1eb224"
+        },
+        {
+          "path": "references/examples.md",
+          "sha256": "7083120ca27c1f5e4daab1e028acb900cb83d23748dc993544e86c37427349b0"
+        },
+        {
+          "path": "references/hooks-setup.md",
+          "sha256": "1cb9ef2afbb8d0519fe6ec201f2c78b91e4a8f2df7f35fc140d2132a29190c0f"
+        },
+        {
+          "path": "references/openclaw-integration.md",
+          "sha256": "aaf44d4f87e89cd7c754059156ea4d9a5ac8d93c6ad56261516e7b451df62c9d"
+        },
+        {
+          "path": "scripts/activator.sh",
+          "sha256": "a751d91466c8c966f01ac32795871ceff0d1e177c7c186ca4201f962a5cc9be4"
+        },
+        {
+          "path": "scripts/error-detector.sh",
+          "sha256": "74f82bfd29bcc3615d4c9df0962f7d5e42af75431c029c0e14c2f6127c4787ba"
+        },
+        {
+          "path": "scripts/extract-skill.sh",
+          "sha256": "d9af3d6f2cde0eeb3c0a85b898828656c1c6d9d51f61ba38f9801030424f5147"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "89930295b917fda778278c3eefdbef934738db9217fea2254a835d921cac53bd"
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "slug": "find-skills",
+      "namespace": "clawhub_root",
+      "version": "1.0.0",
+      "installs": 75956,
+      "pageURL": "https://skillhub.cn/skills/clawhub_root/find-skills",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=find-skills&namespace=clawhub_root&version=1.0.0",
+      "decision": "dependency",
+      "reason": "原件依赖 SkillHub/ClawHub 查找与安装流程，不能直接写入 Stable 市场；当前已有专门安装器。"
+    },
+    {
+      "rank": 3,
+      "slug": "self-improving",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.2.16",
+      "installs": 57561,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/self-improving",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=self-improving&namespace=clawhub_ivangdavila&version=1.2.16",
+      "decision": "duplicate",
+      "reason": "与本次 self-improving-agent 重叠，并包含原宿主的主动执行与全局记忆约定。"
+    },
+    {
+      "rank": 4,
+      "slug": "summarize",
+      "namespace": "clawhub_paudyyin",
+      "version": "1.0.0",
+      "installs": 45959,
+      "pageURL": "https://skillhub.cn/skills/clawhub_paudyyin/summarize",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=summarize&namespace=clawhub_paudyyin&version=1.0.0",
+      "decision": "migrate",
+      "reason": "移除不存在的 summarize CLI；使用实际文本与文档读取能力。",
+      "name": "文本与文档摘要",
+      "group": "办公协作与知识管理",
+      "description": "长文本、文档与网页摘要，提取要点、关键词和来源。",
+      "packageSha256": "d1fa287272b041fea394446781d4c4d2df432eeffbcd4f1df8da43de44f92c14",
+      "packageBytes": 5143,
+      "sourceFiles": [
+        {
+          "path": "package.json",
+          "sha256": "bec0b96503e9fa5b2b8c8fa7aca1e9a0a40958e74252fa3d6dab3d164e653470"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "8a9b83491b172395e7a04dac5d7cc04a8250b325f73e9b5272f7e992e467bc5d"
+        },
+        {
+          "path": "summarize.py",
+          "sha256": "ab2f7e9e1558c3f175830ffcf941d7f9afa1003920a7140090fe4efe911c41ac"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "48be4b3c873d649442ea40d4c076a46a364a014e08c880d56e757424e75bde8e"
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "slug": "skill-vetter",
+      "namespace": "clawhub_spclaudehome",
+      "version": "1.0.0",
+      "installs": 37273,
+      "pageURL": "https://skillhub.cn/skills/clawhub_spclaudehome/skill-vetter",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=skill-vetter&namespace=clawhub_spclaudehome&version=1.0.0",
+      "decision": "migrate",
+      "reason": "按实际副作用审查，修正仅凭下载量或关键词判定安全的规则。",
+      "name": "技能来源与代码审查",
+      "group": "通用工具与依赖支持",
+      "description": "审查待安装技能的来源、脚本、文件访问、依赖和网络行为。",
+      "packageSha256": "09068394fd62b935d0996fcf8af853942cf42b2be26cac776d4e226f6f7ba634",
+      "packageBytes": 2310,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "4787fc3a22356f03ebd8e3a5d150b77674c9e4b64465e3607911cb2011a5854f"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "aa8544ebc37ac31a6d6e7fca4c8bdef6cad25440d8bf4882e9a56986d9e6c6af"
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "slug": "agent-browser",
+      "namespace": "clawhub_rez0",
+      "version": "1.0.0",
+      "installs": 36434,
+      "pageURL": "https://skillhub.cn/skills/clawhub_rez0/agent-browser",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=agent-browser&namespace=clawhub_rez0&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 agent-browser CLI，且原件要求优先于宿主浏览器，尚未适配其命令协议。"
+    },
+    {
+      "rank": 7,
+      "slug": "github",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 35756,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/github",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=github&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 gh CLI；本次未建立 GitHub 登录环境。"
+    },
+    {
+      "rank": 8,
+      "slug": "humanizer",
+      "namespace": "clawhub_biostartechnology",
+      "version": "1.0.0",
+      "installs": 33756,
+      "pageURL": "https://skillhub.cn/skills/clawhub_biostartechnology/humanizer",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=humanizer&namespace=clawhub_biostartechnology&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "已安装 ops-market-humanizer，已有文案自然化工作流。"
+    },
+    {
+      "rank": 9,
+      "slug": "ontology",
+      "namespace": "clawhub_oswalpalash",
+      "version": "1.0.4",
+      "installs": 29080,
+      "pageURL": "https://skillhub.cn/skills/clawhub_oswalpalash/ontology",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ontology&namespace=clawhub_oswalpalash&version=1.0.4",
+      "decision": "dependency",
+      "reason": "图谱 schema 读写依赖未提供的 PyYAML；原脚本 create 与 validate 分离，不能照搬每次写入已校验的承诺。"
+    },
+    {
+      "rank": 10,
+      "slug": "proactive-agent",
+      "namespace": "clawhub_halthelobster",
+      "version": "3.1.0",
+      "installs": 28937,
+      "pageURL": "https://skillhub.cn/skills/clawhub_halthelobster/proactive-agent",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=proactive-agent&namespace=clawhub_halthelobster&version=3.1.0",
+      "decision": "dependency",
+      "reason": "依赖 OpenClaw 工作区、心跳、WAL 和主动任务机制，不能用技能文本接管 Harness 生命周期。"
+    },
+    {
+      "rank": 11,
+      "slug": "agent-memory",
+      "namespace": "clawhub_dennis-da-menace",
+      "version": "1.0.0",
+      "installs": 25555,
+      "pageURL": "https://skillhub.cn/skills/clawhub_dennis-da-menace/agent-memory",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=agent-memory&namespace=clawhub_dennis-da-menace&version=1.0.0",
+      "decision": "migrate",
+      "reason": "指定工作区数据库路径；使用内置 Python SQLite FTS5，准确标注关键词检索。",
+      "name": "本地事实与经验记忆",
+      "group": "办公协作与知识管理",
+      "description": "在当前工作区用 SQLite 保存和检索事实、经验及实体。",
+      "packageSha256": "1c63802f41b8e6523f6779cbbd5f1fece5f9c4f357eec7c3de1c705d94e09ef4",
+      "packageBytes": 15324,
+      "sourceFiles": [
+        {
+          "path": "cli/entity.py",
+          "sha256": "34bf34dad6b73e48f20ab61e83e3dba1ab1beadcc7d05885f6dac66a9def17dc"
+        },
+        {
+          "path": "cli/fact.py",
+          "sha256": "de3eab5852fe233a90955380a4620d077e9df5db9d0d97cdb07f37e84c4784e3"
+        },
+        {
+          "path": "cli/learn.py",
+          "sha256": "827e5700253c754605975d367ab9f2d6d6c6806467fdd8eb72fd029fdff4584d"
+        },
+        {
+          "path": "examples/basic_usage.py",
+          "sha256": "2d4aee57035cb5db1c0dfbfd609d2d2f55913ecee0e40d26fbbbc5ff48651ab2"
+        },
+        {
+          "path": "README.md",
+          "sha256": "4598c26fd23e2218417cb666d18dbcf971c805d5887dbd205eeb846a0f81dbde"
+        },
+        {
+          "path": "requirements.txt",
+          "sha256": "8c0ba1c2073a16ba91088673bcdd919b49778f3c99636e26132876d6c21a6da3"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "7de6c27f611b9abf3928eaeeda14b850fcc852831db9e0087516e5612bd5aa72"
+        },
+        {
+          "path": "src/__init__.py",
+          "sha256": "1e54d9d2881854ff3b1c77775b68b8539aa653ba9cf83f275aa9ac9b8b50243d"
+        },
+        {
+          "path": "src/memory.py",
+          "sha256": "296dec24ca81fc42f118b7dd5a09c27918968a89bed94ec718c7c1881a109cb3"
+        },
+        {
+          "path": "tests/test_memory.py",
+          "sha256": "4a726aa0db0ee8a53b37a9c80332ac8f8dc77eb4cd713352314e1a4536f64822"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "3bfacb0f38fb39ce322c84af474bf9cbdbaed6c290dac0ec230c35a093c40621"
+        }
+      ]
+    },
+    {
+      "rank": 12,
+      "slug": "excel-xlsx",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.2",
+      "installs": 24636,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/excel-xlsx",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=excel-xlsx&namespace=clawhub_ivangdavila&version=1.0.2",
+      "decision": "migrate",
+      "reason": "对接 stable_excel；说明公式不自动重算和复杂格式限制。",
+      "name": "Excel 文件与公式检查",
+      "group": "办公协作与知识管理",
+      "description": "Excel XLSX 公式引用、数据类型、日期和模板保留检查。",
+      "packageSha256": "c1514cee492f3b155e7965cf29dd0ba5fd522b2bad9a39f11c496323bb0958db",
+      "packageBytes": 3497,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "52421d9fba8fdb64124416c450849434f3639e7b95249ce10fecd209aa90f038"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "df7eca48e929051d040e6c6bc01609f3556135bcf85118e56454411a85a1b233"
+        }
+      ]
+    },
+    {
+      "rank": 13,
+      "slug": "word-docx",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.2",
+      "installs": 23940,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/word-docx",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=word-docx&namespace=clawhub_ivangdavila&version=1.0.2",
+      "decision": "migrate",
+      "reason": "保留文档方法；仅使用已提供的文件能力，按任务验证渲染和复杂往返。",
+      "name": "Word 文档结构与修订",
+      "group": "办公协作与知识管理",
+      "description": "DOCX OOXML 样式、编号、修订、批注和节布局的编辑指导。",
+      "packageSha256": "6b8cba2aeee42805c17da788b1a23662a33518ffed10c4b96c9bebc48be9f77f",
+      "packageBytes": 3676,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c766da489810acf03290283780ba9d3be798678d689255ace34477caeb6d7541"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "bf173c91d79a54874fd7e872fc7d38e61a6ae5b4056f9a289b5b287ad717a0e4"
+        }
+      ]
+    },
+    {
+      "rank": 14,
+      "slug": "weather",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 21530,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/weather",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=weather&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "migrate",
+      "reason": "改用 Windows curl.exe 和 HTTPS，查询失败不输出臆造天气。",
+      "name": "天气查询与预报",
+      "group": "通用工具与依赖支持",
+      "description": "通过公开天气服务查询城市天气、温度和预报。",
+      "packageSha256": "b6d96df2ad9b4670293987afad32cabcc4db5f30842e471615bf348e6b2b0aac",
+      "packageBytes": 1004,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1ca0c8d768ad603ea8d5d47f56a9b435fe575f7f34e719eda85c82003d740e93"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "439e41242b257277193733aa2b98f14074aa65096f21ef1f91e42473892a9710"
+        }
+      ]
+    },
+    {
+      "rank": 15,
+      "slug": "auto-updater",
+      "namespace": "clawhub_maximeprades",
+      "version": "1.0.0",
+      "installs": 16784,
+      "pageURL": "https://skillhub.cn/skills/clawhub_maximeprades/auto-updater",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=auto-updater&namespace=clawhub_maximeprades&version=1.0.0",
+      "decision": "unavailable",
+      "reason": "SkillHub 指定版本下载返回404，无法获取与核验原件。"
+    },
+    {
+      "rank": 16,
+      "slug": "gog",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 14214,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/gog",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=gog&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 gog CLI 与 Google Workspace 账户授权。"
+    },
+    {
+      "rank": 17,
+      "slug": "akshare-stock",
+      "namespace": "clawhub_mbpz",
+      "version": "1.0.1",
+      "installs": 13337,
+      "pageURL": "https://skillhub.cn/skills/clawhub_mbpz/akshare-stock",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=akshare-stock&namespace=clawhub_mbpz&version=1.0.1",
+      "decision": "dependency",
+      "reason": "Stable 内置 Python 未提供 AkShare 及其行情分析依赖。"
+    },
+    {
+      "rank": 18,
+      "slug": "nano-pdf",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 12773,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/nano-pdf",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=nano-pdf&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 nano-pdf CLI 及其模型配置。"
+    },
+    {
+      "rank": 19,
+      "slug": "ima-skills",
+      "namespace": "tencent-adm",
+      "version": "1.1.9",
+      "installs": 11831,
+      "pageURL": "https://skillhub.cn/skills/tencent-adm/ima-skills",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ima-skills&namespace=tencent-adm&version=1.1.9",
+      "decision": "dependency",
+      "reason": "需要腾讯 ima 用户凭据和专用 API 配置，本次未提供。"
+    },
+    {
+      "rank": 20,
+      "slug": "openai-whisper",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 11622,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/openai-whisper",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=openai-whisper&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "unavailable",
+      "reason": "SkillHub 指定版本下载返回404，无法获取与核验原件。"
+    },
+    {
+      "rank": 21,
+      "slug": "api-gateway",
+      "namespace": "clawhub_byungkyu",
+      "version": "1.0.124",
+      "installs": 11601,
+      "pageURL": "https://skillhub.cn/skills/clawhub_byungkyu/api-gateway",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=api-gateway&namespace=clawhub_byungkyu&version=1.0.124",
+      "decision": "dependency",
+      "reason": "需要 Maton 账户、凭据和目标应用 OAuth 连接。"
+    },
+    {
+      "rank": 22,
+      "slug": "gemini",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 11363,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/gemini",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=gemini&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 Gemini CLI 及账户配置。"
+    },
+    {
+      "rank": 23,
+      "slug": "notion",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 10208,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/notion",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=notion&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Notion API 令牌及目标工作区授权。"
+    },
+    {
+      "rank": 24,
+      "slug": "automation-workflows",
+      "namespace": "clawhub_jk-0001",
+      "version": "0.1.0",
+      "installs": 10172,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jk-0001/automation-workflows",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=automation-workflows&namespace=clawhub_jk-0001&version=0.1.0",
+      "decision": "migrate",
+      "reason": "保留流程设计；修正回本计算，连接器和定时运行仅按实际能力执行。",
+      "name": "业务自动化流程设计",
+      "group": "产品竞品与行业研究",
+      "description": "评估重复任务、设计触发条件和动作、测试失败处理及计算自动化回报。",
+      "packageSha256": "708f6936b3a9e1c85dc02426ae49e2a4cef81223ffba24ed5c05341fdc92a0b0",
+      "packageBytes": 4984,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7e2a1b38c6f3558f8f373e45eee3e70d7c2d531cbe922d36a9c24a507d8ccb43"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "27f5a6115e8c83c970542631e595b5b73eae95a6b20900c6d3929d09f842426b"
+        }
+      ]
+    },
+    {
+      "rank": 25,
+      "slug": "self-improving-agent-cn",
+      "namespace": "clawhub_zhengxinjipai",
+      "version": "1.0.0",
+      "installs": 9905,
+      "pageURL": "https://skillhub.cn/skills/clawhub_zhengxinjipai/self-improving-agent-cn",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=self-improving-agent-cn&namespace=clawhub_zhengxinjipai&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "与本次 self-improving-agent 的错误、纠正与学习日志核心流程重叠。"
+    },
+    {
+      "rank": 26,
+      "slug": "data-analysis",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.2",
+      "installs": 9814,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/data-analysis",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=data-analysis&namespace=clawhub_ivangdavila&version=1.0.2",
+      "decision": "migrate",
+      "reason": "方法指南不要求 pandas；按实际文件和查询工具执行。",
+      "name": "分析口径与统计推断",
+      "group": "数据分析与用户洞察",
+      "description": "定义指标口径、比较基线、置信区间与混杂因素，解释分析结论。",
+      "packageSha256": "5d93616674cf1da6423227d113bc0d780e6f273780f4e640115dcdd1fcafdcb1",
+      "packageBytes": 11148,
+      "sourceFiles": [
+        {
+          "path": "chart-selection.md",
+          "sha256": "01d040c85f79df832d8d9956e0decab76cbf6ee57cf7c584e35ab9c0c1410a47"
+        },
+        {
+          "path": "decision-briefs.md",
+          "sha256": "e9a4a5ae1fbe0950f2669d03b9b3ba8b7e85fbbaf42465f48f2ae192fa3d170b"
+        },
+        {
+          "path": "metric-contracts.md",
+          "sha256": "074be3abdc96242096fe516f633315138a07ff216c44e649c59cd8a597a223d6"
+        },
+        {
+          "path": "pitfalls.md",
+          "sha256": "88eb29fc1e307bbb984c47a2bb28fbbd045bde7e296aa0f51fa244995566b14e"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "3f1e1a7093c7391eb8f364bdafc8e6357842455b03933b5ba5af76feb32637e7"
+        },
+        {
+          "path": "techniques.md",
+          "sha256": "e073dd1b2af9bed0a11cdf7bd231184ff3d76d9acd61f32e56dc8413118fda78"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "6da52f342b4a1ad1f8e502fb7de2a348772c975403d52926e8e4905a0c2577cb"
+        }
+      ]
+    },
+    {
+      "rank": 27,
+      "slug": "pdf-extract",
+      "namespace": "clawhub_xejrax",
+      "version": "1.0.0",
+      "installs": 8975,
+      "pageURL": "https://skillhub.cn/skills/clawhub_xejrax/pdf-extract",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=pdf-extract&namespace=clawhub_xejrax&version=1.0.0",
+      "decision": "dependency",
+      "reason": "依赖原件要求的 PDF 提取运行工具，Stable 内置 Python 未提供对应 PDF 库。"
+    },
+    {
+      "rank": 28,
+      "slug": "self-reflection",
+      "namespace": "clawhub_hopyky",
+      "version": "1.1.1",
+      "installs": 8846,
+      "pageURL": "https://skillhub.cn/skills/clawhub_hopyky/self-reflection",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=self-reflection&namespace=clawhub_hopyky&version=1.1.1",
+      "decision": "dependency",
+      "reason": "依赖 jq/date 与原宿主反思脚本，核心日志范围已由 self-improving-agent 覆盖。"
+    },
+    {
+      "rank": 29,
+      "slug": "memory-setup",
+      "namespace": "clawhub_jrbobbyhansen-pixel",
+      "version": "1.0.0",
+      "installs": 8659,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jrbobbyhansen-pixel/memory-setup",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=memory-setup&namespace=clawhub_jrbobbyhansen-pixel&version=1.0.0",
+      "decision": "dependency",
+      "reason": "修改 Moltbot/Clawdbot memorySearch 配置，不适用于 Codex Harness。"
+    },
+    {
+      "rank": 30,
+      "slug": "wechat-article-search",
+      "namespace": "clawhub_wuchubuzai2018",
+      "version": "0.1.0",
+      "installs": 8444,
+      "pageURL": "https://skillhub.cn/skills/clawhub_wuchubuzai2018/wechat-article-search",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=wechat-article-search&namespace=clawhub_wuchubuzai2018&version=0.1.0",
+      "decision": "dependency",
+      "reason": "搜索脚本需要专用抓取依赖及可访问的微信搜索链路，尚未验证运行路径。"
+    },
+    {
+      "rank": 31,
+      "slug": "openclaw-tavily-search",
+      "namespace": "clawhub_jacky1n7",
+      "version": "0.1.0",
+      "installs": 8311,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jacky1n7/openclaw-tavily-search",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=openclaw-tavily-search&namespace=clawhub_jacky1n7&version=0.1.0",
+      "decision": "dependency",
+      "reason": "需要 TAVILY_API_KEY，不能把其他搜索接口冒充 Tavily。"
+    },
+    {
+      "rank": 32,
+      "slug": "markdown-converter",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 8264,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/markdown-converter",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=markdown-converter&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "unavailable",
+      "reason": "SkillHub 指定版本下载返回404，无法获取与核验原件。"
+    },
+    {
+      "rank": 33,
+      "slug": "a-stock-analysis",
+      "namespace": "clawhub_cnyezi",
+      "version": "1.0.0",
+      "installs": 8147,
+      "pageURL": "https://skillhub.cn/skills/clawhub_cnyezi/a-stock-analysis",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=a-stock-analysis&namespace=clawhub_cnyezi&version=1.0.0",
+      "decision": "dependency",
+      "reason": "行情脚本需要额外网络/数据依赖和实时行情验证，本次未提供。"
+    },
+    {
+      "rank": 34,
+      "slug": "tencent-docs",
+      "namespace": "tencent-adm",
+      "version": "1.0.41",
+      "installs": 8107,
+      "pageURL": "https://skillhub.cn/skills/tencent-adm/tencent-docs",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=tencent-docs&namespace=tencent-adm&version=1.0.41",
+      "decision": "dependency",
+      "reason": "需要 TENCENT_DOCS_TOKEN 与腾讯文档账户授权；不能从 Stable 登录推定已具备。"
+    },
+    {
+      "rank": 35,
+      "slug": "powerpoint-pptx",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.1",
+      "installs": 8062,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/powerpoint-pptx",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=powerpoint-pptx&namespace=clawhub_ivangdavila&version=1.0.1",
+      "decision": "migrate",
+      "reason": "保留 OOXML 方法；已有 pptxgenjs 可用于生成，渲染能力按任务检查。",
+      "name": "PowerPoint 模板与结构",
+      "group": "办公协作与知识管理",
+      "description": "PPTX 母版、占位符、备注、图表与模板编辑检查。",
+      "packageSha256": "0f8ab553f76fb140004061065284cdfc009a8eabed340764e519511712a2d366",
+      "packageBytes": 3315,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "d286c8cd144b9957d9d27046e75797d9dfd577e5c1d01ffda6373573d5a5a956"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "3a35df3b1ccdaa0b77dde9dcbae7dabd8cd652dcd4891bb18c94a82bd3ddfc10"
+        }
+      ]
+    },
+    {
+      "rank": 36,
+      "slug": "brave-search",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.1",
+      "installs": 7921,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/brave-search",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=brave-search&namespace=clawhub_steipete&version=1.0.1",
+      "decision": "dependency",
+      "reason": "需要 Brave Search API 密钥及其脚本依赖。"
+    },
+    {
+      "rank": 37,
+      "slug": "prompt-engineering-expert",
+      "namespace": "clawhub_tomstools11",
+      "version": "1.0.0",
+      "installs": 7870,
+      "pageURL": "https://skillhub.cn/skills/clawhub_tomstools11/prompt-engineering-expert",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=prompt-engineering-expert&namespace=clawhub_tomstools11&version=1.0.0",
+      "decision": "migrate",
+      "reason": "补齐参考资料路由；请求可验证依据，不要求披露隐藏思维过程。",
+      "name": "提示词设计与评估",
+      "group": "通用工具与依赖支持",
+      "description": "改进提示词、自定义指令和示例，制定输出验收与对照测试。",
+      "packageSha256": "6b9ea8146027cebdf77dfb4cb03c267ccedea6f00ca21c938708408c503477a0",
+      "packageBytes": 33485,
+      "sourceFiles": [
+        {
+          "path": "CLAUDE.md",
+          "sha256": "551040d89c5d455e282f3f2b4f92120c32c1c9f7fb2676e5e6e70f818c86f653"
+        },
+        {
+          "path": "docs/BEST_PRACTICES.md",
+          "sha256": "4c4709dac73dc2747ae03505f0c4f52af2232b906a20e5b312b7025758562434"
+        },
+        {
+          "path": "docs/TECHNIQUES.md",
+          "sha256": "996c1ba3f8e5c94f81c8441e79eb7b59a2b4f0ba2c9f53a1ff9e9817332a44b7"
+        },
+        {
+          "path": "docs/TROUBLESHOOTING.md",
+          "sha256": "54d849104a7296c8cb473dba2554fb8db6294f6a10c91a51075ecee093673f36"
+        },
+        {
+          "path": "examples/EXAMPLES.md",
+          "sha256": "e7d5f7508f559d0826113131a60b60824a5518ea8b1763eeab4561c6ec0e4b55"
+        },
+        {
+          "path": "GETTING_STARTED.md",
+          "sha256": "ffaac9563c6ba5c187832f407a4271cf8e2f838e50faab49786d087a5cd57507"
+        },
+        {
+          "path": "INDEX.md",
+          "sha256": "24bf33ed01930f5a08a57be47e3214a4b032eb425f01951ddf4867c8f7880059"
+        },
+        {
+          "path": "README.md",
+          "sha256": "b74aa4143ae7a86f375fb419b969905a3b633d99e3d3cba271b55f73fddd68d1"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "260c7bc82462bd43283c8a28163a9be4fbf697da3b13d698e6d742f5ae5285f0"
+        },
+        {
+          "path": "START_HERE.md",
+          "sha256": "f7cc95bdec31a4ea9d96a81f5967b7c617df3bde1e1c730ae00f8d1dc1abbbc5"
+        },
+        {
+          "path": "SUMMARY.md",
+          "sha256": "ce9e737a7632f2571f78c47c1d98a5ef74eca49681306ed6ac088b7afe94a816"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "7f8e2e7ffa55f06bb614a4af01988b5ccb641795aee05462e4eae4d7cd9dab8b"
+        }
+      ]
+    },
+    {
+      "rank": 38,
+      "slug": "deep-research-pro",
+      "namespace": "clawhub_parags",
+      "version": "1.0.2",
+      "installs": 7380,
+      "pageURL": "https://skillhub.cn/skills/clawhub_parags/deep-research-pro",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=deep-research-pro&namespace=clawhub_parags&version=1.0.2",
+      "decision": "migrate",
+      "reason": "替换固定 DDG 脚本和 sessions_spawn，使用当轮搜索能力与工作区路径。",
+      "name": "多来源专题研究",
+      "group": "产品竞品与行业研究",
+      "description": "拆分研究问题、检索多来源、交叉核对并交付带引用的研究报告。",
+      "packageSha256": "4df0d608515945ae9a80a9182e317e99ca1a65090b8b64c5ea74fc9e48e95a2c",
+      "packageBytes": 4353,
+      "sourceFiles": [
+        {
+          "path": "package.json",
+          "sha256": "7fa0a4ea9ec446b57d55546f44c46181bc016b0edcf878a786d782900bb844d2"
+        },
+        {
+          "path": "README.md",
+          "sha256": "5cfccbf491b066136f0d21abf52eb1bc2711a8166cd0989d840b7f768495b2cc"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a780f8bbec4421982c8276c460f95d1ad82a065182409a730ba952b2dca20015"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "2facdc2bd00bd4aea14789c68cf306f1ec7aa47fac5df419c7476fe78740b71d"
+        }
+      ]
+    },
+    {
+      "rank": 39,
+      "slug": "memory-manager",
+      "namespace": "clawhub_marmikcfc",
+      "version": "1.0.0",
+      "installs": 7240,
+      "pageURL": "https://skillhub.cn/skills/clawhub_marmikcfc/memory-manager",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=memory-manager&namespace=clawhub_marmikcfc&version=1.0.0",
+      "decision": "dependency",
+      "reason": "依赖原宿主记忆布局和 shell 管理脚本，不能直接读取或替换 Stable 会话记忆。"
+    },
+    {
+      "rank": 40,
+      "slug": "marketing-skills",
+      "namespace": "clawhub_jchopard69",
+      "version": "0.1.2",
+      "installs": 7189,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jchopard69/marketing-skills",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=marketing-skills&namespace=clawhub_jchopard69&version=0.1.2",
+      "decision": "migrate",
+      "reason": "保留23个引用模块；模块示例不代表账号已连接或已授权发布。",
+      "name": "营销与转化优化方法库",
+      "group": "内容运营与营销素材",
+      "description": "23 个营销模块：SEO、转化率、A/B 测试、定价、落地页、邮件及广告文案。",
+      "packageSha256": "ab9809dce3cdc46a2e05b9dbf800efc1883abb7d56157cb1e04f84e37943dedf",
+      "packageBytes": 147184,
+      "sourceFiles": [
+        {
+          "path": "references/ab-test-setup/SKILL.md",
+          "sha256": "51b1895d080bca288a6f1d8022a6a124e82338a7d88c7dd34f1f01b500286459"
+        },
+        {
+          "path": "references/analytics-tracking/SKILL.md",
+          "sha256": "d3619b093a80a814821d87f40e230e165918800820738af9d6087975d765ccff"
+        },
+        {
+          "path": "references/competitor-alternatives/SKILL.md",
+          "sha256": "50d9b99ac71d7b4bbdf168d5c28abef566a97da6f1decb2951e3d4d2574c41f4"
+        },
+        {
+          "path": "references/copy-editing/SKILL.md",
+          "sha256": "f0bf068d14ed3d5fcf13961e7e0de78374663e38255253cad13113e5e66c8bd2"
+        },
+        {
+          "path": "references/copywriting/SKILL.md",
+          "sha256": "5b3ea76961e8de82f00083569f4ef275058afb70bb301a9153dd80f73837b18e"
+        },
+        {
+          "path": "references/email-sequence/SKILL.md",
+          "sha256": "3db17b4bfcb1bbcf1487891b95391561db7f5a2ca6c397392d64c0aea7abd00e"
+        },
+        {
+          "path": "references/form-cro/SKILL.md",
+          "sha256": "0d41e83de9863a51e7fa420766798387556b427656a1c18bbb3505ff52b8e7bf"
+        },
+        {
+          "path": "references/free-tool-strategy/SKILL.md",
+          "sha256": "afd05058a2b0a4df3f32db31f01230e97008d0838d20efb7764effa8677db541"
+        },
+        {
+          "path": "references/launch-strategy/SKILL.md",
+          "sha256": "f4bb88f62b9217214a9362f7ab2787cf1f3c47065623c9ae43aab0f932c5e84d"
+        },
+        {
+          "path": "references/marketing-ideas/SKILL.md",
+          "sha256": "27528960d32a0dd30d556f360d47357abf6051ac4a563af1506af92aff231983"
+        },
+        {
+          "path": "references/marketing-psychology/SKILL.md",
+          "sha256": "793332c9374bc4c28f23590e01bff5e5730ff5900ef2c8ffbc9ba4337a1a9f5d"
+        },
+        {
+          "path": "references/onboarding-cro/SKILL.md",
+          "sha256": "c973ee1520d800fb68c39965d6c99526489c834440d7b2c254ab059cb54dab8d"
+        },
+        {
+          "path": "references/page-cro/SKILL.md",
+          "sha256": "ea4ac2ac8400f1853ae386785f63a0a9c445e1c08c981a9f6b734bc7c810cfc9"
+        },
+        {
+          "path": "references/paid-ads/SKILL.md",
+          "sha256": "0d00d270771f28b74f6243389f73f413fa539612215595757680fa5c95f25b53"
+        },
+        {
+          "path": "references/paywall-upgrade-cro/SKILL.md",
+          "sha256": "8104b18390db197707ad9b44ec4e68ee8f79326cc9ebb3a143e4c57b30857ef1"
+        },
+        {
+          "path": "references/popup-cro/SKILL.md",
+          "sha256": "7284678a518ff9dedb125ce39d04732fb532e32adea6fe0913e64928ab7e8282"
+        },
+        {
+          "path": "references/pricing-strategy/SKILL.md",
+          "sha256": "44cd0b6d3dfc1921d1a3eefdcbc43ef2fbb909bb913af44db1923c5f68e1ebb1"
+        },
+        {
+          "path": "references/programmatic-seo/SKILL.md",
+          "sha256": "f54fd1731b67cf7d3b0e2f418790c589a56c7076913df13c63c7bdd3a6bd72df"
+        },
+        {
+          "path": "references/referral-program/SKILL.md",
+          "sha256": "4ea4a7fd3bb9fd66b45e1643bc107d330038d44cc830676590117fae8a4fe710"
+        },
+        {
+          "path": "references/schema-markup/SKILL.md",
+          "sha256": "b43f80e20747a21f7b459d22d605858cf1d3586fd99388ec2941115e0e043fd8"
+        },
+        {
+          "path": "references/seo-audit/SKILL.md",
+          "sha256": "746cc57c51afc93da2d2f4f06e1270b3a4360ef8b3b49d1e416bf2c0c49bb454"
+        },
+        {
+          "path": "references/signup-flow-cro/SKILL.md",
+          "sha256": "d52fe97c2712260cbba0832e5747dcc6f189e131000be0df762abd7c85562812"
+        },
+        {
+          "path": "references/social-content/SKILL.md",
+          "sha256": "9c40b9ceda9094b3ce256d62ca8a33e8f82f323cff357da294e14262ed429b69"
+        },
+        {
+          "path": "skill-card.md",
+          "sha256": "26ca0e2d7da73d52af94b7c0db531bb69a37aaf22dfdfb08e1bba85a969f3d70"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "bf35799cd93b83a7ce8bee4a2b7a48b078699c71627c5dc4f2bd06a846b9bae3"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "379d179e246ebee1c2d173bec0f71c5dcfe869bb8a17221342c2c64a9bbab323"
+        }
+      ]
+    },
+    {
+      "rank": 41,
+      "slug": "sonoscli",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 6761,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/sonoscli",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=sonoscli&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 sonos CLI 与目标音箱连接。"
+    },
+    {
+      "rank": 42,
+      "slug": "local-whisper",
+      "namespace": "clawhub_araa47",
+      "version": "1.0.0",
+      "installs": 6654,
+      "pageURL": "https://skillhub.cn/skills/clawhub_araa47/local-whisper",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=local-whisper&namespace=clawhub_araa47&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 Whisper、音频运行依赖与模型权重。"
+    },
+    {
+      "rank": 43,
+      "slug": "video-frames",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 6609,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/video-frames",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=video-frames&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 ffmpeg；原 shell 脚本未完成 Windows 运行适配。"
+    },
+    {
+      "rank": 44,
+      "slug": "xiucheng-self-improving-agent",
+      "namespace": "clawhub_xiucheng",
+      "version": "1.0.0",
+      "installs": 6595,
+      "pageURL": "https://skillhub.cn/skills/clawhub_xiucheng/xiucheng-self-improving-agent",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=xiucheng-self-improving-agent&namespace=clawhub_xiucheng&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "与本次 self-improving-agent 的对话反思和改进记录重叠。"
+    },
+    {
+      "rank": 45,
+      "slug": "mx-finance-data",
+      "namespace": "clawhub_financial-ai-analyst",
+      "version": "1.0.12",
+      "installs": 6541,
+      "pageURL": "https://skillhub.cn/skills/clawhub_financial-ai-analyst/mx-finance-data",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=mx-finance-data&namespace=clawhub_financial-ai-analyst&version=1.0.12",
+      "decision": "dependency",
+      "reason": "依赖东方财富金融数据服务的专用访问配置，尚未验证。"
+    },
+    {
+      "rank": 46,
+      "slug": "admapix",
+      "namespace": "clawhub_fly0pants",
+      "version": "1.0.30",
+      "installs": 6496,
+      "pageURL": "https://skillhub.cn/skills/clawhub_fly0pants/admapix",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=admapix&namespace=clawhub_fly0pants&version=1.0.30",
+      "decision": "unavailable",
+      "reason": "SkillHub 指定版本下载返回404，无法获取与核验原件。"
+    },
+    {
+      "rank": 47,
+      "slug": "wechat-article-spider",
+      "namespace": "clawhub_chenchaoqun",
+      "version": "1.0.0",
+      "installs": 6467,
+      "pageURL": "https://skillhub.cn/skills/clawhub_chenchaoqun/wechat-article-spider",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=wechat-article-spider&namespace=clawhub_chenchaoqun&version=1.0.0",
+      "decision": "dependency",
+      "reason": "爬虫需要额外抓取与解析依赖，原件执行链路尚未验证。"
+    },
+    {
+      "rank": 48,
+      "slug": "ppt",
+      "namespace": "clawhub_zhj7860",
+      "version": "1.0.0",
+      "installs": 6371,
+      "pageURL": "https://skillhub.cn/skills/clawhub_zhj7860/ppt",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ppt&namespace=clawhub_zhj7860&version=1.0.0",
+      "decision": "migrate",
+      "reason": "限定 HTML 输出；保留模板，替换远程字体与 Tailwind 为本地 CSS。",
+      "name": "竖屏 HTML 演示稿",
+      "group": "办公协作与知识管理",
+      "description": "将讲稿生成带键盘翻页与进度导航的竖屏 HTML 演示文件。",
+      "packageSha256": "aa985649091eb41fbef4f8fd428ae0c2a3fb1568a4e09dea47365abce17a60b9",
+      "packageBytes": 7593,
+      "sourceFiles": [
+        {
+          "path": "_meta.json",
+          "sha256": "29ccea9382a440202396491de7e70514b8051583c6c19d8473b51a2946580543"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "34339ed6a8bfd7e7222822808bd4e64e99f5615d469e9219c555eeb792e40f9e"
+        },
+        {
+          "path": "assets/template.html",
+          "sha256": "3213560e16e3d320bb21ffd01a7921c07c55e966a8277e7cf2ebae572fbd46b8"
+        },
+        {
+          "path": "references/design-spec.md",
+          "sha256": "f8e58d710c6a6364ade8f2fa130ab76c298bad5a41234046947cefc04b063df0"
+        },
+        {
+          "path": "references/slide-types.md",
+          "sha256": "9898344bcf001034ea222a475910e1c9469e5b848df4f699b988f888ec016ea6"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "ccb5f7210040e5f1104e49b90b7545ac818358d24c85096bad04f1871e9c24af"
+        }
+      ]
+    },
+    {
+      "rank": 49,
+      "slug": "stock-monitor-skill",
+      "namespace": "clawhub_thirtyfang",
+      "version": "0.1.0",
+      "installs": 6258,
+      "pageURL": "https://skillhub.cn/skills/clawhub_thirtyfang/stock-monitor-skill",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=stock-monitor-skill&namespace=clawhub_thirtyfang&version=0.1.0",
+      "decision": "dependency",
+      "reason": "依赖行情库、预警调度和消息渠道，不能用文本登记替代。"
+    },
+    {
+      "rank": 50,
+      "slug": "stock-watcher",
+      "namespace": "clawhub_robin797860",
+      "version": "1.0.0",
+      "installs": 6250,
+      "pageURL": "https://skillhub.cn/skills/clawhub_robin797860/stock-watcher",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=stock-watcher&namespace=clawhub_robin797860&version=1.0.0",
+      "decision": "dependency",
+      "reason": "依赖同花顺抓取脚本与额外 Python 库，尚未验证。"
+    },
+    {
+      "rank": 51,
+      "slug": "remotion-video-toolkit",
+      "namespace": "clawhub_shreefentsar",
+      "version": "1.4.0",
+      "installs": 6202,
+      "pageURL": "https://skillhub.cn/skills/clawhub_shreefentsar/remotion-video-toolkit",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=remotion-video-toolkit&namespace=clawhub_shreefentsar&version=1.4.0",
+      "decision": "dependency",
+      "reason": "需要 Remotion、React 视频项目及渲染环境，本次未配置。"
+    },
+    {
+      "rank": 52,
+      "slug": "stock-market-pro",
+      "namespace": "clawhub_kys42",
+      "version": "1.2.12",
+      "installs": 6186,
+      "pageURL": "https://skillhub.cn/skills/clawhub_kys42/stock-market-pro",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=stock-market-pro&namespace=clawhub_kys42&version=1.2.12",
+      "decision": "dependency",
+      "reason": "缺少 yfinance、matplotlib 等行情和制图依赖。"
+    },
+    {
+      "rank": 53,
+      "slug": "using-superpowers",
+      "namespace": "clawhub_zlc000190",
+      "version": "0.1.0",
+      "installs": 6134,
+      "pageURL": "https://skillhub.cn/skills/clawhub_zlc000190/using-superpowers",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=using-superpowers&namespace=clawhub_zlc000190&version=0.1.0",
+      "decision": "dependency",
+      "reason": "强制每次回复前调用原 Skill 工具，与 Stable 按需检索和用户指令边界冲突。"
+    },
+    {
+      "rank": 54,
+      "slug": "ui-ux-pro-max",
+      "namespace": "clawhub_xobi667",
+      "version": "0.1.0",
+      "installs": 5959,
+      "pageURL": "https://skillhub.cn/skills/clawhub_xobi667/ui-ux-pro-max",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ui-ux-pro-max&namespace=clawhub_xobi667&version=0.1.0",
+      "decision": "migrate",
+      "reason": "修正资源相对路径；使用内置Python运行标准库检索，默认不持久化覆盖文件。",
+      "name": "UI 设计系统与资料检索",
+      "group": "内容运营与营销素材",
+      "description": "查询配色、字体、组件及技术栈资料，生成 UI 设计系统与交互方案。",
+      "packageSha256": "723568514fbc12dcac9094d35ffa844d9904e27114e4982b9cba4620d6ed0c20",
+      "packageBytes": 331809,
+      "sourceFiles": [
+        {
+          "path": "assets/data/charts.csv",
+          "sha256": "b754c0efffcf54cb889114a9314be1d5af6ceebe65c4c436d713b52018e752c9"
+        },
+        {
+          "path": "assets/data/colors.csv",
+          "sha256": "4cc0df2785f340b8bd0ace50bd4068dc13a7c4c6fa4d9d2723271244ce904614"
+        },
+        {
+          "path": "assets/data/icons.csv",
+          "sha256": "351fe61ba45b8146c66de6ea7d67297654639d79a94f537b4d0bad570058c28f"
+        },
+        {
+          "path": "assets/data/landing.csv",
+          "sha256": "010e1e46db271b94e0af6f18973bea86ddba62feeccd62aeeaa6ed40e2ae2db1"
+        },
+        {
+          "path": "assets/data/products.csv",
+          "sha256": "5359e3037dcb84e99c792ea13dd44f5b78ab6a53557afb309cf19140512aaf5b"
+        },
+        {
+          "path": "assets/data/react-performance.csv",
+          "sha256": "904c8afcda229629545912dde0e8ac37503757131f0169f80b016f1f58c4fd3f"
+        },
+        {
+          "path": "assets/data/stacks/astro.csv",
+          "sha256": "ad18dae3ab6d148d37d144592df80dc1825b6c9e86d9d2d68fdda77434206a37"
+        },
+        {
+          "path": "assets/data/stacks/flutter.csv",
+          "sha256": "e470e6bc2bcd8562667cc764d1e1afb0be0a30ca4dc9ec12fa18b19d46f156bd"
+        },
+        {
+          "path": "assets/data/stacks/html-tailwind.csv",
+          "sha256": "1f004891dd189f6bc2a7717401e3100244326e7e2f3963a79bf7b2349d85e091"
+        },
+        {
+          "path": "assets/data/stacks/jetpack-compose.csv",
+          "sha256": "6c8fd4b0391c342c12b0af15610cd5becbeccaef0bbe8dcfc01d928c3195d93e"
+        },
+        {
+          "path": "assets/data/stacks/nextjs.csv",
+          "sha256": "06a8e8c13bd44696c6ebb4cb6c4d8dea440e3de8cce77616512529ed29258f0c"
+        },
+        {
+          "path": "assets/data/stacks/nuxt-ui.csv",
+          "sha256": "05d6e74501b2b6a636faed32450622759f49a5bcafad971f5f4e7eba0eb7be71"
+        },
+        {
+          "path": "assets/data/stacks/nuxtjs.csv",
+          "sha256": "f7a3f2d9542856d00199f85c6c023b7c284cc698e2e6e12d61afce2edacb24d6"
+        },
+        {
+          "path": "assets/data/stacks/react-native.csv",
+          "sha256": "a08ca77fcf6b6d9531982dce465366296013bfcf12d2938ac72ad57cf0c4f085"
+        },
+        {
+          "path": "assets/data/stacks/react.csv",
+          "sha256": "b6e3eb0e4c9c01bd00ffb951d5ca224a19d488b4544c75436f48cf92ff12bf45"
+        },
+        {
+          "path": "assets/data/stacks/shadcn.csv",
+          "sha256": "395c2e415ef6f48a474acccdc8eb2c7258a6ed751a5037ba171a2d8823e02ded"
+        },
+        {
+          "path": "assets/data/stacks/svelte.csv",
+          "sha256": "bc8d158994a8bdf412830a9dd5e5a5534edd2f367a6e50e0ebd4d76f592dfa3f"
+        },
+        {
+          "path": "assets/data/stacks/swiftui.csv",
+          "sha256": "e87cb9eee208bb753bdab96d4a261c7f830c4317ee90ec098316b248fc32be85"
+        },
+        {
+          "path": "assets/data/stacks/vue.csv",
+          "sha256": "9b793c3f4eec85f77a758c09322f2b62f3b3ca549bb713ccf0849ef885934395"
+        },
+        {
+          "path": "assets/data/styles.csv",
+          "sha256": "ad3c3236134d833bda01a2faf31ddeaaa1dbd5005fa430dec571fa91b26e5fea"
+        },
+        {
+          "path": "assets/data/typography.csv",
+          "sha256": "64695e05ac335ba534aff396c4ba9241c642f80ea53b424251d2669b71c4772b"
+        },
+        {
+          "path": "assets/data/ui-reasoning.csv",
+          "sha256": "58fc52fff69f62709f8c7dd460de6f6693699ea820f24287f3301a427c2b554e"
+        },
+        {
+          "path": "assets/data/ux-guidelines.csv",
+          "sha256": "1870ee048f2a2bdd60709f8f7adf7f3b6dcad560bc005c8b2915a8ac8639820d"
+        },
+        {
+          "path": "assets/data/web-interface.csv",
+          "sha256": "10bfc24e09a6a15db8309e6ef9b6881e1d4af97dffb7c99418aefb8e30df7d54"
+        },
+        {
+          "path": "data/charts.csv",
+          "sha256": "b754c0efffcf54cb889114a9314be1d5af6ceebe65c4c436d713b52018e752c9"
+        },
+        {
+          "path": "data/colors.csv",
+          "sha256": "4cc0df2785f340b8bd0ace50bd4068dc13a7c4c6fa4d9d2723271244ce904614"
+        },
+        {
+          "path": "data/icons.csv",
+          "sha256": "351fe61ba45b8146c66de6ea7d67297654639d79a94f537b4d0bad570058c28f"
+        },
+        {
+          "path": "data/landing.csv",
+          "sha256": "010e1e46db271b94e0af6f18973bea86ddba62feeccd62aeeaa6ed40e2ae2db1"
+        },
+        {
+          "path": "data/products.csv",
+          "sha256": "5359e3037dcb84e99c792ea13dd44f5b78ab6a53557afb309cf19140512aaf5b"
+        },
+        {
+          "path": "data/react-performance.csv",
+          "sha256": "904c8afcda229629545912dde0e8ac37503757131f0169f80b016f1f58c4fd3f"
+        },
+        {
+          "path": "data/stacks/astro.csv",
+          "sha256": "ad18dae3ab6d148d37d144592df80dc1825b6c9e86d9d2d68fdda77434206a37"
+        },
+        {
+          "path": "data/stacks/flutter.csv",
+          "sha256": "e470e6bc2bcd8562667cc764d1e1afb0be0a30ca4dc9ec12fa18b19d46f156bd"
+        },
+        {
+          "path": "data/stacks/html-tailwind.csv",
+          "sha256": "1f004891dd189f6bc2a7717401e3100244326e7e2f3963a79bf7b2349d85e091"
+        },
+        {
+          "path": "data/stacks/jetpack-compose.csv",
+          "sha256": "6c8fd4b0391c342c12b0af15610cd5becbeccaef0bbe8dcfc01d928c3195d93e"
+        },
+        {
+          "path": "data/stacks/nextjs.csv",
+          "sha256": "06a8e8c13bd44696c6ebb4cb6c4d8dea440e3de8cce77616512529ed29258f0c"
+        },
+        {
+          "path": "data/stacks/nuxt-ui.csv",
+          "sha256": "05d6e74501b2b6a636faed32450622759f49a5bcafad971f5f4e7eba0eb7be71"
+        },
+        {
+          "path": "data/stacks/nuxtjs.csv",
+          "sha256": "f7a3f2d9542856d00199f85c6c023b7c284cc698e2e6e12d61afce2edacb24d6"
+        },
+        {
+          "path": "data/stacks/react-native.csv",
+          "sha256": "a08ca77fcf6b6d9531982dce465366296013bfcf12d2938ac72ad57cf0c4f085"
+        },
+        {
+          "path": "data/stacks/react.csv",
+          "sha256": "b6e3eb0e4c9c01bd00ffb951d5ca224a19d488b4544c75436f48cf92ff12bf45"
+        },
+        {
+          "path": "data/stacks/shadcn.csv",
+          "sha256": "395c2e415ef6f48a474acccdc8eb2c7258a6ed751a5037ba171a2d8823e02ded"
+        },
+        {
+          "path": "data/stacks/svelte.csv",
+          "sha256": "bc8d158994a8bdf412830a9dd5e5a5534edd2f367a6e50e0ebd4d76f592dfa3f"
+        },
+        {
+          "path": "data/stacks/swiftui.csv",
+          "sha256": "e87cb9eee208bb753bdab96d4a261c7f830c4317ee90ec098316b248fc32be85"
+        },
+        {
+          "path": "data/stacks/vue.csv",
+          "sha256": "9b793c3f4eec85f77a758c09322f2b62f3b3ca549bb713ccf0849ef885934395"
+        },
+        {
+          "path": "data/styles.csv",
+          "sha256": "ad3c3236134d833bda01a2faf31ddeaaa1dbd5005fa430dec571fa91b26e5fea"
+        },
+        {
+          "path": "data/typography.csv",
+          "sha256": "64695e05ac335ba534aff396c4ba9241c642f80ea53b424251d2669b71c4772b"
+        },
+        {
+          "path": "data/ui-reasoning.csv",
+          "sha256": "58fc52fff69f62709f8c7dd460de6f6693699ea820f24287f3301a427c2b554e"
+        },
+        {
+          "path": "data/ux-guidelines.csv",
+          "sha256": "1870ee048f2a2bdd60709f8f7adf7f3b6dcad560bc005c8b2915a8ac8639820d"
+        },
+        {
+          "path": "data/web-interface.csv",
+          "sha256": "10bfc24e09a6a15db8309e6ef9b6881e1d4af97dffb7c99418aefb8e30df7d54"
+        },
+        {
+          "path": "references/upstream-README.md",
+          "sha256": "b8cca8dbb183bcf81c03a66a7ca5ad8b7259cd38bee2232cabb65c1b4acf435b"
+        },
+        {
+          "path": "references/upstream-skill-content.md",
+          "sha256": "4e495d54b006e2132248f21a7886e8c5400a2d09cddf478c0525582519a5ad3b"
+        },
+        {
+          "path": "scripts/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scripts/core.py",
+          "sha256": "5459d1f04eea03dfb913742d0c03edc5065ac67f6227e4807fa87699662588cb"
+        },
+        {
+          "path": "scripts/design_system.py",
+          "sha256": "1f8d1961c9166fe4772522d6458f6a1ec13a7c00ebfd5effa41c47e1c7cc9e7a"
+        },
+        {
+          "path": "scripts/search.py",
+          "sha256": "8ef258d6aed922f4b813b5ac21e8f484dec71fede9409f949224d75adbd82df5"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "e3048deafc62fb65192f99e51a48094571de059634b8bb27f50f37af0c43ba59"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "4e177779eb5db460d17c69a74b2e638378481b7367fc4452df541fa04ff7efb6"
+        }
+      ]
+    },
+    {
+      "rank": 55,
+      "slug": "swelist",
+      "namespace": "user_159cc044",
+      "version": "1.0.13",
+      "installs": 5939,
+      "pageURL": "https://skillhub.cn/skills/user_159cc044/swelist",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=swelist&namespace=user_159cc044&version=1.0.13",
+      "decision": "dependency",
+      "reason": "缺少 swelist CLI，原说明不包含可直接运行的完整实现。"
+    },
+    {
+      "rank": 56,
+      "slug": "ai-persona-os",
+      "namespace": "clawhub_jeffjhunter",
+      "version": "2.0.0",
+      "installs": 5887,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jeffjhunter/ai-persona-os",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ai-persona-os&namespace=clawhub_jeffjhunter&version=2.0.0",
+      "decision": "dependency",
+      "reason": "强依赖 OpenClaw 5.x 人格、心跳、频道路由和记忆工具，迁移需要宿主级重写。"
+    },
+    {
+      "rank": 57,
+      "slug": "ai-ppt-generator",
+      "namespace": "clawhub_ide-rea",
+      "version": "1.1.5",
+      "installs": 5873,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ide-rea/ai-ppt-generator",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ai-ppt-generator&namespace=clawhub_ide-rea&version=1.1.5",
+      "decision": "dependency",
+      "reason": "需要百度文库 API 密钥及其服务访问配置。"
+    },
+    {
+      "rank": 58,
+      "slug": "youtube-watcher",
+      "namespace": "clawhub_michaelgathara",
+      "version": "1.0.0",
+      "installs": 5840,
+      "pageURL": "https://skillhub.cn/skills/clawhub_michaelgathara/youtube-watcher",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=youtube-watcher&namespace=clawhub_michaelgathara&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 yt-dlp 及字幕提取运行依赖。"
+    },
+    {
+      "rank": 59,
+      "slug": "humanizer-zh",
+      "namespace": "clawhub_liuxy951129-cpu",
+      "version": "1.0.0",
+      "installs": 5832,
+      "pageURL": "https://skillhub.cn/skills/clawhub_liuxy951129-cpu/humanizer-zh",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=humanizer-zh&namespace=clawhub_liuxy951129-cpu&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "现有 ops-market-humanizer 与 doubao-human-signal 已覆盖中文自然化改写。"
+    },
+    {
+      "rank": 60,
+      "slug": "wps",
+      "namespace": "user_7368e5a9",
+      "version": "1.0.0",
+      "installs": 5671,
+      "pageURL": "https://skillhub.cn/skills/user_7368e5a9/wps",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=wps&namespace=user_7368e5a9&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 WPS 应用控制或命令行；当前后台路径未验证。"
+    },
+    {
+      "rank": 61,
+      "slug": "memory",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.2",
+      "installs": 5609,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/memory",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=memory&namespace=clawhub_ivangdavila&version=1.0.2",
+      "decision": "dependency",
+      "reason": "采用原宿主的分类记忆协议，尚未完成与 Stable 会话隔离的适配。"
+    },
+    {
+      "rank": 62,
+      "slug": "tavily-search-pro",
+      "namespace": "clawhub_shaharsha",
+      "version": "1.0.0",
+      "installs": 5566,
+      "pageURL": "https://skillhub.cn/skills/clawhub_shaharsha/tavily-search-pro",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=tavily-search-pro&namespace=clawhub_shaharsha&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 TAVILY_API_KEY 和 tavily-python。"
+    },
+    {
+      "rank": 63,
+      "slug": "cognitive-memory",
+      "namespace": "clawhub_icemilo414",
+      "version": "1.0.8",
+      "installs": 5524,
+      "pageURL": "https://skillhub.cn/skills/clawhub_icemilo414/cognitive-memory",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=cognitive-memory&namespace=clawhub_icemilo414&version=1.0.8",
+      "decision": "dependency",
+      "reason": "依赖原宿主记忆、反思周期和知识图谱机制；本次只迁移独立工作区 SQLite 记忆。"
+    },
+    {
+      "rank": 64,
+      "slug": "news-summary",
+      "namespace": "clawhub_joargp",
+      "version": "1.0.1",
+      "installs": 5466,
+      "pageURL": "https://skillhub.cn/skills/clawhub_joargp/news-summary",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=news-summary&namespace=clawhub_joargp&version=1.0.1",
+      "decision": "migrate",
+      "reason": "迁移无需密钥的文字简报；语音输出需另有已配置的TTS能力。",
+      "name": "每日新闻文字简报",
+      "group": "产品竞品与行业研究",
+      "description": "读取公开 RSS，按主题归纳新闻并给出发布时间和链接。",
+      "packageSha256": "c66653c903d3b361bb52d5ff71f8102aa1a401292475dd112fabf21beb6a877c",
+      "packageBytes": 1355,
+      "sourceFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1b4c45b56f5675670df484445f9b021b05ba1b2e688c202ac962f22c9812f23b"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "a11112804f3b3d006fdacc64637bacfd40c3a17924c35a84fbec30a19c400ea9"
+        }
+      ]
+    },
+    {
+      "rank": 65,
+      "slug": "clawddocs",
+      "namespace": "clawhub_nicholasspisak",
+      "version": "1.2.2",
+      "installs": 5430,
+      "pageURL": "https://skillhub.cn/skills/clawhub_nicholasspisak/clawddocs",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=clawddocs&namespace=clawhub_nicholasspisak&version=1.2.2",
+      "decision": "dependency",
+      "reason": "功能是 OpenClaw 文档与配置管理，不是 Stable/Codex 的文档接口。"
+    },
+    {
+      "rank": 66,
+      "slug": "trello",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 5333,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/trello",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=trello&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Trello API_KEY/TOKEN 及 jq，未提供账户授权。"
+    },
+    {
+      "rank": 67,
+      "slug": "openai-image-gen",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.1",
+      "installs": 5328,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/openai-image-gen",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=openai-image-gen&namespace=clawhub_steipete&version=1.0.1",
+      "decision": "dependency",
+      "reason": "需要 OpenAI Images API 凭据及图像生成服务配置。"
+    },
+    {
+      "rank": 68,
+      "slug": "firecrawl-search",
+      "namespace": "clawhub_ashwingupy",
+      "version": "1.0.0",
+      "installs": 5310,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ashwingupy/firecrawl-search",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=firecrawl-search&namespace=clawhub_ashwingupy&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 FIRECRAWL_API_KEY 及其脚本依赖。"
+    },
+    {
+      "rank": 69,
+      "slug": "superdesign",
+      "namespace": "clawhub_mpociot",
+      "version": "1.0.0",
+      "installs": 5248,
+      "pageURL": "https://skillhub.cn/skills/clawhub_mpociot/superdesign",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=superdesign&namespace=clawhub_mpociot&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "入口原名 frontend-design，与已安装 ops-market-frontend-design 重复。"
+    },
+    {
+      "rank": 70,
+      "slug": "skill-finder-cn",
+      "namespace": "clawhub_guohongbin-git",
+      "version": "1.0.1",
+      "installs": 5124,
+      "pageURL": "https://skillhub.cn/skills/clawhub_guohongbin-git/skill-finder-cn",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=skill-finder-cn&namespace=clawhub_guohongbin-git&version=1.0.1",
+      "decision": "dependency",
+      "reason": "依赖 clawhub CLI，不能直接注册 Stable 技能市场。"
+    },
+    {
+      "rank": 71,
+      "slug": "youtube-api-skill",
+      "namespace": "clawhub_byungkyu",
+      "version": "1.0.6",
+      "installs": 5073,
+      "pageURL": "https://skillhub.cn/skills/clawhub_byungkyu/youtube-api-skill",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=youtube-api-skill&namespace=clawhub_byungkyu&version=1.0.6",
+      "decision": "dependency",
+      "reason": "需要 Maton API 密钥及 YouTube OAuth 连接。"
+    },
+    {
+      "rank": 72,
+      "slug": "edge-tts",
+      "namespace": "clawhub_i3130002",
+      "version": "2.0.0",
+      "installs": 5028,
+      "pageURL": "https://skillhub.cn/skills/clawhub_i3130002/edge-tts",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=edge-tts&namespace=clawhub_i3130002&version=2.0.0",
+      "decision": "dependency",
+      "reason": "缺少 node-edge-tts 及已验证的网络语音合成链路。"
+    },
+    {
+      "rank": 73,
+      "slug": "image-ocr",
+      "namespace": "clawhub_xejrax",
+      "version": "1.0.0",
+      "installs": 4924,
+      "pageURL": "https://skillhub.cn/skills/clawhub_xejrax/image-ocr",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=image-ocr&namespace=clawhub_xejrax&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 Tesseract OCR 引擎及语言包。"
+    },
+    {
+      "rank": 74,
+      "slug": "agent-team-orchestration",
+      "namespace": "clawhub_arminnaimi",
+      "version": "1.0.0",
+      "installs": 4869,
+      "pageURL": "https://skillhub.cn/skills/clawhub_arminnaimi/agent-team-orchestration",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=agent-team-orchestration&namespace=clawhub_arminnaimi&version=1.0.0",
+      "decision": "migrate",
+      "reason": "映射到当轮实际Codex协作能力；不强制创建团队、切模型或修改全局配置。",
+      "name": "多智能体任务与交接设计",
+      "group": "通用工具与依赖支持",
+      "description": "设计多智能体职责、任务状态、产物交接和审查流程。",
+      "packageSha256": "9e007cb4a6f92dc1ec0867300946e648120d7e583f05675175c33479575c21cd",
+      "packageBytes": 10600,
+      "sourceFiles": [
+        {
+          "path": "references/communication.md",
+          "sha256": "4897d9a6c0e19df2c39d5bff592263f01b45fc6902a5d939a9572d9aae34c213"
+        },
+        {
+          "path": "references/patterns.md",
+          "sha256": "3a5a86677c57ca8d4824d601ade32e708e857cfe313b82ea40f302153b86a3d6"
+        },
+        {
+          "path": "references/task-lifecycle.md",
+          "sha256": "63cbf0ff43054500843d6728982b45ef25ca0aea05587119a2be98833d583b28"
+        },
+        {
+          "path": "references/team-setup.md",
+          "sha256": "64071e2edbc9d19e29ae7a6277c55064b46d06b74259bbaa78fce067bdb0581e"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "ee8204c92884c727eae1c8c4007df5bc7aaa36595859cd462112982b5ffe1b4c"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "e36fe1ebb63e05e198558fcde7bec80f5d40a24537906bfecd18971339aa726e"
+        }
+      ]
+    },
+    {
+      "rank": 75,
+      "slug": "copywriting",
+      "namespace": "clawhub_jk-0001",
+      "version": "0.1.0",
+      "installs": 4663,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jk-0001/copywriting",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=copywriting&namespace=clawhub_jk-0001&version=0.1.0",
+      "decision": "duplicate",
+      "reason": "本次 marketing-skills 的 references/copywriting 已包含对应营销文案模块。"
+    },
+    {
+      "rank": 76,
+      "slug": "feishu-evolver-wrapper",
+      "namespace": "clawhub_autogame-17",
+      "version": "1.8.0",
+      "installs": 4610,
+      "pageURL": "https://skillhub.cn/skills/clawhub_autogame-17/feishu-evolver-wrapper",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=feishu-evolver-wrapper&namespace=clawhub_autogame-17&version=1.8.0",
+      "decision": "dependency",
+      "reason": "原件标注停止维护，且强依赖飞书与原能力演化宿主。"
+    },
+    {
+      "rank": 77,
+      "slug": "playwright-mcp",
+      "namespace": "clawhub_spiceman161",
+      "version": "1.0.0",
+      "installs": 4587,
+      "pageURL": "https://skillhub.cn/skills/clawhub_spiceman161/playwright-mcp",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=playwright-mcp&namespace=clawhub_spiceman161&version=1.0.0",
+      "decision": "dependency",
+      "reason": "当前没有配置该 Playwright MCP 服务；不能按工具名相似认定兼容。"
+    },
+    {
+      "rank": 78,
+      "slug": "microsoft-excel",
+      "namespace": "clawhub_byungkyu",
+      "version": "1.0.4",
+      "installs": 4570,
+      "pageURL": "https://skillhub.cn/skills/clawhub_byungkyu/microsoft-excel",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=microsoft-excel&namespace=clawhub_byungkyu&version=1.0.4",
+      "decision": "dependency",
+      "reason": "需要 Maton/托管 OAuth 的微软账户连接；本地 stable_excel 不是该远程 API。"
+    },
+    {
+      "rank": 79,
+      "slug": "gemini-deep-research",
+      "namespace": "clawhub_arun-8687",
+      "version": "1.0.0",
+      "installs": 4557,
+      "pageURL": "https://skillhub.cn/skills/clawhub_arun-8687/gemini-deep-research",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=gemini-deep-research&namespace=clawhub_arun-8687&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Gemini 深度研究 API 账户与异步任务配置。"
+    },
+    {
+      "rank": 80,
+      "slug": "finance",
+      "namespace": "clawhub_anton-roos",
+      "version": "1.1.2",
+      "installs": 4548,
+      "pageURL": "https://skillhub.cn/skills/clawhub_anton-roos/finance",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=finance&namespace=clawhub_anton-roos&version=1.1.2",
+      "decision": "dependency",
+      "reason": "金融数据脚本的提供商与依赖尚未完成验证。"
+    },
+    {
+      "rank": 81,
+      "slug": "imap-smtp-email",
+      "namespace": "clawhub_gzlicanyi",
+      "version": "0.0.16",
+      "installs": 4540,
+      "pageURL": "https://skillhub.cn/skills/clawhub_gzlicanyi/imap-smtp-email",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=imap-smtp-email&namespace=clawhub_gzlicanyi&version=0.0.16",
+      "decision": "dependency",
+      "reason": "需要 IMAP/SMTP 账户配置和运行依赖。"
+    },
+    {
+      "rank": 82,
+      "slug": "office",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.0",
+      "installs": 4531,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/office",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=office&namespace=clawhub_ivangdavila&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "通用办公入口与本次 excel-xlsx、word-docx、powerpoint-pptx 重叠，保留具体格式入口。"
+    },
+    {
+      "rank": 83,
+      "slug": "ppt-generator",
+      "namespace": "clawhub_wwlyzzyorg",
+      "version": "1.0.0",
+      "installs": 4510,
+      "pageURL": "https://skillhub.cn/skills/clawhub_wwlyzzyorg/ppt-generator",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ppt-generator&namespace=clawhub_wwlyzzyorg&version=1.0.0",
+      "decision": "duplicate",
+      "reason": "与本次 ppt 使用相同 HTML 演示入口与资源结构，保留排名较高的版本。"
+    },
+    {
+      "rank": 84,
+      "slug": "ai-news-collectors",
+      "namespace": "clawhub_kenxcomp",
+      "version": "1.0.0",
+      "installs": 4469,
+      "pageURL": "https://skillhub.cn/skills/clawhub_kenxcomp/ai-news-collectors",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ai-news-collectors&namespace=clawhub_kenxcomp&version=1.0.0",
+      "decision": "migrate",
+      "reason": "替换 web_fetch 别名；按证据和用户范围检索，去除无依据的覆盖率承诺。",
+      "name": "AI 新闻收集与核对",
+      "group": "产品竞品与行业研究",
+      "description": "按产品、研究、商业、社区与政策收集 AI 新闻，去重并核实来源。",
+      "packageSha256": "d798f122b43f3cc8d1ae4064f0fb18306b62b97afed695cc6add4fe5a9ec8393",
+      "packageBytes": 5740,
+      "sourceFiles": [
+        {
+          "path": "references/sources.md",
+          "sha256": "2ed62b30bd1513356f36b388123cea89efad4b723bf6e11e0e35f911b077325c"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "f853f2ca3affda0efe14af78d16a1bfd82e75cae7c01ec431a4f09b69ebe313a"
+        },
+        {
+          "path": "_meta.json",
+          "sha256": "d7e4ff5dec7a555f8372541f59c30078e2bcc3fdc88c62faef4dcc1907e6ec81"
+        }
+      ]
+    },
+    {
+      "rank": 85,
+      "slug": "openclaw-backup",
+      "namespace": "clawhub_alex3alex",
+      "version": "1.0.0",
+      "installs": 4451,
+      "pageURL": "https://skillhub.cn/skills/clawhub_alex3alex/openclaw-backup",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=openclaw-backup&namespace=clawhub_alex3alex&version=1.0.0",
+      "decision": "dependency",
+      "reason": "备份目标是 ~/.openclaw，不是 Stable 数据库或 Codex 会话结构。"
+    },
+    {
+      "rank": 86,
+      "slug": "x-ai",
+      "namespace": "clawhub_blueberrywoodsym",
+      "version": "1.0.2",
+      "installs": 4427,
+      "pageURL": "https://skillhub.cn/skills/clawhub_blueberrywoodsym/x-ai",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=x-ai&namespace=clawhub_blueberrywoodsym&version=1.0.2",
+      "decision": "dependency",
+      "reason": "需要 XAI_API_KEY，不复用 Stable 模型账户凭据。"
+    },
+    {
+      "rank": 87,
+      "slug": "ai-ppt-generate",
+      "namespace": "clawhub_jlpjavawayup",
+      "version": "1.0.0",
+      "installs": 4380,
+      "pageURL": "https://skillhub.cn/skills/clawhub_jlpjavawayup/ai-ppt-generate",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ai-ppt-generate&namespace=clawhub_jlpjavawayup&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要百度 PPT 生成服务的账户或专用访问配置。"
+    },
+    {
+      "rank": 88,
+      "slug": "tmux",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 4344,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/tmux",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=tmux&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "原件仅支持 Linux/macOS，Windows 当前没有 tmux。"
+    },
+    {
+      "rank": 89,
+      "slug": "himalaya",
+      "namespace": "clawhub_lamelas",
+      "version": "1.0.0",
+      "installs": 4327,
+      "pageURL": "https://skillhub.cn/skills/clawhub_lamelas/himalaya",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=himalaya&namespace=clawhub_lamelas&version=1.0.0",
+      "decision": "dependency",
+      "reason": "缺少 Himalaya CLI 与邮件账户配置。"
+    },
+    {
+      "rank": 90,
+      "slug": "larry",
+      "namespace": "clawhub_olliewazza",
+      "version": "1.0.0",
+      "installs": 4314,
+      "pageURL": "https://skillhub.cn/skills/clawhub_olliewazza/larry",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=larry&namespace=clawhub_olliewazza&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Postiz、TikTok 账户、图像服务和发布链路。"
+    },
+    {
+      "rank": 91,
+      "slug": "liang-tavily-search",
+      "namespace": "clawhub_matthew77",
+      "version": "1.0.1",
+      "installs": 4301,
+      "pageURL": "https://skillhub.cn/skills/clawhub_matthew77/liang-tavily-search",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=liang-tavily-search&namespace=clawhub_matthew77&version=1.0.1",
+      "decision": "dependency",
+      "reason": "需要 Tavily API 密钥，未配置。"
+    },
+    {
+      "rank": 92,
+      "slug": "ocr-local",
+      "namespace": "clawhub_shaw555",
+      "version": "1.0.0",
+      "installs": 4285,
+      "pageURL": "https://skillhub.cn/skills/clawhub_shaw555/ocr-local",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=ocr-local&namespace=clawhub_shaw555&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Tesseract.js 及中英语言数据包。"
+    },
+    {
+      "rank": 93,
+      "slug": "playwright",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.3",
+      "installs": 4237,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/playwright",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=playwright&namespace=clawhub_ivangdavila&version=1.0.3",
+      "decision": "dependency",
+      "reason": "依赖未配置的 Playwright MCP 工具，尚未进行调用协议适配。"
+    },
+    {
+      "rank": 94,
+      "slug": "slack",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 4231,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/slack",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=slack&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "dependency",
+      "reason": "原件调用 Clawdbot 的 slack 工具，Stable 没有对应账户接口。"
+    },
+    {
+      "rank": 95,
+      "slug": "reflect-learn",
+      "namespace": "clawhub_stevengonsalvez",
+      "version": "2.1.0",
+      "installs": 4205,
+      "pageURL": "https://skillhub.cn/skills/clawhub_stevengonsalvez/reflect-learn",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=reflect-learn&namespace=clawhub_stevengonsalvez&version=2.1.0",
+      "decision": "dependency",
+      "reason": "依赖原平台反思脚本、钩子及配置文件，不能自动写入 Codex 全局规则。"
+    },
+    {
+      "rank": 96,
+      "slug": "wechat-publisher",
+      "namespace": "clawhub_0731coderlee-sudo",
+      "version": "0.1.0",
+      "installs": 4168,
+      "pageURL": "https://skillhub.cn/skills/clawhub_0731coderlee-sudo/wechat-publisher",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=wechat-publisher&namespace=clawhub_0731coderlee-sudo&version=0.1.0",
+      "decision": "dependency",
+      "reason": "缺少 wenyan-cli 与公众号 AppID/Secret；不建立未经提供的发布凭据。"
+    },
+    {
+      "rank": 97,
+      "slug": "wechat-article-extractor-skill",
+      "namespace": "clawhub_freestylefly",
+      "version": "1.0.1",
+      "installs": 4167,
+      "pageURL": "https://skillhub.cn/skills/clawhub_freestylefly/wechat-article-extractor-skill",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=wechat-article-extractor-skill&namespace=clawhub_freestylefly&version=1.0.1",
+      "decision": "dependency",
+      "reason": "需要微信文章解析专用依赖和抓取链路，尚未完成运行验证。"
+    },
+    {
+      "rank": 98,
+      "slug": "image",
+      "namespace": "clawhub_ivangdavila",
+      "version": "1.0.4",
+      "installs": 4135,
+      "pageURL": "https://skillhub.cn/skills/clawhub_ivangdavila/image",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=image&namespace=clawhub_ivangdavila&version=1.0.4",
+      "decision": "dependency",
+      "reason": "图像变换依赖 Pillow/ImageMagick 等，Stable 内置 Python 没有 Pillow。"
+    },
+    {
+      "rank": 99,
+      "slug": "search-with-tavily",
+      "namespace": "clawhub_chasehl",
+      "version": "1.0.0",
+      "installs": 4133,
+      "pageURL": "https://skillhub.cn/skills/clawhub_chasehl/search-with-tavily",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=search-with-tavily&namespace=clawhub_chasehl&version=1.0.0",
+      "decision": "dependency",
+      "reason": "需要 Tavily API 密钥与脚本依赖，未配置。"
+    },
+    {
+      "rank": 100,
+      "slug": "obsidian",
+      "namespace": "clawhub_steipete",
+      "version": "1.0.0",
+      "installs": 4105,
+      "pageURL": "https://skillhub.cn/skills/clawhub_steipete/obsidian",
+      "downloadURL": "https://api.skillhub.cn/api/v1/download?slug=obsidian&namespace=clawhub_steipete&version=1.0.0",
+      "decision": "unavailable",
+      "reason": "SkillHub 指定版本下载返回404，无法获取与核验原件。"
+    }
+  ]
+}

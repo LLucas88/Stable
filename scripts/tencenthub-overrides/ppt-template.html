@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>演示文稿</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#090b10;color:#fff;font-family:"Microsoft YaHei",Arial,sans-serif;display:grid;place-items:center;min-height:100dvh}
+main{width:min(100vw,56.25dvh);height:min(177.78vw,100dvh);position:relative;background:radial-gradient(ellipse at 10% 10%,#183e5b,transparent 60%),#090b10}
+.slide{position:absolute;inset:0;padding:12% 9% 20%;display:flex;flex-direction:column;justify-content:center;overflow:auto;opacity:0;visibility:hidden;transition:opacity .25s}
+.slide.active{opacity:1;visibility:visible}h1{font-size:clamp(26px,5.5dvh,54px);line-height:1.25;overflow-wrap:anywhere}p,li{font-size:clamp(16px,2.8dvh,26px);line-height:1.65;color:#c4cdd8}small{color:#9ca3af}
+nav{position:absolute;bottom:4%;left:6%;right:6%;display:flex;gap:10px;align-items:center;justify-content:center;z-index:2}button{background:#283445;color:white;border:1px solid #7b8798;border-radius:20px;padding:10px 18px;cursor:pointer}button:focus-visible{outline:3px solid #9fd9ff;outline-offset:3px}button:disabled{opacity:.4;cursor:default}#page{min-width:4em;text-align:center}
+@media(prefers-reduced-motion:reduce){.slide{transition:none}}
+</style>
+<main aria-label="演示文稿">
+ <section class="slide active"><small>主题</small><h1>替换为演示标题</h1><p>替换为开场要点。</p></section>
+ <section class="slide"><small>核心内容</small><h1>一页表达一个重点</h1><p>替换为用户材料支持的事实与结论。</p></section>
+ <section class="slide"><small>下一步</small><h1>明确行动</h1><p>替换为具体下一步。</p></section>
+ <nav aria-label="页面导航"><button id="prev" aria-label="上一页">←</button><span id="page" aria-live="polite"></span><button id="next" aria-label="下一页">→</button></nav>
+</main>
+<script>
+const slides=[...document.querySelectorAll('.slide')],prev=document.getElementById('prev'),next=document.getElementById('next'),page=document.getElementById('page');
+let index=0;
+function show(n){index=Math.max(0,Math.min(slides.length-1,n));slides.forEach((slide,i)=>{slide.classList.toggle('active',i===index);slide.setAttribute('aria-hidden',String(i!==index))});page.textContent=`${index+1} / ${slides.length}`;prev.disabled=index===0;next.disabled=index===slides.length-1}
+prev.addEventListener('click',()=>show(index-1));next.addEventListener('click',()=>show(index+1));
+document.addEventListener('keydown',event=>{if(['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable)return;if(event.key==='ArrowRight'){event.preventDefault();show(index+1)}if(event.key==='ArrowLeft'){event.preventDefault();show(index-1)}});show(0);
+</script>
+</html>

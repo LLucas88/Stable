@@ -1,0 +1,766 @@
+{
+  "schemaVersion": 1,
+  "bundle": "tencenthub-20260906",
+  "skills": [
+    {
+      "slug": "self-improving-agent",
+      "directory": "skills/self-improving-agent",
+      "entry": "skills/self-improving-agent/SKILL.md"
+    },
+    {
+      "slug": "summarize",
+      "directory": "skills/summarize",
+      "entry": "skills/summarize/SKILL.md"
+    },
+    {
+      "slug": "skill-vetter",
+      "directory": "skills/skill-vetter",
+      "entry": "skills/skill-vetter/SKILL.md"
+    },
+    {
+      "slug": "agent-memory",
+      "directory": "skills/agent-memory",
+      "entry": "skills/agent-memory/SKILL.md"
+    },
+    {
+      "slug": "excel-xlsx",
+      "directory": "skills/excel-xlsx",
+      "entry": "skills/excel-xlsx/SKILL.md"
+    },
+    {
+      "slug": "word-docx",
+      "directory": "skills/word-docx",
+      "entry": "skills/word-docx/SKILL.md"
+    },
+    {
+      "slug": "weather",
+      "directory": "skills/weather",
+      "entry": "skills/weather/SKILL.md"
+    },
+    {
+      "slug": "automation-workflows",
+      "directory": "skills/automation-workflows",
+      "entry": "skills/automation-workflows/SKILL.md"
+    },
+    {
+      "slug": "data-analysis",
+      "directory": "skills/data-analysis",
+      "entry": "skills/data-analysis/SKILL.md"
+    },
+    {
+      "slug": "powerpoint-pptx",
+      "directory": "skills/powerpoint-pptx",
+      "entry": "skills/powerpoint-pptx/SKILL.md"
+    },
+    {
+      "slug": "prompt-engineering-expert",
+      "directory": "skills/prompt-engineering-expert",
+      "entry": "skills/prompt-engineering-expert/SKILL.md"
+    },
+    {
+      "slug": "deep-research-pro",
+      "directory": "skills/deep-research-pro",
+      "entry": "skills/deep-research-pro/SKILL.md"
+    },
+    {
+      "slug": "marketing-skills",
+      "directory": "skills/marketing-skills",
+      "entry": "skills/marketing-skills/SKILL.md"
+    },
+    {
+      "slug": "ppt",
+      "directory": "skills/ppt",
+      "entry": "skills/ppt/SKILL.md"
+    },
+    {
+      "slug": "ui-ux-pro-max",
+      "directory": "skills/ui-ux-pro-max",
+      "entry": "skills/ui-ux-pro-max/SKILL.md"
+    },
+    {
+      "slug": "news-summary",
+      "directory": "skills/news-summary",
+      "entry": "skills/news-summary/SKILL.md"
+    },
+    {
+      "slug": "agent-team-orchestration",
+      "directory": "skills/agent-team-orchestration",
+      "entry": "skills/agent-team-orchestration/SKILL.md"
+    },
+    {
+      "slug": "ai-news-collectors",
+      "directory": "skills/ai-news-collectors",
+      "entry": "skills/ai-news-collectors/SKILL.md"
+    }
+  ],
+  "files": [
+    {
+      "path": "skills/agent-memory/_meta.json",
+      "sha256": "3bfacb0f38fb39ce322c84af474bf9cbdbaed6c290dac0ec230c35a093c40621"
+    },
+    {
+      "path": "skills/agent-memory/cli/entity.py",
+      "sha256": "34bf34dad6b73e48f20ab61e83e3dba1ab1beadcc7d05885f6dac66a9def17dc"
+    },
+    {
+      "path": "skills/agent-memory/cli/fact.py",
+      "sha256": "de3eab5852fe233a90955380a4620d077e9df5db9d0d97cdb07f37e84c4784e3"
+    },
+    {
+      "path": "skills/agent-memory/cli/learn.py",
+      "sha256": "827e5700253c754605975d367ab9f2d6d6c6806467fdd8eb72fd029fdff4584d"
+    },
+    {
+      "path": "skills/agent-memory/examples/basic_usage.py",
+      "sha256": "2d4aee57035cb5db1c0dfbfd609d2d2f55913ecee0e40d26fbbbc5ff48651ab2"
+    },
+    {
+      "path": "skills/agent-memory/README.md",
+      "sha256": "4598c26fd23e2218417cb666d18dbcf971c805d5887dbd205eeb846a0f81dbde"
+    },
+    {
+      "path": "skills/agent-memory/requirements.txt",
+      "sha256": "8c0ba1c2073a16ba91088673bcdd919b49778f3c99636e26132876d6c21a6da3"
+    },
+    {
+      "path": "skills/agent-memory/SKILL.md",
+      "sha256": "ddc6ed7d0590b5909bcffaa8d5683141cca5d295421f3d906ee9c60c76db980a"
+    },
+    {
+      "path": "skills/agent-memory/src/__init__.py",
+      "sha256": "1e54d9d2881854ff3b1c77775b68b8539aa653ba9cf83f275aa9ac9b8b50243d"
+    },
+    {
+      "path": "skills/agent-memory/src/memory.py",
+      "sha256": "296dec24ca81fc42f118b7dd5a09c27918968a89bed94ec718c7c1881a109cb3"
+    },
+    {
+      "path": "skills/agent-memory/tests/test_memory.py",
+      "sha256": "4a726aa0db0ee8a53b37a9c80332ac8f8dc77eb4cd713352314e1a4536f64822"
+    },
+    {
+      "path": "skills/agent-team-orchestration/_meta.json",
+      "sha256": "e36fe1ebb63e05e198558fcde7bec80f5d40a24537906bfecd18971339aa726e"
+    },
+    {
+      "path": "skills/agent-team-orchestration/references/communication.md",
+      "sha256": "4897d9a6c0e19df2c39d5bff592263f01b45fc6902a5d939a9572d9aae34c213"
+    },
+    {
+      "path": "skills/agent-team-orchestration/references/patterns.md",
+      "sha256": "3a5a86677c57ca8d4824d601ade32e708e857cfe313b82ea40f302153b86a3d6"
+    },
+    {
+      "path": "skills/agent-team-orchestration/references/task-lifecycle.md",
+      "sha256": "63cbf0ff43054500843d6728982b45ef25ca0aea05587119a2be98833d583b28"
+    },
+    {
+      "path": "skills/agent-team-orchestration/references/team-setup.md",
+      "sha256": "64071e2edbc9d19e29ae7a6277c55064b46d06b74259bbaa78fce067bdb0581e"
+    },
+    {
+      "path": "skills/agent-team-orchestration/SKILL.md",
+      "sha256": "74398bcfe91a6d05469c041205ea1a8a3cb66ffe5abc65cf474f9d4778c982c9"
+    },
+    {
+      "path": "skills/ai-news-collectors/_meta.json",
+      "sha256": "d7e4ff5dec7a555f8372541f59c30078e2bcc3fdc88c62faef4dcc1907e6ec81"
+    },
+    {
+      "path": "skills/ai-news-collectors/references/sources.md",
+      "sha256": "2ed62b30bd1513356f36b388123cea89efad4b723bf6e11e0e35f911b077325c"
+    },
+    {
+      "path": "skills/ai-news-collectors/SKILL.md",
+      "sha256": "1a25eb62acc6ac7e8d6e276eabe1aa99140b366bc598236f894e2ea69010ca57"
+    },
+    {
+      "path": "skills/automation-workflows/_meta.json",
+      "sha256": "27f5a6115e8c83c970542631e595b5b73eae95a6b20900c6d3929d09f842426b"
+    },
+    {
+      "path": "skills/automation-workflows/SKILL.md",
+      "sha256": "94a61e313a489578b55b7a451657289d30c1d8eb7c30aad064eb908621c7d5cf"
+    },
+    {
+      "path": "skills/data-analysis/_meta.json",
+      "sha256": "6da52f342b4a1ad1f8e502fb7de2a348772c975403d52926e8e4905a0c2577cb"
+    },
+    {
+      "path": "skills/data-analysis/chart-selection.md",
+      "sha256": "01d040c85f79df832d8d9956e0decab76cbf6ee57cf7c584e35ab9c0c1410a47"
+    },
+    {
+      "path": "skills/data-analysis/decision-briefs.md",
+      "sha256": "e9a4a5ae1fbe0950f2669d03b9b3ba8b7e85fbbaf42465f48f2ae192fa3d170b"
+    },
+    {
+      "path": "skills/data-analysis/metric-contracts.md",
+      "sha256": "074be3abdc96242096fe516f633315138a07ff216c44e649c59cd8a597a223d6"
+    },
+    {
+      "path": "skills/data-analysis/pitfalls.md",
+      "sha256": "88eb29fc1e307bbb984c47a2bb28fbbd045bde7e296aa0f51fa244995566b14e"
+    },
+    {
+      "path": "skills/data-analysis/SKILL.md",
+      "sha256": "6537cf12590ed38485b65e0f2e45d326705e6159257001188988df3db087c7b0"
+    },
+    {
+      "path": "skills/data-analysis/techniques.md",
+      "sha256": "e073dd1b2af9bed0a11cdf7bd231184ff3d76d9acd61f32e56dc8413118fda78"
+    },
+    {
+      "path": "skills/deep-research-pro/_meta.json",
+      "sha256": "2facdc2bd00bd4aea14789c68cf306f1ec7aa47fac5df419c7476fe78740b71d"
+    },
+    {
+      "path": "skills/deep-research-pro/package.json",
+      "sha256": "7fa0a4ea9ec446b57d55546f44c46181bc016b0edcf878a786d782900bb844d2"
+    },
+    {
+      "path": "skills/deep-research-pro/README.md",
+      "sha256": "5cfccbf491b066136f0d21abf52eb1bc2711a8166cd0989d840b7f768495b2cc"
+    },
+    {
+      "path": "skills/deep-research-pro/SKILL.md",
+      "sha256": "310e42cf4964dc8b92bc5777029d205b164c2d908ce2d4ffc0e0b9a121869b42"
+    },
+    {
+      "path": "skills/excel-xlsx/_meta.json",
+      "sha256": "df7eca48e929051d040e6c6bc01609f3556135bcf85118e56454411a85a1b233"
+    },
+    {
+      "path": "skills/excel-xlsx/SKILL.md",
+      "sha256": "b9404e43c01ef1e5bbaac46c28b535c7f56a5ede166d7b0ffa62f06d42f57946"
+    },
+    {
+      "path": "skills/marketing-skills/_meta.json",
+      "sha256": "379d179e246ebee1c2d173bec0f71c5dcfe869bb8a17221342c2c64a9bbab323"
+    },
+    {
+      "path": "skills/marketing-skills/references/ab-test-setup/SKILL.md",
+      "sha256": "51b1895d080bca288a6f1d8022a6a124e82338a7d88c7dd34f1f01b500286459"
+    },
+    {
+      "path": "skills/marketing-skills/references/analytics-tracking/SKILL.md",
+      "sha256": "d3619b093a80a814821d87f40e230e165918800820738af9d6087975d765ccff"
+    },
+    {
+      "path": "skills/marketing-skills/references/competitor-alternatives/SKILL.md",
+      "sha256": "50d9b99ac71d7b4bbdf168d5c28abef566a97da6f1decb2951e3d4d2574c41f4"
+    },
+    {
+      "path": "skills/marketing-skills/references/copy-editing/SKILL.md",
+      "sha256": "f0bf068d14ed3d5fcf13961e7e0de78374663e38255253cad13113e5e66c8bd2"
+    },
+    {
+      "path": "skills/marketing-skills/references/copywriting/SKILL.md",
+      "sha256": "5b3ea76961e8de82f00083569f4ef275058afb70bb301a9153dd80f73837b18e"
+    },
+    {
+      "path": "skills/marketing-skills/references/email-sequence/SKILL.md",
+      "sha256": "3db17b4bfcb1bbcf1487891b95391561db7f5a2ca6c397392d64c0aea7abd00e"
+    },
+    {
+      "path": "skills/marketing-skills/references/form-cro/SKILL.md",
+      "sha256": "0d41e83de9863a51e7fa420766798387556b427656a1c18bbb3505ff52b8e7bf"
+    },
+    {
+      "path": "skills/marketing-skills/references/free-tool-strategy/SKILL.md",
+      "sha256": "afd05058a2b0a4df3f32db31f01230e97008d0838d20efb7764effa8677db541"
+    },
+    {
+      "path": "skills/marketing-skills/references/launch-strategy/SKILL.md",
+      "sha256": "f4bb88f62b9217214a9362f7ab2787cf1f3c47065623c9ae43aab0f932c5e84d"
+    },
+    {
+      "path": "skills/marketing-skills/references/marketing-ideas/SKILL.md",
+      "sha256": "27528960d32a0dd30d556f360d47357abf6051ac4a563af1506af92aff231983"
+    },
+    {
+      "path": "skills/marketing-skills/references/marketing-psychology/SKILL.md",
+      "sha256": "793332c9374bc4c28f23590e01bff5e5730ff5900ef2c8ffbc9ba4337a1a9f5d"
+    },
+    {
+      "path": "skills/marketing-skills/references/onboarding-cro/SKILL.md",
+      "sha256": "c973ee1520d800fb68c39965d6c99526489c834440d7b2c254ab059cb54dab8d"
+    },
+    {
+      "path": "skills/marketing-skills/references/page-cro/SKILL.md",
+      "sha256": "ea4ac2ac8400f1853ae386785f63a0a9c445e1c08c981a9f6b734bc7c810cfc9"
+    },
+    {
+      "path": "skills/marketing-skills/references/paid-ads/SKILL.md",
+      "sha256": "0d00d270771f28b74f6243389f73f413fa539612215595757680fa5c95f25b53"
+    },
+    {
+      "path": "skills/marketing-skills/references/paywall-upgrade-cro/SKILL.md",
+      "sha256": "8104b18390db197707ad9b44ec4e68ee8f79326cc9ebb3a143e4c57b30857ef1"
+    },
+    {
+      "path": "skills/marketing-skills/references/popup-cro/SKILL.md",
+      "sha256": "7284678a518ff9dedb125ce39d04732fb532e32adea6fe0913e64928ab7e8282"
+    },
+    {
+      "path": "skills/marketing-skills/references/pricing-strategy/SKILL.md",
+      "sha256": "44cd0b6d3dfc1921d1a3eefdcbc43ef2fbb909bb913af44db1923c5f68e1ebb1"
+    },
+    {
+      "path": "skills/marketing-skills/references/programmatic-seo/SKILL.md",
+      "sha256": "f54fd1731b67cf7d3b0e2f418790c589a56c7076913df13c63c7bdd3a6bd72df"
+    },
+    {
+      "path": "skills/marketing-skills/references/referral-program/SKILL.md",
+      "sha256": "4ea4a7fd3bb9fd66b45e1643bc107d330038d44cc830676590117fae8a4fe710"
+    },
+    {
+      "path": "skills/marketing-skills/references/schema-markup/SKILL.md",
+      "sha256": "b43f80e20747a21f7b459d22d605858cf1d3586fd99388ec2941115e0e043fd8"
+    },
+    {
+      "path": "skills/marketing-skills/references/seo-audit/SKILL.md",
+      "sha256": "746cc57c51afc93da2d2f4f06e1270b3a4360ef8b3b49d1e416bf2c0c49bb454"
+    },
+    {
+      "path": "skills/marketing-skills/references/signup-flow-cro/SKILL.md",
+      "sha256": "d52fe97c2712260cbba0832e5747dcc6f189e131000be0df762abd7c85562812"
+    },
+    {
+      "path": "skills/marketing-skills/references/social-content/SKILL.md",
+      "sha256": "9c40b9ceda9094b3ce256d62ca8a33e8f82f323cff357da294e14262ed429b69"
+    },
+    {
+      "path": "skills/marketing-skills/skill-card.md",
+      "sha256": "26ca0e2d7da73d52af94b7c0db531bb69a37aaf22dfdfb08e1bba85a969f3d70"
+    },
+    {
+      "path": "skills/marketing-skills/SKILL.md",
+      "sha256": "8276fa38ceed173c6ac0af248b9be65bb1eb03d81983c44b32625b87d9bf1f6c"
+    },
+    {
+      "path": "skills/news-summary/_meta.json",
+      "sha256": "a11112804f3b3d006fdacc64637bacfd40c3a17924c35a84fbec30a19c400ea9"
+    },
+    {
+      "path": "skills/news-summary/SKILL.md",
+      "sha256": "457e31cd2814b5fdd2f66725871ccd20c2c40ea8101900e86581f28b6cb5e5fd"
+    },
+    {
+      "path": "skills/powerpoint-pptx/_meta.json",
+      "sha256": "3a35df3b1ccdaa0b77dde9dcbae7dabd8cd652dcd4891bb18c94a82bd3ddfc10"
+    },
+    {
+      "path": "skills/powerpoint-pptx/SKILL.md",
+      "sha256": "90199a2ea646853e6283c633c40bade9e8746a640063ac9343db00b2fbfa45e7"
+    },
+    {
+      "path": "skills/ppt/_meta.json",
+      "sha256": "29ccea9382a440202396491de7e70514b8051583c6c19d8473b51a2946580543"
+    },
+    {
+      "path": "skills/ppt/agents/openai.yaml",
+      "sha256": "34339ed6a8bfd7e7222822808bd4e64e99f5615d469e9219c555eeb792e40f9e"
+    },
+    {
+      "path": "skills/ppt/assets/template.html",
+      "sha256": "3ab3cf80b85435782e440962962161259e7a0238a74d99429fe2bca2b51f0c15"
+    },
+    {
+      "path": "skills/ppt/references/design-spec.md",
+      "sha256": "f8e58d710c6a6364ade8f2fa130ab76c298bad5a41234046947cefc04b063df0"
+    },
+    {
+      "path": "skills/ppt/references/slide-types.md",
+      "sha256": "9898344bcf001034ea222a475910e1c9469e5b848df4f699b988f888ec016ea6"
+    },
+    {
+      "path": "skills/ppt/SKILL.md",
+      "sha256": "8c294ca1d66709433140f5ae87136ef065fe0f8884e5ab39b63b2cddc82a64e8"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/_meta.json",
+      "sha256": "7f8e2e7ffa55f06bb614a4af01988b5ccb641795aee05462e4eae4d7cd9dab8b"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/CLAUDE.md",
+      "sha256": "551040d89c5d455e282f3f2b4f92120c32c1c9f7fb2676e5e6e70f818c86f653"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/docs/BEST_PRACTICES.md",
+      "sha256": "4c4709dac73dc2747ae03505f0c4f52af2232b906a20e5b312b7025758562434"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/docs/TECHNIQUES.md",
+      "sha256": "996c1ba3f8e5c94f81c8441e79eb7b59a2b4f0ba2c9f53a1ff9e9817332a44b7"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/docs/TROUBLESHOOTING.md",
+      "sha256": "54d849104a7296c8cb473dba2554fb8db6294f6a10c91a51075ecee093673f36"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/examples/EXAMPLES.md",
+      "sha256": "e7d5f7508f559d0826113131a60b60824a5518ea8b1763eeab4561c6ec0e4b55"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/GETTING_STARTED.md",
+      "sha256": "ffaac9563c6ba5c187832f407a4271cf8e2f838e50faab49786d087a5cd57507"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/INDEX.md",
+      "sha256": "24bf33ed01930f5a08a57be47e3214a4b032eb425f01951ddf4867c8f7880059"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/README.md",
+      "sha256": "b74aa4143ae7a86f375fb419b969905a3b633d99e3d3cba271b55f73fddd68d1"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/SKILL.md",
+      "sha256": "b79d4ba078a60b771ae2fcecea530c3acefa343dda489cfcbd5294e8d2e541c7"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/START_HERE.md",
+      "sha256": "f7cc95bdec31a4ea9d96a81f5967b7c617df3bde1e1c730ae00f8d1dc1abbbc5"
+    },
+    {
+      "path": "skills/prompt-engineering-expert/SUMMARY.md",
+      "sha256": "ce9e737a7632f2571f78c47c1d98a5ef74eca49681306ed6ac088b7afe94a816"
+    },
+    {
+      "path": "skills/self-improving-agent/_meta.json",
+      "sha256": "89930295b917fda778278c3eefdbef934738db9217fea2254a835d921cac53bd"
+    },
+    {
+      "path": "skills/self-improving-agent/assets/ERRORS.md",
+      "sha256": "731f4a26fee7074d11e999920e5c3ca63b0e025b75a4d9966429ee88a2cb5988"
+    },
+    {
+      "path": "skills/self-improving-agent/assets/FEATURE_REQUESTS.md",
+      "sha256": "a6291573936034efaad57b43b6f57bdb35ed627f01ce9309b2c781da63563c37"
+    },
+    {
+      "path": "skills/self-improving-agent/assets/LEARNINGS.md",
+      "sha256": "33b0de6f4243ea31d913fab017ded852f13443fd1eb84c0983a670334260ff46"
+    },
+    {
+      "path": "skills/self-improving-agent/assets/SKILL-TEMPLATE.md",
+      "sha256": "3ee008f80d53e0e576f7e747ac4c4e040ff659f02d3f5689a95524a3696e4881"
+    },
+    {
+      "path": "skills/self-improving-agent/hooks/openclaw/handler.js",
+      "sha256": "4debdfb3e5a10488a89040f18fe3b8e7445bcc42c7e57e18cb24eaaeb3718112"
+    },
+    {
+      "path": "skills/self-improving-agent/hooks/openclaw/handler.ts",
+      "sha256": "6fe72d61617fcb39f67eda471a993c83d91a491787ba38c83258c4c435f259f7"
+    },
+    {
+      "path": "skills/self-improving-agent/hooks/openclaw/HOOK.md",
+      "sha256": "13294242f2fac134af2dcfcda7c273be98e57d26192989afb7a9ebcb5a1eb224"
+    },
+    {
+      "path": "skills/self-improving-agent/README.md",
+      "sha256": "e443cd023483788f41b3118bf258d4b5ddce1e6f87ba5a4b489feece4c0cb2ba"
+    },
+    {
+      "path": "skills/self-improving-agent/references/examples.md",
+      "sha256": "7083120ca27c1f5e4daab1e028acb900cb83d23748dc993544e86c37427349b0"
+    },
+    {
+      "path": "skills/self-improving-agent/references/hooks-setup.md",
+      "sha256": "1cb9ef2afbb8d0519fe6ec201f2c78b91e4a8f2df7f35fc140d2132a29190c0f"
+    },
+    {
+      "path": "skills/self-improving-agent/references/openclaw-integration.md",
+      "sha256": "aaf44d4f87e89cd7c754059156ea4d9a5ac8d93c6ad56261516e7b451df62c9d"
+    },
+    {
+      "path": "skills/self-improving-agent/scripts/activator.sh",
+      "sha256": "a751d91466c8c966f01ac32795871ceff0d1e177c7c186ca4201f962a5cc9be4"
+    },
+    {
+      "path": "skills/self-improving-agent/scripts/error-detector.sh",
+      "sha256": "74f82bfd29bcc3615d4c9df0962f7d5e42af75431c029c0e14c2f6127c4787ba"
+    },
+    {
+      "path": "skills/self-improving-agent/scripts/extract-skill.sh",
+      "sha256": "d9af3d6f2cde0eeb3c0a85b898828656c1c6d9d51f61ba38f9801030424f5147"
+    },
+    {
+      "path": "skills/self-improving-agent/skill-card.md",
+      "sha256": "d0f8a8dd25d7de09937fb86245c3924c82fcf9158979aed17108b374f73c3cc6"
+    },
+    {
+      "path": "skills/self-improving-agent/SKILL.md",
+      "sha256": "7da627ff75afbd05f7c618df67086bb2596d047a363476ce216e30cfc99f0b11"
+    },
+    {
+      "path": "skills/skill-vetter/_meta.json",
+      "sha256": "aa8544ebc37ac31a6d6e7fca4c8bdef6cad25440d8bf4882e9a56986d9e6c6af"
+    },
+    {
+      "path": "skills/skill-vetter/SKILL.md",
+      "sha256": "035acaafc736b3ad3a2460538301c04b7b3248fc5db65dc2c90b73862265fac3"
+    },
+    {
+      "path": "skills/summarize/_meta.json",
+      "sha256": "48be4b3c873d649442ea40d4c076a46a364a014e08c880d56e757424e75bde8e"
+    },
+    {
+      "path": "skills/summarize/package.json",
+      "sha256": "bec0b96503e9fa5b2b8c8fa7aca1e9a0a40958e74252fa3d6dab3d164e653470"
+    },
+    {
+      "path": "skills/summarize/SKILL.md",
+      "sha256": "b67b49d66895e8f98fdbbf74dd283fcd7e1e13b8f530a0db214ad7449575ed49"
+    },
+    {
+      "path": "skills/summarize/summarize.py",
+      "sha256": "ab2f7e9e1558c3f175830ffcf941d7f9afa1003920a7140090fe4efe911c41ac"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/_meta.json",
+      "sha256": "4e177779eb5db460d17c69a74b2e638378481b7367fc4452df541fa04ff7efb6"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/charts.csv",
+      "sha256": "b754c0efffcf54cb889114a9314be1d5af6ceebe65c4c436d713b52018e752c9"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/colors.csv",
+      "sha256": "4cc0df2785f340b8bd0ace50bd4068dc13a7c4c6fa4d9d2723271244ce904614"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/icons.csv",
+      "sha256": "351fe61ba45b8146c66de6ea7d67297654639d79a94f537b4d0bad570058c28f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/landing.csv",
+      "sha256": "010e1e46db271b94e0af6f18973bea86ddba62feeccd62aeeaa6ed40e2ae2db1"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/products.csv",
+      "sha256": "5359e3037dcb84e99c792ea13dd44f5b78ab6a53557afb309cf19140512aaf5b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/react-performance.csv",
+      "sha256": "904c8afcda229629545912dde0e8ac37503757131f0169f80b016f1f58c4fd3f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/astro.csv",
+      "sha256": "ad18dae3ab6d148d37d144592df80dc1825b6c9e86d9d2d68fdda77434206a37"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/flutter.csv",
+      "sha256": "e470e6bc2bcd8562667cc764d1e1afb0be0a30ca4dc9ec12fa18b19d46f156bd"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/html-tailwind.csv",
+      "sha256": "1f004891dd189f6bc2a7717401e3100244326e7e2f3963a79bf7b2349d85e091"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/jetpack-compose.csv",
+      "sha256": "6c8fd4b0391c342c12b0af15610cd5becbeccaef0bbe8dcfc01d928c3195d93e"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/nextjs.csv",
+      "sha256": "06a8e8c13bd44696c6ebb4cb6c4d8dea440e3de8cce77616512529ed29258f0c"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/nuxt-ui.csv",
+      "sha256": "05d6e74501b2b6a636faed32450622759f49a5bcafad971f5f4e7eba0eb7be71"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/nuxtjs.csv",
+      "sha256": "f7a3f2d9542856d00199f85c6c023b7c284cc698e2e6e12d61afce2edacb24d6"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/react-native.csv",
+      "sha256": "a08ca77fcf6b6d9531982dce465366296013bfcf12d2938ac72ad57cf0c4f085"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/react.csv",
+      "sha256": "b6e3eb0e4c9c01bd00ffb951d5ca224a19d488b4544c75436f48cf92ff12bf45"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/shadcn.csv",
+      "sha256": "395c2e415ef6f48a474acccdc8eb2c7258a6ed751a5037ba171a2d8823e02ded"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/svelte.csv",
+      "sha256": "bc8d158994a8bdf412830a9dd5e5a5534edd2f367a6e50e0ebd4d76f592dfa3f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/swiftui.csv",
+      "sha256": "e87cb9eee208bb753bdab96d4a261c7f830c4317ee90ec098316b248fc32be85"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/stacks/vue.csv",
+      "sha256": "9b793c3f4eec85f77a758c09322f2b62f3b3ca549bb713ccf0849ef885934395"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/styles.csv",
+      "sha256": "ad3c3236134d833bda01a2faf31ddeaaa1dbd5005fa430dec571fa91b26e5fea"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/typography.csv",
+      "sha256": "64695e05ac335ba534aff396c4ba9241c642f80ea53b424251d2669b71c4772b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/ui-reasoning.csv",
+      "sha256": "58fc52fff69f62709f8c7dd460de6f6693699ea820f24287f3301a427c2b554e"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/ux-guidelines.csv",
+      "sha256": "1870ee048f2a2bdd60709f8f7adf7f3b6dcad560bc005c8b2915a8ac8639820d"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/assets/data/web-interface.csv",
+      "sha256": "10bfc24e09a6a15db8309e6ef9b6881e1d4af97dffb7c99418aefb8e30df7d54"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/charts.csv",
+      "sha256": "b754c0efffcf54cb889114a9314be1d5af6ceebe65c4c436d713b52018e752c9"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/colors.csv",
+      "sha256": "4cc0df2785f340b8bd0ace50bd4068dc13a7c4c6fa4d9d2723271244ce904614"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/icons.csv",
+      "sha256": "351fe61ba45b8146c66de6ea7d67297654639d79a94f537b4d0bad570058c28f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/landing.csv",
+      "sha256": "010e1e46db271b94e0af6f18973bea86ddba62feeccd62aeeaa6ed40e2ae2db1"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/products.csv",
+      "sha256": "5359e3037dcb84e99c792ea13dd44f5b78ab6a53557afb309cf19140512aaf5b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/react-performance.csv",
+      "sha256": "904c8afcda229629545912dde0e8ac37503757131f0169f80b016f1f58c4fd3f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/astro.csv",
+      "sha256": "ad18dae3ab6d148d37d144592df80dc1825b6c9e86d9d2d68fdda77434206a37"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/flutter.csv",
+      "sha256": "e470e6bc2bcd8562667cc764d1e1afb0be0a30ca4dc9ec12fa18b19d46f156bd"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/html-tailwind.csv",
+      "sha256": "1f004891dd189f6bc2a7717401e3100244326e7e2f3963a79bf7b2349d85e091"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/jetpack-compose.csv",
+      "sha256": "6c8fd4b0391c342c12b0af15610cd5becbeccaef0bbe8dcfc01d928c3195d93e"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/nextjs.csv",
+      "sha256": "06a8e8c13bd44696c6ebb4cb6c4d8dea440e3de8cce77616512529ed29258f0c"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/nuxt-ui.csv",
+      "sha256": "05d6e74501b2b6a636faed32450622759f49a5bcafad971f5f4e7eba0eb7be71"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/nuxtjs.csv",
+      "sha256": "f7a3f2d9542856d00199f85c6c023b7c284cc698e2e6e12d61afce2edacb24d6"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/react-native.csv",
+      "sha256": "a08ca77fcf6b6d9531982dce465366296013bfcf12d2938ac72ad57cf0c4f085"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/react.csv",
+      "sha256": "b6e3eb0e4c9c01bd00ffb951d5ca224a19d488b4544c75436f48cf92ff12bf45"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/shadcn.csv",
+      "sha256": "395c2e415ef6f48a474acccdc8eb2c7258a6ed751a5037ba171a2d8823e02ded"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/svelte.csv",
+      "sha256": "bc8d158994a8bdf412830a9dd5e5a5534edd2f367a6e50e0ebd4d76f592dfa3f"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/swiftui.csv",
+      "sha256": "e87cb9eee208bb753bdab96d4a261c7f830c4317ee90ec098316b248fc32be85"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/stacks/vue.csv",
+      "sha256": "9b793c3f4eec85f77a758c09322f2b62f3b3ca549bb713ccf0849ef885934395"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/styles.csv",
+      "sha256": "ad3c3236134d833bda01a2faf31ddeaaa1dbd5005fa430dec571fa91b26e5fea"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/typography.csv",
+      "sha256": "64695e05ac335ba534aff396c4ba9241c642f80ea53b424251d2669b71c4772b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/ui-reasoning.csv",
+      "sha256": "58fc52fff69f62709f8c7dd460de6f6693699ea820f24287f3301a427c2b554e"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/ux-guidelines.csv",
+      "sha256": "1870ee048f2a2bdd60709f8f7adf7f3b6dcad560bc005c8b2915a8ac8639820d"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/data/web-interface.csv",
+      "sha256": "10bfc24e09a6a15db8309e6ef9b6881e1d4af97dffb7c99418aefb8e30df7d54"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/references/upstream-README.md",
+      "sha256": "b8cca8dbb183bcf81c03a66a7ca5ad8b7259cd38bee2232cabb65c1b4acf435b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/references/upstream-skill-content.md",
+      "sha256": "4e495d54b006e2132248f21a7886e8c5400a2d09cddf478c0525582519a5ad3b"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/scripts/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/scripts/core.py",
+      "sha256": "5459d1f04eea03dfb913742d0c03edc5065ac67f6227e4807fa87699662588cb"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/scripts/design_system.py",
+      "sha256": "1f8d1961c9166fe4772522d6458f6a1ec13a7c00ebfd5effa41c47e1c7cc9e7a"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/scripts/search.py",
+      "sha256": "8ef258d6aed922f4b813b5ac21e8f484dec71fede9409f949224d75adbd82df5"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/scripts/stable_ui.py",
+      "sha256": "46853f974a95eda46da990203e014f19131c7e2cc5b71221983cfaf84b902a34"
+    },
+    {
+      "path": "skills/ui-ux-pro-max/SKILL.md",
+      "sha256": "e9cd08723f1d5de87de981dadc569ad5d6125a32af50b0b83435710294775d3a"
+    },
+    {
+      "path": "skills/weather/_meta.json",
+      "sha256": "439e41242b257277193733aa2b98f14074aa65096f21ef1f91e42473892a9710"
+    },
+    {
+      "path": "skills/weather/SKILL.md",
+      "sha256": "2d307046faf09e691f807c134258d6fa1ba2564e0658a97d54cfb1e4317da461"
+    },
+    {
+      "path": "skills/word-docx/_meta.json",
+      "sha256": "bf173c91d79a54874fd7e872fc7d38e61a6ae5b4056f9a289b5b287ad717a0e4"
+    },
+    {
+      "path": "skills/word-docx/SKILL.md",
+      "sha256": "66562209fa6cced44e1da40c90b411d87362748595b36fb5b3df200fe07c0a56"
+    }
+  ]
+}
