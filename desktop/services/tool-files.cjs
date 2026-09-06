@@ -9,6 +9,13 @@ function inside(root, target) {
 
 function toolFile(workspace, value, { output = false } = {}) {
   if (typeof value !== 'string' || !value || value.length > 2000 || /[\x00-\x1f]/.test(value)) throw new Error('文件路径无效。')
+  if(Array.isArray(workspace)) {
+    if(!workspace.length)throw Error('项目没有可用的源文件夹。')
+    const target=path.resolve(workspace[0],value)
+    const allowed=workspace.find(root=>inside(path.resolve(root),target))
+    if(!allowed)throw Error('文件必须位于当前 Stable 工作区。')
+    return toolFile(allowed,target,{output})
+  }
   const root = fs.realpathSync(workspace)
   const target = path.resolve(workspace, value)
   if (!inside(path.resolve(workspace), target)) throw new Error('文件必须位于当前 Stable 工作区。')

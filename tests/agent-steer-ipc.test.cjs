@@ -16,6 +16,7 @@ function setup() {
     requireText: (value) => { if (typeof value !== 'string' || !value.trim()) throw new Error('Invalid input'); return value },
     prepareAgentMessage: async (_payload, _id, route) => { prepareRoute = route; return { attachments: [] } },
     store: { listMessages: () => [], getSetting: () => '', conversation: () => ({ capability: 'auto' }) },
+    conversationLifecycle:{beginSteer:()=> 'pending',saveSteer:()=>{}},
     isWendingCliPrompt: () => false, composeAgentPrompt: ({ query }) => query,
     isImageAttachment: () => false, commitAgentMessage: () => { commits++ }, agentState: () => ({ activeConversationId: 'a' }),
   })

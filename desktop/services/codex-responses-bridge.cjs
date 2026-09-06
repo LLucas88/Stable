@@ -1,5 +1,7 @@
 'use strict'
 
+const { WAIT_MARKER } = require('./clarification.cjs')
+
 // Codex speaks Responses; Stable's existing providers speak Chat Completions.
 // Only the parent process holds the upstream credential. Each run gets a
 // loopback server and a disposable capability token, including child agents.
@@ -105,12 +107,13 @@ async function readJSON(request) {
 }
 
 class CodexResponsesBridge {
-  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, search, expectedImages = 0, reasoningFile, windowsPython }) {
+  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, search, expectedImages = 0, reasoningFile, windowsPython, textOnly = false }) {
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl
     this.windowsPython = windowsPython
     this.token = randomUUID(); this.controllers = new Set(); this.reasoning = new CodexReasoningStore(reasoningFile)
     this.onRequest = onRequest; this.search = search
     this.expectedImages = expectedImages
+    this.textOnly = textOnly
   }
   async start() {
     this.server = http.createServer((req, res) => void this.handle(req, res))
@@ -135,6 +138,7 @@ class CodexResponsesBridge {
       if (req.method !== 'POST' || !['/v1/responses', '/v1/search'].includes(req.url)) throw Object.assign(new Error('不支持的模型接口。'), { status: 404 })
       const input = await readJSON(req)
       if (req.url === '/v1/search') {
+        if (this.textOnly) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
         const result = await this.runSearch(input, controller.signal)
         res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(result)); return
       }
@@ -145,12 +149,13 @@ class CodexResponsesBridge {
         if (imageCount < this.expectedImages) throw new Error('Codex 无法解析部分图片，请重新上传有效图片。')
         this.expectedImages = 0
       }
-      const translated = translateTools(input.tools)
+      const translated = translateTools(this.textOnly ? [] : input.tools)
       const body = { model: this.model.model, messages: translateInput(input.input, input.instructions, this.reasoning), stream: true, stream_options: { include_usage: true } }
       if (translated.tools.length) body.tools = translated.tools
       if (input.max_output_tokens) body.max_tokens = input.max_output_tokens
       if (typeof input.tool_choice === 'string') body.tool_choice = input.tool_choice
       else if (input.tool_choice?.name) body.tool_choice = { type: 'function', function: { name: input.tool_choice.name } }
+      if (this.textOnly) delete body.tool_choice
       const format = input.text?.format
       if (format?.type === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: format.name || 'result', schema: format.schema, strict: format.strict ?? true } }
       this.onRequest?.(body, input)
@@ -214,6 +219,8 @@ class CodexResponsesBridge {
     emit('response.output_item.done', { output_index: 0, item: reasoningItem })
     if (message) {
       message.status = 'completed'
+      // A clarification must end the turn even if the provider also emitted tools.
+      if (message.content[0].text.trimStart().startsWith(WAIT_MARKER)) calls.clear()
       message.phase = calls.size ? 'commentary' : 'final_answer'
       const index = output.indexOf(message)
       emit('response.output_text.done', { item_id: message.id, output_index: index, content_index: 0, text: message.content[0].text })

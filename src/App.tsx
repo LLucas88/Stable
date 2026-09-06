@@ -1,9 +1,17 @@
+import { useTransientScrollbar } from './use-transient-scrollbar'
+import { SidebarActionMenu } from './SidebarActionMenu'
+import { RemoveDialog } from './RemoveDialog'
+import { ProjectSelector } from './ProjectSelector'
+import { BrowserPanel } from './BrowserPanel'
+import { SkillMarket } from './SkillMarket'
+import { RenameConversationDialog } from './RenameConversationDialog'
+import { useConversationScroll } from './use-conversation-scroll'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert,
   CircleStop, Clock3, Copy, Database, Download, ExternalLink, Eye, FilePlus2, FileText, FlaskConical, FolderInput, FolderOpen, Home, Library, ListTree,
-  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, MoreVertical, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Play, Plus, Save,
+  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, MoreHorizontal, MoreVertical, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Play, Plus, Save,
   RotateCw, SendHorizontal, Share2, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
@@ -16,13 +24,14 @@ import { buildTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { taskErrorMessage } from './task-feedback'
 import { ConversationWending } from './ConversationWending'
+import { ClarificationCard } from './ClarificationCard'
 import { ApprovalComposer } from './ApprovalComposer'
 import { useComposerAutosize } from './use-composer-autosize'
 import { useConversationUnread } from './use-conversation-unread'
-import type { AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode, WendingCliStatus } from './types'
+import type { ClarificationResponse, AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, PreviewBounds, PreviewState, SkillItem, TeamState, ThemeMode, WendingCliStatus } from './types'
 
 type WorkspaceMode = 'work' | 'lab'
-type ComposerMessage = { prompt: string; attachments: AgentAttachment[]; references: AgentReference[] }
+type ComposerMessage = { prompt: string; attachments: AgentAttachment[]; references: AgentReference[]; clarificationResponse?: ClarificationResponse }
 type RepositoryPageId = Extract<Page, 'data' | 'reports' | 'skills' | 'knowledge'>
 type PrimaryNavId = Page | 'repository'
 
@@ -43,6 +52,7 @@ const WORK_NAV: Array<{ id: PrimaryNavId; label: string; icon: typeof Home }> = 
   { id: 'agent', label: '对话', icon: MessageSquareText },
   { id: 'automations', label: '定时', icon: Clock3 },
   { id: 'repository', label: '仓库', icon: Library },
+  { id: 'market', label: '技能市场', icon: Braces },
   { id: 'mcp-cli', label: 'MCP & CLI', icon: Box },
 ]
 
@@ -118,6 +128,8 @@ export function App() {
   const [conversationSearchQuery, setConversationSearchQuery] = useState('')
   const [conversationSearchResults, setConversationSearchResults] = useState<ConversationSearchResult[]>([])
   const [conversationSearchLoading, setConversationSearchLoading] = useState(false)
+  const [searchHasMore,setSearchHasMore]=useState(false)
+  const searchQueryRef=useRef(conversationSearchQuery);searchQueryRef.current=conversationSearchQuery
   const [conversationSearchError, setConversationSearchError] = useState('')
   const confirmationResolver = useRef<((value: boolean) => void) | null>(null)
   const railResize = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
@@ -188,7 +200,7 @@ export function App() {
     setConversationSearchError('')
     const timer = window.setTimeout(() => {
       void window.stable.agent.search(conversationSearchQuery).then((results) => {
-        if (!cancelled) setConversationSearchResults(results)
+        if (!cancelled) {setConversationSearchResults(results);setSearchHasMore(results.length===30)}
       }).catch((reason) => {
         if (!cancelled) { setConversationSearchResults([]); setConversationSearchError(errorMessage(reason)) }
       }).finally(() => { if (!cancelled) setConversationSearchLoading(false) })
@@ -377,6 +389,7 @@ export function App() {
         {page !== 'agent' && page !== 'workflows' && !isRepositoryPage(page) && <div className="page-stage" data-page={page} key={page}>
           {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
+          {page === 'market' && <SkillMarket renderContent={content => <MarkdownContent content={content}/>} onUse={agent => { setState(current => current ? { ...current, ...agent } : current); setPage('agent') }}/> }
           {page === 'mcp-cli' && <McpCliPage onUseWending={openWendingConversation} />}
         </div>}
 
@@ -387,7 +400,7 @@ export function App() {
         {confirmation && <ConfirmModal value={confirmation} onCancel={() => resolveConfirmation(false)} onConfirm={() => resolveConfirmation(true)} />}
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
       </div>
-      {conversationSearchOpen && <ConversationSearch query={conversationSearchQuery} results={conversationSearchResults} loading={conversationSearchLoading} error={conversationSearchError} activeConversationId={state.activeConversationId} onQueryChange={setConversationSearchQuery} onSelect={selectConversationSearchResult} onClose={() => closeConversationSearch()} />}
+      {conversationSearchOpen && <ConversationSearch query={conversationSearchQuery} results={conversationSearchResults} loading={conversationSearchLoading} error={conversationSearchError} activeConversationId={state.activeConversationId} onQueryChange={setConversationSearchQuery} hasMore={searchHasMore} onMore={()=>{const query=conversationSearchQuery;setConversationSearchLoading(true);void window.stable.agent.search(query,conversationSearchResults.length).then(results=>{if(searchQueryRef.current!==query)return;setConversationSearchResults(current=>[...new Map([...current,...results].map(i=>[i.id,i])).values()]);setSearchHasMore(results.length===30)}).catch(reason=>setConversationSearchError(errorMessage(reason))).finally(()=>setConversationSearchLoading(false))}} onSelect={selectConversationSearchResult} onClose={() => closeConversationSearch()} />}
     </div>{launch}</>
   )
 }
@@ -436,7 +449,7 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
   return <section className="extension-market page-stage" data-page="mcp-cli">
     <header className="extension-market-head">
       <div><span>TOOL CENTER</span><h1>MCP &amp; CLI</h1><p>把可调用的本地服务带入 Stable 对话。首版已内置问鼎 CLI，MCP 暂未开放。</p></div>
-      <div className="extension-market-note"><ShieldCheck size={18} aria-hidden="true" /><span>点击“使用”创建独立任务，再在任务内登录；仅预填提示词，不会自动发送或执行业务任务。</span></div>
+      <div className="extension-market-note"><ShieldCheck size={18} aria-hidden="true" /><span>点击“使用”创建独立任务；首次登录后，再次使用直接选择品牌。仅预填提示词，不会自动发送或执行业务任务。</span></div>
     </header>
     <div className="extension-market-body">
       <div className="extension-tabs" role="tablist" aria-label="工具类型">
@@ -456,7 +469,7 @@ function McpCliPage({ onUseWending }: { onUseWending: () => Promise<void> }) {
               <StatusIcon className={cliStatus.status === 'checking' ? 'spin' : undefined} size={15} aria-hidden="true" />
               <span><strong>{statusLabel}</strong>{cliStatus.detail}</span>
             </div>
-            <p className="extension-login-status">每个任务独立绑定账号、渠道和品牌</p>
+            <p className="extension-login-status">首次登录后全局记住账号，品牌按对话分别保存</p>
             {localError && <p className="extension-card-error" role="alert">{localError}</p>}
           </div>
           <div className="extension-card-action">
@@ -604,9 +617,11 @@ function WindowTitlebar({ railCollapsed, searchOpen, searchButtonRef, onToggleRa
   </div>
 }
 
-function ConversationSearch({ query, results, loading, error, activeConversationId, onQueryChange, onSelect, onClose }: {
+function ConversationSearch({ query, results, loading, error, activeConversationId, onQueryChange, onSelect, onClose, hasMore, onMore }: {
   query: string
   results: ConversationSearchResult[]
+  hasMore?:boolean
+  onMore?:()=>void
   loading: boolean
   error: string
   activeConversationId: string
@@ -645,6 +660,7 @@ function ConversationSearch({ query, results, loading, error, activeConversation
         {results.map((item) => <button type="button" className="conversation-search-result" data-active={item.id === activeConversationId || undefined} aria-current={item.id === activeConversationId ? 'page' : undefined} onClick={() => onSelect(item.id)} key={item.id}>
           <MessageSquareText size={17} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.snippet || `${item.messageCount} 条消息`}</small></span><ChevronRight size={16} aria-hidden="true" />
         </button>)}
+        {hasMore&&<button type="button" disabled={loading} onClick={onMore}>加载更多结果</button>}
       </div>
     </section>
   </div>
@@ -795,11 +811,27 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
   const [composerErrorMap, setComposerErrorMap] = useState<Record<string, string>>({})
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mobileTasksTarget, setMobileTasksTarget] = useState<HTMLElement | null>(null)
+  useTransientScrollbar(conversationTasksTarget)
+  useTransientScrollbar(mobileTasksTarget)
+  const [recentCollapsed,setRecentCollapsed]=useState(false)
+  const [projectMenuId,setProjectMenuId]=useState('')
+  const menuAnchor=useRef<HTMLElement|null>(null)
+  const [menuMobile,setMenuMobile]=useState(false)
+  const [removeTarget,setRemoveTarget]=useState<{kind:'conversation'|'project';id:string;name:string}>()
+  const [projectOverlay,setProjectOverlay]=useState(false)
   const [conversationMenuId, setConversationMenuId] = useState('')
   const [previewTarget, setPreviewTarget] = useState<ConversationPreviewTarget>()
+  const [browserOpen,setBrowserOpen]=useState(false)
+  const [browserURL,setBrowserURL]=useState<string>()
   const [imageViewer, setImageViewer] = useState<ImageViewerTarget>()
   const [previewWidth, setPreviewWidth] = useState(0)
   const [previewState, setPreviewState] = useState<PreviewState>(emptyPreviewState)
+  const [olderPages, setOlderPages] = useState<Record<string, { messages: MessageItem[]; beforeCursor: number | null }>>({})
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const olderPage = olderPages[state.activeConversationId]
+  const visibleMessages = [...new Map([...(olderPage?.messages || []), ...state.messages].map(item => [item.id, item])).values()]
+  const beforeCursor = olderPage ? olderPage.beforeCursor : state.beforeCursor
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [modelStatus, setModelStatus] = useState('')
@@ -820,7 +852,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const queue = outbox.snapshot(state.activeConversationId)
   const [queueEdit, setQueueEdit] = useState<{ conversationId: string; id: string; text: string }>()
   const cancelBeforeDispatchRef = useRef<Record<string, boolean>>({})
-  const scrollRef = useRef<HTMLDivElement>(null)
   const conversationWorkspaceRef = useRef<HTMLDivElement>(null)
   const previewRequestRef = useRef(0)
   const previewViewportRef = useRef<HTMLDivElement>(null)
@@ -840,9 +871,25 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
+  const pendingQuestion = !running && state.messages.at(-1)?.role === 'assistant' ? [...(state.messages.at(-1)?.trace || [])].reverse().find(item => item.clarification?.status === 'waiting')?.clarification : undefined
   const pendingApproval = running ? liveTrace?.items.find((item) => item.kind === 'approval' && item.status === 'running' && item.requestId) : undefined
   const streamingAnswer = streamingAnswerMap[state.activeConversationId]
-  const attachments = attachmentMap[state.activeConversationId] || []
+  const localAttachments = attachmentMap[state.activeConversationId] || []
+  const attachments = [...(state.catchAttachments || []).filter((item) => !queue.running && !queue.items.some((entry) => entry.payload.attachments.some((attachment) => attachment.path === item.path)) && !localAttachments.some((entry) => entry.path === item.path)), ...localAttachments]
+  const [catchingId, setCatchingId] = useState('')
+  const loadScrollAnchor = async (seq: number) => {
+    const id = stateRef.current.activeConversationId
+    let cursor = stateRef.current.beforeCursor
+    const messages: MessageItem[] = []
+    while (cursor && cursor > seq && stateRef.current.activeConversationId === id) {
+      const page = await window.stable.agent.messages(id, cursor)
+      messages.unshift(...page.messages)
+      if (page.beforeCursor === cursor) break
+      cursor = page.beforeCursor
+    }
+    if (messages.length && stateRef.current.activeConversationId === id) setOlderPages(current => ({ ...current, [id]: { messages, beforeCursor: cursor ?? null } }))
+  }
+  const { scrollRef, awayFromBottom, scrollToBottom } = useConversationScroll(state.activeConversationId, `${state.messages.length}:${pendingPrompt?.content}:${liveTrace?.items.length}:${streamingAnswer?.content}:${running}`, active, loadScrollAnchor)
   const imageAttachments = attachments.filter(attachmentIsImage)
   const documentAttachments = attachments.filter((item) => !attachmentIsImage(item))
   const selectedReferences = referenceMap[state.activeConversationId] || []
@@ -861,12 +908,12 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const enabledSkills = state.skills.filter((item) => item.enabled)
   const enabledKnowledge = state.knowledge.filter((item) => item.enabled)
   const scripts = state.library.filter((item) => item.kind === 'script')
-  const pinnedConversations = state.conversations.filter((item) => item.pinned)
+  const pinnedConversations = state.conversations.filter((item) => item.pinned && !item.archivedAt)
   const remoteTeamDevices = state.team.devices.filter((item) => item.id !== state.team.profile?.deviceId)
   activeConversationIdRef.current = state.activeConversationId
   stateRef.current = state
 
-  useEffect(() => { setPrompt(''); setSidebarOpen(false) }, [state.activeConversationId])
+  useEffect(() => { setPrompt(''); setSidebarOpen(false); if (state.draftReference) setReferenceMap(current => ({ ...current, [state.activeConversationId]: [state.draftReference!] })) }, [state.activeConversationId])
 
   useEffect(() => {
     if (!active || !prefill || running) return
@@ -876,30 +923,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   useEffect(() => { setModelStatus(''); if (modelMenuRef.current) modelMenuRef.current.open = false }, [state.activeConversationId])
 
-  useEffect(() => {
-    if (!conversationMenuId) return
-    const menuHost = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-conversation-menu="${conversationMenuId}"]`)).find((element) => element.getClientRects().length)
-    menuHost()?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus()
-    const closeMenu = (event: globalThis.PointerEvent) => {
-      if (!(event.target as Element).closest(`[data-conversation-menu="${conversationMenuId}"]`)) setConversationMenuId('')
-    }
-    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => {
-      const host = menuHost()
-      if (event.key === 'Escape') {
-        setConversationMenuId('')
-        host?.querySelector<HTMLButtonElement>(':scope > button')?.focus()
-      } else if (host?.contains(document.activeElement) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-        event.preventDefault()
-        const items = Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
-        const index = items.indexOf(document.activeElement as HTMLButtonElement)
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
-        items[next]?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', closeMenu)
-    window.addEventListener('keydown', closeFromKeyboard)
-    return () => { document.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeFromKeyboard) }
-  }, [conversationMenuId])
+  useEffect(()=>{setConversationMenuId('');setProjectMenuId('')},[state.activeConversationId,active])
 
   useEffect(() => {
     setPreviewTarget(undefined)
@@ -976,10 +1000,23 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }), [])
 
   useEffect(() => {
-    const element = scrollRef.current
-    if (!element) return
-    element.scrollTo({ top: element.scrollHeight, behavior: running && !reduceConversationMotion ? 'smooth' : 'auto' })
-  }, [state.messages.length, pendingPrompt, liveTrace?.items.length, Boolean(streamingAnswer?.content), running])
+    if (!active) return
+    const stopPaste = window.stable.editor?.onPasteIntoComposer((text) => {
+      const element = promptRef.current
+      if (!element || !text) return
+      const start = element.selectionStart, end = element.selectionEnd
+      setPrompt((current) => `${current.slice(0, start)}${text}${current.slice(end)}`)
+      window.requestAnimationFrame(() => { element.focus(); element.setSelectionRange(start + text.length, start + text.length) })
+    })
+    const stopSelect = window.stable.editor?.onSelectAllMessages(() => {
+      const content = scrollRef.current?.querySelector('.conversation-stream')
+      if (!content) return
+      const selection = window.getSelection(), range = document.createRange()
+      range.selectNodeContents(content)
+      selection?.removeAllRanges(); selection?.addRange(range)
+    })
+    return () => { stopPaste?.(); stopSelect?.() }
+  }, [active])
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -1036,8 +1073,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }, [previewTarget])
 
   function openConversationPreview(target: Omit<ConversationPreviewTarget, 'requestId'>) {
+    if(target.kind==='web'){setPreviewTarget(undefined);void window.stable.preview.close();setBrowserURL(target.value);setBrowserOpen(true);return}
+    setBrowserOpen(false)
     setPreviewWidth(0)
-    setPreviewState({ url: target.kind === 'web' ? target.value : '', title: target.title, loading: true, canGoBack: false, canGoForward: false })
+    setPreviewState({ url: '', title: target.title, loading: true, canGoBack: false, canGoForward: false })
     previewRequestRef.current += 1
     setPreviewTarget({ ...target, requestId: previewRequestRef.current })
   }
@@ -1103,12 +1142,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     })
   }
 
-  function commitRename(id: string) {
-    const title = editingTitle.trim()
-    setEditingId('')
-    if (!title) return
-    void action('正在重命名对话', async () => updateAgent(await window.stable.agent.rename(id, title)))
-  }
 
   function togglePin(item: ConversationItem) {
     setConversationMenuId('')
@@ -1167,7 +1200,28 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     void addPastedImages(files)
   }
 
+  async function catchReply(message: MessageItem) {
+    if (catchingId) return
+    setCatchingId(message.id)
+    try {
+      await action('正在创建 Catch 任务', async () => {
+        const next = await window.stable.agent.catchReply(state.activeConversationId, message.id)
+        updateAgent(next); openConversation()
+        window.requestAnimationFrame(() => promptRef.current?.focus())
+      })
+    } finally { setCatchingId('') }
+  }
+
   function removeAttachment(item: AgentAttachment) {
+    if (item.type === 'catch') {
+      const conversationId = state.activeConversationId
+      void action('正在移除 Catch 附件', async () => {
+        const next = await window.stable.agent.discardCatch(conversationId)
+        setAttachmentMap((current) => ({ ...current, [conversationId]: (current[conversationId] || []).filter((entry) => entry.path !== item.path) }))
+        if (activeConversationIdRef.current === conversationId) updateAgent(next)
+      })
+      return
+    }
     setAttachments((current) => current.filter((entry) => entry.path !== item.path))
     setAttachmentStatus(`已移除附件 ${item.name}。`)
     if (item.draft) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
@@ -1231,6 +1285,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     const restoredAttachments: AgentAttachment[] = []
     for (const item of message.attachments || []) {
       if (item.kind !== 'attachment' || !item.path) continue
+      if (item.type === 'catch') { restoredAttachments.push({ name: item.name, path: item.path, size: item.size, type: item.type }); continue }
       try { restoredAttachments.push(...await window.stable.agent.inspectAttachments([item.path])) } catch { /* missing legacy attachment stays omitted */ }
     }
     copyUndoRef.current[state.activeConversationId] = { copiedPrompt: message.content, prompt, attachments: [...attachments], references: [...selectedReferences] }
@@ -1249,50 +1304,70 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     return true
   }
 
-  function ConversationRow({ item }: { item: ConversationItem }) {
-    const menuOpen = conversationMenuId === item.id
+  function ConversationRow({ item, mobile }: { item: ConversationItem; mobile:boolean }) {
+    const menuOpen = conversationMenuId === item.id && menuMobile === mobile
     const activity = approvalUnread.has(item.id) && !(active && item.id === activeConversation.id) ? 'approval' : runningMap[item.id] ? 'running' : unread.has(item.id) ? 'unread' : undefined
     const activityLabel = activity === 'approval' ? '有待查看的审批请求' : activity === 'running' ? '任务执行中' : activity === 'unread' ? '已完成，未读' : ''
     return <article className="conversation-list-item" data-conversation-id={item.id} data-activity={activity} data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
       <button className="conversation-pin-action" type="button" onClick={() => togglePin(item)} aria-label={item.pinned ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}><span>{item.pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</span></button>
-      {editingId === item.id
-        ? <input className="conversation-title-input" autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} onBlur={() => commitRename(item.id)} onKeyDown={(event) => { if (event.key === 'Enter') commitRename(item.id); if (event.key === 'Escape') setEditingId('') }} aria-label="对话名称" />
-        : <button className="conversation-select" type="button" onClick={() => selectConversation(item)}>
-          <strong>{item.title}</strong>
-          {activityLabel && <span className="sr-only">{activityLabel}</span>}
-        </button>}
+      <button className="conversation-select" type="button" onClick={() => selectConversation(item)} onDoubleClick={() => { setEditingId(item.id); setEditingTitle(item.title) }}>
+        <strong>{item.title}{item.deletionState==='pending'?' · 删除待同步':''}</strong>{activityLabel && <span className="sr-only">{activityLabel}</span>}
+      </button>
       {activity && <span className="conversation-activity" title={activityLabel} aria-hidden="true">
         {activity === 'running' ? <LoaderCircle className="spin" size={15} /> : <span className={activity === 'approval' ? 'conversation-approval-dot' : 'conversation-unread-dot'} />}
       </span>}
       <div className="conversation-item-actions" data-conversation-menu={item.id}>
-        <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setConversationMenuId((current) => current === item.id ? '' : item.id)}><MoreVertical size={15} aria-hidden="true" /></button>
-        {menuOpen && <div className="conversation-action-menu" role="menu">
+        <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={event => {menuAnchor.current=event.currentTarget;setMenuMobile(Boolean(event.currentTarget.closest('.conversation-sidebar-mobile')));setProjectMenuId('');setConversationMenuId(current=>current===item.id?'':item.id)}}><MoreVertical size={15} aria-hidden="true" /></button>
+        {menuOpen && menuAnchor.current && <SidebarActionMenu anchor={menuAnchor.current} label={`任务操作 ${item.title}`} onClose={()=>setConversationMenuId('')}>
           <button type="button" role="menuitem" onClick={() => togglePin(item)}>{item.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{item.pinned ? '取消置顶任务' : '置顶任务'}</span></button>
-          <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); void action('正在打开资源管理器', async () => { await window.stable.agent.openWorkspace() }) }}><FolderOpen size={14} /><span>在资源管理器打开</span></button>
+          <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); void action('正在打开资源管理器', async () => { await window.stable.agent.openWorkspace(item.id) }) }}><FolderOpen size={14} /><span>在资源管理器打开</span></button>
           <button type="button" role="menuitem" disabled aria-disabled="true"><ListTree size={14} /><span>文件管理</span><small>暂不可用</small></button>
           <button type="button" role="menuitem" disabled aria-disabled="true"><Share2 size={14} /><span>分享</span><small>暂不可用</small></button>
           <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); setEditingId(item.id); setEditingTitle(item.title) }}><Pencil size={14} /><span>重命名</span></button>
-          <button className="danger" type="button" role="menuitem" disabled={Boolean(runningMap[item.id])} onClick={() => { setConversationMenuId(''); replaceConversation(() => window.stable.agent.remove(item.id), '正在删除对话') }}><Trash2 size={14} /><span>删除任务</span></button>
-        </div>}
+          <button className="danger" type="button" role="menuitem" disabled={Boolean(runningMap[item.id])} onClick={() => { setConversationMenuId(''); setRemoveTarget({kind:'conversation',id:item.id,name:item.title}) }}><Trash2 size={14} /><span>删除任务</span></button>
+        </SidebarActionMenu>}
       </div>
     </article>
   }
 
-  function ConversationTaskSections() {
+  function ConversationTaskSections(mobile=false) {
     return <>
       {pinnedConversations.length > 0 && <section className="conversation-pinned" aria-label="置顶任务">
         <div className="conversation-section-head"><span>置顶</span><small>{pinnedConversations.length}</small></div>
-        <div className="conversation-list">{pinnedConversations.map((item) => ConversationRow({ item }))}</div>
+        <div className="conversation-list">{pinnedConversations.map((item) => ConversationRow({ item, mobile }))}</div>
       </section>}
       <section className="conversation-history-card" aria-label="任务清单">
-        <div className="conversation-section-head"><span>任务清单</span></div>
+        {(state.projects||[]).length>0&&<div className="conversation-section-head"><span>项目</span></div>}
         <div className="conversation-list">
           {state.team.conversationOffers.map((offer) => <article className="team-offer-card" key={offer.id}>
             <div><small>来自 {offer.sourceDeviceName}</small><strong>{offer.title}</strong><span>{offer.messageCount} 条问答消息</span></div>
             <div><button type="button" onClick={() => decideConversation(offer.id, false)}>拒绝</button><button type="button" className="primary" onClick={() => decideConversation(offer.id, true)}>接收</button></div>
           </article>)}
-          {state.conversations.filter((item) => !item.pinned).map((item) => ConversationRow({ item }))}
+          {(state.projects||[]).map(project=>{
+            const items=state.conversations.filter(item=>item.projectId===project.id&&!item.pinned&&!item.archivedAt)
+            const menuOpen=projectMenuId===project.id&&menuMobile===mobile
+            return <section className="sidebar-project" key={project.id} aria-label={'项目 '+project.name}>
+              <div className="sidebar-project-heading" data-pinned={project.pinned||undefined}>
+                <button className="sidebar-project-title" type="button" title={project.rootPath} onClick={()=>void action('正在打开项目',async()=>{updateAgent(await window.stable.projects.open(project.id));openConversation()})}><FolderOpen size={17}/><span>{project.name}</span>{project.pinned&&<Pin size={13}/>}</button>
+                <button className="sidebar-project-more" type="button" aria-label={'项目操作 '+project.name} aria-haspopup="menu" aria-expanded={menuOpen} onClick={event=>{menuAnchor.current=event.currentTarget;setMenuMobile(Boolean(event.currentTarget.closest('.conversation-sidebar-mobile')));setConversationMenuId('');setProjectMenuId(current=>current===project.id?'':project.id)}}><MoreHorizontal size={17}/></button>
+                <button className="sidebar-project-new" type="button" aria-label={'在 '+project.name+' 中新建对话'} onClick={()=>void action('正在新建对话',async()=>{updateAgent(await window.stable.projects.open(project.id));openConversation()})}><SquarePen size={17}/></button>
+                {menuOpen&&menuAnchor.current&&<SidebarActionMenu anchor={menuAnchor.current} label={'项目操作 '+project.name} onClose={()=>setProjectMenuId('')}>
+                  <button type="button" role="menuitem" onClick={()=>{setProjectMenuId('');void action('正在保存项目排序',async()=>updateAgent(await window.stable.projects.manage(project.id,project.pinned?'unpin':'pin')))}}>{project.pinned?<PinOff size={15}/>:<Pin size={15}/>}<span>{project.pinned?'取消置顶':'置顶'}</span></button>
+                  <button type="button" role="menuitem" onClick={()=>{setProjectMenuId('');void action('正在打开项目目录',async()=>{await window.stable.projects.manage(project.id,'open')})}}><FolderOpen size={15}/><span>在资源管理器中打开</span></button>
+                  <button type="button" role="menuitem" className="danger" disabled={state.conversations.some(item=>item.projectId===project.id&&runningMap[item.id])} onClick={()=>{setProjectMenuId('');setRemoveTarget({kind:'project',id:project.id,name:project.name})}}><X size={15}/><span>移除项目</span></button>
+                </SidebarActionMenu>}
+              </div>
+              {items.length?items.map(item=>ConversationRow({item,mobile})):<p className="sidebar-project-empty">暂无聊天</p>}
+            </section>
+          })}
         </div>
+        <div className="conversation-section-head recent-heading">
+          <button type="button" className="recent-toggle" aria-label={recentCollapsed?'展开最近对话':'收起最近对话'} aria-expanded={!recentCollapsed} onClick={()=>{setRecentCollapsed(value=>!value);setConversationMenuId('')}}><span>最近</span><ChevronDown size={14} data-collapsed={recentCollapsed||undefined}/></button>
+          <button type="button" className="recent-new" aria-label="新建对话" onClick={()=>{setRecentCollapsed(false);replaceConversation(()=>window.stable.agent.create(),'正在新建对话');openConversation()}}><SquarePen size={17}/></button>
+        </div>
+        {!recentCollapsed&&<div className="conversation-list recent-conversations">
+          {state.conversations.filter((item) => !item.pinned && !item.archivedAt && !(state.projects||[]).some(project=>project.id===item.projectId)).map((item) => ConversationRow({ item, mobile }))}
+        </div>}
       </section>
     </>
   }
@@ -1308,11 +1383,12 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     try {
       const pendingQueue = outbox.snapshot(conversationId)
       if (!pendingQueue.running && !pendingQueue.items.length) outbox.resume(conversationId)
-      outbox.enqueue(conversationId, {
+      const dispatch = pendingQuestion ? outbox.reply.bind(outbox) : outbox.enqueue.bind(outbox)
+      void Promise.resolve(dispatch(conversationId, {
         prompt: prompt.trim() || '请读取并分析本次引用的资源与附件。',
         attachments: attachments.map((item) => ({ ...item })),
         references: selectedReferences.map((item) => ({ ...item })),
-      })
+      })).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
       copyUndoRef.current[conversationId] = undefined
       setPrompt(''); setAttachments([]); setReferences([])
       setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
@@ -1350,12 +1426,13 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         return { accepted: false, continue: false, error: '已停止发送，消息仍保留在队列中。' }
       }
       dispatched = true
-      const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences)
+      const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences, entry.id, entry.payload.clarificationResponse)
       updateAgentForConversation(result, conversationId)
       completed = true
       const lastAnswer = [...result.messages].reverse().find((item) => item.role === 'assistant')
-      if (lastAnswer && !previousMessageIds.has(lastAnswer.id) && (!lastAnswer.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed')) markCompleted(conversationId)
-      return { accepted: true, continue: !lastAnswer?.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed' }
+      const waiting = lastAnswer?.trace?.some(item => item.clarification?.status === 'waiting')
+      if (!waiting && lastAnswer && !previousMessageIds.has(lastAnswer.id) && (!lastAnswer.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed')) markCompleted(conversationId)
+      return { accepted: true, continue: !waiting && (!lastAnswer?.trace?.length || savedTraceStatus(lastAnswer.trace) === 'completed') }
     } catch (error) {
       let messageAccepted = dispatched
       try {
@@ -1392,15 +1469,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   function updateAgentForConversation(result: AgentState, conversationId: string) {
     if (activeConversationIdRef.current === conversationId) updateAgent(result)
-    else updateAgent({ ...result, activeConversationId: activeConversationIdRef.current, messages: stateRef.current.messages })
+    else updateAgent({ ...result, activeConversationId: activeConversationIdRef.current, messages: stateRef.current.messages, catchAttachments: stateRef.current.catchAttachments, draftReference: stateRef.current.draftReference, beforeCursor: stateRef.current.beforeCursor, paths: stateRef.current.paths, deliveries: stateRef.current.deliveries, recoveryText: stateRef.current.recoveryText, recoveryDiagnostic: stateRef.current.recoveryDiagnostic })
   }
 
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
 
   return <section className="agent-layout reveal" data-sidebar-open={sidebarOpen || undefined}>
     {conversationTasksTarget && createPortal(ConversationTaskSections(), conversationTasksTarget)}
-    <aside className="conversation-sidebar conversation-sidebar-mobile" aria-label="对话任务">
-      {ConversationTaskSections()}
+    <aside ref={setMobileTasksTarget} className="conversation-sidebar conversation-sidebar-mobile" aria-label="对话任务">
+      {ConversationTaskSections(true)}
     </aside>
     <div className="conversation-workspace" data-preview-open={Boolean(previewTarget) || undefined} ref={conversationWorkspaceRef} style={previewTarget ? { '--preview-width': `${previewWidth || 320}px` } as CSSProperties : undefined}>
     <div className="conversation" data-empty={conversationIsEmpty || undefined}>
@@ -1411,13 +1488,40 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : state.messages.map((message) => <MessageTurn message={message} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {state.deliveries?.some(d=>['unknown','interrupted','failed'].includes(d.state))&&<div className="recovery-notice" role="status"><strong>上次运行结果需要核实</strong><p>消息已保留，系统不会自动重发或重做操作。</p><button onClick={()=>void action('核实运行记录',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'reconcile')))}>核实消息记录</button>{state.recoveryText&&<details><summary>查看已收到的部分回复</summary><pre>{state.recoveryText}</pre></details>}{state.recoveryDiagnostic&&<p>{state.recoveryDiagnostic}</p>}</div>}
+
+          {beforeCursor && <button className="history-load-more" disabled={loadingOlder} onClick={() => void action('正在读取更早消息', async () => {
+            const id = state.activeConversationId, element = scrollRef.current, height = element?.scrollHeight || 0, top = element?.scrollTop || 0
+            setLoadingOlder(true)
+            try { const page = await window.stable.agent.messages(id, beforeCursor); setOlderPages(current => ({ ...current, [id]: { messages: [...page.messages, ...(current[id]?.messages || [])], beforeCursor: page.beforeCursor } })); window.requestAnimationFrame(() => { if (element && activeConversationIdRef.current === id) element.scrollTop = top + element.scrollHeight - height }) }
+            finally { setLoadingOlder(false) }
+          })}>{loadingOlder ? '读取中…' : '加载更早的消息'}</button>}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn message={message} onCatch={message.role === 'assistant' ? () => void catchReply(message) : undefined} catching={Boolean(catchingId)} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
           {liveTrace && <RunTrace items={liveTrace.items} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
 
         </div>
       </div>
+      {removeTarget&&<RemoveDialog key={removeTarget.kind+removeTarget.id} kind={removeTarget.kind} name={removeTarget.name} onClose={()=>setRemoveTarget(undefined)} onConfirm={async()=>{
+        const result=removeTarget.kind==='project'?await window.stable.projects.manage(removeTarget.id,'remove'):await window.stable.agent.remove(removeTarget.id)
+        updateAgent(result)
+        setModelStatus(result.syncNotice||'')
+      }}/>}
+      {editingId && <RenameConversationDialog key={editingId} title={editingTitle} suggestion={editingId === state.activeConversationId ? (state.messages.find(item => item.role === 'user')?.content || '').replace(/\s+/g, ' ').slice(0, 32) : ''} onClose={() => setEditingId('')} onSave={async title => {
+        const result = await window.stable.agent.rename(editingId, title)
+        updateAgentForConversation(result, editingId)
+      }}/>}
       <div className="composer">
+        {active && pendingQuestion?.id && <ClarificationCard key={pendingQuestion.id} question={pendingQuestion} conversationId={activeConversation.id} onSend={async response => {
+          const result = await outbox.reply(activeConversation.id, { prompt: response.source === 'custom' ? response.text! : response.source === 'choice' ? pendingQuestion.options[response.option!].label : '由模型选择推荐路线并继续', attachments: [], references: [], clarificationResponse: response }, false)
+          if (result.error) throw new Error(result.error)
+        }} />}
+        {pendingQuestion && !pendingQuestion.id && <p className="clarification-waiting">等待你补充信息，回复后继续原任务。</p>}
+        <ProjectSelector projects={state.projects||[]} projectId={activeConversation.projectId} conversationId={state.activeConversationId} running={running} onUpdate={updateAgent} onOverlayChange={setProjectOverlay}/>
+
+        {(running || awayFromBottom) && <button className="conversation-bottom" type="button" onClick={scrollToBottom} aria-label={running ? '任务运行中，回到对话底部' : '回到对话底部'} title="回到对话底部">
+          {running ? <span className="conversation-bottom-dots" aria-hidden="true"><i /><i /><i /></span> : <ChevronDown size={20} aria-hidden="true" />}
+        </button>}
         {queue.items.length > 0 && <section className="message-queue" aria-label="待发送消息">
           <div className="queue-heading"><span role="status" aria-atomic="true">{queue.paused ? '排队已暂停' : '排队中'} · {queue.items.length} 条</span>
             {queue.paused && <button type="button" disabled={queueEdit?.conversationId === activeConversation.id} onClick={() => outbox.resume(activeConversation.id)}>继续队列</button>}
@@ -1549,6 +1653,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         </DropTarget>}
       </div>
     </div>
+    {browserOpen && active && <BrowserPanel obscured={Boolean(editingId || imageViewer || projectOverlay || removeTarget || conversationMenuId || projectMenuId)} key={state.activeConversationId+(browserURL||'')} conversationId={state.activeConversationId} initialURL={browserURL} onClose={()=>setBrowserOpen(false)} onImport={value=>setAttachmentMap(current=>({...current,[state.activeConversationId]:[...(current[state.activeConversationId]||[]),value]}))}/>}
     {previewTarget && <aside className="conversation-preview" aria-label="对话文件预览">
       <div className="preview-resizer" role="separator" aria-label="调整预览面板宽度" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, (conversationWorkspaceRef.current?.clientWidth || 680) - 360)} aria-valuenow={previewWidth || 320} tabIndex={0} onPointerDown={startPreviewResize} onKeyDown={(event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); resizePreviewBy(32) } else if (event.key === 'ArrowRight') { event.preventDefault(); resizePreviewBy(-32) } }} />
       <header className="conversation-preview-head">
@@ -1588,13 +1693,12 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ message, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { message: MessageItem; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
-  if (message.role === 'user') return <UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} />
-  return <article className="assistant-turn">
-    {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} /> : null}
+function MessageTurn({ message, workspace, onCatch, catching, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { message: MessageItem; workspace: string; onCatch?: () => void; catching?: boolean; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+  if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
+  return <article className="assistant-turn" data-message-id={message.id} data-message-seq={message.seq}>
+    {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} onCatch={onCatch} catching={catching} /> : <div className="trace-header"><span /><CatchButton onCatch={onCatch} catching={catching} /></div>}
     <div className="assistant-answer">
-      <div className="assistant-mark" aria-hidden="true">S</div>
-      <div className="answer-content"><div className="answer-label">Stable</div><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
+      <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
     </div>
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
       <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
@@ -1635,6 +1739,13 @@ function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; on
     setMenuPosition({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)) })
   }
 
+  async function showInFolder() {
+    setMenuPosition(undefined)
+    setMenuError('')
+    try { await window.stable.system.showItemInFolder(item.path) }
+    catch (reason) { setMenuError(errorMessage(reason)) }
+  }
+
   async function openInExternalBrowser() {
     setMenuPosition(undefined)
     setMenuError('')
@@ -1649,7 +1760,7 @@ function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; on
       <ChevronRight size={16} aria-hidden="true" />
     </button>
     {menuPosition && <div className="conversation-file-menu" role="menu" aria-label={`${item.name} 附件操作`} ref={menuRef} style={{ left: menuPosition.x, top: menuPosition.y }}>
-      <button type="button" role="menuitem" onClick={() => { setMenuPosition(undefined); void window.stable.system.showItemInFolder(item.path) }}><FolderOpen size={14} aria-hidden="true" /><span>打开文件所在位置</span></button>
+      <button type="button" role="menuitem" onClick={() => void showInFolder()}><FolderOpen size={14} aria-hidden="true" /><span>打开文件所在位置</span></button>
       {isHtml && <button type="button" role="menuitem" onClick={() => void openInExternalBrowser()}><ExternalLink size={14} aria-hidden="true" /><span>用外部浏览器打开</span></button>}
     </div>}
     {menuError && <span className="conversation-file-error" role="alert">{menuError}</span>}
@@ -1839,7 +1950,7 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   return <details className="trace-action" data-status={itemStatus}>
     <summary>
       <Icon size={15} aria-hidden="true" />
-      <span>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{traceActionLabel(item)}</span>
+      <span>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceActionLabel(item)}</span>
       <span className="trace-action-state">{itemStatus === 'running' && <LoaderCircle className="spin" size={13} aria-hidden="true" />}{statusLabel}</span>
       <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
     </summary>
@@ -1851,7 +1962,11 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   </details>
 }
 
-function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
+function CatchButton({ onCatch, catching }: { onCatch?: () => void; catching?: boolean }) {
+  return onCatch ? <button className="catch-button" type="button" disabled={catching} onClick={onCatch} title="将本轮提问和完整回复作为附件带入新任务"><Copy size={14} aria-hidden="true" />Catch</button> : null
+}
+
+function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent, onCatch, catching }: { onCatch?: () => void; catching?: boolean; items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
   const [expanded, setExpanded] = useState(active)
   const timelineId = useId()
   const firstEventAt = useMemo(() => items.length ? Math.min(...items.map((item) => item.startedAt ?? item.time)) : Date.now(), [items])
@@ -1878,12 +1993,13 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
   }, [status, timerStartedAt])
   const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
-    <button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
+    <div className="trace-header"><button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
       {status === 'running' && <LoaderCircle className="spin" size={14} aria-hidden="true" />}
       <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status === 'running' ? '思考中 · ' : '用时 '}{elapsed}</span>
       {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
       <ChevronRight className="trace-chevron" data-open={expanded} size={15} aria-hidden="true" />
     </button>
+    <CatchButton onCatch={onCatch} catching={catching} /></div>
     {expanded && <div className="trace-timeline" id={timelineId}>
       {timeline.map((item) => item.eventType === 'agent/answer'
         ? <TraceText key={item.id} content={item.content!} live={item.id === streaming?.id} />

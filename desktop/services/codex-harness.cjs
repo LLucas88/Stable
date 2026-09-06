@@ -9,6 +9,7 @@ const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
 const { cleanupHarnessRunDirectory } = require('./harness.cjs')
 const { classifyCodexApproval, approvalScope } = require('./codex-approval.cjs')
 const { CODEX_BUILTIN_TOOLS } = require('./codex-builtin-tools.cjs')
+const { CLARIFICATION_GUIDANCE, WAIT_MARKER, clarificationStream } = require('./clarification.cjs')
 
 const PINNED_CODEX_VERSION = '0.142.2'
 const activeHomes = new Set()
@@ -73,8 +74,10 @@ function buildConfig({ model, baseURL, searchCommand, searchScript, token, searc
   return `${lines.join('\n')}\n`
 }
 
+async function replacePointer(source,target){for(let attempt=0;;attempt++){try{fs.renameSync(source,target);return}catch(error){if(!['EPERM','EACCES','EBUSY'].includes(error.code)||attempt>=5)throw error;await new Promise(r=>setTimeout(r,25*(attempt+1)))}}}
+
 class CodexHarnessRunner {
-  constructor(options) { this.options = options; this.supportsPersistentSessions = true; this.busy = false; this.steerReady = false; this.approvals = new Map() }
+  constructor(options) { this.options = options; this.supportsPersistentSessions = true; this.supportsTextOnly = true; this.busy = false; this.steerReady = false; this.approvals = new Map() }
   runtimePaths() { return { cli: runtimePath(this.options) } }
   ready() { return fs.existsSync(this.runtimePaths().cli) }
   async run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = [], session = {}) {
@@ -82,12 +85,19 @@ class CodexHarnessRunner {
     if (!apiKey) throw new Error('请先配置模型服务。')
     if (imageAttachments.length && isDeepSeekModel(model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
     if (!this.ready()) throw new Error(this.options.packaged ? 'Codex 运行时不完整，请重新安装 Stable。' : 'Codex 运行时不完整，请先运行 npm run runtime:codex。')
-    const workspace = path.resolve(this.options.workspace)
+    const workspace = path.resolve(session.cwd || this.options.workspace)
+    const writableRoots = [...new Set([workspace,...(session.writableRoots || []).map(root=>path.resolve(root))])]
     // Full access authorizes networking, not unrestricted filesystem access.
     // Recompute for each run so resuming a thread cannot retain an old grant.
-    const networkAccess = sandboxMode !== 'read-only' && session.permissionMode === 'full'
+    const networkAccess = sandboxMode !== 'read-only' && (typeof session.networkAccess === 'boolean' ? session.networkAccess : session.permissionMode === 'full')
     const approvalExecution = { sandboxMode, networkAccess, workspace, cliProfile: this.options.environment?.WENDING_CONFIG_DIR || null }
-    fs.mkdirSync(workspace, { recursive: true })
+    // Windows can reject recursive mkdir on an existing drive root (EPERM).
+    // Reuse existing directories, and preserve access errors instead of changing cwd.
+    let workspaceInfo
+    try { workspaceInfo = fs.statSync(workspace) }
+    catch (error) { if (error.code !== 'ENOENT') throw error }
+    if (workspaceInfo && !workspaceInfo.isDirectory()) throw new Error(`工作区路径不是文件夹：${workspace}`)
+    if (!workspaceInfo) fs.mkdirSync(workspace, { recursive: true })
     const canonicalWorkspace = fs.realpathSync(workspace)
     for (const image of imageAttachments) {
       const relative = path.relative(canonicalWorkspace, fs.realpathSync(image.path))
@@ -105,6 +115,7 @@ class CodexHarnessRunner {
     const turn = new Promise((resolve, reject) => { resolveTurn = resolve; rejectTurn = reject })
     turn.catch(() => {})
     const answers = new Map(); const finalAnswers = new Map(); const parents = new Map(); const answerSteps = new Map()
+    const visibleDelta = clarificationStream()
     const depthOf = (id) => { let depth = 0; const seen = new Set(); while (id && id !== this.threadId && !seen.has(id)) { seen.add(id); depth++; id = parents.get(id) }; return depth }
     const publish = (event) => onEvent({ time: Date.now(), ...event })
     this.publishApproval = publish
@@ -118,13 +129,14 @@ class CodexHarnessRunner {
         publish({ id: `${thread.id}:agent`, sessionId: thread.id, parentSessionId: thread.parentThreadId, depth: depthOf(thread.id), kind: 'status', entity: 'agent', eventType: 'agent/descriptor', title: thread.agentNickname || thread.agentRole || '子 Agent', status: 'running' })
       }
       const base = { sessionId: p.threadId || this.threadId, ...(child ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : { depth: 0 }) }
-      if (method === 'turn/started' && !child) { this.turnId = p.turn?.id; this.steerReady = !settled && !this.cancelled }
+      if (method === 'turn/started' && !child) { this.turnId = p.turn?.id;this.options.onTurnAccepted?.(session.key,p.threadId,this.turnId); this.steerReady = !settled && !this.cancelled }
       if (method === 'item/agentMessage/delta' && !child) {
         answers.set(p.itemId, (answers.get(p.itemId) || '') + p.delta)
+        if(session.key)this.options.onRuntimeItem?.(session.key,p.threadId,p.turnId||this.turnId,{id:p.itemId,type:'agentMessage',text:answers.get(p.itemId),status:'streaming'})
         if (!answerSteps.has(p.itemId)) answerSteps.set(p.itemId, answerSteps.size)
-        publish({ ...base, id: `${p.threadId}:${p.itemId}`, kind: 'answer', eventType: 'agent/answer-delta', delta: p.delta, turn: 0, step: answerSteps.get(p.itemId), status: 'running' })
+        publish({ ...base, id: `${p.threadId}:${p.itemId}`, kind: 'answer', eventType: 'agent/answer-delta', delta: visibleDelta(p.itemId, p.delta), turn: 0, step: answerSteps.get(p.itemId), status: 'running' })
       } else if (['item/started', 'item/completed'].includes(method)) {
-        const item = p.item || {}; const completed = method === 'item/completed'
+        const item = p.item || {};if(session.key&&!child)this.options.onRuntimeItem?.(session.key,p.threadId,p.turnId||this.turnId,item); const completed = method === 'item/completed'
         const status = ['failed', 'declined', 'errored'].includes(item.status) ? 'failed' : completed ? 'completed' : 'running'
         if (item.type === 'agentMessage') { if (!child && completed) { answers.set(item.id, item.text || ''); if (item.phase === 'final_answer') finalAnswers.set(item.id, item.text || '') }; return }
         if (item.type === 'userMessage') return
@@ -165,10 +177,10 @@ class CodexHarnessRunner {
         if (settled || this.cancelled || !this.approvals.has(key)) return
         const danger = assessment.risk === 'high'
         const scope = approvalScope(method, p, assessment, approvalExecution)
-        const event = { id: `approval:${key}`, requestId: key, sessionId: p.threadId, ...(p.threadId !== this.threadId ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : {}), kind: 'approval', eventType: 'approval/request', toolName, approvalCategory: scope.label,
+        const event = { id: `approval:${key}`, requestId: key, sessionId: p.threadId, ...(p.threadId !== this.threadId ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : {}), kind: 'approval', eventType: 'approval/request', toolName, approvalCategory: scope.label, actionDigest: scope.key, actionType: method, approvalParameters: p,
           title: danger ? '高风险操作需要确认' : assessment.risk === 'unknown' ? '此操作需要复核' : '需要权限审批',
-          reason: [assessment.reason, p.reason].filter(Boolean).join('；'), detail: toolName, danger, approvalRisk: assessment.risk, status: 'running' }
-        Object.assign(this.approvals.get(key), { scope, event })
+          reason: [p.reason, assessment.reason].filter(Boolean).join('；'), detail: toolName, danger, approvalRisk: assessment.risk, status: 'running' }
+        Object.assign(this.approvals.get(key), { scope, event, assessment, execution: approvalExecution })
         if (sandboxMode !== 'read-only' && session.key && this.options.hasConversationApproval?.(session.key, scope.key)) this.answerApproval(key, true)
         else publish(event)
       } else if (method === 'item/tool/call') {
@@ -177,14 +189,15 @@ class CodexHarnessRunner {
           ...(p.threadId !== this.threadId ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : { depth: 0 }) }
         publish({ ...event, eventType: 'tool/start', status: 'running' })
         try {
+          if (p.tool==='stable_browser' && p.arguments?.action==='screenshot' && isDeepSeekModel(model)) throw new Error('当前模型不支持图片，截图未采集。')
           if (!this.builtins || p.namespace || !CODEX_BUILTIN_TOOLS.some((tool) => tool.name === p.tool)) throw new Error('不支持此内置工具。')
-          const needsApproval = p.tool === 'stable_browser' && ['click', 'fill', 'select'].includes(p.arguments?.action)
+          const needsApproval = p.tool === 'stable_browser' && ['open', 'click', 'fill', 'select', 'key', 'drag'].includes(p.arguments?.action)
           if (needsApproval) {
             if (sandboxMode === 'read-only') throw new Error('只读模式不允许网页交互。')
             const allowed = await new Promise((resolve) => {
-              const scope = approvalScope('builtin', { command: p.tool, cwd: workspace, arguments: p.arguments }, {}, approvalExecution)
+              const scope = approvalScope('builtin', { command: p.tool + ' ' + JSON.stringify(p.arguments), cwd: workspace, arguments: p.arguments }, {}, approvalExecution)
               const approvalEvent = { ...event, id: `approval:${key}`, requestId: key, kind: 'approval', eventType: 'approval/request', toolName: p.tool, approvalCategory: scope.label,
-                title: '网页操作需要确认', reason: `网页操作 ${p.arguments.action}，目标 ${p.arguments.ref || '(未指定)'}；可能提交表单或改变网站数据。`,
+                actionDigest: scope.key, actionType: 'builtin', approvalParameters: { arguments: p.arguments, cwd: workspace, threadId: p.threadId, turnId: p.turnId }, title: '网页操作需要确认', reason: `网页操作 ${p.arguments.action}，目标 ${p.arguments.url || p.arguments.ref || '(当前页面)'}；可能提交表单或改变网站数据。`,
                 danger: true, approvalRisk: 'high', status: 'running' }
               this.approvals.set(key, { resolve, scope, event: approvalEvent })
               if (sandboxMode !== 'read-only' && session.key && this.options.hasConversationApproval?.(session.key, scope.key)) this.answerApproval(key, true)
@@ -195,7 +208,7 @@ class CodexHarnessRunner {
           if (settled || this.cancelled) throw new Error('任务已停止。')
           const value = await this.builtins.execute({ requestId: key, name: p.tool, args: p.arguments, approved: needsApproval }, sandboxMode)
           if (!settled && !this.cancelled) {
-            rpc.reply(id, { contentItems: [{ type: 'inputText', text: JSON.stringify(value) }], success: true })
+            rpc.reply(id, { contentItems: value?.image ? [{ type: 'inputText', text: JSON.stringify({ tabId: value.tabId, epoch: value.epoch }) }, { type: 'inputImage', imageUrl: value.image }] : [{ type: 'inputText', text: JSON.stringify(value) }], success: true })
             publish({ ...event, eventType: 'tool/end', status: 'completed' })
           }
         } catch (error) {
@@ -205,16 +218,21 @@ class CodexHarnessRunner {
           }
         } finally { this.approvals.delete(key) }
       } else if (method === 'item/tool/requestUserInput') {
-        publish({ id: `input:${id}`, kind: 'status', title: '需要补充信息', detail: (p.questions || []).map((q) => q.question).join('\n'), status: 'completed' })
-        rpc.reply(id, { answers: {} })
+        // Never manufacture an empty user answer. Resume through the next user turn.
+        const question = (p.questions || []).map(q => q.question).filter(Boolean).join('\n') || '请补充任务目标和交付要求。'
+        if (!settled) {
+          settled = true; this.steerReady = false
+          resolveTurn(WAIT_MARKER + '\n' + question)
+          void rpc.request('turn/interrupt', { threadId: p.threadId || this.threadId, turnId: p.turnId || this.turnId }, 3000).catch(() => {})
+        }
       } else if (method === 'mcpServer/elicitation/request') rpc.reply(id, { action: 'decline', content: null })
       else rpc.send({ id, error: { code: -32601, message: `Stable does not support ${method}` } })
     }
     try {
-      this.builtins = this.options.builtinTools?.()
+      this.builtins = this.options.builtinTools?.({ workspace, writableRoots, conversationId: session.key })
       fs.mkdirSync(home, { recursive: true })
       if (session.key && fs.existsSync(pointer)) {
-        try { saved = JSON.parse(fs.readFileSync(pointer, 'utf8')) } catch { throw new Error('Codex 会话索引损坏，请清空该对话后重试。') }
+        try { saved = JSON.parse(fs.readFileSync(pointer, 'utf8')) } catch { throw new Error('Codex 会话索引损坏，历史已保留。请在任务菜单选择“从本地历史重建上下文”，不必清空消息。') }
         if (saved.threadId && (saved.reasoningVersion !== 1 || (this.builtins && saved.builtinToolsVersion !== 1))) {
           if (!session.initialPrompt) throw new Error('旧版 Codex 会话缺少模型上下文，请从 Stable 对话继续或新建对话重试。')
           // Old releases discarded provider state. Seed a compatible thread from
@@ -223,7 +241,7 @@ class CodexHarnessRunner {
         }
       }
       const windowsPython = this.options.trustedCli?.root ? path.join(this.options.trustedCli.root, 'python/python.exe') : undefined
-      bridge = new CodexResponsesBridge({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: this.options.onModelRequest, search: this.options.search, expectedImages: imageAttachments.length, reasoningFile: path.join(home, 'stable-reasoning.jsonl'), windowsPython })
+      bridge = new CodexResponsesBridge({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: this.options.onModelRequest, search: this.options.search, expectedImages: imageAttachments.length, reasoningFile: path.join(home, 'stable-reasoning.jsonl'), windowsPython, textOnly: session.textOnly === true })
       const baseURL = await bridge.start()
       const executable = this.runtimePaths().cli
       const config = buildConfig({ model, baseURL, token: bridge.token, searchCommand: process.execPath, searchScript: path.join(__dirname, 'codex-search-mcp.cjs'), searchEnabled: model.providerId !== 'stable-cloud' && (isZhipuModel(model) || isDeepSeekModel(model)), networkAccess })
@@ -237,7 +255,11 @@ class CodexHarnessRunner {
       rpc.send({ method: 'initialized', params: {} })
       const params = { model: model.model, modelProvider: 'stable', cwd: workspace, sandbox: sandboxMode === 'read-only' ? 'read-only' : 'workspace-write', approvalPolicy: sandboxMode === 'read-only' ? 'never' : 'untrusted', approvalsReviewer: 'user',
         config: { 'model_providers.stable.base_url': baseURL, 'sandbox_workspace_write.network_access': networkAccess }, developerInstructions: [
-          '你在 Stable 中工作。遵循用户提供的任务、资源和交付约束。需要补充信息时在最终回答中提问。联网查询优先使用 stable_search。',
+          '你在 Stable 中工作。遵循用户提供的任务、资源和交付约束。联网查询优先使用 stable_search。',
+          ...(session.globalInstructions?.trim() ? ['本机全局 Agent 对话规则：\n' + session.globalInstructions.trim()] : []),
+          CLARIFICATION_GUIDANCE,
+          ...(writableRoots.length>1 ? ['本项目源文件夹（均可读取和编辑；默认交付目录为当前工作目录）：\n'+writableRoots.join('\n')] : []),
+          ...(session.textOnly ? ['本轮仅澄清需求，禁止任何工具调用；按当前请求要求返回澄清 JSON。'] : []),
           ...(process.platform === 'win32' ? [
             '本机 shell_command 使用 PowerShell。禁止 Bash 的 <<EOF/<<PATCH 写法。有原生 apply_patch 工具时直接传入补丁；没有时用 PowerShell New-Item 创建文件或 Set-Content 编辑文件。不要用 shell 管道调用 apply_patch。',
             '读取 JSON/CSV 文本使用 encoding="utf-8-sig"，兼容 Windows UTF-8 BOM。输出普通文本使用 UTF-8。不要把中文字段改为列序号来绕过乱码，应修正编码。',
@@ -251,23 +273,25 @@ class CodexHarnessRunner {
       this.threadId = started.thread.id
       if (session.key) {
         fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: Boolean(saved?.seeded), version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 1 : 0 }))
-        fs.renameSync(`${pointer}.tmp`, pointer)
+        await replacePointer(`${pointer}.tmp`, pointer)
       }
       publish({ id: `${this.threadId}:agent`, sessionId: this.threadId, depth: 0, kind: 'status', entity: 'agent', eventType: 'agent/start', title: 'Stable 总控', detail: saved ? '继续已有 Codex 会话' : '启动 Codex 会话', status: 'running' })
       if (migrated) publish({ id: 'codex-context-upgrade', kind: 'status', title: '已升级模型上下文', detail: '已从 Stable 对话记录建立兼容会话，原有文件保留。', status: 'completed' })
       if (this.cancelled) throw new Error('任务已停止。')
       let text = !saved?.seeded && session.initialPrompt ? session.initialPrompt : prompt
       if (migrated) text += '\n\n模型上下文刚从 Stable 历史记录恢复。上一次失败前可能已经执行部分操作，请先核对现有文件和内容，避免重复追加或覆盖已完成结果。'
+      if (session.key) this.options.saveRuntimeSession?.(session.key, { threadId: this.threadId, home, model: model.model, version: PINNED_CODEX_VERSION, state: 'ready' })
       const input = [{ type: 'text', text }, ...imageAttachments.map((image) => ({ type: 'localImage', path: path.resolve(image.path) }))]
       const sandboxPolicy = sandboxMode === 'read-only'
         ? { type: 'readOnly' }
-        : { type: 'workspaceWrite', writableRoots: [workspace], networkAccess, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+        : { type: 'workspaceWrite', writableRoots, networkAccess, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
       const result = await rpc.request('turn/start', { threadId: this.threadId, input, model: model.model, sandboxPolicy })
       this.turnId = result.turn.id
+      this.options.onTurnAccepted?.(session.key,this.threadId,this.turnId)
       this.steerReady = !settled && !this.cancelled
       if (session.key) {
         fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: true, version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 1 : 0 }))
-        fs.renameSync(`${pointer}.tmp`, pointer)
+        await replacePointer(`${pointer}.tmp`, pointer)
       }
       if (this.cancelled) void rpc.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => {})
       return await turn
@@ -296,13 +320,15 @@ class CodexHarnessRunner {
   }
   answerApproval(requestId, allowed, duration = 'once') {
     const entry = this.approvals.get(String(requestId))
-    if (!entry || !this.rpc) return false
+    if (!entry || !this.rpc || this.cancelled) return false
+    const changed = allowed && entry.params && entry.assessment && approvalScope(entry.method, entry.params, entry.assessment, entry.execution).key !== entry.scope.key
+    if (changed) { allowed = false; duration = 'once' }
     if (duration === 'conversation') {
       if (!allowed || !entry.scope || !this.approvalConversation || !this.options.grantConversationApproval) throw new Error('此请求无法保存对话授权，请选择允许一次')
       this.options.grantConversationApproval(this.approvalConversation, entry.scope.key, entry.scope.label)
     }
     this.approvals.delete(String(requestId))
-    if (entry.event) this.publishApproval?.({ ...entry.event, title: allowed ? (duration === 'conversation' ? '此对话已允许该类操作' : '已允许本次操作') : '已拒绝本次操作', status: 'completed' })
+    if (entry.event) this.publishApproval?.({ ...entry.event, actualDecision: allowed ? 'approved' : 'denied', ...(changed ? { reason: '审批期间命令或文件内容已变化，原批准失效。' } : {}), title: allowed ? (duration === 'conversation' ? '此对话已允许该类操作' : '已允许本次操作') : '已拒绝本次操作', status: 'completed' })
     if (entry.resolve) entry.resolve(Boolean(allowed))
     else {
       const result = entry.method === 'item/permissions/requestApproval'
@@ -313,7 +339,7 @@ class CodexHarnessRunner {
     if (duration === 'conversation') {
       for (const [key, pending] of [...this.approvals]) if (pending.scope?.key === entry.scope.key) this.answerApproval(key, true)
     }
-    return true
+    return !changed
   }
   cancel() {
     if (!this.busy) return false

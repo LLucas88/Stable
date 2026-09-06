@@ -264,3 +264,57 @@ test('full access grants network on new and resumed turns, and downgrades revoke
     }
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
+
+
+test('project folder boundaries reach the runtime and are replaced on the next resumed turn',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-project-policy-')),workspace=path.join(root,'primary'),second=path.join(root,'secondary');fs.mkdirSync(second)
+ const options={userData:root,workspace,executable:process.execPath,executableArgs:[path.join(__dirname,'fixtures','codex-app-server.cjs')]},home=sessionDirectory(root,'project')
+ try {
+  await new CodexHarnessRunner(options).run('test',model,'never-sent',5000,()=>{},'workspace-write',[],{key:'project',writableRoots:[workspace,second]})
+  let turn=JSON.parse(fs.readFileSync(path.join(home,'fixture-input.json')));assert.deepEqual(turn.sandboxPolicy.writableRoots,[workspace,second])
+  const thread=JSON.parse(fs.readFileSync(path.join(home,'fixture-thread.json')));assert(thread.params.developerInstructions.includes(second))
+  await new CodexHarnessRunner(options).run('test',model,'never-sent',5000,()=>{},'workspace-write',[],{key:'project'})
+  turn=JSON.parse(fs.readFileSync(path.join(home,'fixture-input.json')));assert.deepEqual(turn.sandboxPolicy.writableRoots,[workspace])
+ } finally{fs.rmSync(root,{recursive:true,force:true})}
+})
+
+
+test('existing drive-root project starts and resumes without mkdir; missing workspace still initializes', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-root-workspace-'))
+  const workspace = path.parse(process.cwd()).root
+  const originalMkdir = fs.mkdirSync
+  let rootMkdirCalls = 0
+  const mkdir = t.mock.method(fs, 'mkdirSync', function (target, ...args) {
+    if (path.resolve(String(target)) === workspace) {
+      rootMkdirCalls++
+      throw Object.assign(new Error('EPERM: mkdir drive root'), { code: 'EPERM' })
+    }
+    return originalMkdir.call(fs, target, ...args)
+  })
+  const options = { userData: root, workspace, executable: process.execPath, executableArgs: [path.join(__dirname, 'fixtures', 'codex-app-server.cjs')] }
+  try {
+    for (const expectedMethod of ['thread/start', 'thread/resume']) {
+      assert.equal(await new CodexHarnessRunner(options).run('test', model, 'never-sent', 5000, () => {}, 'workspace-write', [], { key: 'root-project', cwd: workspace }), '完成🙂')
+      const home = sessionDirectory(root, 'root-project')
+      const thread = JSON.parse(fs.readFileSync(path.join(home, 'fixture-thread.json')))
+      const turn = JSON.parse(fs.readFileSync(path.join(home, 'fixture-input.json')))
+      assert.equal(thread.method, expectedMethod)
+      assert.equal(thread.params.cwd, workspace)
+      assert.deepEqual(turn.sandboxPolicy.writableRoots, [workspace])
+    }
+    assert.equal(rootMkdirCalls, 0)
+    const missing = path.join(root, 'new', 'workspace')
+    await new CodexHarnessRunner({ ...options, workspace: missing }).run('test', model, 'never-sent', 5000)
+    assert(fs.statSync(missing).isDirectory())
+    const file = path.join(root, 'file'); fs.writeFileSync(file, 'keep')
+    await assert.rejects(new CodexHarnessRunner({ ...options, workspace: file }).run('test', model, 'never-sent', 5000), /不是文件夹/)
+    assert.equal(fs.readFileSync(file, 'utf8'), 'keep')
+    const stat = t.mock.method(fs, 'statSync', function(target, ...args) {
+      if (path.resolve(String(target)) === workspace) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+      return stat.mock.original.call(fs, target, ...args)
+    })
+    await assert.rejects(new CodexHarnessRunner(options).run('test', model, 'never-sent', 5000), { code: 'EACCES' })
+    stat.mock.restore()
+    assert.equal(rootMkdirCalls, 0)
+  } finally { mkdir.mock.restore(); fs.rmSync(root, { recursive: true, force: true }) }
+})

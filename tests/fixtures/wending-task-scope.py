@@ -10,7 +10,7 @@ from crm_base_cli.api import CrmAPI
 scenario = sys.argv[1]
 cfg = config.load_config()
 expected = cfg.get('stable_brand_id')
-remote = expected
+remote = '999' if scenario == 'restore' else expected
 business_calls = 0
 
 def response(request, **kwargs):
@@ -21,6 +21,9 @@ def response(request, **kwargs):
         # The live gateway returns JSON text inside result, not a plain object.
         record = json.dumps({'success': True, 'data': {'orgId': remote}, 'extInfo': {}, 'canRetry': False})
         return io.BytesIO(json.dumps({'result': record}).encode())
+    if request.get_header('Methodname') == 'switchOrganization':
+        remote = str(json.loads(request.data)['args'][0])
+        return io.BytesIO(json.dumps({'result': True}).encode())
     business_calls += 1
     data = {'brand': remote, 'rows': [1, 2]}
     if scenario == 'drift-during':

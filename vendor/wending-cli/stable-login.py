@@ -12,6 +12,7 @@ import tempfile
 from crm_base_cli import config as config_mod
 from crm_base_cli.api import CrmAPI
 from crm_base_cli.stable_response import decode_response
+from crm_base_cli.stable_scope import session_lock
 from crm_base_cli.cli import (
     _generate_third_login_code_verifier,
     _build_third_login_auth_open_request,
@@ -154,8 +155,18 @@ class LoginFlow:
             raise LoginError('EMPTY_LOGIN_RECORD', '服务端未返回有效登录记录，请重试检查。')
         self.auth_token = token
         active = self.active_brand(record)
+        if os.environ.get('WENDING_SHARED_AUTH_DIR'):
+            expected = str(cfg.get('stable_brand_id') or '')
+            channel_matches = str(cfg.get('stable_brand_channel', self.state['channel'])) == self.state['channel']
+            current = next((item for item in self.brands.values() if item['id'] == expected), None) if channel_matches else None
+            if current:
+                self.state.update(phase='ready', detail='登录状态已恢复，此对话的品牌选择已保留。', brandLabel=current['label'])
+            else:
+                self.state.update(phase='choose_brand', brands=options, detail='已恢复共享登录，请选择此对话使用的品牌。')
+                if not options: raise LoginError('NO_BRANDS', '账号未返回可用品牌，请联系管理员或重试品牌查询。')
+            return
         if os.environ.get('WENDING_CONFIG_DIR') and cfg.get('stable_brand_id') and active != str(cfg['stable_brand_id']):
-            raise LoginError('BRAND_BINDING_CHANGED', '服务端品牌与此任务绑定的品牌不一致，请重新开始登录；不会自动更换任务品牌。')
+            raise LoginError('BRAND_BINDING_CHANGED', '服务端品牌与此任务绑定的品牌不一致，请重新选择品牌；不会自动更换任务品牌。')
         current = next((item for item in self.brands.values() if item['id'] == active), None)
         if current:
             self.state.update(phase='ready', detail='已核验登录态与当前品牌。', brandLabel=current['label'])
@@ -225,14 +236,25 @@ class LoginFlow:
         token = _extract_third_login_auth_token(result)
         if not token: raise LoginError('MISSING_AUTH_TOKEN', '授权接口未返回业务令牌，请重新开始。')
         self.auth_token = token
+        config_mod.save_shared_auth(token, self.state['channel'])
         self.context.clear()
         self.accounts.clear()
         self.state = {'phase': 'choose_brand', 'channel': self.state['channel'], 'detail': '授权已完成，请选择品牌。', 'brands': []}
         self.refresh_brands()
 
+    def assert_current_auth(self):
+        shared = config_mod.load_shared_auth()
+        if shared.get('wnToken') and shared['wnToken'] != self.auth_token:
+            self.brands.clear()
+            self.auth_token = None
+            self.state = {'phase': 'unknown', 'channel': self.state['channel'], 'detail': '共享登录账号已变化，请重新检查后选择品牌。'}
+            raise LoginError('SESSION_CHANGED', '共享登录账号已变化，请重新检查；无需重复验证手机号。')
+
     def refresh_brands(self):
-        if not self.auth_token or self.state['phase'] != 'choose_brand':
-            raise LoginError('INVALID_STATE', '请先完成手机号验证。')
+        if not self.auth_token or self.state['phase'] not in ('choose_brand', 'ready'):
+            raise LoginError('INVALID_STATE', '请先检查登录状态。')
+        self.assert_current_auth()
+        self.state.update(phase='choose_brand', detail='登录有效，请选择此对话使用的品牌。')
         self.brands.clear()
         self.state['brands'] = []
         options = self.brand_options(self.invoke(self.api(self.auth_token), 'third_login_query_brand_list'))
@@ -242,6 +264,7 @@ class LoginFlow:
     def select_brand(self, payload):
         if self.state['phase'] != 'choose_brand' or payload.get('id') not in self.brands:
             raise LoginError('INVALID_BRAND', '请选择本次查询返回的品牌。')
+        self.assert_current_auth()
         brand = self.brands[payload['id']]
         api = self.api(self.auth_token)
         switched = self.invoke(api, 'third_login_switch_brand', brandId=brand['id'])
@@ -261,6 +284,10 @@ class LoginFlow:
         cfg.update(wnToken=self.auth_token, third_login_channel=self.state['channel'])
         if brand:
             cfg.update(stable_brand_id=brand['id'], stable_brand_label=brand['label'])
+        if os.environ.get('WENDING_SHARED_AUTH_DIR'):
+            config_mod.save_shared_auth(self.auth_token, self.state['channel'])
+            cfg.pop('wnToken', None)
+            cfg['stable_brand_channel'] = self.state['channel']
         encoded = {key: config_mod._encode_value(value) if isinstance(value, str) else value for key, value in cfg.items()}
         config_mod.ensure_config_dir()
         destination = Path(config_mod.CONFIG_FILE)
@@ -276,6 +303,13 @@ class LoginFlow:
             if temporary and os.path.exists(temporary): os.unlink(temporary)
 
     def handle(self, operation, payload):
+        try:
+            with session_lock():
+                return self._handle(operation, payload)
+        except Exception as error:
+            return self.result(error)
+
+    def _handle(self, operation, payload):
         try:
             if not isinstance(payload, dict): raise LoginError('INVALID_INPUT', '登录请求格式不正确。')
             if operation == 'check': self.check()

@@ -89,7 +89,7 @@ export function WendingLoginPanel({ state, onState, onReady, onClose, conversati
     <header><div><ShieldCheck size={20} aria-hidden="true" /><h3 id={`${id}-title`} ref={heading} tabIndex={-1}>{phaseLabel}</h3></div>
       <button type="button" className="icon-button" aria-label="关闭登录表单" onClick={onClose}><X size={18} aria-hidden="true" /></button>
     </header>
-    <p className="wending-login-privacy" id={`${id}-privacy`}>手机号和验证码仅用于问鼎登录，不会进入模型提示词或聊天记录。关闭表单会清除本次未完成的登录上下文，不会退出已有账号。</p>
+    <p className="wending-login-privacy" id={`${id}-privacy`}>手机号和验证码仅用于问鼎登录，不会进入模型提示词或聊天记录。登录成功后所有对话共用登录状态，品牌按对话保存。关闭表单不会退出已有账号。</p>
     <p role="status" aria-live="polite">{busy ? '正在处理，请稍候；不会自动重发短信。' : state.detail}{state.mobileHint && ` ${state.mobileHint}`}</p>
     <form onSubmit={submit} noValidate aria-describedby={`${id}-privacy`} aria-busy={busy}>
       {error && <p className="wending-login-error" ref={errorRef} role="alert" tabIndex={-1} id={`${id}-error`}>{error}{state.error?.code && <small>错误码：{state.error.code}</small>}</p>}
@@ -106,8 +106,8 @@ export function WendingLoginPanel({ state, onState, onReady, onClose, conversati
               {busy && <LoaderCircle className="spin" size={16} aria-hidden="true" />}
               {state.phase === 'signed_out' ? remaining > 0 ? `${remaining} 秒后可发送` : '确认发送验证码' : state.phase === 'code_sent' ? '验证并登录' : state.phase === 'choose_account' ? '使用此账号' : '确认品牌并进入对话'}
             </button>}
-        {state.phase === 'choose_brand' && <button className="button" type="button" disabled={busy} onClick={() => void perform(() => window.stable.extensions.refreshWendingBrands(conversationId))}>刷新品牌</button>}
-        {state.phase !== 'signed_out' && <button className="button" type="button" disabled={busy} onClick={() => { setCode(''); setMobile(''); void perform(() => window.stable.extensions.resetWendingLogin(conversationId)) }}>重新开始登录</button>}
+        {(state.phase === 'choose_brand' || state.phase === 'ready') && <button className="button" type="button" disabled={busy} onClick={() => void perform(() => window.stable.extensions.refreshWendingBrands(conversationId))}>{state.phase === 'ready' ? '切换品牌' : '刷新品牌'}</button>}
+        {state.phase !== 'signed_out' && <button className="button" type="button" disabled={busy} onClick={() => { setCode(''); setMobile(''); void perform(() => window.stable.extensions.resetWendingLogin(conversationId)) }}>更换登录账号</button>}
         <button className="button" type="button" onClick={onClose}>取消</button>
       </div>
     </form>

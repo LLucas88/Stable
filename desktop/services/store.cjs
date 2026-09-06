@@ -1,6 +1,6 @@
 'use strict'
 
-const { DatabaseSync } = require('node:sqlite')
+const { openConfiguredDatabase } = require('./sqlite-storage.cjs')
 const { mkdirSync } = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
@@ -66,10 +66,9 @@ function knowledgeExcerpt(content, terms) {
 class StableStore {
   constructor(root) {
     mkdirSync(root, { recursive: true })
-    this.db = new DatabaseSync(path.join(root, 'stable.db'))
+    this.db = openConfiguredDatabase(root)
+    try {
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS data_items (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, path TEXT NOT NULL,
@@ -171,6 +170,10 @@ class StableStore {
     }
     if (this.getSetting('identity') === undefined) this.setSetting('identity', DEFAULT_IDENTITY)
     if (this.getSetting('theme') === undefined) this.setSetting('theme', 'dark')
+    require('./conversation-state.cjs').initializeConversationState(this, root)
+    require('./conversation-state.cjs').initializeMessageSearch(this)
+    require('./conversation-state.cjs').initializeProjectFolders(this)
+    } catch (error) { try { this.db.close() } catch {} throw error }
   }
 
   getSetting(key) {
@@ -255,7 +258,9 @@ class StableStore {
     const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
     return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
-      GROUP BY c.id ORDER BY c.updated_at DESC`).all().map((row) => ({
+      GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all().map((row) => ({
+      ...this.conversationContext(row.id),
+      networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
       id: row.id, title: row.title, capability: row.capability || 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
       modelId: row.model_id || defaultModelId,
@@ -271,44 +276,13 @@ class StableStore {
   conversation(id) { return this.listConversations().find((item) => item.id === id) }
   activeConversationId() { return this.getSetting('activeConversationId') }
 
-  searchConversations(query, limit = 30) {
-    const normalized = String(query || '').trim().toLowerCase()
-    const requestedLimit = Math.max(1, Math.min(50, Number(limit) || 30))
-    const conversations = this.listConversations()
-    if (!normalized) return conversations.slice(0, requestedLimit).map((item) => ({
-      id: item.id, title: item.title, snippet: '', messageCount: item.messageCount, updatedAt: item.updatedAt,
-    }))
-
-    const terms = normalized.split(/\s+/u).filter(Boolean).slice(0, 12)
-    const messages = this.db.prepare('SELECT conversation_id,content FROM messages ORDER BY created_at DESC').all()
-    const byConversation = new Map()
-    for (const row of messages) {
-      const items = byConversation.get(row.conversation_id) || []
-      items.push(String(row.content || ''))
-      byConversation.set(row.conversation_id, items)
-    }
-
-    return conversations.map((item) => {
-      const conversationMessages = byConversation.get(item.id) || []
-      const titleLower = item.title.toLowerCase()
-      const searchable = `${titleLower}\n${conversationMessages.map((message) => message.toLowerCase()).join('\n')}`
-      if (!terms.every((term) => searchable.includes(term))) return undefined
-      const matchingMessage = conversationMessages.find((message) => terms.some((term) => message.toLowerCase().includes(term)))
-      const compact = matchingMessage?.replace(/\s+/g, ' ').trim() || ''
-      const positions = compact ? terms.map((term) => compact.toLowerCase().indexOf(term)).filter((index) => index >= 0) : []
-      const firstMatch = positions.length ? Math.min(...positions) : 0
-      const start = Math.max(0, firstMatch - 36)
-      const excerpt = compact.slice(start, start + 110)
-      return {
-        id: item.id,
-        title: item.title,
-        snippet: excerpt ? `${start > 0 ? '…' : ''}${excerpt}${start + 110 < compact.length ? '…' : ''}` : '标题匹配',
-        messageCount: item.messageCount,
-        updatedAt: item.updatedAt,
-        score: terms.reduce((score, term) => score + (titleLower.includes(term) ? 100 : occurrences(searchable, term)), 0),
-      }
-    }).filter(Boolean).sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt)).slice(0, requestedLimit)
-      .map(({ score: _score, ...item }) => item)
+  searchConversations(query, limit = 30, offset = 0) {
+    const terms=String(query||'').trim().toLowerCase().split(/\s+/u).filter(Boolean).slice(0,12)
+    const size=Math.max(1,Math.min(50,Number(limit)||30)),skip=Math.max(0,Number(offset)||0)
+    const bindings=[]
+    const where=terms.map(term=>{bindings.push(term,term);let index='';if([...term].length>=3){index=' AND m.rowid IN (SELECT rowid FROM message_search WHERE message_search MATCH ?)';bindings.push('"'+term.replace(/"/g,'""')+'"')}return `(instr(lower(c.title),?)>0 OR EXISTS(SELECT 1 FROM messages m WHERE m.conversation_id=c.id AND instr(lower(m.content),?)>0${index}))`}).join(' AND ')||'1'
+    const rows=this.db.prepare(`SELECT c.id,c.title,c.updated_at,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count FROM conversations c WHERE ${where} ORDER BY c.updated_at DESC,c.id LIMIT ? OFFSET ?`).all(...bindings,size,skip)
+    return rows.map(row=>{const match=terms.length?this.db.prepare('SELECT content FROM messages WHERE conversation_id=? AND ('+terms.map(()=>"instr(lower(content),?)>0").join(' OR ')+') ORDER BY seq DESC LIMIT 1').get(row.id,...terms):null;const text=String(match?.content||'').replace(/\s+/g,' '),positions=terms.map(t=>text.toLowerCase().indexOf(t)).filter(n=>n>=0),start=Math.max(0,(positions.length?Math.min(...positions):0)-36);return {id:row.id,title:row.title,snippet:text?(start?'…':'')+text.slice(start,start+110)+(text.length>start+110?'…':''):terms.length?'标题匹配':'',messageCount:row.message_count,updatedAt:row.updated_at}})
   }
 
   createConversation(options = {}) {
@@ -362,6 +336,7 @@ class StableStore {
   }
 
   removeConversation(id) {
+    this.revokeConversationGrants(id)
     if (!this.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)) return this.activeConversationId()
     this.db.exec('BEGIN')
     try {
@@ -679,8 +654,8 @@ class StableStore {
     if (!terms.length) return []
     return this.db.prepare('SELECT name,description,content FROM skills WHERE enabled=1').all()
       .map((row) => {
-        const haystack = `${row.name}\n${row.description}\n${row.content}`.toLowerCase()
-        return { ...row, score: terms.reduce((score, term) => score + occurrences(haystack, term), 0) }
+        const name = row.name.toLowerCase(), description = row.description.toLowerCase(), content = row.content.toLowerCase()
+        return { ...row, score: terms.reduce((score, term) => score + (name.includes(term) ? 12 : 0) + (description.includes(term) ? 6 : 0) + (content.includes(term) ? 1 : 0), 0) }
       })
       .filter((row) => row.score > 0).sort((a, b) => b.score - a.score).slice(0, limit)
       .map(({ name, content }) => ({ name, content }))
@@ -708,15 +683,9 @@ class StableStore {
   workflow(id) { const row = this.db.prepare('SELECT * FROM workflows WHERE id=?').get(id); return row ? { ...row, ...normalizeWorkflowGraph(JSON.parse(row.steps_json)) } : undefined }
   setWorkflowResult(id, status, result) { this.db.prepare('UPDATE workflows SET last_status=?,last_result=?,updated_at=? WHERE id=?').run(status, result, new Date().toISOString(), id) }
 
-  listMessages(conversationId = this.activeConversationId()) {
-    return this.db.prepare('SELECT id,role,content,trace_json,attachments_json,automation_json,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 200').all(conversationId).map((row) => ({
-      id: row.id, role: row.role, content: row.content, createdAt: row.created_at,
-      ...(row.trace_json ? { trace: JSON.parse(row.trace_json) } : {}),
-      ...(row.attachments_json ? { attachments: JSON.parse(row.attachments_json) } : {}),
-      ...(row.automation_json ? { automationProposal: JSON.parse(row.automation_json) } : {}),
-    }))
-  }
+  listMessages(conversationId = this.activeConversationId()) { return this.messagePage(conversationId).messages }
   addMessage(conversationId, role, content, trace, attachments, automationProposal) {
+    if(this.conversationContext(conversationId).deletionState==='pending')throw Error('此对话正在删除，拒绝迟到消息。')
     if (!this.conversation(conversationId)) throw new Error('找不到这个对话。')
     const allowedKinds = new Set(['data', 'skill', 'script', 'knowledge'])
     const messageAttachments = Array.isArray(attachments) ? attachments.slice(0, 24).map((item) => {
@@ -747,6 +716,9 @@ class StableStore {
     this.db.prepare('INSERT OR IGNORE INTO conversation_approvals (conversation_id, scope_key, label) VALUES (?, ?, ?)').run(conversationId, key, label)
   }
   clearMessages(conversationId = this.activeConversationId()) {
+    this.revokeConversationGrants(conversationId)
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='steer_deliveries'").get())this.db.prepare("UPDATE steer_deliveries SET state='cleared' WHERE conversation_id=?").run(conversationId)
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='message_deliveries'").get())this.db.prepare("UPDATE message_deliveries SET state='cleared' WHERE conversation_id=?").run(conversationId)
     this.db.prepare('DELETE FROM messages WHERE conversation_id=?').run(conversationId)
     this.db.prepare('DELETE FROM conversation_approvals WHERE conversation_id=?').run(conversationId)
   }
@@ -842,5 +814,7 @@ class StableStore {
   }
   close() { this.db.close() }
 }
+
+Object.assign(StableStore.prototype, require('./conversation-state.cjs').methods, require('./approval-ledger.cjs').methods)
 
 module.exports = { StableStore, DEFAULT_IDENTITY, LEGACY_MODEL_PROFILE_ID }

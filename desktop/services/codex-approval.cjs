@@ -109,11 +109,21 @@ async function classifyCodexApproval(method, params, workspace, trustedCli) {
 function approvalScope(method, params, assessment, execution = {}) {
   // Never accept a category supplied by the renderer or the model.
   const metadata = new Set(['threadId', 'turnId', 'itemId', 'callId', 'startedAtMs', 'reason', 'commandActions', 'availableDecisions', 'proposedExecpolicyAmendment'])
-  if (assessment.category) metadata.add('command')
+  // Grants remain bound to exact arguments even for statically safe categories.
   const stableParams = Object.fromEntries(Object.entries(params).filter(([key]) => !metadata.has(key)))
   const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value
-  const value = JSON.stringify(canonical({ method, params: stableParams, category: assessment.category, execution }))
-  return { key: createHash('sha256').update(`v2:${value}`).digest('hex'), label: assessment.categoryLabel || '相同命令、参数和访问范围' }
+  const fs = require('node:fs'), path = require('node:path')
+  const hashFile = target => { const hash=createHash('sha256'),buffer=Buffer.alloc(64*1024),fd=fs.openSync(target,'r');try{let n;while((n=fs.readSync(fd,buffer,0,buffer.length,null))>0)hash.update(buffer.subarray(0,n));return hash.digest('hex')}finally{fs.closeSync(fd)} }
+  const fingerprints = []
+  if(execution.cliProfile){try{for(const name of fs.readdirSync(execution.cliProfile).sort().filter(n=>/\.(json|toml|ini|yaml|yml)$/i.test(n))){const file=path.join(execution.cliProfile,name);if(fs.statSync(file).isFile())fingerprints.push(['cli-context',name,hashFile(file)])}}catch{fingerprints.push(['cli-context','unavailable'])}}
+  for (const match of String(params.command || '').matchAll(/(?:"([^"\r\n]+\.(?:py|ps1|js|cjs|sh|exe))"|'([^'\r\n]+\.(?:py|ps1|js|cjs|sh|exe))'|([^\s"']+\.(?:py|ps1|js|cjs|sh|exe)))/gi)) {
+    const target=path.resolve(params.cwd || execution.workspace || '.',match[1]||match[2]||match[3])
+    try { const stat=fs.statSync(target); fingerprints.push([fs.realpathSync(target),stat.ino,stat.mtimeMs,stat.size,hashFile(target)]) } catch { fingerprints.push([target,'unavailable']) }
+  }
+  let directory
+  try { const stat=fs.statSync(execution.workspace || params.cwd);directory=[stat.dev,stat.ino,stat.birthtimeMs] } catch { directory='unavailable' }
+  const value = JSON.stringify(canonical({ method, params: stableParams, category: assessment.category, execution, fingerprints, directory }))
+  return { key: createHash('sha256').update(`v3:${value}`).digest('hex'), label: assessment.categoryLabel ? assessment.categoryLabel+'（相同命令、参数和访问范围）' : '相同命令、参数和访问范围' }
 }
 
 function canAutoApprove(mode, event) {

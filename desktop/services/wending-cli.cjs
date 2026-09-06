@@ -1,7 +1,7 @@
 'use strict'
 
 const { spawn } = require('node:child_process')
-const { existsSync, readFileSync, mkdirSync, unlinkSync } = require('node:fs')
+const { existsSync, readFileSync, mkdirSync, unlinkSync, readdirSync, statSync, writeFileSync, linkSync } = require('node:fs')
 const { createHash } = require('node:crypto')
 const path = require('node:path')
 const { WendingLoginBridge } = require('./wending-login.cjs')
@@ -65,7 +65,7 @@ function wendingCliAgentInstruction() {
 
 class WendingCliService {
   constructor(options) {
-    this.options = options
+    this.options = { ...options, sharedAuthDirectory: options.sharedAuthDirectory || (options.userData ? path.join(options.userData, 'wending', 'auth') : undefined) }
     this.conversations = new Map()
     this.login = new WendingLoginBridge({ ...options, root: () => this.root(), environment: () => this.environment() })
   }
@@ -89,8 +89,8 @@ class WendingCliService {
     try {
       const cfg = JSON.parse(readFileSync(path.join(this.options.configDirectory, 'config.json'), 'utf8'))
       const decode = (key) => typeof cfg[key] === 'string' ? Buffer.from(cfg[key], 'base64').toString('utf8') : ''
-      const channel = decode('third_login_channel') === '1' ? '1' : '0'
-      return { phase: 'unknown', channel, brandLabel: decode('stable_brand_label').slice(0, 200), detail: '此任务的独立登录配置已保存，使用时核验服务端品牌。' }
+      const channel = decode('stable_brand_channel') === '1' || (!cfg.stable_brand_channel && decode('third_login_channel') === '1') ? '1' : '0'
+      return { phase: 'unknown', channel, brandLabel: decode('stable_brand_label').slice(0, 200), detail: '此对话的品牌选择已保存；登录状态全局共用，使用时核验品牌。' }
     } catch { return this.login.snapshot() }
   }
 
@@ -119,8 +119,40 @@ class WendingCliService {
     return { id: WENDING_CLI_ID, status: 'bundled', version: WENDING_CLI_VERSION, detail: '运行环境与服务包已内置，使用前将执行版本自检。' }
   }
 
+  ensureSharedAuth() {
+    const directory = this.options.sharedAuthDirectory
+    if (!directory || existsSync(path.join(directory, 'config.json'))) return
+    // Adopt the most recently saved legacy login, without adopting its brand.
+    const conversations = path.join(this.options.userData, 'wending', 'conversations')
+    const candidates = [path.join(this.options.workspace, '.crm-cli', 'config.json')]
+    if (existsSync(conversations)) for (const item of readdirSync(conversations, { withFileTypes: true })) {
+      if (item.isDirectory() && !item.isSymbolicLink()) candidates.push(path.join(conversations, item.name, 'config.json'))
+    }
+    const saved = candidates.filter(file => existsSync(file)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+    for (const file of saved) {
+      let cfg
+      try { cfg = JSON.parse(readFileSync(file, 'utf8')) } catch { continue }
+      if (typeof cfg.wnToken !== 'string' || !cfg.wnToken) continue
+      mkdirSync(directory, { recursive: true })
+      const temporary = path.join(directory, `.migration-${process.pid}.tmp`)
+      try {
+        writeFileSync(temporary, JSON.stringify({ wnToken: cfg.wnToken, third_login_channel: cfg.third_login_channel || Buffer.from('0').toString('base64') }))
+        try { linkSync(temporary, path.join(directory, 'config.json')) }
+        catch (error) { if (error.code !== 'EEXIST') throw error }
+      } finally { if (existsSync(temporary)) unlinkSync(temporary) }
+      return
+    }
+  }
+
   environment(baseEnvironment = process.env) {
     const environment = createWendingEnvironment(baseEnvironment, this.root())
+    delete environment.WENDING_SESSION_LOCK_DIR
+    delete environment.WENDING_SHARED_AUTH_DIR
+    if (this.options.sharedAuthDirectory) {
+      this.ensureSharedAuth()
+      environment.WENDING_SHARED_AUTH_DIR = this.options.sharedAuthDirectory
+      environment.WENDING_SESSION_LOCK_DIR = path.join(this.options.workspace, '.wending-session')
+    }
     delete environment.WENDING_CONFIG_DIR
     if (this.options.configDirectory) environment.WENDING_CONFIG_DIR = this.options.configDirectory
     return environment
@@ -130,7 +162,7 @@ class WendingCliService {
     const state = this.login.snapshot()
     const summary = state.phase === 'ready' ? '已核验登录与品牌；不代表拥有所有数据集权限。' : '登录状态尚未完成核验；需要登录时引导用户打开专用表单。'
     const binding = this.binding()
-    const scope = this.options.configDirectory ? `\n- 此任务使用独立问鼎登录配置；仅在任务顶部「问鼎 CLI」表单登录。绑定品牌：${binding.brandLabel || '尚未绑定'}。不得沿用历史消息中的品牌假设或其他任务的登录配置。不得覆盖 WENDING_CONFIG_DIR，不得读取、复制或切换其他任务的凭据。` : ''
+    const scope = this.options.configDirectory ? `\n- 问鼎登录状态全局共用，此任务独立保存品牌；通过任务顶部「问鼎 CLI」表单切换品牌。绑定品牌：${binding.brandLabel || '尚未绑定'}。不得沿用历史消息中的品牌假设或其他任务的登录配置。不得覆盖 WENDING_CONFIG_DIR，不得读取、复制或切换其他任务的凭据。` : ''
     return `${wendingCliAgentInstruction()}\n- 登录状态（脱敏）：${summary}\n\n${readFileSync(wendingCliFiles(this.root()).guide, 'utf8')}${scope}`
   }
 

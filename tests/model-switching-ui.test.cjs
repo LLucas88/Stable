@@ -48,11 +48,11 @@ test('main process snapshots the selected route before asynchronous message prep
 
   assert.ok(sendHandler.indexOf('modelRegistry.resolve(conversation.modelId)') >= 0)
   assert.ok(sendHandler.indexOf('modelRegistry.resolve(conversation.modelId)') < sendHandler.indexOf('await prepareAgentMessage'))
-  assert.match(sendHandler, /executionRunner\.run\(proposalPrompt\(query\), modelRoute\.model, modelRoute\.apiKey/)
+  assert.match(sendHandler, /executionRunner\.run\(proposalPrompt\(taskQuery\), modelRoute\.model, modelRoute\.apiKey/)
   assert.match(sendHandler, /runAgent\([\s\S]*executionRunner, undefined, modelRoute\)/)
   assert.match(runAgent, /const modelRoute = modelRouteOverride \|\| modelRegistry\.resolve\(conversation\?\.modelId\)/)
   assert.match(runAgent, /const \{ model, apiKey \} = modelRoute/)
-  assert.match(runAgent, /reviewer\.run\(reviewPrompt, model, apiKey/)
+  assert.match(runAgent, /reviewer\.run\(ledger\.prompt\(request\), model, apiKey/)
   assert.match(runAgent, /execute: async \(task\)[\s\S]*await executionRunner\.run\(task, model, apiKey/)
   assert.doesNotMatch(main, /getSetting\('model'\)/)
   assert.doesNotMatch(main, /secrets\.get\('apiKey'\)/)

@@ -23,6 +23,11 @@ function isInside(root, target) {
 function resolveWorkspaceEntry(value, workspace, options = {}) {
   const requested = String(value || '').trim()
   if (!requested || requested.length > 2_000) throw new Error('文件路径无效。')
+  if(Array.isArray(workspace)) {
+    const root=workspace.find(root=>isInside(root,path.resolve(requested)))
+    if(!root)throw Error('只能打开 Stable 工作区内真实存在的文件。')
+    return resolveWorkspaceEntry(requested,root,options)
+  }
   const workspaceAbsolute = path.resolve(workspace || '')
   const absolute = path.resolve(requested)
   if (!workspace || !isInside(workspaceAbsolute, absolute)) throw new Error('只能打开 Stable 工作区内真实存在的文件。')
