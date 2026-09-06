@@ -4,6 +4,21 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload)
 
+// Registered before launch completes; keep CSS transparency in sync with the
+// native host without exposing an additional privileged renderer API.
+let windowSurface = { material: 'opaque' }
+function syncWindowSurface() {
+  if (!document.documentElement) return
+  document.documentElement.dataset.windowMaterial = windowSurface.material
+  if (windowSurface.theme) document.documentElement.dataset.theme = windowSurface.theme
+}
+ipcRenderer.on('stable:appearance:surface', (_event, value) => {
+  if (!value || !['mica', 'opaque'].includes(value.material) || !['light', 'dark'].includes(value.theme)) return
+  windowSurface = value
+  syncWindowSurface()
+})
+window.addEventListener('DOMContentLoaded', syncWindowSurface, { once: true })
+
 contextBridge.exposeInMainWorld('stable', {
   bootstrap: () => invoke('stable:bootstrap'),
   editor: {

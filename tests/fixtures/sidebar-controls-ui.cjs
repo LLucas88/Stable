@@ -49,8 +49,8 @@ async function main() {
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks" class="rail-conversation-tasks-slot"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
-  await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
+  for (const name of ['tokens.css', 'app.css', 'codex-surfaces.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.main-frame > #root{background:var(--color-paper)}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   // Force a CSS hover in this isolated renderer, without moving the user's mouse.
   await new Promise(resolve => setTimeout(resolve, 200))
@@ -67,6 +67,15 @@ async function main() {
   await win.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: heading, forcedPseudoClasses: [] })
   if ((await actions()).flat().some(value => value !== '0')) throw Error('Actions remain after hover')
   win.webContents.debugger.detach()
+  await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+  const typography=await win.webContents.executeJavaScript('(()=>{ const style=selector=>getComputedStyle(document.querySelector(selector)); const answer=style(".assistant-answer .markdown-body"),input=style("#agent-prompt"); return {bodyWeight:style("body").fontWeight,answerColor:answer.color,answerSize:answer.fontSize,answerFamily:answer.fontFamily,inputMinHeight:input.minHeight,inputOverflow:input.overflowY,headerBorder:style(".conversation-topbar").borderBottomWidth}; })()')
+  require('node:assert/strict').equal(typography.answerColor,'rgb(26, 28, 31)')
+  require('node:assert/strict').equal(typography.bodyWeight,'400')
+  require('node:assert/strict').equal(typography.answerSize,'16px')
+  require('node:assert/strict').equal(typography.inputOverflow,'auto')
+  require('node:assert/strict').equal(typography.headerBorder,'1px')
+  fs.writeFileSync(path.join(output,'design-typography.json'),JSON.stringify(typography,null,2))
+  fs.writeFileSync(path.join(output,'design-conversation.png'),(await win.webContents.capturePage()).toPNG())
   const result=await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(yes,msg)=>{if(!yes)throw Error(msg)},click=selector=>{const el=document.querySelector(selector);expect(el,'Missing '+selector);el.click()};
     const menuText=()=>Array.from(document.querySelectorAll('.sidebar-action-menu [role=menuitem]')).map(el=>el.textContent);

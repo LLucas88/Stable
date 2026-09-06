@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu } = require('electron')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
@@ -68,11 +68,11 @@ const {
   scanPackage,
 } = require('./services/library-packages.cjs')
 
+const { createWindowAppearance } = require('./services/window-appearance.cjs')
+const windowAppearance = createWindowAppearance({ app, nativeTheme })
+
 const APP_ID = 'com.stable.agent'
-const WINDOW_CHROME = {
-  dark: { backgroundColor: '#060d15', symbolColor: '#dbe7f7', height: 40 },
-  light: { backgroundColor: '#f3eee6', symbolColor: '#172030', height: 40 },
-}
+
 let mainWindow
 let tray
 const windowPresence = createWindowPresence({ app, nativeImage, isInstalling: () => updateController?.state().status === 'installing' })
@@ -161,11 +161,7 @@ function timestampedOutputName(value, now = new Date()) {
 function normalizeTheme(value) { return value === 'light' ? 'light' : 'dark' }
 
 function applyWindowTheme(window, theme) {
-  const chrome = WINDOW_CHROME[normalizeTheme(theme)]
-  window.setBackgroundColor(chrome.backgroundColor)
-  if (process.platform === 'win32' && typeof window.setTitleBarOverlay === 'function') {
-    window.setTitleBarOverlay({ color: chrome.backgroundColor, symbolColor: chrome.symbolColor, height: chrome.height })
-  }
+  windowAppearance.apply(window, normalizeTheme(theme))
 }
 
 function readGlobalInstructions() {
@@ -282,7 +278,7 @@ function createPreviewView(kind, bounds) {
   previewView = view
   previewKind = kind
   mainWindow.contentView.addChildView(view)
-  view.setBackgroundColor(normalizeTheme(store.getSetting('theme')) === 'light' ? '#f8f5ee' : '#070b12')
+  view.setBackgroundColor(normalizeTheme(store.getSetting('theme')) === 'light' ? '#ffffff' : '#181818')
   view.setBounds(normalizedPreviewBounds(bounds))
   configurePreviewSession(view.webContents, kind)
   const guardNavigation = (event, targetUrl) => {
@@ -2669,6 +2665,7 @@ function createWindow() {
     } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
+  windowAppearance.watch(window)
   window.setMenuBarVisibility(false)
   installEditContextMenu(window.webContents, Menu, clipboard)
   windowPresence.attach(window)

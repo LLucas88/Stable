@@ -45,8 +45,8 @@ test('account dock stays at the bottom and main content has a rounded top-left j
   assert.match(css, /\.rail-account-dock\s*\{[^}]*margin-block-start:\s*auto/)
   assert.match(css, /\.main-frame\s*\{[^}]*border-start-start-radius:\s*var\(--radius-lg\)[^}]*background:\s*var\(--color-paper\)/)
   assert.match(app, /if \(!onToggleRail \|\| !onSearch\) return <div className="window-titlebar" aria-hidden="true" \/>/)
-  assert.match(main, /dark: \{ backgroundColor: '#060d15'/)
-  assert.match(main, /light: \{ backgroundColor: '#f3eee6'/)
+  assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /dark: \{ backgroundColor: '#141414'/)
+  assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /light: \{ backgroundColor: '#f6f6f6'/)
 })
 
 test('titlebar can fully collapse the rail and search titles plus all conversation messages', () => {

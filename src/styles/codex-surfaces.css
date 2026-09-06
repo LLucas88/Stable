@@ -1,0 +1,159 @@
+/* Codex 26.901.5280.0 inspired surfaces. Values are derived from its default
+ * theme generator; see docs/CODEX_DESIGN.md for source and deliberate changes.
+ * The native host owns Mica. The application-menu reference exposes that material without a shell tint. */
+:root {
+  --surface-shell: var(--surface-under);
+  --surface-floating: var(--surface-elevated-solid);
+  --surface-composer-current: var(--surface-control-solid);
+  --surface-composer-filter: none;
+  --shadow-soft: 0 0 0 .5px var(--color-rule-soft);
+  --shadow-float: 0 0 0 .5px var(--color-rule), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
+  --shadow-hover: 0 0 0 .5px var(--color-rule-2), 0 3px 7.5px #00000008;
+  --shadow-composer: inset 0 0 1px #fff3;
+}
+[data-theme="light"] {
+  --shadow-composer: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006;
+}
+html[data-window-material="mica"] {
+  --surface-shell: transparent;
+  --surface-floating: var(--surface-elevated);
+  --surface-composer-current: var(--surface-composer);
+  --surface-composer-filter: blur(16px);
+}
+html, body, #root { background: var(--surface-under); }
+html[data-window-material="mica"],
+html[data-window-material="mica"] body,
+html[data-window-material="mica"] #root { background: transparent; }
+.window-shell { background: var(--surface-shell); }
+.window-titlebar, .app-shell, .side-rail { background: transparent; }
+.side-rail { border-inline-end: 0; }
+.main-frame { background: var(--color-paper); }
+
+/* Keep actual reading and preview surfaces opaque, including embedded views. */
+.conversation-main, .conversation-preview, .preview-viewport, .browser-panel {
+  background: var(--color-paper);
+}
+.rail-mode-switch { background: var(--surface-selected); }
+.rail-mode-switch button[data-active="true"] { background: var(--surface-control-solid); box-shadow: var(--shadow-soft); }
+
+/* The legacy component sheet uses !important for these states. Match only
+ * those components instead of changing every button or workflow node. */
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option)[data-active="true"],
+#root .conversation-history-card .conversation-list-item[data-active="true"],
+#root .conversation-pinned .conversation-list-item[data-active="true"],
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option)[data-active="true"]:hover {
+  background: var(--surface-selected) !important;
+  color: var(--color-ink) !important;
+}
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option):not(:disabled):hover,
+.window-titlebar-tools button:not(:disabled):hover,
+.sidebar-project-heading:hover,
+.sidebar-project-more:not(:disabled):hover,
+.sidebar-project-new:not(:disabled):hover { background: var(--surface-hover) !important; }
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option):not(:disabled):active {
+  background: var(--surface-active) !important;
+  transform: none;
+}
+
+#root .composer-box,
+#root .composer-box:hover,
+#root .composer-box:focus,
+#root .composer-box:focus-within {
+  border: 0 !important;
+  border-radius: var(--radius-composer);
+  background: var(--surface-composer-current) !important;
+  backdrop-filter: var(--surface-composer-filter);
+  box-shadow: var(--shadow-composer) !important;
+}
+#root .composer-box[data-dragging="true"] { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+:is(.composer-popover, .conversation-action-menu, .conversation-file-menu,
+    .conversation-search-dialog, .project-picker, .project-dialog, .remove-dialog,
+    .confirm-modal, .account-module-panel) {
+  background: var(--surface-floating);
+  color: var(--color-ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float) !important;
+}
+.conversation-action-menu::before { background: var(--surface-floating); }
+#root .conversation-action-menu button:not(:disabled):hover,
+#root .conversation-file-menu button:not(:disabled):hover { background: var(--surface-hover) !important; }
+#root .conversation-action-menu button:not(:disabled):active,
+#root .conversation-file-menu button:not(:disabled):active { background: var(--surface-active) !important; }
+.confirm-backdrop, .conversation-search-backdrop {
+  background: var(--surface-scrim);
+  backdrop-filter: none;
+}
+.project-dialog::backdrop, .remove-dialog::backdrop { background: var(--surface-scrim); }
+
+/* Inputs own their fill. Textarea inside the composer stays transparent. */
+.field input:not([type="checkbox"]):not([type="radio"]), .field textarea, .field select, .project-name, .project-folders {
+  background: var(--surface-control-solid);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+}
+.user-bubble { background: var(--surface-selected); border-color: transparent; }
+
+/* Screenshot correction: Windows application-menu chrome does not use the
+ * 70% sidebar overlay of Codex's other chrome variant. Keep native tint visible.
+ * Use system UI text and primary ink for content; muted ink is for metadata. */
+:root {
+  --font-body: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-display: var(--font-body);
+}
+body { font-weight: 400; }
+.assistant-answer .markdown-body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--color-ink);
+  font-weight: 400;
+  line-height: 1.65;
+}
+.rail-button { min-height: 2.25rem; padding: .375rem .625rem; gap: .625rem; border-radius: .5rem; color: var(--color-ink); font-weight: 400; }
+.rail-button span { font-size: .875rem; line-height: 1.4; }
+.rail-nav { gap: .125rem; padding-block: .5rem; }
+.sidebar-project-title { color: var(--color-ink); font-size: .875rem; }
+.conversation-topbar { min-height: 3.25rem; }
+#root .conversation-topbar { border-block-end: 1px solid var(--color-rule-2) !important; }
+.conversation-topbar > div strong { font-family: var(--font-body); font-size: .875rem; font-weight: 600; }
+.rail-account-trigger { min-height: 2.75rem; background: transparent; border: 0; border-radius: .5rem; }
+.rail-account-name { font-weight: 400; font-size: .875rem; }
+.rail-account-trigger .account-avatar { width: 1.5rem; height: 1.5rem; font-size: .65rem; }
+.user-bubble { border-radius: 1.125rem; padding: .625rem 1rem; }
+/* Retain the role label for accessibility, without a second visible text row. */
+.user-bubble .turn-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer #agent-prompt { height: 3.5rem; min-height: 3.5rem; }
+.composer-actions { margin-block-start: .25rem; }
+.composer-send:not(:disabled) .composer-action-visual { background: var(--color-ink); color: var(--color-paper); }
+
+/* Native Mica is allowed to fall back at OS level. Forced-colors additionally
+ * replaces every translucent reading/control surface inside this renderer. */
+@media (forced-colors: active) {
+  :root {
+    --color-paper: Canvas;
+    --color-paper-2: Canvas;
+    --color-paper-3: ButtonFace;
+    --color-paper-4: ButtonFace;
+    --color-ink: CanvasText;
+    --color-ink-2: CanvasText;
+    --color-muted: GrayText;
+    --color-rule: ButtonText;
+    --color-rule-2: ButtonText;
+    --color-rule-soft: ButtonText;
+    --color-focus: Highlight;
+    --surface-under: Canvas;
+    --surface-shell: Canvas !important;
+    --surface-floating: Canvas !important;
+    --surface-control-solid: Field;
+    --surface-composer-current: Field !important;
+    --surface-composer-filter: none !important;
+    --surface-selected: ButtonFace;
+    --surface-hover: ButtonFace;
+    --surface-active: ButtonFace;
+  }
+  #root .composer-box, :is(.composer-popover, .conversation-action-menu, .project-dialog, .remove-dialog, .confirm-modal) {
+    border: 1px solid ButtonText !important;
+    box-shadow: none !important;
+  }
+}
