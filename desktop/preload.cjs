@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld('stable', {
   },
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
   agent: {
+    setSkillReferences: (id, ids) => invoke('stable:agent:skillReferences', { id, ids }),
     lifecycle: (id,action)=>invoke('stable:agent:lifecycle',{id,action}),
     configureNetwork: (id, enabled) => invoke('stable:agent:network', { id, enabled }),
     grants: id => invoke('stable:agent:grants', { id }), revokeGrants: (id, key) => invoke('stable:agent:revokeGrants', { id, key }),

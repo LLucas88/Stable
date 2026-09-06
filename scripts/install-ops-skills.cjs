@@ -29,12 +29,12 @@ async function install(args) {
   }
   const store = new StableStore(userData)
   try {
-    const result = installBundle(store, bundlePath, { applyPolicy: true })
+    const result = installBundle(store, bundlePath, { applyPolicy: !args.includes('--preserve-preferences') })
     fs.writeFileSync(path.join(appPath, CONFIG_FILE), JSON.stringify({ version: 1, bundlePath: path.relative(appPath, bundlePath), policy: 'all-compatible-except-feishu' }, null, 2))
     fs.writeFileSync(path.join(appPath, '.local', 'ops-skill-installation.json'), JSON.stringify({ ...result, userData, backupPath, verified: 'source-hashes-and-database-registration', businessRuntimeTested: false }, null, 2))
     const rows = result.skills.map(s => ['|', s.category, '|', s.name, '|', s.uid, '|', s.enabled ? '启用' : '停用', '|', s.reason.replaceAll('|', '／'), '|'].join(' '))
     fs.writeFileSync(path.join(appPath, '.local', '运营技能安装清单.md'), '# Stable 运营技能安装清单\n\n主技能 ' + result.registered + ' 个版本；启用 ' + result.enabled + '，停用 ' + result.disabled + '。另有 3 个辅助技能随原包保留，仅作为参考依赖。\n\n“启用”表示已登记为可检索的方法流程，不代表所有代码示例、账号连接或外部服务均已验证。\n\n| 分类 | 技能 | 来源编号 | 状态 | 原因 / 范围 |\n|---|---|---|---|---|\n' + rows.join('\n') + '\n')
-    console.log(JSON.stringify({ registered: result.registered, enabled: result.enabled, disabled: result.disabled, feishuPaused: result.skills.filter(s => s.status === 'feishu-paused').length, dependencyPending: result.skills.filter(s => s.status === 'dependency-pending').length, checkedFiles: result.checkedFiles, userData, bundlePath, backupPath }, null, 2))
+    console.log(JSON.stringify({ registered: result.registered, enabled: result.enabled, disabled: result.disabled, excludedFeishu: result.excludedFeishu, excludedUnavailable: result.excludedUnavailable, dependencyPending: result.skills.filter(s => s.status === 'dependency-pending').length, checkedFiles: result.checkedFiles, userData, bundlePath, backupPath }, null, 2))
   } finally { store.close() }
 }
 module.exports = { install }

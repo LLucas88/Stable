@@ -1,4 +1,5 @@
 'use strict'
+const { skillReferences, saveSkillReferences, selectedSkillContext } = require('./services/skill-selection.cjs')
 
 const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme } = require('electron')
 const { autoUpdater } = require('electron-updater')
@@ -393,6 +394,7 @@ function bootstrap() {
     recoveryText:conversationLifecycle?.recoveryText(store.activeConversationId())||'',
     recoveryDiagnostic:store.getSetting(`recovery-diagnostic:${store.activeConversationId()}`)||'',
     draftReference: store.getSetting(`draft-reference:${store.activeConversationId()}`),
+    skillReferences: skillReferences(store, store.activeConversationId()),
     projects: store.listProjects(),
     models: modelRegistry.publicCatalog(),
     cloud: cloudAccount?.publicState() || { status: 'disabled', account: null, quota: null, usage: null, models: [], error: '', baseURL: '' },
@@ -1359,6 +1361,7 @@ function agentState(conversationId = store.activeConversationId()) {
     recoveryDiagnostic: store.getSetting(`recovery-diagnostic:${conversationId}`) || '',
     paths: conversationPaths(conversationId),
     draftReference: store.getSetting(`draft-reference:${conversationId}`),
+    skillReferences: skillReferences(store, conversationId),
     catchAttachments: new CatchService(store, paths.workspace).drafts(conversationId),
   }
 }
@@ -1373,14 +1376,13 @@ async function prepareAgentMessage(payload, conversationId, modelRoute) {
   if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
   const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
   const attachments = [...extractedAttachments.items, ...catchAttachments]
-  const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : []
+  const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : skillReferences(store, conversationId)
   const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
   const dataIds = idsByKind('data')
-  const skillIds = idsByKind('skill')
   const scriptIds = idsByKind('script')
   const knowledgeIds = idsByKind('knowledge')
   const selectedData = store.dataByIds([...dataIds])
-  const selectedSkills = store.listSkills().filter((item) => item.enabled && skillIds.has(item.id)).map(({ name, content }) => ({ name, content }))
+  const selectedSkills = selectedSkillContext(store, requestedReferences)
   const selectedScripts = store.listLibrary().filter((item) => item.kind === 'script' && scriptIds.has(item.id)).map(({ id, name, description }) => ({ id, name, description }))
   const selectedKnowledge = store.listKnowledge().filter((item) => item.enabled && knowledgeIds.has(item.id)).map((item) => {
     const document = store.knowledgeItem(item.id)
@@ -1408,6 +1410,7 @@ function commitAgentMessage(conversationId, query, prepared, isSteer = false) {
   const messageId = store.addMessage(conversationId, 'user', query, undefined, prepared.messageAttachments)
   const deliveryId=agentRunners.get(conversationId)?.deliveryId
   if(deliveryId&&!isSteer)conversationLifecycle.status(deliveryId,'saved',{userMessageId:messageId})
+  if (store.getSetting(`conversation-skills:${conversationId}`) === undefined) store.setSetting(`conversation-skills:${conversationId}`, skillReferences(store, conversationId).map(item => item.id))
   store.setSetting(`draft-reference:${conversationId}`, null)
   new CatchService(store, paths.workspace).consume(conversationId, prepared.attachments)
   for (const draftPath of prepared.extractedAttachments.consumedDraftImages || []) {
@@ -1527,7 +1530,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }
   if (installedSkills.length) publish({ id: 'stable-skill-install', kind: 'tool', title: '安装全局 Skill', detail: `已识别并安装：${installedSkills.join('、')}`, status: 'completed' })
   const workbenchAction = conversationId ? requestedWorkbenchAction(query, {
-    library: store.listLibrary(), workflows: store.listWorkflows(), skills: store.listSkills(),
+    library: store.listLibrary(), workflows: store.listWorkflows(), skills: [],
   }) : null
   if (workbenchAction?.type === 'script') {
     const item = workbenchAction.item
@@ -1570,17 +1573,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const selectedData = explicitContext.data ?? (conversation?.dataIds?.length ? store.dataByIds(conversation.dataIds) : [])
   const data = selectedData.length ? selectedData : store.retrieveData(query, 5)
   const knowledge = explicitContext.knowledge?.length ? explicitContext.knowledge : store.retrieveKnowledge(query, 4)
-  const skills = explicitContext.skills?.length ? [...explicitContext.skills] : store.retrieveSkills(query, 4)
+  const skills = [...(explicitContext.skills ?? (conversationId ? selectedSkillContext(store, skillReferences(store, conversationId)) : []))]
   const scripts = explicitContext.scripts || []
-  if (workbenchAction?.type === 'skill') {
-    const selectedIndex = skills.findIndex((item) => item.name === workbenchAction.item.name)
-    if (selectedIndex > 0) skills.unshift(...skills.splice(selectedIndex, 1))
-    else if (selectedIndex < 0) {
-      const selectedSkill = store.skillContent(workbenchAction.item.name)
-      if (selectedSkill) skills.unshift(selectedSkill)
-    }
-    publish({ id: `stable-skill:${workbenchAction.item.id}`, kind: 'tool', title: `调用 Skill ${workbenchAction.item.name}`, detail: '已加载保存的 Skill 说明', status: 'completed' })
-  }
   const capability = conversation?.capability || 'auto'
   if (asksForWorkbenchInventory(query)) {
     const workbench = buildWorkbenchInventory({
@@ -2186,6 +2180,7 @@ function registerIpc() {
     else throw Error('未知的项目操作。')
     return agentState(store.activeConversationId())
   })
+  ipcMain.handle('stable:agent:skillReferences', (_event, payload) => saveSkillReferences(store, requireText(payload?.id, '对话 ID', 100), payload?.ids))
   ipcMain.handle('stable:agent:rename' , (_event, payload) => {
     const id = requireText(payload?.id, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')

@@ -34,8 +34,8 @@ function fixture(t) {
 
 test('registers distinct versions and resources; only compatible non-Feishu workflows reach the prompt', t => {
   const { bundle, store } = fixture(t), result = installBundle(store, bundle)
-  assert.equal(result.registered, 4); assert.equal(result.enabled, 1)
-  assert.equal(new Set(store.listSkills().map(s => s.name)).size, 4)
+  assert.equal(result.registered, 1); assert.equal(result.excludedFeishu, 2); assert.equal(result.excludedUnavailable, 1); assert.equal(result.enabled, 1)
+  assert.equal(new Set(store.listSkills().map(s => s.name)).size, 1)
   const selected = store.retrieveSkills('会员复购指标')
   assert.equal(selected.length, 1)
   const prompt = composeAgentPrompt({ identity: 'Stable', query: '会员复购指标', history: [], data: [], knowledge: [], skills: selected })
@@ -94,4 +94,42 @@ test('optional missing or invalid installation configuration does not break app 
   fs.writeFileSync(path.join(root, '.stable-ops-skills.json'), '{bad')
   assert(applyLocalSkillConfig({ appPath: root, userData: root, store }).error)
   assert(store.activeConversationId())
+})
+
+test('removes previously imported Feishu skills and does not reimport them on restart', t => {
+  const {bundle,store}=fixture(t)
+  const id='ops-market-lark-im'
+  store.upsertSkill({id,name:'飞书聊天',path:'local',description:'',content:'旧的飞书正文'})
+  store.setSetting('skillMarketMeta',{[id]:{bundle:require('../desktop/services/ops-skill-bundle.cjs').BUNDLE_ID,policyPaused:true}})
+  const first=installBundle(store,bundle)
+  assert.equal(first.excludedFeishu,2)
+  assert(!store.listSkills().some(item=>item.id===id))
+  assert.equal(store.getSetting('skillMarketMeta')[id].removed,true)
+  installBundle(store,bundle)
+  assert(!store.listSkills().some(item=>/lark/.test(item.id)))
+})
+
+test('generic online-document caveats do not qualify a skill for deletion', () => {
+  const {isFeishuSkill}=require('../desktop/services/ops-skill-bundle.cjs')
+  assert.equal(isFeishuSkill({id:'data-analysis',caveats:['部分流程强制输出在线文档'],content:'分析本地数据'}),false)
+  assert.equal(isFeishuSkill({id:'campaign',content:'最终必须创建并交付飞书文档。'}),true)
+  assert.equal(isFeishuSkill({id:'campaign',content:'可选 Word、Markdown 或飞书文档'}),false)
+})
+
+test('removes blocked imports while retaining manually disabled and custom skills across restarts', t => {
+  const {bundle,store}=fixture(t)
+  const id='ops-doubao-seed-audio'
+  store.upsertSkill({id,name:'音频生成',path:'local',description:'',content:'旧的音频说明'})
+  store.setSetting('skillMarketMeta',{[id]:{bundle:require('../desktop/services/ops-skill-bundle.cjs').BUNDLE_ID,compatibility:'dependency-pending'}})
+  store.upsertSkill({id:'my-skill',name:'自建技能',path:'local',description:'',content:'保留自建内容'})
+  const first=installBundle(store,bundle)
+  assert.equal(first.excludedUnavailable,1)
+  assert(!store.listSkills().some(item=>item.id===id))
+  assert.equal(store.getSetting('skillMarketMeta')[id].removalReason,'unavailable-excluded')
+  setSkillEnabled(store,'ops-market-startup-metrics-framework',false)
+  installBundle(store,bundle)
+  assert(!store.listSkills().some(item=>item.id===id))
+  assert.equal(store.listSkills().find(item=>item.id==='ops-market-startup-metrics-framework').enabled,false)
+  assert.equal(store.listSkills().find(item=>item.id==='my-skill').content,'保留自建内容')
+  assert.throws(()=>setSkillEnabled(store,id,true),/音频/)
 })

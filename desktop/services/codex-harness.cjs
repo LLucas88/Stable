@@ -1,5 +1,6 @@
 'use strict'
 
+const { SKILL_SELECTION_POLICY } = require('./skill-selection.cjs')
 const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
@@ -258,6 +259,7 @@ class CodexHarnessRunner {
           '你在 Stable 中工作。遵循用户提供的任务、资源和交付约束。联网查询优先使用 stable_search。',
           ...(session.globalInstructions?.trim() ? ['本机全局 Agent 对话规则：\n' + session.globalInstructions.trim()] : []),
           CLARIFICATION_GUIDANCE,
+          SKILL_SELECTION_POLICY,
           ...(writableRoots.length>1 ? ['本项目源文件夹（均可读取和编辑；默认交付目录为当前工作目录）：\n'+writableRoots.join('\n')] : []),
           ...(session.textOnly ? ['本轮仅澄清需求，禁止任何工具调用；按当前请求要求返回澄清 JSON。'] : []),
           ...(process.platform === 'win32' ? [

@@ -157,3 +157,14 @@ body { font-weight: 400; }
     box-shadow: none !important;
   }
 }
+
+/* Skill identities share a quiet shape, with a distinct symbol and color. */
+.market-avatar { width: 2.75rem; height: 2.75rem; border: 0; border-radius: .875rem; background: var(--skill-icon-bg); color: var(--skill-icon-ink); }
+.market-avatar[data-tone="blue"] { --skill-icon-bg: #eaf2ff; --skill-icon-ink: #2767d8; }
+.market-avatar[data-tone="teal"] { --skill-icon-bg: #e4f5f2; --skill-icon-ink: #138577; }
+.market-avatar[data-tone="green"] { --skill-icon-bg: #e8f6eb; --skill-icon-ink: #278647; }
+.market-avatar[data-tone="pink"] { --skill-icon-bg: #fbeaf1; --skill-icon-ink: #c44b7b; }
+.market-avatar[data-tone="amber"] { --skill-icon-bg: #fff3db; --skill-icon-ink: #b87714; }
+.market-avatar[data-tone="violet"] { --skill-icon-bg: #f0eaff; --skill-icon-ink: #7854c8; }
+html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srgb, var(--skill-icon-ink) 18%, var(--color-paper)); color: color-mix(in srgb, var(--skill-icon-ink) 48%, white); }
+@media (forced-colors: active) { .market-avatar[data-tone] { background: Canvas !important; color: CanvasText !important; border: 1px solid CanvasText; } }

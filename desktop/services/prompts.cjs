@@ -1,4 +1,5 @@
 'use strict'
+const { SKILL_SELECTION_POLICY } = require('./skill-selection.cjs')
 
 function block(title, items, render) {
   if (!items?.length) return ''
@@ -67,16 +68,19 @@ ${CAPABILITY_GUIDANCE[capability] || CAPABILITY_GUIDANCE.auto}
 - 如生成或修改供用户使用的文件，无论格式，都必须保存在当前 Stable 工作区；最终回答只列真实存在且已完成检查的文件，并把每个完整绝对路径各自放在单独一行，供 Stable 生成可点击文件卡片。
 - 表格数据使用标准 Markdown 表格，每行独占一行并包含表头分隔行。
 - 默认不要枚举、扫描或概述整个工作区；只有当前请求明确要求查看工作区内容，或任务执行中确实需要检索文件时，才按需使用文件搜索与读取工具。
-- 下方本地资源只包含用户手动引用或本次检索命中的数据、知识、Skill 与脚本；没有出现的资源不得假设已经加载。
-- 用户按名称调用且下方已加载对应 Skill 时，直接遵循其说明完成任务。
+- 数据与知识库可按需检索；Skill 与脚本只来自手动选择。没有出现的资源不得假设已经加载。
+- ${SKILL_SELECTION_POLICY}
 - 复杂文件任务必须拆成可验证的小步骤；不要在一次工具调用中生成超过 3000 字符的脚本或文件内容，较长内容要分段写入并逐步验证，避免单次输出达到模型长度上限。
 ${delivery?.type === 'artifact' ? `\n## 本次交付要求\n- 这是文件交付任务。所有交付文件必须保存到当前 Stable 工作区内，不能只保存在临时目录或工作区外。\n- 只有目标文件已经真实写入当前工作区并完成检查后，任务才算完成；不得列出不存在、尚未生成或未经检查的路径。\n- 计划、待办、实现思路和“接下来会做”不是最终交付，不得把它们作为最终回答。\n- 如果权限不足、登录失效、缺少数据或需要用户确认，停止无效重试，明确说明文件尚未交付、真实阻塞原因以及需要用户提供什么；不得伪造数据或用未确认的旧快照替代。\n- 若复用已有文件，必须先核验其内容和日期口径符合当前需求，在最终回答明确写“复用已有文件，已检查”并列出完整绝对路径；不得仅修改时间戳或触碰文件来假装新生成。\n- 最终回答只保留交付摘要，并把每个已验证交付文件的绝对路径各自放在单独一行，Stable 会据此生成可点击文件卡片。` : ''}
-${block('可调用的本地 Skills', skills, (item) => `### ${item.name}\n${item.content}`)}
+${block('当前对话手动选择的 Skills', skills, (item) => `### ${item.name}\n${item.content}`)}
 ${block('本次显式引用的脚本', scripts, (item) => `### ${item.name}\n${item.description || 'Stable 本地脚本'}\n需要运行时按名称调用 Stable 工作台中的这个脚本。`)}
 ${block('检索到的本地数据', data, (item) => `### ${item.name}\n${item.text_content.slice(0, 80_000)}`)}
 ${block('检索到的本地知识库', knowledge, (item) => `### ${item.name}\n${item.excerpt.slice(0, 20_000)}`)}
 ${attachmentBlock(attachments)}
 ${block('最近对话', history, (item) => `${item.role === 'user' ? '用户' : 'Stable'}：${item.content}`)}
+
+## 当前 Skill 选择
+${skills?.length ? skills.map(item => item.name).join('、') : '未选择 Skill。请直接处理任务，不调用 Skill。'}
 
 ## 当前请求
 ${query}`.trim()

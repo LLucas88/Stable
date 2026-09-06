@@ -54,6 +54,7 @@ class SkillMarket {
     if(item.builtin && item.kind !== 'expert'){skillId='wending-market-reference';this.store.upsertSkill({id:skillId,name:'问鼎 CLI',description:'问鼎账号与品牌数据查询',path:'builtin:wending',content:'用户本次选择调用问鼎 CLI。请使用已安装的 crm-brand-cli，遵循当前对话绑定的品牌与全局登录状态。'})}
     const conversationId=this.store.createConversation()
     this.store.setSetting(`draft-reference:${conversationId}`,{id:skillId,kind:'skill',name:item.name,size:Buffer.byteLength(item.content),type:item.kind})
+    this.store.setSetting(`conversation-skills:${conversationId}`, [skillId])
     return conversationId
   }
 }

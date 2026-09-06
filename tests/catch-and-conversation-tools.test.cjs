@@ -68,7 +68,7 @@ test('real message preparation loads authoritative Catch text instead of rendere
   const [draft] = service.drafts(id)
   const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   const code = main.slice(main.indexOf('async function prepareAgentMessage('), main.indexOf('\nfunction commitAgentMessage('))
-  const prepare = vm.runInNewContext(code + '\nprepareAgentMessage', { CatchService, conversationPaths: () => ({ workspace: f.workspace }), store: f.store, paths: { workspace: f.workspace }, Buffer, inspectAgentAttachments: () => { throw Error('Catch must bypass bounded extraction') }, isImageAttachment: () => false, isDeepSeekModel: () => false, extractAgentAttachments: async items => ({ items }) })
+  const prepare = vm.runInNewContext(code + '\nprepareAgentMessage', { ...require('../desktop/services/skill-selection.cjs'), CatchService, conversationPaths: () => ({ workspace: f.workspace }), store: f.store, paths: { workspace: f.workspace }, Buffer, inspectAgentAttachments: () => { throw Error('Catch must bypass bounded extraction') }, isImageAttachment: () => false, isDeepSeekModel: () => false, extractAgentAttachments: async items => ({ items }) })
   const result = await prepare({ attachments: [{ ...draft, text: 'forged', type: 'markdown' }] }, id, { model: {} })
   assert.equal(result.attachments[0].type, 'catch')
   assert.ok(result.attachments[0].text.endsWith('TAIL'))

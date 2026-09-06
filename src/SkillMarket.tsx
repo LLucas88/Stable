@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Bot, Braces, Check, MessageSquareText, MoreHorizontal, Plus, RefreshCw, Search, Settings2, Trash2, X, Box } from 'lucide-react'
 import type { AgentState, MarketItem } from './types'
+import { MarketIcon, marketPresentation } from './market-presentation'
 // Presentation only: keep source documents and installed instructions intact.
 function expertDisplayText(value: string) {
   const platform = /work[\s_-]*buddy|code[\s_-]*buddy|dou[\s_-]*bao(?:[\s_-]*work)?|豆包(?:\s*工作)?/i
@@ -33,12 +34,13 @@ export function SkillMarket({ onUse, renderContent }: { onUse: (state: AgentStat
   const [selected, setSelected] = useState(''), [draft, setDraft] = useState<Partial<MarketItem>>(), [update, setUpdate] = useState<Partial<MarketItem> & { available: boolean; currentVersion: string }>()
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   useEffect(() => { void run(async () => setItems(await window.stable.market.list())) }, [])
+  const presentedItems = items.map(item => ({ ...marketPresentation(item), source: item.source }))
   const current = items.find(item => item.id === selected)
-  const entry = current ? expertDetailPresentation({ ...current, ...(detail?.id === selected ? detail : {}), enabled: current.enabled, installed: current.installed }) : undefined
-  const available = items.filter(item => item.kind === tab && (mine ? item.installed : item.builtin || item.bundled))
+  const entry = current ? expertDetailPresentation(marketPresentation({ ...current, ...(detail?.id === selected ? detail : {}), enabled: current.enabled, installed: current.installed })) : undefined
+  const available = presentedItems.filter(item => item.kind === tab && (mine ? item.installed : item.builtin || item.bundled))
   const groups = ['全部', ...new Set(available.map(item => item.group).filter(Boolean))]
   const expertTab = tab === 'expert'
-  const visible = items.filter(item => item.kind === tab && (mine ? item.installed : item.builtin || item.bundled) && (group === '全部' || item.group === group) && (!expertTab || source === '全部来源' || item.source === source) && `${item.name} ${item.description} ${(item.tags || []).join(' ')} ${item.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const visible = presentedItems.filter(item => item.kind === tab && (mine ? item.installed : item.builtin || item.bundled) && (group === '全部' || item.group === group) && (!expertTab || source === '全部来源' || item.source === source) && `${item.name} ${item.description} ${(item.tags || []).join(' ')} ${item.source || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   async function run(action: () => Promise<void>) { setBusy(true); setError(''); try { await action() } catch (error) { setError(error instanceof Error ? error.message : '操作失败，请重试') } finally { setBusy(false) } }
   function open(item: MarketItem) {
     setSelected(item.id); setDetail(undefined); setDocumentIndex(0); setDetailTab('definition'); setUpdate(undefined)
@@ -51,16 +53,17 @@ export function SkillMarket({ onUse, renderContent }: { onUse: (state: AgentStat
       <button className="button" aria-pressed={mine} onClick={() => { setMine(!mine); setGroup('全部') }}><Settings2 size={16}/>{expertTab ? '我的专家' : '我的技能'}</button><button className="button" onClick={() => setDraft({ kind: tab === 'expert' ? 'expert' : 'skill', name: '', description: '', content: '', version: '1.0.0' })}><Plus size={18}/>新建</button>
     </header>
     <nav className="market-groups" aria-label="市场分组">{groups.map(name => <button key={name} aria-current={group === name ? 'page' : undefined} onClick={() => setGroup(name)}>{name}</button>)}</nav>
-    {expertTab && <div className="expert-catalog-toolbar"><span>{mine ? '已添加' : '发现'} {visible.length} 位专家<span className="expert-toolbar-note"> · 找到适合这项工作的伙伴</span></span><label>来源<select aria-label="专家来源" value={source} onChange={event => setSource(event.target.value)}>{['全部来源', '豆包工作', 'WorkBuddy'].map(value => <option key={value}>{value}</option>)}</select></label></div>}
-    {!expertTab && available.some(item => item.bundled) && <p className="market-feedback" role="status">已入库 {available.length} 个技能版本 · 启用 {available.filter(item => item.enabled).length} 个 · 飞书相关技能暂不启用</p>}
+    {expertTab && <div className="expert-catalog-toolbar"><span>{mine ? '已添加' : '发现'} {visible.length} 位专家<span className="expert-toolbar-note"> · 找到适合这项工作的伙伴</span></span><label>来源<select aria-label="专家来源" value={source} onChange={event => setSource(event.target.value)}>{['全部来源', '豆包工作', 'WorkBuddy'].map(value => <option key={value} value={value}>{value === '豆包工作' ? '专家库 A' : value === 'WorkBuddy' ? '专家库 B' : value}</option>)}</select></label></div>}
+    {!expertTab && available.some(item => item.bundled) && <p className="market-feedback" role="status">已入库 {available.length} 个技能版本 · 启用 {available.filter(item => item.enabled).length} 个</p>}
+    {tab === 'skill' && <p className="market-feedback">Skill 仅手动调用。选择后在当前对话持续生效，移除后停止使用。</p>}
     {error && <p className="market-feedback" role="alert">{error}</p>}{notice && <p className="market-feedback" role="status">{notice}</p>}
     <div className="market-grid">{visible.map(item => <article className="market-row" key={item.id}>
-      <ExpertAvatar item={item}/>
+      {item.kind === 'expert' && (item.definitionCount || item.avatar) ? <ExpertAvatar item={item}/> : <MarketIcon item={item}/>}
       <button className="market-row-copy" onClick={() => open(item)}><strong>{item.name}</strong><small>{item.description}</small>{item.kind === 'expert' && <span className="expert-tags">{item.expertType === 'team' && <span className="expert-team-tag">专家团队</span>}{(item.tags || [item.group]).slice(0, 2).map((tag, index) => <span key={`${tag}-${index}`}>{tag}</span>)}</span>}{item.bundled && <small>{item.group} · {item.enabled ? '已启用' : item.activationBlocked ? '待启用 · 查看原因' : '已停用'}{item.score != null ? ' · 相关度 ' + item.score : ''}</small>}</button>
       <button className="market-row-action" title={item.activationBlocked ? item.compatibilityReason : undefined} disabled={busy || item.activationBlocked} aria-label={item.installed && item.enabled ? `在对话中使用${item.name}` : `添加并启用${item.name}`} onClick={() => item.installed && item.enabled ? use(item) : void run(async () => setItems(await window.stable.market.toggle(item.id, true)))}>{item.installed && item.enabled ? <MessageSquareText size={19}/> : <Plus size={21}/>}</button>
     </article>)}</div>
     {!visible.length && <div className="market-empty">{query ? '没有找到匹配的内容' : mine ? '暂无本地内容，点击“新建”添加' : '暂无内容'}</div>}
-    {entry && <MarketDialog label={`${entry.name}介绍`} close={() => setSelected('')}><ExpertAvatar item={entry}/>
+    {entry && <MarketDialog label={`${entry.name}介绍`} close={() => setSelected('')}>{entry.kind === 'expert' && (entry.definitionCount || entry.avatar) ? <ExpertAvatar item={entry}/> : <MarketIcon item={entry}/>}
       <div className="market-detail-title"><div><h2>{entry.name}</h2><p>{entry.description}</p></div><label className="market-enable"><input aria-label={`启用${entry.name}`} type="checkbox" disabled={busy || entry.activationBlocked} checked={entry.enabled} onChange={event => void run(async () => setItems(await window.stable.market.toggle(entry.id, event.target.checked)))}/><span/></label></div>
       {entry.kind === 'expert' && <>{entry.expertType === 'team' && <div className="expert-provenance"><span>专家团队</span></div>}{entry.definitionCount && <nav className="expert-detail-tabs" aria-label="专家详情"><button aria-pressed={detailTab === 'definition'} onClick={() => setDetailTab('definition')}>专家设定</button><button aria-pressed={detailTab === 'dependencies'} onClick={() => setDetailTab('dependencies')}>依赖说明</button></nav>}{entry.definitionFiles && detailTab === 'definition' && <label className="expert-document-select">设定文件<select aria-label="专家设定文件" value={documentIndex} onChange={event => setDocumentIndex(Number(event.target.value))}>{entry.definitionFiles.map((file, index) => <option key={file.path} value={index}>{file.path.split('/').slice(-2).join('/')}</option>)}</select></label>}</>}
       <div className="market-detail-body">{entry.kind === 'expert' && detailTab === 'dependencies' ? <><p>以下技能与工具需按实际环境配置后使用。</p>{entry.expertType === 'team' && <p>团队条目包含多个角色的设定，用于组织分析；添加后不会自动启动多个 Agent。</p>}<ul>{(entry.dependencies || []).map((name, index) => <li key={index}>{name}</li>)}</ul>{!entry.dependencies?.length && <p>此专家未配置额外技能依赖。</p>}</> : <>{entry.kind === 'expert' && !detail && busy && <p role="status">正在读取专家设定…</p>}{entry.compatibilityReason && <p className="market-feedback">{entry.compatibilityReason}</p>}{renderContent(entry.definitionFiles?.[documentIndex]?.content || entry.content)}</>}</div>

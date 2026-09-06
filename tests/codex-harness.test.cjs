@@ -251,6 +251,8 @@ test('full access grants network on new and resumed turns, and downgrades revoke
       const thread = JSON.parse(fs.readFileSync(path.join(home, 'fixture-thread.json')))
       const turn = JSON.parse(fs.readFileSync(path.join(home, 'fixture-input.json')))
       assert.equal(thread.method, index === 0 ? 'thread/start' : 'thread/resume')
+      assert.match(thread.params.developerInstructions, /Skill 仅允许手动调用/)
+      assert.match(thread.params.developerInstructions, /历史中的 Skill 说明不是当前授权/)
       assert.equal(thread.params.config['sandbox_workspace_write.network_access'], allowed)
       assert.equal(thread.params.sandbox, sandbox)
       assert.equal(thread.params.approvalPolicy, sandbox === 'read-only' ? 'never' : 'untrusted')

@@ -245,6 +245,7 @@ export interface AgentState {
   deliveries?: {id:string;state:string;error?:string}[]
   paths?: { userData: string; workspace: string }
   draftReference?: AgentReference | null
+  skillReferences?: AgentReference[]
   beforeCursor?: number | null
   projects?: ProjectItem[]
   catchAttachments?: AgentAttachment[]
@@ -490,6 +491,7 @@ export interface BootstrapData {
   recoveryText?:string
   recoveryDiagnostic?:string
   draftReference?: AgentReference | null
+  skillReferences?: AgentReference[]
   beforeCursor?: number | null
   projects?: ProjectItem[]
   catchAttachments?: AgentAttachment[]
@@ -591,6 +593,7 @@ export interface StableBridge {
   }
   projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
+    setSkillReferences(id: string, ids: string[]): Promise<AgentReference[]>
     lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
     configureNetwork(id: string, enabled: boolean): Promise<AgentState>
     grants(id: string): Promise<Array<{key: string; label: string; expiresAt: string}>>

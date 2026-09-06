@@ -38,6 +38,12 @@ const SPECIFIC_BLOCKERS = {
   'doubao-visualization': '原件引用豆包呈现与生图路由，需验证对应输出协议。',
 }
 
+function isFeishuSkill(skill) {
+  return /^(?:lark|feishu)[-_]/i.test(skill.id)
+    || (skill.dependencies || []).some(value => /\blark\b|\bfeishu\b|飞书/i.test(value))
+    || /(?:必须|唯一|默认)[^\n]*飞书|飞书[^\n]*(?:必须|唯一)/.test(skill.content || '')
+}
+
 function compatibility(skill) {
   const dependencies = skill.dependencies || []
   const feishu = /^lark-/.test(skill.id) || dependencies.some(value => /lark|飞书/i.test(value))
@@ -113,13 +119,21 @@ function installBundle(store, root, { applyPolicy = false } = {}) {
   const bundle = inspectBundle(root)
   const existing = new Map(store.listSkills().map(item => [item.id, item]))
   const meta = store.getSetting('skillMarketMeta') || {}
-  const result = { bundle: BUNDLE_ID, root: bundle.root, checkedFiles: bundle.checkedFiles, registered: 0, skippedRemoved: 0, enabled: 0, disabled: 0, skills: [] }
+  const result = { bundle: BUNDLE_ID, root: bundle.root, checkedFiles: bundle.checkedFiles, registered: 0, skippedRemoved: 0, excludedFeishu: 0, excludedUnavailable: 0, enabled: 0, disabled: 0, skills: [] }
   store.db.exec('BEGIN IMMEDIATE')
   try {
     for (const skill of bundle.skills) {
       const id = storeId(skill.uid), old = existing.get(id)
-      if (meta[id]?.removed && !old) { result.skippedRemoved++; continue }
       if (old && meta[id]?.bundle !== BUNDLE_ID) throw new Error('现有技能编号冲突：' + id)
+      const feishu = isFeishuSkill(skill)
+      if (feishu || skill.compatibility.status !== 'local-workflow') {
+        if (old) store.removeSkill(id)
+        meta[id] = { ...meta[id], bundle: BUNDLE_ID, originalId: skill.id, removed: true,
+          compatibility: skill.compatibility.status, compatibilityReason: skill.compatibility.reason,
+          policyPaused: feishu, removalReason: feishu ? 'feishu-excluded' : 'unavailable-excluded' }
+        result[feishu ? 'excludedFeishu' : 'excludedUnavailable']++; continue
+      }
+      if (meta[id]?.removed && !old) { result.skippedRemoved++; continue }
       if (!old || (old.content === registeredContent(skill, bundle.root) && (old.name === meta[id]?.managedName || old.name === ((skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName) + ' · ' + skill.platform))) store.upsertSkill({ id,
         name: `${(skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName} · ${skill.platform}`,
         description: `${skill.category}；${skill.id}；${skill.reason}`,
@@ -176,4 +190,4 @@ function applyLocalSkillConfig({ appPath, userData, isPackaged, store }) {
   }
 }
 
-module.exports = { BUNDLE_ID, CONFIG_FILE, compatibility, inspectBundle, storeId, installBundle, setSkillEnabled, removeSkill, applyLocalSkillConfig }
+module.exports = { BUNDLE_ID, CONFIG_FILE, isFeishuSkill, compatibility, inspectBundle, storeId, installBundle, setSkillEnabled, removeSkill, applyLocalSkillConfig }

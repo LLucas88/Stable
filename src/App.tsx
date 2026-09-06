@@ -809,6 +809,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
+  const referenceMapRef = useRef(referenceMap)
+  referenceMapRef.current = referenceMap
+  const skillSaves = useRef<Record<string, Promise<unknown>>>({})
   const [composerErrorMap, setComposerErrorMap] = useState<Record<string, string>>({})
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mobileTasksTarget, setMobileTasksTarget] = useState<HTMLElement | null>(null)
@@ -913,7 +916,16 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   activeConversationIdRef.current = state.activeConversationId
   stateRef.current = state
 
-  useEffect(() => { setPrompt(''); setSidebarOpen(false); if (state.draftReference) setReferenceMap(current => ({ ...current, [state.activeConversationId]: [state.draftReference!] })) }, [state.activeConversationId])
+  useEffect(() => {
+    setPrompt(''); setSidebarOpen(false)
+    const id = state.activeConversationId
+    const current = referenceMapRef.current
+    if (current[id] === undefined) {
+      const refs = state.skillReferences ?? (state.draftReference ? [state.draftReference] : [])
+      referenceMapRef.current = { ...current, [id]: refs }
+      setReferenceMap(referenceMapRef.current)
+    }
+  }, [state.activeConversationId])
 
   useEffect(() => {
     if (!active || !prefill || running) return
@@ -944,10 +956,18 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }
 
   function setReferences(next: AgentReference[] | ((current: AgentReference[]) => AgentReference[])) {
-    setReferenceMap((current) => {
-      const currentItems = current[state.activeConversationId] || []
-      return { ...current, [state.activeConversationId]: typeof next === 'function' ? next(currentItems) : next }
-    })
+    const id = state.activeConversationId
+    const current = referenceMapRef.current[id] || []
+    const refs = typeof next === 'function' ? next(current) : next
+    referenceMapRef.current = { ...referenceMapRef.current, [id]: refs }
+    setReferenceMap(referenceMapRef.current)
+    const ids = (items: AgentReference[]) => items.filter(item => item.kind === 'skill').map(item => item.id)
+    if (JSON.stringify(ids(current)) !== JSON.stringify(ids(refs)) && window.stable.agent.setSkillReferences) {
+      // Serialize saves; a send waits for its conversation's outstanding selection.
+      const save = (skillSaves.current[id] || Promise.resolve()).catch(() => {}).then(() => window.stable.agent.setSkillReferences(id, ids(refs)))
+      skillSaves.current[id] = save
+      void save.catch(error => setComposerErrorMap(all => ({ ...all, [id]: errorMessage(error) })))
+    }
   }
 
   function toggleReference(reference: AgentReference) {
@@ -1390,7 +1410,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         references: selectedReferences.map((item) => ({ ...item })),
       })).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
       copyUndoRef.current[conversationId] = undefined
-      setPrompt(''); setAttachments([]); setReferences([])
+      setPrompt(''); setAttachments([]); setReferences(current => current.filter(item => item.kind === 'skill'))
       setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
       window.requestAnimationFrame(() => promptRef.current?.focus())
     } catch (error) {
@@ -1416,6 +1436,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     let previousMessageIds: Set<string> | undefined
     let dispatched = false
     try {
+      await skillSaves.current[conversationId]
       const before = await window.stable.agent.state(conversationId)
       previousMessageIds = new Set(before.messages.map((item) => item.id))
       const conversation = before.conversations.find((item) => item.id === conversationId)
@@ -1457,6 +1478,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }
 
   async function steerQueuedMessage(conversationId: string, entry: OutboxEntry<ComposerMessage>) {
+    await skillSaves.current[conversationId]
     const result = await window.stable.agent.steer(conversationId, entry.id, entry.payload.prompt, entry.payload.attachments, entry.payload.references)
     updateAgentForConversation(result, conversationId)
   }
@@ -1469,7 +1491,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   function updateAgentForConversation(result: AgentState, conversationId: string) {
     if (activeConversationIdRef.current === conversationId) updateAgent(result)
-    else updateAgent({ ...result, activeConversationId: activeConversationIdRef.current, messages: stateRef.current.messages, catchAttachments: stateRef.current.catchAttachments, draftReference: stateRef.current.draftReference, beforeCursor: stateRef.current.beforeCursor, paths: stateRef.current.paths, deliveries: stateRef.current.deliveries, recoveryText: stateRef.current.recoveryText, recoveryDiagnostic: stateRef.current.recoveryDiagnostic })
+    else updateAgent({ ...result, activeConversationId: activeConversationIdRef.current, messages: stateRef.current.messages, catchAttachments: stateRef.current.catchAttachments, draftReference: stateRef.current.draftReference, skillReferences: stateRef.current.skillReferences, beforeCursor: stateRef.current.beforeCursor, paths: stateRef.current.paths, deliveries: stateRef.current.deliveries, recoveryText: stateRef.current.recoveryText, recoveryDiagnostic: stateRef.current.recoveryDiagnostic })
   }
 
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
@@ -1580,7 +1602,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   <summary className="composer-tool" aria-label="选择 Skill"><Braces size={18} aria-hidden="true" /></summary>
                   <div className="composer-popover">
                     <div className="composer-popover-head"><strong>选择 Skills</strong><span>可多选</span></div>
-                    {enabledSkills.length ? enabledSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.description || '已安装全局 Skill'}</small></span></button> }) : <p className="composer-menu-empty">还没有已启用的 Skill。</p>}
+                    {enabledSkills.length ? enabledSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.description || '手动选择后在当前对话持续生效'}</small></span></button> }) : <p className="composer-menu-empty">还没有已启用的 Skill。</p>}
                     <button className="composer-install-skill" type="button" onClick={addSkillFolder}><FolderInput size={15} />安装新的 Skill 文件夹</button>
                   </div>
                 </details>
