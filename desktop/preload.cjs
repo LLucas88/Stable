@@ -98,7 +98,7 @@ contextBridge.exposeInMainWorld('stable', {
   },
   browser: { command: payload => invoke('stable:browser:command', payload), onChanged: callback => { const listener=()=>callback();ipcRenderer.on('stable:browser:changed',listener);return()=>ipcRenderer.removeListener('stable:browser:changed',listener) } },
   market: {
-    list: () => invoke('stable:market:list'), save: value => invoke('stable:market:save', value),
+    list: () => invoke('stable:market:list'), detail: id => invoke('stable:market:detail', { id }), save: value => invoke('stable:market:save', value),
     toggle: (id, enabled) => invoke('stable:market:toggle', { id, enabled }), remove: id => invoke('stable:market:remove', { id }),
     checkUpdate: id => invoke('stable:market:update', { id }), use: id => invoke('stable:market:use', { id }),
   },
