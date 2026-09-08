@@ -140,8 +140,8 @@ async function main() {
     }
     assert.match(fs.readFileSync(path.join(workspace, 'write-full.txt'), 'utf8'), /CODEX_FILE_OK/)
     assert.equal(fs.readFileSync(path.join(workspace, 'sentinel.txt'), 'utf8'), 'DO_NOT_DELETE')
-    assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['read-full', 'write-full'])
-    assert.deepEqual(manualApprovals, [{ phase: 'write', risk: 'safe' }, { phase: 'deny', risk: 'high' }, { phase: 'danger-full', risk: 'high' }, { phase: 'unknown-full', risk: 'unknown' }])
+    assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['write', 'read-full', 'write-full', 'unknown-full'])
+    assert.deepEqual(manualApprovals, [{ phase: 'deny', risk: 'high' }, { phase: 'danger-full', risk: 'high' }])
     phase = 'search'; issuedTool = false
     let searchCalled = false
     currentRunner = new CodexHarnessRunner({ ...options, search: async ({ query }) => { assert.equal(query, 'mock query'); searchCalled = true; return { sources: [{ url: 'https://example.com/source', title: 'MOCK_SEARCH_RESULT' }], truncated: false } } })
@@ -180,7 +180,7 @@ async function main() {
     assert.equal(currentRunner.cancel(), true); await rejected
     assert.equal(currentRunner.busy, false)
     assert.equal(cloudRequests, requests.length - 3, 'Text runs use the cloud proxy; only image and the two search requests use a direct provider')
-    const report = { success: true, checks: ['stream', 'resume-after-restart', 'thinking-state-replay', 'context-compaction', 'image-input', 'tool-file-write', 'approval-denial', 'full-read-auto-approval', 'full-write-auto-approval', 'full-danger-confirmation', 'full-unknown-confirmation', 'cloud-proxy-text-contract', 'mcp-search', 'builtin-excel-create', 'builtin-excel-resume-read', 'turn-steer', 'cancel'], cloudRequests, autoApprovals, manualApprovals, requests: requests.length, tools: requests[0].tools?.map((tool) => tool.function.name), events: [...new Set(events.map((event) => event.eventType))], root }
+    const report = { success: true, checks: ['stream', 'resume-after-restart', 'thinking-state-replay', 'context-compaction', 'image-input', 'tool-file-write', 'approval-denial', 'full-read-auto-approval', 'full-write-auto-approval', 'full-danger-confirmation', 'full-nondestructive-command-auto-approval', 'cloud-proxy-text-contract', 'mcp-search', 'builtin-excel-create', 'builtin-excel-resume-read', 'turn-steer', 'cancel'], cloudRequests, autoApprovals, manualApprovals, requests: requests.length, tools: requests[0].tools?.map((tool) => tool.function.name), events: [...new Set(events.map((event) => event.eventType))], root }
     fs.writeFileSync(path.join(root, 'report.json'), JSON.stringify(report, null, 2))
     console.log(JSON.stringify(report, null, 2))
   } finally {

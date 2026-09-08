@@ -8,7 +8,7 @@ const path = require('node:path')
 test('agent composer multi-selects data, scripts, knowledge and Skills into removable chips', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu capability-menu"'))
+  const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu permission-menu"'))
   assert.doesNotMatch(menu, /type="checkbox"/)
   assert.match(menu, /<ResourceGroup title="数据库"/)
   assert.match(menu, /<ResourceGroup title="脚本"/)
@@ -39,12 +39,13 @@ test('conversation selection has a clear neutral active surface while history la
   assert.match(main, /STABLE_QA_AGENT_NEUTRAL_STATES/)
 })
 
-test('paperclip directly opens the ordinary image and file picker while Skill installation stays separate', () => {
+test('plus menu opens the image and file picker while Skill installation stays separate', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(app, /accept="[^"]*\.zip"/)
-  assert.match(app, /className="composer-tool" type="button" onClick=\{\(\) => attachmentInputRef\.current\?\.click\(\)\} aria-label="添加图片或文件"/)
+  assert.match(app, /aria-label="添加附件与内容"/)
+  assert.match(app, /addMenuRef\.current\.open=false; attachmentInputRef\.current\?\.click\(\)/)
   assert.doesNotMatch(app, /attachment-popover|composer-attachment-option|>普通文件夹</)
   assert.match(app, />安装新的 Skill 文件夹</)
   assert.match(preload, /stable:agent:selectAttachmentFolder/)
@@ -98,13 +99,13 @@ test('conversation images support selection, drag, paste, thumbnail removal and 
   assert.match(main, /visibleMetadata: Boolean/)
 })
 
-test('resource picker trigger is icon-only with an accessible label', () => {
+test('resource entry in plus menu has a label and submenu arrow', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu permission-menu"'))
   const summary = menu.slice(menu.indexOf('<summary'), menu.indexOf('</summary>'))
   assert.match(summary, /aria-label=\{`选择引用资源/)
   assert.match(summary, /<Database size=\{18\} aria-hidden="true"/)
-  assert.doesNotMatch(summary, /ChevronDown|<span>/)
+  assert.match(summary, /<span>引用本地资源<\/span><ChevronRight/)
 })
 
 test('generated deliverables and materialized uploads share clickable file cards behind a real workspace guard', () => {
@@ -136,9 +137,9 @@ test('the conversation context panel and its toggle are removed while the file p
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.doesNotMatch(app, /contextOpen|className="context-toggle"|className="context-panel"|data-context-open|function ContextLine/)
   assert.doesNotMatch(css, /\.context-toggle|\.context-panel|\.context-line|\.context-note|data-context-open/)
-  assert.match(app, /className="conversation-preview"/)
+  assert.match(app, /<BrowserPanel/)
   assert.match(css, /\.conversation-preview/)
-  assert.match(app, /setPreviewState\(emptyPreviewState\(\)\)[\s\S]*window\.stable\.preview\.close\(\)[\s\S]*\}, \[state\.activeConversationId\]\)/)
+  assert.match(app, /key=\{state\.activeConversationId\} conversationId=\{state\.activeConversationId\}/)
 })
 
 test('large attachment previews no longer reject the send and failures stay recoverable in the composer', () => {
@@ -157,7 +158,7 @@ test('large attachment previews no longer reject the send and failures stay reco
   assert.match(app, /messageAccepted = Boolean\(dispatched && previousMessageIds && recovered\.messages\.some/)
   assert.match(app, /return \{ accepted: messageAccepted, continue: false, error: detail \}/)
   assert.match(app, /setAttachmentMap\(\(current\) =>/)
-  assert.match(app, /setReferenceMap\(\(current\) =>/)
+  assert.match(app, /setReferenceMap\(referenceMapRef\.current\)/)
   assert.match(app, /className="composer-error" role="alert"/)
   const composerErrorCss = css.slice(css.indexOf('.composer-error {'), css.indexOf('.selection-chip {'))
   assert.doesNotMatch(composerErrorCss, /position:\s*(?:fixed|absolute)/)
@@ -169,10 +170,10 @@ test('large attachment previews no longer reject the send and failures stay reco
 test('sent attachments follow the user message and completed execution timelines collapse without cards', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  assert.match(app, /setPrompt\(''\); setAttachments\(\[\]\); setReferences\(\[\]\)/)
+  assert.match(app, /setPrompt\(''\); setAttachments\(\[\]\); setReferences\(current => current\.filter\(item => item\.kind === 'skill'\)\)/)
   assert.match(app, /setPendingMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: \{ content: value, attachments: messageAttachments \} \}\)\)/)
-  assert.match(app, /window\.stable\.agent\.configure\(conversationId, conversation\.capability, \[\]\)/)
-  assert.match(app, /window\.stable\.agent\.run\(conversationId, value, currentAttachments, currentReferences\)/)
+  assert.match(app, /window\.stable\.agent\.configure\(conversationId, conversation\.capability,/)
+  assert.match(app, /window\.stable\.agent\.run\(conversationId, value, currentAttachments, currentReferences, entry\.id, entry\.payload\.clarificationResponse\)/)
   assert.match(app, /<UserTurn content=\{message\.content\} attachments=\{message\.attachments\}/)
   assert.match(app, /className="message-attachments"/)
   assert.match(css, /\.message-attachments[^}]*overflow-x: auto/)

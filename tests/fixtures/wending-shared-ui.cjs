@@ -40,14 +40,14 @@ async function run() {
     expect(document.querySelector('h3').textContent==='选择品牌','Existing session must open brand selection');
     expect(!document.querySelector('input[type=tel]'),'Reopened session requested SMS');
     await select('b'.repeat(24));
-    expect(document.querySelector('.conversation-wending-button').textContent.includes('品牌 B'),'Brand label not saved');
+    expect(document.querySelector('.conversation-wending-button').getAttribute('aria-label')?.includes('品牌 B'),'Brand label not saved');
     window.showTask('new-task');await wait(()=>document.querySelector('dialog')?.open&&document.querySelector('select'));
     expect(!document.querySelector('input[type=tel]'),'New task requested a new SMS');
     await select('a'.repeat(24));
     window.showTask('a');await wait(()=>document.querySelector('dialog')?.open&&document.querySelector('select'));
-    expect(document.querySelector('.conversation-wending-button').textContent.includes('品牌 B'),'Another task overwrote original brand');
+    expect(document.querySelector('.conversation-wending-button').getAttribute('aria-label')?.includes('品牌 B'),'Another task overwrote original brand');
     window.restartView();await new Promise(r=>setTimeout(r,80));await wait(()=>document.querySelector('select'));
-    expect(document.querySelector('.conversation-wending-button').textContent.includes('品牌 B'),'Reopening lost the saved brand');
+    expect(document.querySelector('.conversation-wending-button').getAttribute('aria-label')?.includes('品牌 B'),'Reopening lost the saved brand');
     expect(window.calls.sms===0,'Unexpected SMS on brand switch');
     return window.calls;
   })()`)

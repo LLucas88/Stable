@@ -84,7 +84,7 @@ test('store persists resources, retrieval, workflow and messages', () => {
     store.updateConversationPermission(secondConversationId, 'auto')
     assert.deepEqual(store.listMessages(secondConversationId).map((item) => item.content), ['分析第二份任务'])
     assert.deepEqual(store.listMessages(firstConversationId).map((item) => item.role), ['user', 'assistant'])
-    assert.equal(store.conversation(secondConversationId).capability, 'analysis')
+    assert.equal(store.conversation(secondConversationId).capability, 'auto')
     assert.equal(store.conversation(secondConversationId).permissionMode, 'auto')
     assert.equal(store.conversation(secondConversationId).collaboration, undefined)
     assert.deepEqual(store.conversation(secondConversationId).dataIds, [dataId])

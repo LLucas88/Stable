@@ -21,7 +21,7 @@ const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Erro
 await tick();const market=document.querySelector('.skill-market'),bar=document.querySelector('.market-groups-bar'),nav=document.querySelector('.market-groups'),toggle=document.querySelector('.market-groups-toggle');
 market.style.width='480px';await tick();
 expect(toggle.getAttribute('aria-expanded')==='false','Groups must start collapsed');
-expect(document.querySelectorAll('.skill-market-top [role="tab"] svg').length===3,'Tab icons missing');
+expect(document.querySelectorAll('.skill-market-top [role="tab"] svg').length===4,'Tab icons missing');
 const rowHeight=nav.firstElementChild.getBoundingClientRect().height;
 expect(nav.getBoundingClientRect().height<=rowHeight+1,'Collapsed groups occupy multiple rows');
 expect(nav.scrollWidth>nav.clientWidth,'Fixture must exercise overflow');
@@ -37,7 +37,7 @@ nav.firstElementChild.click();toggle.click();await tick();market.style.width='';
 await win.webContents.executeJavaScript(`(async()=>{
 const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Error(m)},button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent===t);
 const clean=()=>expect(!/work[\\s_-]*buddy|trae[\\s_-]*work|豆包|doubao/i.test(document.body.innerText),'Platform branding visible');
-await tick();expect(document.querySelectorAll('.market-row').length===3,'Imported catalog missing');clean();expect(document.querySelector('[role="status"]').textContent.includes('启用 2'),'Enabled count missing');expect(!document.body.innerText.includes('飞书'),'Obsolete Feishu notice');
+await tick();expect(document.querySelectorAll('.market-row').length===3,'Imported catalog missing');clean();expect(!document.body.innerText.includes('启用 2'),'Removed enabled count returned');expect(!document.body.innerText.includes('飞书'),'Obsolete Feishu notice');
 expect(new Set([...document.querySelectorAll('.market-row .market-avatar')].map(e=>e.dataset.tone)).size===3,'Icons must vary by function');
 button('会员增长与客户经营').click();await tick();expect(document.querySelectorAll('.market-row').length===1,'Category filter failed');
 document.querySelector('.market-row-copy').click();await tick();clean();expect(document.querySelector('dialog').textContent.includes('原平台活动原文'),'Body presentation missing');

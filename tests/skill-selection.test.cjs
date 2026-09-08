@@ -53,7 +53,7 @@ test('real runAgent skill assembly never retrieves by relevance or infers a Skil
   const env = setup(t)
   env.store.retrieveSkills = () => { throw Error('Automatic retrieval must not run') }
   // Execute the production resource-selection block, with the actual prompt composer.
-  const source = main.slice(main.indexOf('  const history = historyOverride ||'), main.indexOf('  const capability = conversation?.capability'))
+  const source = main.slice(main.indexOf('  const history = historyOverride ||'), main.indexOf('  if (asksForWorkbenchInventory(query))'))
   const assemble = (id, context) => vm.runInNewContext(source + '\nresult = composeAgentPrompt({query,history,data,knowledge,skills,scripts})', {
     store: env.store, conversationId: id, conversation: {}, query:'使用分析技能帮我研究', historyOverride: [], selectedContextOverride: { manualSkillInvocation: true, ...context },
     skillReferences, selectedSkillContext, composeAgentPrompt, manualSkillContext,

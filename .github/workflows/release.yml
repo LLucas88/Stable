@@ -31,9 +31,9 @@ jobs:
       - run: npm run tools:install
       - run: npm run runtime:codex
       - run: npm run typecheck
+      - run: npm run build
       - run: npm test
       - run: npm run test:codex-integration
-      - run: npm run build
       - name: Verify isolated installer runtime migration and rollback
         run: node tests/installer-runtime-integration.cjs
       - name: Build full installer and lightweight updater
@@ -57,10 +57,11 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
+          $releaseVersion = node -p "require('./package.json').releaseVersion || require('./package.json').version"
           if ($LASTEXITCODE -ne 0) { throw 'Failed to read package version.' }
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller "./release-$version-update/Stable-Update-$version-x64.exe" `
+            -UpdateInstaller "./release-$version-update/Stable-Update-$releaseVersion-x64.exe" `
             -ExpectedVersion $version
       - name: Upload installer QA evidence
         if: always()
@@ -77,16 +78,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = node -p "require('./package.json').version"
-          $tag = "v$version"
+          $releaseVersion = node -p "require('./package.json').releaseVersion || require('./package.json').version"
+          $tag = "v$releaseVersion"
           if ($env:GITHUB_EVENT_NAME -ne 'push' -or $env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag) {
             throw "Release tag $env:GITHUB_REF_NAME does not match package version $tag."
           }
           $output = "release-$version"
           $updateOutput = "release-$version-update"
           $assets = @(
-            "$output/Stable-Setup-$version-x64.exe",
-            "$updateOutput/Stable-Update-$version-x64.exe",
-            "$updateOutput/Stable-Update-$version-x64.exe.blockmap",
+            "$output/Stable-Setup-$releaseVersion-x64.exe",
+            "$updateOutput/Stable-Update-$releaseVersion-x64.exe",
+            "$updateOutput/Stable-Update-$releaseVersion-x64.exe.blockmap",
             "$updateOutput/latest.yml"
           )
           foreach ($asset in $assets) {
@@ -94,7 +96,7 @@ jobs:
           }
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --generate-notes --target $env:GITHUB_SHA
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --notes-file "docs/releases/$tag.md" --target $env:GITHUB_SHA
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release $tag." }
           }
           gh release upload $tag $assets --repo $env:GITHUB_REPOSITORY --clobber

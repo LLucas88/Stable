@@ -17,6 +17,9 @@ const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', STABLE_CODEX_TEST_RESOU
 delete env.STABLE_CODEX_PATH; delete env.STABLE_HARNESS
 const result = spawnSync(executable, [path.join(__dirname, 'codex-integration.cjs')], { env, windowsHide: true, stdio: 'inherit', timeout: 180_000 })
 assert.ifError(result.error); assert.equal(result.status, 0, 'Packaged integration failed')
+
+const skillCheck = spawnSync(executable, [path.join(__dirname, 'fixtures/packaged-skills.cjs'), resources], { env, windowsHide: true, stdio: 'inherit', timeout: 120_000 })
+assert.ifError(skillCheck.error); assert.equal(skillCheck.status, 0, 'Packaged skills failed')
 delete env.ELECTRON_RUN_AS_NODE
 const userData = path.resolve(__dirname, '../qa-artifacts/codex-packaged-health', `${Date.now()}`)
 env.STABLE_QA_USER_DATA = userData

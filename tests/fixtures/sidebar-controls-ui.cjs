@@ -21,7 +21,7 @@ async function main() {
   const bundle = (await build({ stdin: { contents: `
     import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
-    const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false}));
+    const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
     conversations.push({...conversations[0],id:'pc',title:'项目已有聊天',projectId:'p1'});const initial={projects:[{id:'p1',name:'项目一',rootPath:'D:/mock/project-one'},{id:'p2',name:'项目二',rootPath:'D:/mock/project-two'}],activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
@@ -31,9 +31,9 @@ async function main() {
       manage:async(id,action)=>{window.projectCalls||=[];window.projectCalls.push({id,action});const p=initial.projects.find(p=>p.id===id);if(action==='pin'||action==='unpin'){p.pinned=action==='pin';initial.projects.sort((a,b)=>Number(b.pinned||false)-Number(a.pinned||false))}if(action==='remove'){initial.projects.splice(initial.projects.indexOf(p),1);conversations.forEach(c=>{if(c.projectId===id)c.projectId=null})}return state(initial.activeConversationId)},
       pickFolders:async()=>{window.pickerCalls=(window.pickerCalls||0)+1;return window.pickResult||[]},
       create:async(name,folders)=>{const item={id:'p'+(initial.projects.length+1),name,rootPath:folders[0],folders:folders.map(path=>({path,identity:'mock'}))};initial.projects.push(item);window.created=item;return item},
-      open:async(projectId,conversationId)=>{window.openCount=(window.openCount||0)+1;window.opened={projectId,conversationId};let id=conversationId||'project-new';if(id==='a')id='project-new';if(!conversations.some(c=>c.id===id))conversations.push({...conversations[0],id,title:'项目新对话',projectId});conversations.find(c=>c.id===id).projectId=projectId;return state(id)},
+      open:async(projectId,conversationId)=>{window.openCount=(window.openCount||0)+1;window.opened={projectId,conversationId};let id=conversationId||'project-new';if(id==='a')id='project-new';if(!conversations.some(c=>c.id===id))conversations.push({...conversations[0],id,title:'项目新对话',projectId,messageCount:0});conversations.find(c=>c.id===id).projectId=projectId;return state(id)},
     },appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
-      create:async()=>{window.newCount=(window.newCount||0)+1;const id='new-'+window.newCount;conversations.push({...conversations[0],id,title:'新建的对话',projectId:null});return state(id)},
+      create:async()=>{window.newCount=(window.newCount||0)+1;const id='new-'+window.newCount;conversations.push({...conversations[0],id,title:'新建的对话',projectId:null,messageCount:0});return state(id)},
       remove:async id=>{window.removeCalls||=[];window.removeCalls.push(id);if(window.failRemove)throw Error('测试删除失败');conversations.splice(conversations.findIndex(c=>c.id===id),1);return state(conversations[0].id)},
       openWorkspace:async id=>{window.workspaceOpened=id;return true},
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
@@ -71,7 +71,7 @@ async function main() {
   const typography=await win.webContents.executeJavaScript('(()=>{ const style=selector=>getComputedStyle(document.querySelector(selector)); const answer=style(".assistant-answer .markdown-body"),input=style("#agent-prompt"); return {bodyWeight:style("body").fontWeight,answerColor:answer.color,answerSize:answer.fontSize,answerFamily:answer.fontFamily,inputMinHeight:input.minHeight,inputOverflow:input.overflowY,headerBorder:style(".conversation-topbar").borderBottomWidth}; })()')
   require('node:assert/strict').equal(typography.answerColor,'rgb(26, 28, 31)')
   require('node:assert/strict').equal(typography.bodyWeight,'400')
-  require('node:assert/strict').equal(typography.answerSize,'16px')
+  require('node:assert/strict').equal(typography.answerSize,'14px')
   require('node:assert/strict').equal(typography.inputOverflow,'auto')
   require('node:assert/strict').equal(typography.headerBorder,'1px')
   fs.writeFileSync(path.join(output,'design-typography.json'),JSON.stringify(typography,null,2))
@@ -90,7 +90,7 @@ async function main() {
     expect(host.dataset.scrolling==='true','Scrollbar hid while still scrolling');
     await new Promise(r=>setTimeout(r,600));expect(!host.dataset.scrolling,'Scrollbar did not hide after idle');
     expect(host.clientWidth===width,'Scrollbar changed content width');host.style.cssText=previous;host.scrollTop=0;await tick();
-    expect(!document.querySelector('.browser-launch'),'Browser button remains');expect(!document.querySelector('.conversation-section-head').textContent.includes('归档'),'Archive button remains');
+    expect(document.querySelector('.browser-launch')?.textContent.trim()==='','Browser button must be icon only');expect(!document.querySelector('.conversation-section-head').textContent.includes('归档'),'Archive button remains');
     expect(!document.querySelector('.recent-heading .sidebar-project-more'),'Recent ellipsis should not exist');
     click('.recent-toggle');await tick();expect(!document.querySelector('.recent-conversations'),'Recent collapse failed');expect(document.querySelector('[data-conversation-id="pc"]'),'Collapse hid project tasks');
     click('.recent-new');await tick();expect(window.newCount===1&&document.querySelector('.recent-conversations'),'New conversation did not expand recents');

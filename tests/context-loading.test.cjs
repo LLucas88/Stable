@@ -11,7 +11,7 @@ test('agent context has no enabled-resource fallback and inventories workspace o
   assert.doesNotMatch(runAgent, /enabledData\(|enabledKnowledge\(|enabledSkillContent\(/)
   assert.match(runAgent, /store\.retrieveData\(query, 5\)/)
   assert.match(runAgent, /store\.retrieveKnowledge\(query, 4\)/)
-  assert.match(runAgent, /store\.retrieveSkills\(query, 4\)/)
+  assert.doesNotMatch(runAgent, /store\.retrieveSkills/); assert.match(runAgent, /manualSkillContext/)
   assert.ok(runAgent.indexOf('if (asksForWorkbenchInventory(query))') < runAgent.indexOf('const workbench = buildWorkbenchInventory'))
   assert.match(runAgent, /runWithDeliveryChecks/)
   assert.match(runAgent, /store\.finishRun\(runId, 'failed', answer, result.reason\)/)

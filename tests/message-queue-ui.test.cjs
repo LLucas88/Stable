@@ -43,7 +43,7 @@ test('composer stays editable while running and keeps queue control separate fro
   assert.doesNotMatch(input, /disabled=/)
   assert.match(input, /!event.nativeEvent.isComposing/)
   assert.match(app, /aria-label="待发送消息"/)
-  assert.match(app, /outbox\.enqueue\(conversationId/)
+  assert.match(app, /outbox\.enqueue\.bind\(outbox\)/)
   assert.match(app, /attachments: attachments\.map/)
   assert.match(app, /references: selectedReferences\.map/)
   assert.match(app, /outbox\.pause\(activeConversation\.id\)[\s\S]*agent\.cancel/)

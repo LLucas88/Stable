@@ -68,11 +68,11 @@ async function run() {
   const factory = () => new BuiltinTools({ workspace: root, electron })
   runner = new HarnessRunner({ userData: root, workspace: root, packaged: false, environment: {}, builtinTools: factory })
   const answer = await runner.run('Use the requested built-in tools on the local test fixture.', { providerId: 'builtin-test', model: 'builtin-test', baseURL: `${origin}/v1` }, 'fake-test-key', 50_000, event => {
-    events.push(event)
+    events.push(event); console.log('HARNESS_TRACE',event.kind,event.title,event.detail||'')
     if (event.kind === 'approval') { approvals++; runner.answerApproval(event.requestId, true) } // fixture only
   }, 'workspace-write')
   assert.equal(answer, 'BUILTIN_AGENT_OK')
-  assert.equal(step, 7); assert.equal(approvals, 2)
+  assert.equal(step, 7); assert.equal(approvals, 3)
   assert.ok(events.some(e => e.title === '使用工具 stable_excel'))
   assert.ok(events.some(e => e.title === '使用工具 stable_browser'))
   assert.equal(electron.BrowserWindow.getAllWindows().length, 0, 'run completion must close its hidden browser')
@@ -105,7 +105,7 @@ async function run() {
   const stage = path.join(root, 'stage'), resources = path.join(root, 'resources')
   fs.mkdirSync(path.join(stage, 'desktop/services'), { recursive: true })
   fs.mkdirSync(resources)
-  for (const filename of ['builtin-tools.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
+  for (const filename of ['builtin-tools.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
   fs.cpSync(path.join(__dirname, '../../vendor/agent-tools'), path.join(resources, 'agent-tools'), { recursive: true })
   const archive = path.join(resources, 'app.asar')
   await asar.createPackage(stage, archive)
@@ -115,7 +115,8 @@ async function run() {
     assert.equal(packaged.dependencyRoot, path.join(resources, 'agent-tools'))
     const created = await packaged.execute({ requestId: 'package-xlsx', name: 'stable_excel', args: { action: 'create', output: '安装布局.xlsx', sheets: [{ name: '验证', rows: [['安装布局', 1]] }] } }, 'workspace-write')
     assert.equal(created.verified, true)
-    const page = await packaged.execute({ requestId: 'package-browser', name: 'stable_browser', args: { action: 'open', url: `${origin}/page` } }, 'workspace-write')
+    await assert.rejects(packaged.execute({ requestId: 'package-unapproved', name: 'stable_browser', args: { action: 'open', url: `${origin}/page` } }, 'workspace-write'), /单次审批/)
+    const page = await packaged.execute({ requestId: 'package-browser', name: 'stable_browser', approved: true, args: { action: 'open', url: `${origin}/page` } }, 'workspace-write')
     assert.match(page.text, /A店/)
   } finally { packaged.dispose() }
   console.log('BUILTIN_ELECTRON_PASSED', JSON.stringify({ modelRequests: step, approvals, tools: ['stable_browser', 'stable_excel'], realWorkbook: true, hiddenIsolatedBrowser: true, cancellation: true, asarAndResources: true }))

@@ -44,7 +44,7 @@ test('sidebar width is session-only, pointer resizable, and keyboard accessible'
 test('account dock stays at the bottom and main content has a rounded top-left junction', () => {
   assert.match(css, /\.rail-account-dock\s*\{[^}]*margin-block-start:\s*auto/)
   assert.match(css, /\.main-frame\s*\{[^}]*border-start-start-radius:\s*var\(--radius-lg\)[^}]*background:\s*var\(--color-paper\)/)
-  assert.match(app, /if \(!onToggleRail \|\| !onSearch\) return <div className="window-titlebar" aria-hidden="true" \/>/)
+  assert.match(app, /if \(!onToggleRail \|\| !onSearch\) return <><div className="window-titlebar" aria-hidden="true" \/>/)
   assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /dark: \{ backgroundColor: '#141414'/)
   assert.match(readFileSync(path.join(root, 'desktop/services/window-appearance.cjs'), 'utf8'), /light: \{ backgroundColor: '#f6f6f6'/)
 })

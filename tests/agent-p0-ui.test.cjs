@@ -30,12 +30,12 @@ test('user messages overwrite the main draft with recoverable resources and Ctrl
 })
 
 test('conversation links, generated files and uploaded attachments open a resizable in-window preview without a composer eye button', () => {
-  const composer = app.slice(app.indexOf('<div className="composer">'), app.indexOf('{previewTarget &&'))
+  const composer = app.slice(app.indexOf('<div className="composer">'), app.indexOf('{browserPanel?.open &&'))
   assert.doesNotMatch(composer, /<Eye|打开快捷预览|PreviewDialog/)
-  assert.match(app, /className="conversation-preview"/)
-  assert.match(app, /className="preview-resizer" role="separator"/)
-  assert.match(app, /window\.stable\.preview\.openWeb\(previewTarget\.value, bounds\)/)
-  assert.match(app, /window\.stable\.preview\.openFile\(previewTarget\.value, bounds\)/)
+  assert.match(app, /<BrowserPanel/)
+  assert.match(readFileSync(path.join(__dirname, '..', 'src', 'BrowserPanel.tsx'), 'utf8'), /role="separator"/)
+  assert.match(readFileSync(path.join(__dirname, '..', 'src', 'BrowserPanel.tsx'), 'utf8'), /api\('show',\{tabId:tab!\.id,bounds:bounds\(\)\}\)/)
+  assert.match(readFileSync(path.join(__dirname, '..', 'src', 'BrowserPanel.tsx'), 'utf8'), /window\.stable\.preview\.openFile/)
   assert.match(app, /function localArtifactPaths/)
   assert.match(app, /className="conversation-file-card"/)
   assert.match(app, /className="conversation-file-list artifact-links"/)

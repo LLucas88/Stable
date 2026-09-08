@@ -61,7 +61,7 @@ test('renderer, preload and main process wire the MCP and CLI catalog to a fresh
   const preload = readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8')
   const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
   const types = readFileSync(path.join(root, 'src', 'types.ts'), 'utf8')
-  assert.match(app, /id: 'mcp-cli', label: 'MCP & CLI'/)
+  assert.match(readFileSync(path.join(root, 'src', 'SkillMarket.tsx'), 'utf8'), /'connector','CLI与MCP'/)
   assert.match(app, /<McpCliPage onUseWending=\{openWendingConversation\}/)
   assert.match(app, /<ConversationWending key=\{state.activeConversationId\}/)
   assert.match(app, /首次登录后全局记住账号，品牌按对话分别保存/)

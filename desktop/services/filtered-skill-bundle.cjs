@@ -62,8 +62,16 @@ function createBundleManager(lock) {
   }
   function applyLocalSkillConfig({ appPath, userData, isPackaged, store }) {
     const file = path.join(isPackaged ? userData : appPath, CONFIG_FILE)
-    if (!fs.existsSync(file)) return null
+    if (!fs.existsSync(file) && !isPackaged) return null
     try {
+      if (isPackaged && !fs.existsSync(file)) {
+        // Scripts must live outside app.asar so external tools can read them.
+        const source = path.join(appPath, 'desktop/skills/filtered/bundle')
+        inspectBundle(source)
+        const target = path.join(userData, 'bundled-skills', lock.manifestSha256)
+        if (!fs.existsSync(target)) fs.cpSync(source, target, { recursive: true })
+        return installBundle(store, target)
+      }
       const config = JSON.parse(fs.readFileSync(file, 'utf8'))
       if (config.version !== 1 || typeof config.userData !== 'string' || typeof config.bundlePath !== 'string') throw Error('筛选技能配置无效。')
       const normalize = p => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p)

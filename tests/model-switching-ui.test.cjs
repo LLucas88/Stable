@@ -24,7 +24,7 @@ test('renderer keeps conversation-scoped model switching without exposing the re
   assert.match(preload, /remove: \(id\) => invoke\('stable:model:remove'/)
   assert.match(preload, /setDefault: \(id\) => invoke\('stable:model:setDefault'/)
 
-  assert.match(app, /className="composer-menu model-menu"/)
+  assert.match(app, /className="composer-menu model-menu capability-menu"/)
   assert.match(app, /type="radio" name=\{`conversation-model-\$\{activeConversation\.id\}`\}/)
   assert.doesNotMatch(app, /当前对话 · 从下一条消息生效/)
   assert.match(app, /window\.stable\.agent\.configureModel\(activeConversation\.id, modelId\)/)

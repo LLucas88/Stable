@@ -12,7 +12,7 @@ const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
 test('Team conversation sharing replaces the old remote task modules', () => {
   assert.match(app, /<AtSign[^>]*aria-hidden="true"/)
   assert.match(app, /aria-label="任务清单"/)
-  assert.match(app, /state\.conversations\.filter\(\(item\) => !item\.pinned\)\.map\(\(item\) => ConversationRow\(\{ item \}\)\)/)
+  assert.match(app, /listedConversations\.filter\(\(item\) => !item\.pinned/)
   assert.match(app, /team\.conversationOffers/)
   assert.match(app, /decideConversation\(offer\.id, true\)/)
   assert.match(app, /const available = state\.team\.connection === 'online' && device\.status === 'online'/)

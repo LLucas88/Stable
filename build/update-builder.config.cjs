@@ -15,6 +15,6 @@ module.exports = {
   },
   win: {
     ...pkg.build.win,
-    artifactName: 'Stable-Update-${version}-x64.${ext}',
+    artifactName: `Stable-Update-${pkg.releaseVersion || pkg.version}-x64.\${ext}`,
   },
 }

@@ -56,7 +56,7 @@ test('scope ignores native timestamps and display hints but retains permissions,
   for (const change of [{command:'python other.py'},{cwd:'D:/other'},{environmentId:'remote'},{additionalPermissions:{network:{enabled:true}}},{grantRoot:'D:/'}]) assert.notEqual(scope(p),scope({...q,...change}))
   assert.notEqual(scope(p),scope(q,{}, {networkAccess:true}))
   assert.notEqual(scope(p,{}, {cliProfile:'a'}),scope(q,{}, {cliProfile:'b'}))
-  assert.equal(scope(p,{category:'read'}),scope({...q,command:'new validated code'},{category:'read'}))
+  assert.notEqual(scope(p,{category:'read'}),scope({...q,command:'new validated code'},{category:'read'}))
   assert.notEqual(scope(p,{category:'read'}),scope({...q,additionalPermissions:{network:{enabled:true}}},{category:'read'}))
 })
 

@@ -21,7 +21,7 @@ async function main() {
   const bundle = (await build({ stdin: { contents: `
     import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
-    const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false}));
+    const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
     const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
@@ -60,8 +60,8 @@ async function main() {
     expect(permission.querySelectorAll('.permission-option').length===3,'Permission modes were removed');
     document.querySelector('.permission-menu > summary').click();await tick();
     const conversation=document.querySelector('.conversation'),width=conversation.getBoundingClientRect().width;
-    const expectedGutter=Math.max(Math.min(64,Math.max(24,innerWidth*.04)),(width-896)/2)/2;
-    expect(Math.abs(parseFloat(getComputedStyle(document.querySelector('.message-scroll')).paddingLeft)-expectedGutter)<2,'Conversation gutter is not halved');
+    const expectedGutter=Math.max(Math.min(64,Math.max(24,innerWidth*.04)),(width-896)/2);
+    expect(Math.abs(parseFloat(getComputedStyle(document.querySelector('.message-scroll')).paddingLeft)-expectedGutter)<2,'Conversation gutter differs from current layout');
     document.querySelector('.conversation-select').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await tick();
     const rename=document.querySelector('.rename-dialog'),name=rename.querySelector('input');expect(rename.open,'Rename dialog did not open on double click');expect(name.selectionEnd-name.selectionStart===name.value.length,'Rename title not selected');
     rename.querySelector('.rename-suggestion').click();await tick();rename.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();expect(window.renamed.title==='本轮提问','Suggested rename not saved');expect(!document.querySelector('.rename-dialog'),'Rename did not close');

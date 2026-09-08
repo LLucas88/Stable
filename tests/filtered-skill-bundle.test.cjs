@@ -51,3 +51,20 @@ test('tampered resources fail before writes; a different user profile is not pop
   assert.throws(() => manager.installBundle(store, bundle), /校验/)
   assert.equal(store.listSkills().length, 0)
 })
+
+test('packaged startup registers bundled skills outside asar while preserving history and edits', t => {
+  const { root, bundle, manager, store } = fixture(t)
+  const appPath = path.join(root, 'app.asar')
+  fs.cpSync(bundle, path.join(appPath, 'desktop/skills/filtered/bundle'), { recursive: true })
+  const id = store.activeConversationId()
+  store.addMessage(id, 'user', 'existing history')
+  const options = { appPath, userData: path.join(root, 'profile'), isPackaged: true, store }
+  assert.equal(manager.applyLocalSkillConfig(options).added, 1)
+  const skill = store.listSkills()[0]
+  assert(skill.path.startsWith(path.join(root, 'profile', 'bundled-skills')))
+  assert.equal(fs.readFileSync(path.join(skill.path, 'SKILL.md'), 'utf8'), '# Evidence skill')
+  store.upsertSkill({ ...skill, content: 'my custom edit' })
+  assert.equal(manager.applyLocalSkillConfig(options).added, 0)
+  assert.equal(store.listSkills()[0].content, 'my custom edit')
+  assert.equal(store.listMessages(id)[0].content, 'existing history')
+})

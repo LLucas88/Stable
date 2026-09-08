@@ -45,10 +45,10 @@ test('PowerShell CLI batches are safe only when every statement and argument is 
   }
 })
 
-test('conversation grant keys group known read commands but never broaden unknown invocations', () => {
+test('conversation grant keys retain exact arguments for known and unknown invocations', () => {
   const known = classifyWending(['crm-brand-cli', 'data-analysis', 'get-today'], __dirname, trusted)
   const method = 'item/commandExecution/requestApproval'
-  assert.equal(approvalScope(method, { cwd: __dirname, command: 'one' }, known).key, approvalScope(method, { cwd: __dirname, command: 'two' }, known).key)
+  assert.notEqual(approvalScope(method, { cwd: __dirname, command: 'one' }, known).key, approvalScope(method, { cwd: __dirname, command: 'two' }, known).key)
   assert.notEqual(approvalScope(method, { cwd: __dirname }, known).key, approvalScope(method, { cwd: os.tmpdir() }, known).key)
   assert.notEqual(approvalScope(method, { command: 'python a.py' }, {}).key, approvalScope(method, { command: 'python b.py' }, {}).key)
   assert.notEqual(approvalScope('item/fileChange/requestApproval', { grantRoot: 'a' }, {}).key, approvalScope('item/fileChange/requestApproval', { grantRoot: 'b' }, {}).key)
