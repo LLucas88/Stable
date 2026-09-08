@@ -18,6 +18,8 @@ async function main() {
   const html = '<html lang="zh-CN" data-theme="light"><body><div id="root"><div class="window-shell"><div class="window-titlebar">Stable · 主题与材质验证</div><div class="app-shell"><aside class="side-rail"><div class="rail-mode-switch"><button data-active="true">工作</button><button>实验室</button></div><button class="rail-button" data-active="true">新建任务</button><div class="conversation-history-card"><button class="conversation-list-item" data-active="true">色彩与背景复刻</button></div></aside><main class="main-frame"><section style="padding:40px"><h1>稳定内容表面</h1><p>侧栏保留环境色，阅读和输入使用独立表面。</p><div class="composer"><div class="composer-box"><textarea placeholder="输入任务…"></textarea><button class="composer-tool">＋</button></div></div><div class="composer-popover" style="position:relative;inset:auto;margin-top:32px"><strong>模型与任务选项</strong><button class="composer-option">默认状态</button><button class="composer-option" data-active="true">已选中</button></div><div class="field"><input value="普通输入控件" /></div></section></main></div></div></div></body></html>'
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
   for (const name of ['tokens.css', 'app.css', 'codex-surfaces.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  // Inspect settled colors, independent of the runner's animation frame rate.
+  await win.webContents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}')
   const appearance = createWindowAppearance({ app, nativeTheme })
   appearance.watch(win)
   const result = []

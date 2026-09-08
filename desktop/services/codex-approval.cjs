@@ -61,7 +61,7 @@ function parsePowerShell(script) {
     const helper = fs.readFileSync(path.join(__dirname, 'powershell-approval.ps1'), 'utf8')
     const executable = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
     const child = execFile(executable, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(helper, 'utf16le').toString('base64')],
-      { windowsHide: true, timeout: 5000, maxBuffer: 512 * 1024, encoding: 'utf8' }, (error, stdout) => {
+      { windowsHide: true, timeout: 15000, maxBuffer: 512 * 1024, encoding: 'utf8' }, (error, stdout) => {
         if (error) { resolve(unknown('命令结构检查未完成，需要人工确认')); return }
         try { resolve(JSON.parse(stdout.replace(/^\uFEFF/, ''))) } catch { resolve(unknown('命令结构检查结果无效')) }
       })
