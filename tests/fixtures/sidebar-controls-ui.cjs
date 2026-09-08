@@ -55,6 +55,8 @@ async function main() {
   // Force a CSS hover in this isolated renderer, without moving the user's mouse.
   await new Promise(resolve => setTimeout(resolve, 200))
   win.webContents.debugger.attach('1.3')
+  // Hosted Windows runners can enable reduced motion, which uses a 150 ms transition.
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await win.webContents.debugger.sendCommand('DOM.enable')
   await win.webContents.debugger.sendCommand('CSS.enable')
   const { root: dom } = await win.webContents.debugger.sendCommand('DOM.getDocument')
@@ -62,10 +64,12 @@ async function main() {
   const actions = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('#tasks .sidebar-project-heading')).map(row => Array.from(row.querySelectorAll('.sidebar-project-more,.sidebar-project-new')).map(el => getComputedStyle(el).opacity))`)
   if ((await actions()).flat().some(value => value !== '0')) throw Error('Idle project actions visible')
   await win.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: heading, forcedPseudoClasses: ['hover'] })
+  await new Promise(resolve => setTimeout(resolve, 220))
   await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   const hovered = await actions()
-  if (hovered[0].some(value => value !== '1') || hovered[1].some(value => value !== '0')) throw Error('Hover is not scoped to one project row')
+  if (hovered[0].some(value => value !== '1') || hovered[1].some(value => value !== '0')) throw Error('Hover is not scoped to one project row: ' + JSON.stringify(hovered))
   await win.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: heading, forcedPseudoClasses: [] })
+  await new Promise(resolve => setTimeout(resolve, 220))
   await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   if ((await actions()).flat().some(value => value !== '0')) throw Error('Actions remain after hover')
   win.webContents.debugger.detach()
