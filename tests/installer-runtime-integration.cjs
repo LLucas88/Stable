@@ -112,6 +112,7 @@ SectionEnd
     { name: 'in-app-missing-runtime', old: true, updated: true, code: 11 },
     { name: 'manual-rollback', old: true, runtime: 'embedded', healthExit: 4, code: 12 },
     { name: 'in-app-rollback', old: true, updated: true, runtime: 'embedded', healthExit: 4, code: 12 },
+    { name: 'rollback-with-stale-longpath-failure', old: true, updated: true, runtime: 'embedded', healthExit: 4, staleFailure: true, code: 12 },
   ]) {
     const home = path.join(root, scenario.name)
     const app = path.join(home, 'App')
@@ -120,6 +121,12 @@ SectionEnd
     fs.mkdirSync(home)
     const sentinel = path.join(home, 'user-data-sentinel')
     fs.writeFileSync(sentinel, 'preserve-user-data')
+    if (scenario.staleFailure) {
+      const retained = path.join(home, 'App.__stable_failed_0.91.7', ...Array(12).fill('long-resource-directory'), 'retained.txt')
+      fs.mkdirSync(path.dirname(retained), { recursive: true })
+      fs.writeFileSync(retained, 'prior-failure-evidence')
+      fs.chmodSync(retained, 0o444)
+    }
     if (scenario.old) {
       fs.mkdirSync(app)
       fs.writeFileSync(path.join(app, 'Stable.exe'), 'old-executable')

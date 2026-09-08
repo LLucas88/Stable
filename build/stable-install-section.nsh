@@ -75,6 +75,15 @@ stableAtomicUpdate:
   StrCpy $stableStageDir "$INSTDIR.__stable_next_${VERSION}"
   StrCpy $stablePreviousDir "$INSTDIR.__stable_previous_${VERSION}"
   StrCpy $stableFailedDir "$INSTDIR.__stable_failed_${VERSION}"
+  ; A prior failure may contain long or temporarily locked paths that NSIS
+  ; cannot delete. Never depend on deleting it to isolate this attempt.
+  StrCpy $R2 0
+stableChooseFailedDir:
+  IfFileExists "$stableFailedDir" 0 stableFailedDirReady
+  IntOp $R2 $R2 + 1
+  StrCpy $stableFailedDir "$INSTDIR.__stable_failed_${VERSION}-$R2"
+  Goto stableChooseFailedDir
+stableFailedDirReady:
   StrCpy $stableRuntimeMigrated "false"
   StrCpy $stableRuntimeCopied "false"
   ReadEnvStr $stableRuntimeDir "STABLE_RUNTIME_HOME"
@@ -83,7 +92,6 @@ stableAtomicUpdate:
   ${endif}
 
   RMDir /r "$stableStageDir"
-  RMDir /r "$stableFailedDir"
   CreateDirectory "$stableStageDir"
   SetOutPath "$stableStageDir"
   !insertmacro stableReportProgress "10" "staging" "running" "0"
