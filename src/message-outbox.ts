@@ -1,5 +1,5 @@
 export interface OutboxEntry<T> { id: string; payload: T; status: 'queued' | 'steering'; error?: string }
-export interface OutboxResult { accepted: boolean; continue: boolean; error?: string }
+export interface OutboxResult { accepted: boolean; continue: boolean; cancelled?: boolean; error?: string }
 
 // The composer owns this session-only outbox; switching conversations never changes its owner.
 export class MessageOutbox<T> {
@@ -37,7 +37,7 @@ export class MessageOutbox<T> {
     let result: OutboxResult
     try { result = await this.callbacks.run(id, entry) }
     catch (error) { result = { accepted: false, continue: false, error: String(error) } }
-    if (!result.accepted && retainOnFailure) { entry.error = result.error || '消息尚未发送，请检查后重试。'; state.items.unshift(entry) }
+    if (!result.accepted && !result.cancelled && retainOnFailure) { entry.error = result.error || '消息尚未发送，请检查后重试。'; state.items.unshift(entry) }
     state.active = undefined
     state.paused = !result.accepted || !result.continue
     this.callbacks.changed(); void this.drain(id)
@@ -93,7 +93,7 @@ export class MessageOutbox<T> {
     let result: OutboxResult
     try { result = await this.callbacks.run(id, entry) }
     catch (error) { result = { accepted: false, continue: false, error: String(error) } }
-    if (!result.accepted) { entry.error = result.error || '消息尚未发送，请检查后重试。'; state.items.unshift(entry) }
+    if (!result.accepted && !result.cancelled) { entry.error = result.error || '消息尚未发送，请检查后重试。'; state.items.unshift(entry) }
     if (!result.continue || !result.accepted) state.paused = true
     state.active = undefined
     this.callbacks.changed()

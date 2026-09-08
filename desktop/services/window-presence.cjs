@@ -42,7 +42,7 @@ function createWindowPresence({ app, nativeImage, platform = process.platform, i
   function attach(target) {
     window = target
     target.on('close', (event) => {
-      if (quitting || isInstalling()) return
+      if (quitting || isInstalling() || target.closeChoiceManaged) return
       event.preventDefault()
       target.minimize()
     })

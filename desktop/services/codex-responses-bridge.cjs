@@ -9,6 +9,7 @@ const http = require('node:http')
 const { randomUUID } = require('node:crypto')
 const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
 const { createZhipuSearchProvider } = require('./harness.cjs')
+const { reasoningParameters } = require('./model-reasoning.cjs')
 const { CodexReasoningStore } = require('./codex-reasoning-store.cjs')
 const { normalizeWindowsCall } = require('./windows-command.cjs')
 
@@ -151,6 +152,7 @@ class CodexResponsesBridge {
       }
       const translated = translateTools(this.textOnly ? [] : input.tools)
       const body = { model: this.model.model, messages: translateInput(input.input, input.instructions, this.reasoning), stream: true, stream_options: { include_usage: true } }
+      Object.assign(body, reasoningParameters(this.model))
       if (translated.tools.length) body.tools = translated.tools
       if (input.max_output_tokens) body.max_tokens = input.max_output_tokens
       if (typeof input.tool_choice === 'string') body.tool_choice = input.tool_choice

@@ -204,10 +204,10 @@ export interface AgentReference {
   type: string
 }
 
-export type AgentCapability = 'auto' | 'fast' | 'reasoning' | 'analysis'
+export type AgentCapability = 'auto' | 'none' | 'enabled' | 'low' | 'high' | 'max'
 export type AgentPermissionMode = 'request' | 'auto' | 'full'
 
-export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert'; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
+export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert' | 'plugin'; pluginSkills?: { id: string; name: string; description: string }[]; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
 export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
 
 export interface ConversationItem {
@@ -256,6 +256,7 @@ export interface AgentState {
 }
 
 export interface AgentAttachment {
+  annotation?: { text: string; comment: string; source: string; tag: string; thumbnail: string }
   name: string
   path: string
   size: number
@@ -328,6 +329,7 @@ export interface AgentAnswerDeltaEvent {
 export type AgentEvent = AgentTraceItem | AgentAnswerDeltaEvent
 
 export interface ModelProfile {
+  reasoningOptions?: Array<{ id: AgentCapability; label: string }>
   id: string
   providerId: string
   displayName: string
@@ -518,6 +520,10 @@ export interface BootstrapData {
 }
 
 export interface StableBridge {
+  windowClose: {
+    onRequest(handler: () => void): () => void
+    decide(choice: 'minimize' | 'quit' | 'cancel', remember: boolean): Promise<boolean>
+  }
   bootstrap(): Promise<BootstrapData>
   cloud: {
     login(username: string, password: string): Promise<BootstrapData>

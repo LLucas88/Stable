@@ -1,0 +1,31 @@
+const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), crypto = require('node:crypto')
+const { StableStore } = require('../desktop/services/store.cjs')
+const { SkillMarket } = require('../desktop/services/skill-market.cjs')
+const catalog = require('../desktop/plugins/catalog.json')
+test('both bundled plugins install complete resources and bind each chosen skill to a new conversation', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-plugins-')), store = new StableStore(root)
+  t.after(() => store.close())
+  const market = new SkillMarket(store, root), oldId = store.activeConversationId()
+  store.addMessage(oldId, 'user', 'keep history')
+  store.upsertSkill({ id: 'existing', name: 'Existing', description: '', content: 'Keep', path: root })
+  assert.deepEqual(market.entries().filter(i => i.kind === 'plugin').map(i => i.pluginSkills.length), [3, 7])
+  for (const plugin of catalog) {
+    for (const skill of plugin.skills) {
+      const id = await market.use(skill.id)
+      assert.deepEqual(store.getSetting(`conversation-skills:${id}`), [skill.id])
+      assert.equal(store.getSetting(`draft-reference:${id}`).name, skill.name)
+      const installed = store.listSkills().find(s => s.id === skill.id)
+      assert(installed.content.endsWith(skill.content))
+      assert(installed.content.includes(installed.path))
+      assert(fs.existsSync(path.join(installed.path, 'SKILL.md')))
+    }
+    const installed = store.listSkills().find(s => s.id === plugin.skills[0].id)
+    const pluginRoot = path.resolve(installed.path, '../..')
+    for (const [name, hash] of Object.entries(plugin.hashes)) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(pluginRoot, name))).digest('hex'), hash, name)
+    assert(!fs.existsSync(path.join(pluginRoot, 'scripts/processor/logs')))
+  }
+  assert.equal(store.listMessages(oldId)[0].content, 'keep history')
+  assert(store.listSkills().some(s => s.id === 'existing'))
+  assert.throws(() => market.use(catalog[0].id), /请选择/)
+  console.log('Complete plugin files and ten conversation bindings verified:', root)
+})

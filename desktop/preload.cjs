@@ -21,6 +21,10 @@ window.addEventListener('DOMContentLoaded', syncWindowSurface, { once: true })
 
 contextBridge.exposeInMainWorld('stable', {
   bootstrap: () => invoke('stable:bootstrap'),
+  windowClose: {
+    onRequest: handler => { const listener = () => handler(); ipcRenderer.on('stable:window:closeRequested', listener); return () => ipcRenderer.removeListener('stable:window:closeRequested', listener) },
+    decide: (choice, remember) => invoke('stable:window:closeDecision', { choice, remember }),
+  },
   editor: {
     onPasteIntoComposer: (handler) => { const listener = (_event, text) => handler(text); ipcRenderer.on('stable:editor:pasteIntoComposer', listener); return () => ipcRenderer.removeListener('stable:editor:pasteIntoComposer', listener) },
     onSelectAllMessages: (handler) => { const listener = () => handler(); ipcRenderer.on('stable:editor:selectAllMessages', listener); return () => ipcRenderer.removeListener('stable:editor:selectAllMessages', listener) },

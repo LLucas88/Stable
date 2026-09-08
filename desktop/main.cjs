@@ -5,6 +5,8 @@ const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, 
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
+const { PageAnnotations, saveCurrentPage } = require('./services/browser-page-actions.cjs')
+const pageAnnotations = new PageAnnotations()
 const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
@@ -25,6 +27,7 @@ const { ModelRegistry, isDeepSeekModel } = require('./services/model-registry.cj
 const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { createCloudFetch } = require('./services/cloud-transport.cjs')
+const { normalizeReasoning, reasoningOptions } = require('./services/model-reasoning.cjs')
 const { composeAgentPrompt } = require('./services/prompts.cjs')
 const { deliveryRequest, revisedDelivery, runWithDeliveryChecks } = require('./services/delivery.cjs')
 const { timerState, resolveResponse } = require('./services/clarification-interaction.cjs')
@@ -79,6 +82,7 @@ let mainWindow
 let tray
 const windowPresence = createWindowPresence({ app, nativeImage, isInstalling: () => updateController?.state().status === 'installing' })
 let previewView
+let previewSourcePath
 let previewKind
 let previewTemporaryPath
 const configuredPreviewSessions = new WeakSet()
@@ -235,6 +239,7 @@ function cleanupPreviewTemporaryFile() {
 function closePreviewView() {
   const view = previewView
   previewView = undefined
+  previewSourcePath = undefined
   previewKind = undefined
   cleanupPreviewTemporaryFile()
   if (!view) return true
@@ -329,6 +334,7 @@ async function loadGeneratedFilePreview(view, html, prefix) {
   requireActivePreviewView(view)
 }
 
+const { renderSpreadsheetDocument } = require('./services/spreadsheet-preview.cjs')
 const DIRECT_HTML_EXTENSIONS = new Set(['.html', '.htm'])
 const IMAGE_PREVIEW_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
 const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.xlsx', '.xls'])
@@ -340,6 +346,7 @@ async function openFilePreview(value, bounds) {
   const theme = normalizeTheme(store.getSetting('theme'))
   const interactiveHtml = !resolved.isDirectory && DIRECT_HTML_EXTENSIONS.has(resolved.extension) && resolved.size <= 20 * 1024 * 1024
   const view = createPreviewView(interactiveHtml ? 'html' : 'file', bounds)
+  previewSourcePath = resolved.path
   try {
     if (resolved.isDirectory) {
       await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, '这是当前 Stable 工作区内的文件夹。文件夹内容不会自动展开或执行。'), 'folder-preview')
@@ -356,6 +363,13 @@ async function openFilePreview(value, bounds) {
       requireActivePreviewView(view)
     } else if (IMAGE_PREVIEW_EXTENSIONS.has(resolved.extension) && resolved.size <= 50 * 1024 * 1024) {
       await loadGeneratedFilePreview(view, renderImageDocument(pathToFileURL(resolved.path).toString(), resolved, theme), 'image-preview')
+    } else if (['.xlsx', '.xls'].includes(resolved.extension)) {
+      try {
+        if (resolved.size > 50 * 1024 * 1024) throw Error('文件超过 50 MB，请使用本地表格软件打开。')
+        await loadGeneratedFilePreview(view, renderSpreadsheetDocument(resolved.path, theme), 'spreadsheet-preview')
+      } catch (error) {
+        await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, `无法预览工作簿：${error.message}`), 'file-preview')
+      }
     } else if (EXTRACTED_TEXT_EXTENSIONS.has(resolved.extension)) {
       try {
         const extracted = await extractText(resolved.path)
@@ -1341,7 +1355,7 @@ function createScriptAutoResponder({ control, node, item, input, publish, script
   }
 }
 
-const AGENT_CAPABILITIES = new Set(['auto', 'fast', 'reasoning', 'analysis'])
+const AGENT_CAPABILITIES = new Set(['auto', 'none', 'enabled', 'low', 'high', 'max'])
 
 function conversationPaths(conversationId, validate = false) {
   const context = validate ? store.resolveRunContext(conversationId, paths.workspace) : store.conversationContext(conversationId)
@@ -1432,7 +1446,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
   const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.modelId)
-  const { model, apiKey } = modelRoute
+  const { apiKey } = modelRoute
+  const model = { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
   const runId = store.startRun('agent', conversationId || null, query)
   const trace = []
   const transcript = createStreamTranscript()
@@ -1503,7 +1518,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       if (canAutoApprove(mode, source)) {
         ledger.finish(request.id, { decision: 'approved', reasonCode: 'STATIC_SAFE', rationale: '当前范围内的已核验操作', reviewerSource: 'static_policy' })
         if(!executionRunner.answerApproval(source.requestId, true))return
-        publish({ ...source, id: source.id, detail: '完全访问权限已自动批准本次操作', status: 'completed' })
+        publish({ ...source, id: source.id, detail: '当前权限策略已自动批准本次操作', status: 'completed' })
       } else if(mode==='auto'&&ledger.limited(conversationId)){publish({...source,reason:'审核拒绝已达到重试上限，需要你核实具体操作。'+(source.reason||''),status:'awaiting_user'})
       } else if(mode==='auto'&&!featureFlags.compatibilityReviewer){publish({...source,reason:'兼容自动审核已关闭，请人工确认。'+(source.reason||''),status:'awaiting_user'})
       } else if (mode === 'auto' && !source.danger) {
@@ -1578,7 +1593,6 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const knowledge = explicitContext.knowledge?.length ? explicitContext.knowledge : store.retrieveKnowledge(query, 4)
   const skills = manualSkillContext({ ...explicitContext, skills: explicitContext.skills ?? (conversationId ? selectedSkillContext(store, skillReferences(store, conversationId)) : []) })
   const scripts = explicitContext.scripts || []
-  const capability = conversation?.capability || 'auto'
   if (asksForWorkbenchInventory(query)) {
     const workbench = buildWorkbenchInventory({
       data: store.listData(), library: store.listLibrary(), knowledge: store.listKnowledge(),
@@ -1603,7 +1617,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}`
   const [originalQuery, ...clarificationReplies] = query.split('\n\n用户补充（以最新要求为准）：\n')
   const delivery = clarificationReplies.reduce(revisedDelivery, deliveryRequest(originalQuery))
-  const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, capability, delivery }
+  const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, scripts, attachments, delivery }
   const initialPrompt = composeAgentPrompt(promptOptions)
   const persistentSession = executionRunner.supportsPersistentSessions && conversationId && !historyOverride
     ? { key: conversationId, initialPrompt } : undefined
@@ -1612,7 +1626,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const activeControl = agentRunners.get(conversationId)
   const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
-  publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${capability} · ${model.model}`, status: 'completed' })
+  publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
     const result = await runWithDeliveryChecks({
@@ -2022,7 +2036,7 @@ function registerIpc() {
   ipcMain.handle('stable:market:toggle', (_event, value) => market().toggle(requireText(value?.id, '条目 ID', 100), Boolean(value.enabled)))
   ipcMain.handle('stable:market:remove', (_event, value) => market().remove(requireText(value?.id, '条目 ID', 100)))
   ipcMain.handle('stable:market:update', (_event, value) => market().checkUpdate(requireText(value?.id, '条目 ID', 100)))
-  ipcMain.handle('stable:market:use', (_event, value) => { const id=market().use(requireText(value?.id, '条目 ID', 100)); return { ...agentState(id), skills: store.listSkills() } })
+  ipcMain.handle('stable:market:use', async (_event, value) => { const id=await market().use(requireText(value?.id, '条目 ID', 100)); return { ...agentState(id), skills: store.listSkills() } })
   ipcMain.handle('stable:skills:enabled', (_event, payload) => { require('./services/ops-skill-bundle.cjs').setSkillEnabled(store, requireText(payload?.id, 'Skill ID', 100), Boolean(payload?.enabled)); return store.listSkills() })
   ipcMain.handle('stable:skills:remove', (_event, payload) => { require('./services/ops-skill-bundle.cjs').removeSkill(store, requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
   ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())
@@ -2207,7 +2221,14 @@ function registerIpc() {
     const id = requireText(payload?.id, '对话 ID', 100)
     const conversation = store.conversation(id)
     if (!conversation) throw new Error('找不到这个对话。')
-    if (agentRunners.has(id)) throw new Error('这个对话仍在执行，请先停止后再删除。')
+    await require('./services/stop-before-delete.cjs').stopBeforeDelete(id, agentRunners, conversationId => {
+      const control = agentRunners.get(conversationId)
+      control.cancelled = true
+      new ApprovalLedger(store)
+      store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
+      for (const reviewer of control.reviewers) reviewer.cancel()
+      control.runner.cancel()
+    })
     const result=await conversationLifecycle.sync(id,'delete')
     if(!result.pending)wendingCli.removeConversation(id)
     return {...agentState(store.activeConversationId()),syncNotice:result.error}
@@ -2216,7 +2237,8 @@ function registerIpc() {
     const id = requireText(payload?.id, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     const capability = String(payload?.capability || 'auto')
-    if (!AGENT_CAPABILITIES.has(capability)) throw new Error('未知的模型能力模式。')
+    const profile = modelRegistry.publicCatalog().items.find(item => item.id === (store.conversation(id).modelId || modelRegistry.publicCatalog().defaultModelId))
+    if (!AGENT_CAPABILITIES.has(capability) || (capability !== 'auto' && !reasoningOptions(profile).some(item => item.id === capability))) throw new Error('当前模型 API 不支持此思考强度。')
     const requestedIds = Array.isArray(payload?.dataIds) ? [...new Set(payload.dataIds.map(String))].slice(0, 50) : []
     const enabledIds = new Set(store.listData().filter((item) => item.enabled).map((item) => item.id))
     const dataIds = requestedIds.filter((idValue) => enabledIds.has(idValue))
@@ -2240,6 +2262,7 @@ function registerIpc() {
     if(agentRunners.has(id))throw Error('请先停止任务再切换模型。')
     store.revokeConversationGrants(id)
     store.updateConversationModel(id, modelId, modelRegistry.publicCatalog().items.map((item) => item.id))
+    store.updateConversationContext(id, 'auto', store.conversation(id).dataIds || [])
     return agentState(id)
   })
   ipcMain.handle('stable:agent:clarification-timer', (_event, payload) => {
@@ -2552,12 +2575,31 @@ function registerIpc() {
     if (!store.conversation(p.conversationId)) throw new Error('找不到对话。')
     if(!featureFlags.sharedBrowser)throw Error('共享浏览器已通过功能开关关闭。')
     const id = p.conversationId, service = browserSession
+    if (p.action === 'annotationStop') return pageAnnotations.stop(id,p.sessionId)
+    if (p.action === 'annotationPoll') return pageAnnotations.poll(id,p.sessionId,conversationPaths(id,true).workspace)
+    if (p.action === 'saveCurrent' || p.action === 'annotationStart') {
+      let sourcePath, contents
+      if (p.filePath) {
+        const paths=conversationPaths(id)
+        const entry=resolveWorkspaceEntry(p.filePath,paths.writableRoots||paths.workspace)
+        if (entry.isDirectory) throw Error('请选择文件。')
+        sourcePath=entry.path
+        if (p.action==='annotationStart' && (store.activeConversationId()!==id || sourcePath!==previewSourcePath || !previewView || previewView.webContents.isDestroyed())) throw Error('文件预览已切换，请重新打开后注释。')
+        contents=previewView?.webContents
+      } else {
+        const tab=service.get(id,p.tabId);contents=tab.view.webContents
+        service.control(id,tab.id,true)
+      }
+      if(p.action==='saveCurrent')return saveCurrentPage({electron:require('electron'),window:mainWindow,downloads:service.downloads,conversationId:id,sourcePath,contents})
+      return pageAnnotations.start(id,contents,sourcePath||contents.getURL())
+    }
     if (p.action === 'state') return service.restore(id)
     if (p.action === 'create') { const tab = await service.create(id, p.url || 'about:blank', true); if (p.userControl) service.control(id, tab.id, true) }
     else if (p.action === 'show') { closePreviewView(); const b=p.bounds; if(!b || !['x','y','width','height'].every(k=>Number.isFinite(b[k])))throw Error('无效页面范围');const [w,h]=mainWindow.getContentSize();service.show(id,p.tabId,{x:Math.max(0,Math.round(b.x)),y:Math.max(0,Math.round(b.y)),width:Math.max(1,Math.min(w,Math.round(b.width))),height:Math.max(1,Math.min(h,Math.round(b.height)))}) }
     else if (p.action === 'hide') service.hide()
     else if (p.action === 'close') service.close(id,p.tabId)
     else if (p.action === 'control') return service.control(id,p.tabId,Boolean(p.user))
+    else if (p.action === 'permitSite') service.permit(id,p.origin)
     else if (p.action === 'navigate') return service.navigate(id,p.tabId,p.navigation,p.url)
     else if (p.action === 'annotate') service.annotate(id,p.tabId,p.text,p.ref)
     else if (p.action === 'history') return { history: service.history(id), annotations: (store.getSetting('browser-annotations-v2')||[]).filter(a=>a.conversationId===id), allowHistory:Boolean(store.getSetting(`browser-history-allow:${id}`)) }
@@ -2658,7 +2700,7 @@ function createWindow() {
   const chrome = { backgroundColor: '#ffffff', symbolColor: '#172030', height: 40 }
   const window = new BrowserWindow({
     width: isQa ? qaWidth : 1440, height: isQa ? qaHeight : 900, minWidth: isQa ? 320 : 1180, minHeight: isQa ? 480 : 720, show: false, autoHideMenuBar: true,
-    backgroundColor: chrome.backgroundColor, icon: resourcePath('build', 'stable_logo_transparent.png'),
+    backgroundColor: chrome.backgroundColor, icon: resourcePath('build', 'stable_app_icon.png'),
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: chrome.backgroundColor, symbolColor: chrome.symbolColor, height: chrome.height },
@@ -2666,6 +2708,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
   windowAppearance.watch(window)
+  require('./services/window-close-choice.cjs').installWindowCloseChoice(window, app, ipcMain, { get: () => store?.getSetting('windowCloseChoice'), set: value => store.setSetting('windowCloseChoice', value) })
   window.setMenuBarVisibility(false)
   installEditContextMenu(window.webContents, Menu, clipboard)
   windowPresence.attach(window)
@@ -2798,7 +2841,7 @@ async function boot() {
   mainWindow = createWindow()
   if(featureFlags.historyRecovery)void conversationLifecycle.startup(id=>{if(!agentRunners.has(id))publishAgentState(id)}).catch(()=>{})
   // Closing only minimizes. Keep an explicit, discoverable exit route.
-  tray = new Tray(resourcePath('build', 'stable_logo_transparent.png'))
+  tray = new Tray(resourcePath('build', 'stable_app_icon.png'))
   tray.setToolTip('Stable · 后台任务继续运行')
   const showWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return

@@ -41,3 +41,6 @@ team-p0a-qa.json
 .stable-tencenthub-skills.json
 
 .stable-filtered-skills.json
+
+# Portable personal plugin source bundles (required by the market).
+!desktop/plugins/*.zip

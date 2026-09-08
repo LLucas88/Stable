@@ -84,8 +84,17 @@ async function classifyCodexApproval(method, params, workspace, trustedCli) {
   if (args.length !== 2 || !/^-Command$/i.test(args[0])) return unknown('脚本文件、编码命令或额外启动参数需要确认')
   const parsed = await parsePowerShell(stripUtf8Prefix(args[1]))
   const paths = checkPaths(parsed.paths || [], params.cwd, workspace)
+  if (parsed.risk !== 'safe' && destructiveCommand(args[1])) return high('操作包含删除、清理或破坏性重置，需要你确认')
   if (paths?.risk === 'high') return paths
   const external = await Promise.all((parsed.external || []).map(async (item) => {
+    for (const arg of item.argv || []) {
+      if (!/\.(?:py|ps1|js|cjs|mjs|sh)$/i.test(arg)) continue
+      try {
+        const script = path.resolve(params.cwd, arg)
+        if (fs.statSync(script).size > 2 * 1024 * 1024) return high('脚本过大，需确认实际操作')
+        if (destructiveCommand(fs.readFileSync(script, 'utf8'))) return high('脚本包含删除、清理或破坏性操作，需要你确认')
+      } catch { return high('无法读取待执行脚本，需要确认实际操作') }
+    }
     const cli = classifyWending(item.argv, params.cwd, trustedCli)
     if (cli.risk === 'safe' || cli.risk === 'high') return cli
     // No shared category for a script combined with other commands or file I/O.
@@ -129,6 +138,13 @@ function approvalScope(method, params, assessment, execution = {}) {
 function canAutoApprove(mode, event) {
   // Legacy harness events have no risk classification. Preserve their existing
   // policy, but never treat a Codex 'unknown' assessment as permission to run.
-  return mode === 'full' && !event.danger && (event.approvalRisk ? event.approvalRisk === 'safe' : true)
+  if (event.danger || event.approvalRisk === 'high') return false
+  if (event.approvalRisk === 'safe') return true
+  if (destructiveCommand(event.toolName || event.detail || '')) return false
+  if (/-enc(?:odedcommand)?\b|\b(?:invoke-expression|iex|eval|exec)\s*\(?|frombase64string/i.test(event.toolName || event.detail || '')) return false
+  return mode === 'full' && (!event.approvalRisk || (event.actionType === 'item/commandExecution/requestApproval' && event.approvalRisk === 'unknown'))
 }
-module.exports = { classifyCodexApproval, canAutoApprove, splitCommand, checkPaths, approvalScope }
+function destructiveCommand(command) {
+  return /\b(?:remove-item|clear-content|clear-item|rmdir|unlink|rmtree|removeSync|unlinkSync|rmSync|deleteFile|deleteDirectory|truncate|format-volume)\b|(?:^|[\s;&|])(?:rm|del|erase|rd)(?:\s|$)|\bgit\s+(?:clean|reset\s+--hard|restore|checkout\s+--|push\s+[^\r\n]*(?:--force|-f\b))|\b(?:drop|truncate)\s+(?:table|database)\b|\bdelete\s+from\b|\.(?:Delete|Remove|Clear)\s*\(/i.test(command)
+}
+module.exports = { classifyCodexApproval, canAutoApprove, splitCommand, checkPaths, approvalScope, destructiveCommand }

@@ -18,11 +18,11 @@ test('approval display argv round-trips quotes and never ignores trailing tokens
   assert.equal(splitCommand(`${command(script)} ; evil`).length, 6)
 })
 
-test('full mode only automatically approves verified safe operations; request mode still asks', () => {
+test('all modes approve verified safe operations and preserve destructive approvals', () => {
   for (const risk of ['safe', 'unknown', 'high']) {
     assert.equal(canAutoApprove('full', { approvalRisk: risk, danger: risk === 'high' }), risk === 'safe')
-    assert.equal(canAutoApprove('request', { approvalRisk: risk }), false)
-    assert.equal(canAutoApprove('auto', { approvalRisk: risk }), false)
+    assert.equal(canAutoApprove('request', { approvalRisk: risk }), risk === 'safe')
+    assert.equal(canAutoApprove('auto', { approvalRisk: risk }), risk === 'safe')
   }
   assert.equal(canAutoApprove('full', { danger: true }), false)
 })
@@ -34,6 +34,8 @@ test('PowerShell assessment handles screenshot reads and workspace editing witho
   const assess = (script, extra = {}) => classifyCodexApproval(method, { command: command(script), cwd: workspace, ...extra }, workspace)
   try {
     for (const script of [
+      '[Math]::Round(28.963, 2)',
+      '10 * 3 + 2',
       '$f="report.md"; Select-String -Path "$f" -Pattern "A店|B店|C店|sales|summary|校验" -Context 2,2 -ErrorAction SilentlyContinue | Select-Object -First 40 | Format-List',
       "Get-ChildItem -Path . -Force -Directory | Where-Object { $_.Name -like '.*' } | Select-Object Name,LastWriteTime | Format-Table -AutoSize",
       "Write-Host '--- input ---'; Get-Content -LiteralPath 'report.md'",
@@ -104,4 +106,12 @@ test('file writes through junctions cannot escape the workspace', { skip: proces
     fs.linkSync(path.join(outside, 'original.txt'), path.join(workspace, 'alias.txt'))
     assert.equal(checkPaths([{ mode: 'write', path: 'alias.txt' }], workspace, workspace).risk, 'unknown')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test('full mode permits ordinary unclassified commands but asks for destructive and opaque execution', () => {
+  const event = command => ({actionType: method, approvalRisk: 'unknown', toolName: command})
+  for (const command of ['npm ci', 'python analysis.py', 'node build.cjs']) assert.equal(canAutoApprove('full', event(command)), true)
+  for (const command of ['Remove-Item data -Recurse', 'git reset --hard HEAD', 'python -c "import shutil; shutil.rmtree(123)"', 'powershell -EncodedCommand AAAA']) assert.equal(canAutoApprove('full', event(command)), false)
+  assert.equal(canAutoApprove('request', event('npm ci')), false)
+  assert.equal(canAutoApprove('auto', event('npm ci')), false)
 })

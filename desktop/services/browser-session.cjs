@@ -77,7 +77,7 @@ class BrowserSessionService {
   control(id,tabId,user){const tab=this.get(id,tabId);tab.state=user?'user_controlled':'idle';tab.epoch++;this.emit();return this.snapshot(id)}
   async navigate(id,tabId,action,url){const tab=this.get(id,tabId);if(tab.state==='agent_controlled')throw Error('请先接管页面再导航。');const wc=tab.view.webContents;tab.error='';
     if(action==='open'){this.permit(id,url);tab.blockedURL='';await wc.loadURL(normalizeWebUrl(url))}
-    else if(action==='reload'){if(tab.state!=='user_controlled')tab.state='idle';await wc.loadURL(normalizeWebUrl(tab.url||wc.getURL()))}
+    else if(action==='reload'){if(tab.state!=='user_controlled')tab.state='idle';await wc.loadURL((tab.url||wc.getURL())==='about:blank'?'about:blank':normalizeWebUrl(tab.url||wc.getURL()))}
     else if(action==='back'&&wc.navigationHistory.canGoBack())wc.navigationHistory.goBack()
     else if(action==='forward'&&wc.navigationHistory.canGoForward())wc.navigationHistory.goForward()
     this.emit();return this.snapshot(id)

@@ -13,6 +13,31 @@ function setup() {
 }
 const success = { accepted: true, continue: true }
 
+test('stopping before acceptance removes only the cancelled dispatch and never resends it', async () => {
+  const { queue, calls, runs } = setup()
+  queue.enqueue('a', { text: 'cancel me', attachments: ['report.html'] })
+  queue.enqueue('a', 'next task')
+  queue.pause('a')
+  runs[0]({ accepted: false, continue: false, cancelled: true }); await tick()
+  assert.deepEqual(queue.snapshot('a').items.map(item => item.payload), ['next task'])
+  assert.equal(queue.snapshot('a').paused, true)
+  assert.equal(calls.length, 1)
+  queue.resume('a')
+  assert.deepEqual(calls[1], ['a', 'next task'])
+  runs[1](success); await tick()
+  assert.equal(calls.length, 2)
+})
+
+test('cancelled clarification reply does not become a queued task', async () => {
+  const { queue, calls, runs } = setup()
+  queue.pause('a'); queue.enqueue('a', 'later')
+  const reply = queue.reply('a', 'cancelled answer')
+  runs[0]({ accepted: false, continue: false, cancelled: true }); await reply
+  assert.deepEqual(queue.snapshot('a').items.map(item => item.payload), ['later'])
+  assert.equal(calls.length, 1)
+  assert.equal(queue.snapshot('a').paused, true)
+})
+
 test('outbox sends FIFO only after each full task resolves and isolates conversations', async () => {
   const { queue, calls, runs } = setup()
   queue.enqueue('a', 'A1'); queue.enqueue('a', 'A2'); queue.enqueue('a', 'A3'); queue.enqueue('b', 'B1')

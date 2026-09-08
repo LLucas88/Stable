@@ -41,19 +41,9 @@ function attachmentBlock(items) {
   }).join('\n\n')}`
 }
 
-const CAPABILITY_GUIDANCE = {
-  auto: '在遵循全局对话规则并完成必要澄清后，根据任务复杂度选择回答深度；复杂任务先核对资料与约束。',
-  fast: '优先给出简洁、直接、可执行的回答；除非缺少关键事实，否则不展开长篇分析。',
-  reasoning: '先核对假设、拆分问题并检查结论一致性，再给出结构化回答；不要展示隐藏思维链。',
-  analysis: '优先使用本次显式引用的数据，区分事实、计算、推断与缺口，并给出可复核的分析结论。',
-}
-
-function composeAgentPrompt({ identity, globalInstructions = '', query, history, data, knowledge, skills, scripts = [], attachments = [], capability = 'auto', delivery }) {
+function composeAgentPrompt({ identity, globalInstructions = '', query, history, data, knowledge, skills, scripts = [], attachments = [], delivery }) {
   return `${identity}
 ${globalInstructions.trim() ? `\n## 本机全局 Agent 对话提醒\n${globalInstructions.trim()}\n` : ''}
-
-## 本次能力模式
-${CAPABILITY_GUIDANCE[capability] || CAPABILITY_GUIDANCE.auto}
 
 ## 执行约束
 - ${MANUAL_SKILL_POLICY}

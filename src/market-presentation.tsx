@@ -1,4 +1,5 @@
-import { BarChart3, BookOpen, Bot, Code2, Compass, FileText, Globe2, Layers3, Mail, Palette, ShieldCheck, Sparkles, Users, Workflow, type LucideIcon } from 'lucide-react'
+import skillCategories from './skill-categories.json'
+import { BarChart3, BookOpen, Puzzle, Bot, Code2, Compass, FileText, Globe2, Layers3, Mail, Palette, ShieldCheck, Sparkles, Users, Workflow, type LucideIcon } from 'lucide-react'
 import type { MarketItem } from './types'
 
 // Presentation only: keep original instructions, provenance and resource paths
@@ -10,12 +11,14 @@ export function marketText(text = '') {
 }
 export function marketPresentation(item: MarketItem): MarketItem {
   const name = item.name.replace(/\s*[·|｜]\s*(?:work[\s_-]*buddy|trae[\s_-]*work|doubao(?:[\s_-]*work)?|豆包(?:\s*工作(?:台)?)?)\s*$/gi, '')
-  return { ...item, name: marketText(name), description: marketText(item.description), content: marketText(item.content), group: marketText(item.group), source: undefined, compatibilityReason: marketText(item.compatibilityReason) }
+  const category = item.kind === 'skill' ? (skillCategories as Record<string, { group: string; tags: string[] }>)[item.id] : undefined
+  return { ...item, ...(category || {}), name: marketText(name), description: marketText(item.description), content: marketText(item.content), group: category?.group || marketText(item.group), source: undefined, compatibilityReason: marketText(item.compatibilityReason) }
 }
 export function MarketIcon({ item }: { item: MarketItem }) {
   const text = `${item.name} ${item.group} ${item.id}`
   let Icon: LucideIcon = Sparkles, tone = 'violet'
   if (item.kind === 'expert') { Icon = Bot; tone = 'violet' }
+  else if (item.kind === 'plugin') { Icon = Puzzle; tone = 'blue' }
   else if (item.kind === 'connector') { Icon = Workflow; tone = 'blue' }
   else if (/数据|指标|分析|sql|metric|data/i.test(text)) { Icon = BarChart3; tone = 'blue' }
   else if (/合同|合规|隐私|审查|安全|privacy|contract/i.test(text)) { Icon = ShieldCheck; tone = 'teal' }

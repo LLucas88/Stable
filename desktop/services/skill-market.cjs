@@ -1,6 +1,7 @@
  'use strict'
 const { randomUUID } = require('node:crypto')
 const fs = require('node:fs'), path = require('node:path')
+const plugins = require('./personal-plugins.cjs')
 const experts = require('./expert-catalog.cjs')
 const { setSkillEnabled, removeSkill } = require('./ops-skill-bundle.cjs')
 const WENDING = { id: 'builtin-wending', name: '问鼎 CLI', kind: 'connector', group: '问鼎', description: '连接问鼎账号与品牌，查询会员、营销和经营数据。', content: '# 问鼎 CLI\n\n在当前对话选择账号与品牌后，用自然语言描述需要查询的数据。登录状态全局保留，品牌按对话保存。\n\n## 使用场景\n会员经营分析、活动效果、商品与订单分析。真实权限和数据范围以已登录账号为准。\n\n## 使用方式\n点击“在对话中试用”，选择品牌并输入任务。涉及修改的操作需要依据当前授权范围处理。', version: '内置', builtin: true }
@@ -8,7 +9,7 @@ class SkillMarket {
   constructor(store, root) { this.store = store; this.root = root }
   entries() {
     const meta = this.store.getSetting('skillMarketMeta') || {}
-    return [...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills().filter(item => item.id !== 'wending-market-reference' && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: true, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
+    return [...plugins.entries(), ...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills().filter(item => item.id !== 'wending-market-reference' && !plugins.findSkill(item.id) && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: true, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
   }
   detail(id) {
     const entry=this.entries().find(item=>item.id===id)
@@ -48,10 +49,17 @@ class SkillMarket {
     return {available:value.version!==item.version,currentVersion:item.version,version:value.version,content:value.content,name:item.name,description:typeof value.description==='string'?value.description:item.description,updateURL:item.updateURL,kind:item.kind,id:item.id}
   }
   use(id) {
+    if (plugins.findSkill(id)) return plugins.installSkill(this.store, this.root, id).then(skill => {
+      const conversationId = this.store.createConversation()
+      this.store.setSetting(`draft-reference:${conversationId}`, { id, kind: 'skill', name: skill.name, size: Buffer.byteLength(skill.content), type: 'skill' })
+      this.store.setSetting(`conversation-skills:${conversationId}`, [id])
+      return conversationId
+    })
+    if (plugins.entries().some(item => item.id === id)) throw Error('请选择插件中的一个技能。')
     const item=this.detail(id)
     if(!item || !item.installed || !item.enabled)throw new Error('请先添加并启用此技能。')
     let skillId=id
-    if(item.builtin && item.kind !== 'expert'){skillId='wending-market-reference';this.store.upsertSkill({id:skillId,name:'问鼎 CLI',description:'问鼎账号与品牌数据查询',path:'builtin:wending',content:'用户本次选择调用问鼎 CLI。请使用已安装的 crm-brand-cli，遵循当前对话绑定的品牌与全局登录状态。'})}
+    if(id === WENDING.id){skillId='wending-market-reference';this.store.upsertSkill({id:skillId,name:'问鼎 CLI',description:'问鼎账号与品牌数据查询',path:'builtin:wending',content:'用户本次选择调用问鼎 CLI。请使用已安装的 crm-brand-cli，遵循当前对话绑定的品牌与全局登录状态。'})}
     const conversationId=this.store.createConversation()
     this.store.setSetting(`draft-reference:${conversationId}`,{id:skillId,kind:'skill',name:item.name,size:Buffer.byteLength(item.content),type:item.kind})
     this.store.setSetting(`conversation-skills:${conversationId}`, [skillId])

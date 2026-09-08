@@ -64,6 +64,7 @@
       "desktop/**/*",
       "build/stable_logo.png",
       "build/stable_logo_transparent.png",
+      "build/stable_app_icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -107,7 +108,7 @@
       "output": "release-0.91.7"
     },
     "win": {
-      "icon": "build/stable_logo_transparent.png",
+      "icon": "build/stable_app_icon.png",
       "artifactName": "Stable-Setup-${version}-${arch}.${ext}",
       "target": [
         {

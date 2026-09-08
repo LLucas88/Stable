@@ -261,7 +261,7 @@ class StableStore {
       GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all().map((row) => ({
       ...this.conversationContext(row.id),
       networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
-      id: row.id, title: row.title, capability: row.capability || 'auto',
+      id: row.id, title: row.title, capability: ['none','enabled','low','high','max'].includes(row.capability) ? row.capability : 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
       modelId: row.model_id || defaultModelId,
       dataIds: JSON.parse(row.data_ids_json || '[]'), messageCount: Number(row.message_count || 0),

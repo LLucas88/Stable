@@ -26,7 +26,7 @@ test('renderer keeps conversation-scoped model switching without exposing the re
 
   assert.match(app, /className="composer-menu model-menu"/)
   assert.match(app, /type="radio" name=\{`conversation-model-\$\{activeConversation\.id\}`\}/)
-  assert.match(app, /当前对话 · 从下一条消息生效/)
+  assert.doesNotMatch(app, /当前对话 · 从下一条消息生效/)
   assert.match(app, /window\.stable\.agent\.configureModel\(activeConversation\.id, modelId\)/)
   assert.match(app, /role="status" aria-live="polite"/)
   assert.doesNotMatch(app, /className="model-profile-list"/)
@@ -51,7 +51,7 @@ test('main process snapshots the selected route before asynchronous message prep
   assert.match(sendHandler, /executionRunner\.run\(proposalPrompt\(taskQuery\), modelRoute\.model, modelRoute\.apiKey/)
   assert.match(sendHandler, /runAgent\([\s\S]*executionRunner, undefined, modelRoute\)/)
   assert.match(runAgent, /const modelRoute = modelRouteOverride \|\| modelRegistry\.resolve\(conversation\?\.modelId\)/)
-  assert.match(runAgent, /const \{ model, apiKey \} = modelRoute/)
+  assert.match(runAgent, /reasoningSelection: normalizeReasoning/)
   assert.match(runAgent, /reviewer\.run\(ledger\.prompt\(request\), model, apiKey/)
   assert.match(runAgent, /execute: async \(task\)[\s\S]*await executionRunner\.run\(task, model, apiKey/)
   assert.doesNotMatch(main, /getSetting\('model'\)/)

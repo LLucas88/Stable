@@ -27,7 +27,7 @@ function PathLiterals($node) {
         foreach ($entry in $node.Elements) { PathLiterals $entry }
     } else { Literal $node }
 }
-$allowedNodes = @('ScriptBlockAst','NamedBlockAst','PipelineAst','CommandAst','CommandParameterAst','CommandExpressionAst','StringConstantExpressionAst','ConstantExpressionAst','ExpandableStringExpressionAst','VariableExpressionAst','AssignmentStatementAst','StatementBlockAst','ScriptBlockExpressionAst','BinaryExpressionAst','MemberExpressionAst','ArrayLiteralAst','ParenExpressionAst','MergingRedirectionAst')
+$allowedNodes = @('ScriptBlockAst','NamedBlockAst','PipelineAst','CommandAst','CommandParameterAst','CommandExpressionAst','StringConstantExpressionAst','ConstantExpressionAst','ExpandableStringExpressionAst','VariableExpressionAst','AssignmentStatementAst','StatementBlockAst','ScriptBlockExpressionAst','BinaryExpressionAst','MemberExpressionAst','ArrayLiteralAst','ParenExpressionAst','MergingRedirectionAst','InvokeMemberExpressionAst','TypeExpressionAst','ConvertExpressionAst','UnaryExpressionAst')
 $commands = @{
     'get-content' = 'path,literalpath,totalcount,tail,raw,encoding,erroraction'
     'get-childitem' = 'path,literalpath,filter,include,exclude,force,directory,file,recurse,depth,name,erroraction'
@@ -53,10 +53,11 @@ if ($parseErrors.Count) { Review 'unknown' '命令语法无法完整解析' }
 foreach ($node in $tree.FindAll({ param($n) $true }, $true)) {
     $type = $node.GetType().Name
     if ($type -notin $allowedNodes) { Review 'unknown' "命令含需复核的语法：$type" }
+    if ($type -eq 'InvokeMemberExpressionAst' -and !($node.Static -and $node.Expression.Extent.Text -match '^\[(?:System\.)?Math\]$' -and $node.Member.Value -in @('Round','Abs','Min','Max','Floor','Ceiling','Pow','Sqrt','Log','Log10','Exp','Truncate'))) { Review 'unknown' '方法调用需核对实际影响' }
     if ($type -eq 'MergingRedirectionAst' -and ([string]$node.FromStream -ne 'Error' -or [string]$node.ToStream -ne 'Output')) { Review 'unknown' '仅标准错误合并到标准输出可直接核实' }
     if ($type -eq 'VariableExpressionAst' -and ($node.VariablePath.UserPath -match ':' -or $node.VariablePath.UserPath -in @('ExecutionContext','PSDefaultParameterValues','OFS'))) { Review 'unknown' '命令访问环境或执行配置变量' }
     if ($type -eq 'MemberExpressionAst' -and ($node.Static -or $node.Expression.Extent.Text -notin @('$_','$PSItem') -or $node.Member.Value -notin @('Name','FullName','Length','LastWriteTime','Extension','PSIsContainer'))) { Review 'unknown' '命令包含需复核的成员访问' }
-    if ($type -eq 'BinaryExpressionAst' -and [string]$node.Operator -notin @('Ieq','Ine','Igt','Ige','Ilt','Ile','Ilike','Inotlike','Imatch','Inotmatch','And','Or')) { Review 'unknown' '命令包含需复核的运算' }
+    if ($type -eq 'BinaryExpressionAst' -and [string]$node.Operator -notin @('Ieq','Ine','Igt','Ige','Ilt','Ile','Ilike','Inotlike','Imatch','Inotmatch','And','Or','Plus','Minus','Multiply','Divide','Rem')) { Review 'unknown' '命令包含需复核的运算' }
     if ($type -eq 'ScriptBlockExpressionAst') {
         if ($node.Parent -isnot [System.Management.Automation.Language.CommandAst] -or $node.Parent.GetCommandName() -ne 'Where-Object') { Review 'unknown' '命令包含可执行脚本块' }
     }

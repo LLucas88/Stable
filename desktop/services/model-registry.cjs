@@ -2,7 +2,11 @@
 
 const { randomUUID } = require('node:crypto')
 
+const { reasoningOptions } = require('./model-reasoning.cjs')
+
 const SECRET_PREFIX = 'model:'
+const MODEL_DISPLAY_NAMES = { 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
+function displayName(model, fallback) { return MODEL_DISPLAY_NAMES[String(model).toLowerCase()] || fallback }
 
 function requireModelText(value, label, limit) {
   const text = String(value || '').trim()
@@ -51,7 +55,7 @@ class ModelRegistry {
     const state = this.cloudGateway?.account?.publicState()
     if (state?.status !== 'authenticated') return null
     const items = state.models.map((item) => ({
-      id: String(item.id), providerId: 'stable-cloud', displayName: String(item.display_name || item.id),
+      id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
     }))
     return { items, defaultModelId: items[0]?.id || '' }
@@ -70,7 +74,7 @@ class ModelRegistry {
     if (cloud) return cloud
     const catalog = this.store.modelCatalog()
     return {
-      items: catalog.items.map((item) => ({ ...item, hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
+      items: catalog.items.map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
       defaultModelId: catalog.defaultModelId,
     }
   }

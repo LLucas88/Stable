@@ -84,7 +84,7 @@ function isTableStart(lines, index) {
 }
 
 function renderMarkdown(markdown) {
-  const lines = String(markdown || '').replace(/\r/g, '').split('\n')
+  const lines = String(markdown || '').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')
   const blocks = []
   let index = 0
   while (index < lines.length) {
@@ -111,16 +111,28 @@ function renderMarkdown(markdown) {
     }
     const heading = line.match(/^(#{1,6})\s+(.+)$/)
     if (heading) { const level = heading[1].length; blocks.push(`<h${level}>${renderInline(heading[2])}</h${level}>`); index += 1; continue }
-    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
-      const ordered = /^\s*\d+\./.test(line)
-      const entries = []
+    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      const base = line.match(/^(\s*)/)[1].length
+      const ordered = /^\s*\d+\./.test(line), entries = []
       while (index < lines.length) {
-        const match = lines[index].match(/^\s*([-*]|\d+\.)\s+(.+)$/)
-        if (!match || /^\d+\.$/.test(match[1]) !== ordered) break
-        entries.push(match[2]); index += 1
+        const match = lines[index].match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
+        if (!match || match[1].length !== base || /^\d+\.$/.test(match[2]) !== ordered) break
+        const item = [match[3]]; index++
+        while (index < lines.length) {
+          if (!lines[index].trim()) {
+            const next = lines[index + 1]
+            if (next && next.match(/^\s*/)[0].length > base) { item.push(''); index++; continue }
+            break
+          }
+          const indent = lines[index].match(/^\s*/)[0].length
+          if (indent <= base) break
+          item.push(lines[index].slice(Math.min(indent, base + match[2].length + 1))); index++
+        }
+        entries.push(renderMarkdown(item.join('\n')))
       }
       const tag = ordered ? 'ol' : 'ul'
-      blocks.push(`<${tag}>${entries.map((entry) => `<li>${renderInline(entry)}</li>`).join('')}</${tag}>`)
+      const start = ordered ? ` start="${parseInt(line.trim(), 10)}"` : ''
+      blocks.push(`<${tag}${start}>${entries.map(entry => `<li>${entry}</li>`).join('')}</${tag}>`)
       continue
     }
     if (line.trimStart().startsWith('> ')) {
@@ -146,7 +158,8 @@ function renderMarkdownDocument(markdown, title, theme = 'dark') {
   const safeTitle = escapeHtml(title || 'Markdown 预览')
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>${safeTitle}</title><style>
     :root{color-scheme:${light ? 'light' : 'dark'};font-family:"IBM Plex Sans","Microsoft YaHei",sans-serif;background:${colors.background};color:${colors.text}}*{box-sizing:border-box}body{margin:0;background:${colors.background}}main{width:min(58rem,calc(100% - 2rem));min-height:100vh;margin:auto;padding:3rem clamp(1rem,4vw,3rem);background:${colors.surface}}h1,h2,h3,h4,h5,h6{margin:1.6em 0 .55em;line-height:1.25}h1{margin-top:0;font-size:2rem}h2{font-size:1.5rem;border-bottom:1px solid ${colors.rule};padding-bottom:.4rem}p,li,blockquote{font-size:1rem;line-height:1.72}p{margin:.8rem 0}a{color:${colors.accent}}code,pre{font-family:"Cascadia Code",Consolas,monospace}.code-block{margin:1rem 0;overflow:hidden;border:1px solid ${colors.rule};border-radius:.65rem;background:${colors.code}}.code-label{padding:.55rem .8rem;border-bottom:1px solid ${colors.rule};color:${colors.muted};font-size:.75rem}pre{margin:0;overflow:auto;padding:1rem;line-height:1.6}p code,li code{padding:.1rem .35rem;border-radius:.3rem;background:${colors.code}}blockquote{margin:1rem 0;padding:.2rem 1rem;border-left:3px solid ${colors.accent};color:${colors.muted}}.table-wrap{overflow:auto;margin:1rem 0}table{width:100%;border-collapse:collapse}th,td{padding:.65rem .75rem;border:1px solid ${colors.rule};vertical-align:top}th{background:${colors.code}}hr{border:0;border-top:1px solid ${colors.rule};margin:2rem 0}@media(max-width:600px){main{width:100%;padding:1.25rem}h1{font-size:1.65rem}}
-  </style></head><body><main>${renderMarkdown(markdown)}</main></body></html>`
+  main{width:100%;padding:24px;background:${colors.surface}}h1{font-size:24px}h2{font-size:20px}h3{font-size:17px}p,li,blockquote{font-size:14px;line-height:1.8}li>p{margin:.25em 0}ul,ol{padding-left:1.6em}th,td{font-size:13px;min-width:90px}pre{font-size:13px}p,h1,h2,h3,li{overflow-wrap:anywhere}.document-label{font-size:12px;color:${colors.muted};padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid ${colors.rule}}
+  </style></head><body><main><div class="document-label">Markdown 文档 · 只读预览</div>${renderMarkdown(markdown)}</main></body></html>`
 }
 
 function previewPalette(theme) {
