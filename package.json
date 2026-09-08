@@ -104,13 +104,6 @@
       {
         "from": "runtime/codex",
         "to": "codex"
-      },
-      {
-        "from": "desktop/skills/filtered/bundle",
-        "to": "filtered-skills",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "directories": {
@@ -147,7 +140,8 @@
         "repo": "Stable",
         "releaseType": "release"
       }
-    ]
+    ],
+    "afterPack": "scripts/copy-bundled-skills.cjs"
   },
   "releaseVersion": "1.0.01"
 }

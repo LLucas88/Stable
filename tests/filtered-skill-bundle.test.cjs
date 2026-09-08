@@ -61,7 +61,7 @@ test('packaged startup registers bundled skills outside asar while preserving hi
   const options = { appPath, userData: path.join(root, 'profile'), isPackaged: true, store }
   assert.equal(manager.applyLocalSkillConfig(options).added, 1)
   const skill = store.listSkills()[0]
-  assert(skill.path.startsWith(path.join(root, 'profile', 'bundled-skills')))
+  assert(skill.path.startsWith(path.join(root, 'filtered-skills')))
   assert.equal(fs.readFileSync(path.join(skill.path, 'SKILL.md'), 'utf8'), '# Evidence skill')
   store.upsertSkill({ ...skill, content: 'my custom edit' })
   assert.equal(manager.applyLocalSkillConfig(options).added, 0)

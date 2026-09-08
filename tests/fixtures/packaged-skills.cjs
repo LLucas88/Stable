@@ -13,7 +13,7 @@ try {
   assert.equal(result.registered, 617)
   assert.equal(store.listSkills().length, 617)
   for (const skill of store.listSkills()) {
-    assert(skill.path.startsWith(root))
+    assert(skill.path.startsWith(path.join(resources, 'filtered-skills')))
     assert(fs.existsSync(path.join(skill.path, 'SKILL.md')))
   }
   assert.equal(store.listMessages(id)[0].content, 'Preserve this existing conversation')

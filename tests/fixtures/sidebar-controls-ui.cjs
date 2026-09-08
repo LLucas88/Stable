@@ -55,6 +55,7 @@ async function main() {
   // Force a CSS hover in this isolated renderer, without moving the user's mouse.
   await new Promise(resolve => setTimeout(resolve, 200))
   win.webContents.debugger.attach('1.3')
+  await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
   // Hosted Windows runners can enable reduced motion, which uses a 150 ms transition.
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await win.webContents.debugger.sendCommand('DOM.enable')
@@ -83,7 +84,7 @@ async function main() {
   fs.writeFileSync(path.join(output,'design-typography.json'),JSON.stringify(typography,null,2))
   fs.writeFileSync(path.join(output,'design-conversation.png'),(await win.webContents.capturePage()).toPNG())
   const result=await win.webContents.executeJavaScript(`(async()=>{
-    const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(yes,msg)=>{if(!yes)throw Error(msg)},click=selector=>{const el=document.querySelector(selector);expect(el,'Missing '+selector);el.click()};
+    const tick=()=>new Promise(r=>setTimeout(r,220)),expect=(yes,msg)=>{if(!yes)throw Error(msg)},click=selector=>{const el=document.querySelector(selector);expect(el,'Missing '+selector);el.click()};
     const menuText=()=>Array.from(document.querySelectorAll('.sidebar-action-menu [role=menuitem]')).map(el=>el.textContent);
     await tick();await tick();
     const host=document.getElementById('tasks'),recent=document.querySelector('.recent-new'),projectNew=document.querySelector('.sidebar-project-new');
@@ -110,7 +111,7 @@ async function main() {
     click('.remove-dialog footer button');await tick();expect(!document.querySelector('.remove-dialog')&&!window.removeCalls,'Cancel deleted data');
     click('[aria-label="更多操作 来源对话"]');await tick();click('.sidebar-action-menu .danger');await tick();window.failRemove=true;click('.remove-dialog-confirm');await tick();expect(document.querySelector('.remove-dialog [role=alert]'),'Delete error not shown');expect(!document.querySelector('.remove-dialog-confirm').disabled,'Cannot retry failed delete');window.failRemove=false;click('.remove-dialog-confirm');await tick();expect(!document.querySelector('[data-conversation-id="a"]')&&!document.querySelector('.remove-dialog'),'Confirmed delete failed');
     click('[aria-label="项目操作 项目二"]');await tick();expect(JSON.stringify(menuText())===JSON.stringify(['置顶','在资源管理器中打开','移除项目']),'Project menu has wrong actions '+JSON.stringify(menuText()));expect(!window.openCount,'Project ellipsis created a conversation');document.querySelector('.sidebar-action-menu [role=menuitem]').click();await tick();expect(document.querySelector('.sidebar-project-title').textContent.includes('项目二'),'Project not pinned above others');
-    click('[aria-label="项目操作 项目二"]');await tick();expect(menuText()[0]==='取消置顶','Pinned project toggle missing');document.querySelectorAll('.sidebar-action-menu [role=menuitem]')[1].click();await tick();expect(window.projectCalls.at(-1).action==='open','Project Explorer not dispatched');
+    click('[aria-label="项目操作 项目二"]');await tick();expect(menuText()[0]==='取消置顶','Pinned project toggle missing '+JSON.stringify(menuText()));document.querySelectorAll('.sidebar-action-menu [role=menuitem]')[1].click();await tick();expect(window.projectCalls.at(-1).action==='open','Project Explorer not dispatched');
     click('[aria-label="在 项目一 中新建对话"]');await tick();expect(window.opened.projectId==='p1'&&window.openCount===1,'Project new conversation failed');
     click('[aria-label="项目操作 项目一"]');await tick();click('.sidebar-action-menu .danger');await tick();expect(document.querySelector('.remove-dialog p').textContent.includes('现有聊天不会被删除'),'Project removal copy inaccurate');click('.remove-dialog-close');await tick();expect(document.querySelector('[aria-label="项目 项目一"]'),'Cancel removed project');
     click('[aria-label="项目操作 项目一"]');await tick();click('.sidebar-action-menu .danger');await tick();click('.remove-dialog-confirm');await tick();expect(!document.querySelector('[aria-label="项目 项目一"]'),'Project remains after removal');expect(document.querySelector('.recent-conversations [data-conversation-id="pc"]'),'Removing project lost conversation');

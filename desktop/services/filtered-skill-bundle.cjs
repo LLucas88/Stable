@@ -65,13 +65,8 @@ function createBundleManager(lock) {
     if (!fs.existsSync(file) && !isPackaged) return null
     try {
       if (isPackaged && !fs.existsSync(file)) {
-        // Scripts must live outside app.asar so external tools can read them.
-        const resourcesBundle = path.join(path.dirname(appPath), 'filtered-skills')
-        const source = fs.existsSync(resourcesBundle) ? resourcesBundle : path.join(appPath, 'desktop/skills/filtered/bundle')
-        inspectBundle(source)
-        const target = path.join(userData, 'bundled-skills', lock.manifestSha256)
-        if (!fs.existsSync(target)) fs.cpSync(source, target, { recursive: true })
-        return installBundle(store, target)
+        // Bundled scripts already live outside app.asar for external tools.
+        return installBundle(store, path.join(path.dirname(appPath), 'filtered-skills'))
       }
       const config = JSON.parse(fs.readFileSync(file, 'utf8'))
       if (config.version !== 1 || typeof config.userData !== 'string' || typeof config.bundlePath !== 'string') throw Error('筛选技能配置无效。')
