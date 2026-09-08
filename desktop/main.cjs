@@ -113,8 +113,29 @@ const featureFlags={compatibilityReviewer:process.env.STABLE_COMPATIBILITY_REVIE
 const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
 if (process.env.STABLE_STARTUP_PROBE) require('./services/startup-probe.cjs').installStartupProbe(require('electron'), () => store)
 
+function pendingApproval(conversationId, requestId) {
+  const control = agentRunners.get(conversationId)
+  if (!control || control.cancelled) return null
+  return store.db.prepare("SELECT id,request_json FROM approval_requests WHERE conversation_id=? AND json_extract(request_json,'$.requestId')=? AND state IN ('pending','needs_user') ORDER BY created_at DESC LIMIT 1").get(conversationId, requestId) || null
+}
+function answerTaskApproval(payload, expected) {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    const requestId = requireText(payload?.requestId, '审批 ID', 200)
+    const decision = payload?.decision ?? (payload?.allowed === true ? 'once' : 'deny')
+    if (!['deny', 'once', 'conversation'].includes(decision)) throw new Error('未知的审批决定')
+    const control = agentRunners.get(conversationId)
+    const runner = control?.runner
+    const pending = pendingApproval(conversationId, requestId)
+    if (!pending || control?.cancelled || (expected && (expected.runner !== runner || expected.id !== pending.id))) return false
+    if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
+    const accepted = runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
+    if (accepted) taskAlerts.resolve(conversationId, requestId)
+    if (accepted) { new ApprovalLedger(store); store.db.prepare("UPDATE approval_requests SET state=?,decision_json=?,decided_at=? WHERE id=? AND state IN ('pending','reviewing','needs_user')").run(decision === 'deny' ? 'denied' : 'approved', JSON.stringify({ reviewerSource: 'user', decision, rationale: '用户在审批面板明确选择' }),new Date().toISOString(),pending.id) }
+    return accepted
+}
+
 const { TaskAlerts } = require('./services/task-alerts.cjs')
-const taskAlerts = new TaskAlerts({ notify: (id, kind) => {
+const taskAlerts = new TaskAlerts({ notify: (id, kind, requestId) => {
   const title = kind === 'approval' ? '任务等待审批' : kind === 'input' ? '任务等待补充信息' : '任务可能停滞'
   const detail = kind === 'stalled' ? '连续 3 分钟没有收到新进展，可能仍在思考或执行工具。点击查看任务。' : '需要你处理后才能继续。点击返回对应任务。'
   const body = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${detail}`
@@ -129,16 +150,29 @@ const taskAlerts = new TaskAlerts({ notify: (id, kind) => {
     mainWindow.webContents.send('stable:task:notice', { id, title, body })
     if (!mainWindow.isFocused()) mainWindow.flashFrame(true)
   }
-  let notice
+  let notice, disposeApproval
+  const request = kind === 'approval' && requestId ? pendingApproval(id, requestId) : null
+  if (request && mainWindow && !mainWindow.isDestroyed()) {
+    const approval = JSON.parse(request.request_json)
+    const runner = agentRunners.get(id)?.runner
+    const authorization = redactApproval(`${approval.reason || ''}\n${approval.action || ''}`).trim()
+    const summary = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${authorization.slice(0,360)}${authorization.length > 360 ? '…' : ''}\n点击正文查看完整授权内容。`
+    disposeApproval = require('./services/approval-notification.cjs').approvalNotification({
+      Notification, window: mainWindow, title: '需要你审批', summary,
+      persistent: Boolean(runner?.supportsPersistentSessions),
+      pending: () => pendingApproval(id, requestId)?.id === request.id && agentRunners.get(id)?.runner === runner,
+      decide: decision => answerTaskApproval({conversationId:id,requestId,decision}, {id:request.id,runner}), open,
+    })
+  }
   try {
-    if (Notification.isSupported()) {
+    if (!request && Notification.isSupported()) {
       notice = new Notification({ title: `Stable · ${title}`, body, timeoutType: 'never' })
       notice.on('click', open)
       notice.on('failed', () => {}) // In-app notice remains if OS notifications are unavailable.
       notice.show()
     }
   } catch {}
-  return () => { notice?.close(); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:task:notice', { id, clear: true }) }
+  return () => { disposeApproval?.(); notice?.close(); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:task:notice', { id, clear: true }) }
 } })
 const taskAlertClock = setInterval(() => taskAlerts.tick(), 1000)
 taskAlertClock.unref()
@@ -2451,18 +2485,7 @@ function registerIpc() {
     control.runner.cancel()
     return true
   })
-  ipcMain.handle('stable:agent:answerApproval', (_event, payload) => {
-    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
-    const requestId = requireText(payload?.requestId, '审批 ID', 200)
-    const decision = payload?.decision ?? (payload?.allowed === true ? 'once' : 'deny')
-    if (!['deny', 'once', 'conversation'].includes(decision)) throw new Error('未知的审批决定')
-    const runner = agentRunners.get(conversationId)?.runner
-    if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
-    const accepted = runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
-    if (accepted) taskAlerts.resolve(conversationId, requestId)
-    if (accepted) { new ApprovalLedger(store); store.db.prepare("UPDATE approval_requests SET state=?,decision_json=?,decided_at=? WHERE conversation_id=? AND json_extract(request_json,'$.requestId')=? AND state IN ('pending','reviewing','needs_user')").run(decision === 'deny' ? 'denied' : 'approved', JSON.stringify({ reviewerSource: 'user', decision, rationale: '用户在审批面板明确选择' }),new Date().toISOString(),conversationId,requestId) }
-    return accepted
-  })
+  ipcMain.handle('stable:agent:answerApproval', (_event, payload) => answerTaskApproval(payload))
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
