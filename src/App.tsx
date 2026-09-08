@@ -111,6 +111,10 @@ export function App() {
   const requestedPage = new URLSearchParams(window.location.search).get('page') as Page | null
   const initialPage = requestedPage && PAGE_IDS.includes(requestedPage) ? requestedPage : 'agent'
   const [page, setPage] = useState<Page>(initialPage)
+  const [taskNotices, setTaskNotices] = useState<Record<string,{title?:string;body?:string}>>({})
+  useEffect(() => window.stable.agent.onTaskOpen?.(agent => {setState(current=>current?{...current,...agent}:current);setPage('agent');setMode('work')}), [])
+  useEffect(() => window.stable.agent.onTaskNotice?.(notice => setTaskNotices(current=>{const next={...current};if(notice.clear)delete next[notice.id];else next[notice.id]=notice;return next})), [])
+
   const [mode, setMode] = useState<WorkspaceMode>(LAB_NAV.some((item) => item.id === initialPage) ? 'lab' : 'work')
   const [repositoryTab, setRepositoryTab] = useState<RepositoryPageId>(isRepositoryPage(initialPage) ? initialPage : 'data')
   const [agentPrefill, setAgentPrefill] = useState('')
@@ -340,7 +344,7 @@ export function App() {
   if (!['disabled', 'authenticated'].includes(state.cloud.status)) return <><div className="window-shell"><WindowTitlebar /><CloudAccessPage state={state} onComplete={(value) => { document.documentElement.dataset.theme = value.theme; setState(value); setError('') }} /></div>{launch}</>
 
   return (
-    <><div className="window-shell">
+    <><div className="task-notices" aria-live="polite">{Object.entries(taskNotices).map(([id,notice])=><div key={id} role="status"><button type="button" onClick={()=>{void window.stable.agent.select(id).then(agent=>{setState(current=>current?{...current,...agent}:current);setPage('agent')}).catch(reason=>setError(errorMessage(reason)))}}><strong>{notice.title}</strong><span>{notice.body}</span></button><button type="button" aria-label="关闭提醒" onClick={()=>setTaskNotices(current=>{const next={...current};delete next[id];return next})}>×</button></div>)}</div><div className="window-shell">
       <WindowTitlebar railCollapsed={railCollapsed} searchOpen={conversationSearchOpen} searchButtonRef={conversationSearchButtonRef} onToggleRail={() => setRailCollapsed((current) => !current)} onSearch={openConversationSearch} />
       <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
       {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">

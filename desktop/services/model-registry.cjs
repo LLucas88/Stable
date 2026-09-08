@@ -2,7 +2,7 @@
 
 const { randomUUID } = require('node:crypto')
 
-const { reasoningOptions } = require('./model-reasoning.cjs')
+const { reasoningOptions, cloudReasoningProfile } = require('./model-reasoning.cjs')
 
 const SECRET_PREFIX = 'model:'
 const MODEL_DISPLAY_NAMES = { 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
@@ -55,8 +55,9 @@ class ModelRegistry {
     const state = this.cloudGateway?.account?.publicState()
     if (state?.status !== 'authenticated') return null
     const items = state.models.map((item) => ({
-      id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
+      ...cloudReasoningProfile(item), id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
+      reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
     return { items, defaultModelId: items[0]?.id || '' }
   }

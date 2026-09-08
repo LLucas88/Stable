@@ -7,6 +7,7 @@
 const LABELS = { auto:'默认', none:'关闭思考', enabled:'开启思考', low:'低', high:'高', max:'最高' }
 function reasoningValues(model = {}) {
   if (process.env.STABLE_HARNESS === 'deepseek') return [] // Legacy runner has no verified parameter transport.
+  if (model.cloudReasoning === true && model.providerId === 'stable-cloud' && /^http:\/\/127\.0\.0\.1:\d+\/v1$/.test(model.baseURL || '') && ['glm-5.3-flash','deepseek-v4-flash','deepseek-v4-pro'].includes(model.model)) return ['low','high','max']
   let host
   try { host = new URL(model.baseURL).hostname } catch { return [] }
   const id = String(model.model || '').toLowerCase()
@@ -30,6 +31,12 @@ function reasoningParameters(model, value = model?.reasoningSelection) {
   if (selected === 'auto') return {}
   if (selected === 'none') return { thinking:{type:'disabled'} }
   if (selected === 'enabled') return { thinking:{type:'enabled'} }
+  if (model.cloudReasoning === true) return { reasoning_effort:selected }
   return { thinking:{type:'enabled'}, reasoning_effort:selected }
 }
-module.exports = { reasoningOptions, normalizeReasoning, reasoningParameters }
+function cloudReasoningProfile(item) {
+  const id = String(item.id || '').toLowerCase()
+  const provider = String(item.provider || '').toLowerCase()
+  return { cloudReasoning: (id === 'glm-5.3-flash' && ['zhipu','zai','z.ai','glm','bigmodel'].includes(provider)) || (/^deepseek-v4-(flash|pro)$/.test(id) && provider === 'deepseek') }
+}
+module.exports = { cloudReasoningProfile, reasoningOptions, normalizeReasoning, reasoningParameters }

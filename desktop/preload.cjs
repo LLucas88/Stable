@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld('stable', {
   },
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
   agent: {
+    onTaskOpen: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:open', listener); return () => ipcRenderer.removeListener('stable:task:open', listener) },
+    onTaskNotice: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:notice', listener); return () => ipcRenderer.removeListener('stable:task:notice', listener) },
     setSkillReferences: (id, ids) => invoke('stable:agent:skillReferences', { id, ids }),
     lifecycle: (id,action)=>invoke('stable:agent:lifecycle',{id,action}),
     configureNetwork: (id, enabled) => invoke('stable:agent:network', { id, enabled }),

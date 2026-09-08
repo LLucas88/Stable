@@ -600,6 +600,8 @@ export interface StableBridge {
   }
   projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
+    onTaskOpen?(handler: (state: AgentState) => void): () => void
+    onTaskNotice?(handler: (notice: {id:string; title?:string; body?:string; clear?:boolean}) => void): () => void
     setSkillReferences(id: string, ids: string[]): Promise<AgentReference[]>
     lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
     configureNetwork(id: string, enabled: boolean): Promise<AgentState>

@@ -1,7 +1,7 @@
 'use strict'
 const { skillReferences, saveSkillReferences, selectedSkillContext } = require('./services/skill-selection.cjs')
 
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme } = require('electron')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme, Notification } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
@@ -112,6 +112,36 @@ const pendingCollaborationChecks = new Map()
 const featureFlags={compatibilityReviewer:process.env.STABLE_COMPATIBILITY_REVIEWER!=='0',sharedBrowser:process.env.STABLE_SHARED_BROWSER!=='0',historyRecovery:process.env.STABLE_HISTORY_RECOVERY!=='0'}
 const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
 if (process.env.STABLE_STARTUP_PROBE) require('./services/startup-probe.cjs').installStartupProbe(require('electron'), () => store)
+
+const { TaskAlerts } = require('./services/task-alerts.cjs')
+const taskAlerts = new TaskAlerts({ notify: (id, kind) => {
+  const title = kind === 'approval' ? '任务等待审批' : kind === 'input' ? '任务等待补充信息' : '任务可能停滞'
+  const detail = kind === 'stalled' ? '连续 3 分钟没有收到新进展，可能仍在思考或执行工具。点击查看任务。' : '需要你处理后才能继续。点击返回对应任务。'
+  const body = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${detail}`
+  const open = () => {
+    if (!store.conversation(id) || !mainWindow || mainWindow.isDestroyed()) return
+    store.selectConversation(id)
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show(); mainWindow.focus(); mainWindow.flashFrame(false)
+    mainWindow.webContents.send('stable:task:open', agentState(id))
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('stable:task:notice', { id, title, body })
+    if (!mainWindow.isFocused()) mainWindow.flashFrame(true)
+  }
+  let notice
+  try {
+    if (Notification.isSupported()) {
+      notice = new Notification({ title: `Stable · ${title}`, body, timeoutType: 'never' })
+      notice.on('click', open)
+      notice.on('failed', () => {}) // In-app notice remains if OS notifications are unavailable.
+      notice.show()
+    }
+  } catch {}
+  return () => { notice?.close(); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:task:notice', { id, clear: true }) }
+} })
+const taskAlertClock = setInterval(() => taskAlerts.tick(), 1000)
+taskAlertClock.unref()
 
 app.setAppUserModelId(APP_ID)
 if (process.platform === 'win32' && app.isPackaged) {
@@ -1452,6 +1482,9 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const trace = []
   const transcript = createStreamTranscript()
   const publish = (source) => {
+    taskAlerts.progress(conversationId)
+    if (source.kind === 'approval' && source.requestId && ['completed', 'failed', 'cancelled'].includes(source.status)) taskAlerts.resolve(conversationId, source.requestId)
+    if (source.kind === 'approval' && source.status === 'awaiting_user') taskAlerts.wait(conversationId, source.requestId)
     if (source.eventType === 'agent/answer-delta') {
       const delta = String(source.delta || '')
       if (!delta) return
@@ -1541,7 +1574,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
           executionRunner.answerApproval(source.requestId, false)
           publish({ ...source, title: '审核未完成，未执行操作', reason: decision.rationale, detail: '审核技术失败，未默认放行。', status: 'failed' })
         }).finally(() => control?.reviewers.delete(reviewer))
-      }
+      } else { taskAlerts.wait(conversationId, source.requestId) }
     }
   }
   if (installedSkills.length) publish({ id: 'stable-skill-install', kind: 'tool', title: '安装全局 Skill', detail: `已识别并安装：${installedSkills.join('、')}`, status: 'completed' })
@@ -2223,12 +2256,14 @@ function registerIpc() {
     if (!conversation) throw new Error('找不到这个对话。')
     await require('./services/stop-before-delete.cjs').stopBeforeDelete(id, agentRunners, conversationId => {
       const control = agentRunners.get(conversationId)
+      taskAlerts.finish(conversationId)
       control.cancelled = true
       new ApprovalLedger(store)
       store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
       for (const reviewer of control.reviewers) reviewer.cancel()
       control.runner.cancel()
     })
+    taskAlerts.finish(id)
     const result=await conversationLifecycle.sync(id,'delete')
     if(!result.pending)wendingCli.removeConversation(id)
     return {...agentState(store.activeConversationId()),syncNotice:result.error}
@@ -2288,6 +2323,7 @@ function registerIpc() {
     if(delivery.duplicate){if(delivery.state==='completed')return {...agentState(conversationId),answer:''};throw Error('此条消息已有发送记录（'+delivery.state+'），请先核实历史，不会重复发送。')}
     const control = { deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
+    taskAlerts.start(conversationId)
     try {
       control.phase = 'clarifying'
       const globalInstructions = readGlobalInstructions().content
@@ -2308,6 +2344,8 @@ function registerIpc() {
           conversationLifecycle.status(deliveryId, 'completed', { assistantMessageId: message })
           store.db.exec('COMMIT')
         } catch (error) { store.db.exec('ROLLBACK'); throw error }
+        control.waitingForInput = true
+        taskAlerts.wait(conversationId, 'input', 'input')
         publishAgentState(conversationId)
         return { answer: clarification.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
       }
@@ -2343,6 +2381,7 @@ function registerIpc() {
         if (control.cancelled) throw new Error('任务已停止。')
         result.trace.push(clarificationTrace({ ...executionPayload, attachments: prepared.attachments }, result.answer, 'clarification', card))
       }
+      if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
       store.db.exec('BEGIN IMMEDIATE')
@@ -2354,6 +2393,7 @@ function registerIpc() {
       conversationLifecycle.status(deliveryId,journal?.state==='preparing'?'rejected':control.cancelled?'interrupted':'unknown',{error:error.message})
       throw new Error(error.message)
     } finally {
+      if (!control.waitingForInput || control.cancelled) taskAlerts.finish(conversationId)
       control.phase = 'finished'
       for (const reviewer of control.reviewers) reviewer.cancel()
       if (agentRunners.get(conversationId) === control) agentRunners.delete(conversationId)
@@ -2403,6 +2443,7 @@ function registerIpc() {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const control = agentRunners.get(conversationId)
     if (!control) return false
+    taskAlerts.finish(conversationId)
     control.cancelled = true
     new ApprovalLedger(store)
     store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
@@ -2418,6 +2459,7 @@ function registerIpc() {
     const runner = agentRunners.get(conversationId)?.runner
     if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
     const accepted = runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
+    if (accepted) taskAlerts.resolve(conversationId, requestId)
     if (accepted) { new ApprovalLedger(store); store.db.prepare("UPDATE approval_requests SET state=?,decision_json=?,decided_at=? WHERE conversation_id=? AND json_extract(request_json,'$.requestId')=? AND state IN ('pending','reviewing','needs_user')").run(decision === 'deny' ? 'denied' : 'approved', JSON.stringify({ reviewerSource: 'user', decision, rationale: '用户在审批面板明确选择' }),new Date().toISOString(),conversationId,requestId) }
     return accepted
   })
@@ -2425,6 +2467,7 @@ function registerIpc() {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     if (agentRunners.has(id)) throw new Error('请先停止当前任务，再清空对话。')
+    taskAlerts.finish(id)
     clearCodexSession(paths.userData, id)
     store.revokeConversationGrants(id)
     store.clearMessages(id)

@@ -2701,3 +2701,6 @@ html[data-theme="dark"] .conversation-start-animation { filter: invert(1) hue-ro
 .annotation-detail p { white-space:pre-wrap; margin:8px 0; }
 .annotation-detail small { color:var(--color-ink-muted); }
 .browser-annotation-toolbar{display:flex;align-items:center;gap:8px;min-height:50px;padding:8px 12px;background:#e1f1fc;color:#202124}.browser-annotation-toolbar>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.browser-annotation-toolbar button{border:0;background:transparent;border-radius:10px;padding:7px 10px;cursor:pointer;white-space:nowrap}.browser-annotation-toolbar .annotation-add-draft{background:#0785d1;color:white}.browser-annotation-toolbar button:disabled{opacity:.45;cursor:default}
+
+.task-notices{position:fixed;right:16px;bottom:20px;z-index:10000;display:grid;gap:8px;max-height:50vh;overflow:auto;width:min(360px,90vw)}
+.task-notices>div{display:flex;background:var(--color-paper-2);color:var(--color-ink);border:1px solid #8886;border-radius:12px;box-shadow:0 6px 24px #0002;padding:12px}.task-notices button{color:inherit;background:transparent;border:0;text-align:left;cursor:pointer}.task-notices strong,.task-notices span{display:block}.task-notices span{margin-top:6px;font-size:13px}

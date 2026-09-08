@@ -1,5 +1,6 @@
 'use strict'
 
+const { cloudReasoningProfile } = require('./model-reasoning.cjs')
 const http = require('node:http')
 const { randomUUID } = require('node:crypto')
 const { Readable } = require('node:stream')
@@ -52,7 +53,7 @@ class CloudGatewayProxy {
     if (!item) throw new Error('所选云端模型已不可用，请重新选择。')
     if (!this.baseURL) throw new Error('Stable Cloud 本机网关尚未就绪。')
     return {
-      model: { id: item.id, providerId: 'stable-cloud', displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id },
+      model: { ...cloudReasoningProfile(item), id: item.id, providerId: 'stable-cloud', displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id },
       apiKey: this.secret,
     }
   }
