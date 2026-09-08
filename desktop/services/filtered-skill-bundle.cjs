@@ -66,7 +66,8 @@ function createBundleManager(lock) {
     try {
       if (isPackaged && !fs.existsSync(file)) {
         // Scripts must live outside app.asar so external tools can read them.
-        const source = path.join(appPath, 'desktop/skills/filtered/bundle')
+        const resourcesBundle = path.join(path.dirname(appPath), 'filtered-skills')
+        const source = fs.existsSync(resourcesBundle) ? resourcesBundle : path.join(appPath, 'desktop/skills/filtered/bundle')
         inspectBundle(source)
         const target = path.join(userData, 'bundled-skills', lock.manifestSha256)
         if (!fs.existsSync(target)) fs.cpSync(source, target, { recursive: true })

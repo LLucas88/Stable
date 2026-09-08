@@ -4,6 +4,7 @@ const resources = path.resolve(process.argv[2]), appPath = path.join(resources, 
 const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'stable-packaged-skills-'))
 const { StableStore } = require(path.join(appPath, 'desktop/services/store.cjs'))
 const manager = require(path.join(appPath, 'desktop/services/filtered-skill-bundle.cjs'))
+assert.equal(manager.inspectBundle(path.join(resources, 'filtered-skills')).skills.length, 617)
 const store = new StableStore(root)
 try {
   const id = store.activeConversationId()

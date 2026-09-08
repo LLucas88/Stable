@@ -65,7 +65,8 @@
       "build/stable_logo.png",
       "build/stable_logo_transparent.png",
       "build/stable_app_icon.png",
-      "package.json"
+      "package.json",
+      "!desktop/skills/filtered/bundle/**/*"
     ],
     "extraResources": [
       {
@@ -103,6 +104,13 @@
       {
         "from": "runtime/codex",
         "to": "codex"
+      },
+      {
+        "from": "desktop/skills/filtered/bundle",
+        "to": "filtered-skills",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {

@@ -55,7 +55,7 @@ test('tampered resources fail before writes; a different user profile is not pop
 test('packaged startup registers bundled skills outside asar while preserving history and edits', t => {
   const { root, bundle, manager, store } = fixture(t)
   const appPath = path.join(root, 'app.asar')
-  fs.cpSync(bundle, path.join(appPath, 'desktop/skills/filtered/bundle'), { recursive: true })
+  fs.cpSync(bundle, path.join(root, 'filtered-skills'), { recursive: true })
   const id = store.activeConversationId()
   store.addMessage(id, 'user', 'existing history')
   const options = { appPath, userData: path.join(root, 'profile'), isPackaged: true, store }
