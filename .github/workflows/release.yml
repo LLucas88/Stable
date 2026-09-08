@@ -71,6 +71,19 @@ jobs:
           path: ${{ runner.temp }}/stable-update-installer-evidence
           if-no-files-found: warn
           retention-days: 7
+      - name: Preserve verified release installers
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-verified-installers
+          path: |
+            release-*/Stable-Setup-*-x64.exe
+            release-*-update/Stable-Update-*-x64.exe
+            release-*-update/Stable-Update-*-x64.exe.blockmap
+            release-*-update/latest.yml
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish GitHub Release assets
         if: success() && github.event_name == 'push' && github.ref_type == 'tag'
         shell: pwsh
