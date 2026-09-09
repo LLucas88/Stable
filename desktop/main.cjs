@@ -2103,7 +2103,7 @@ function registerIpc() {
   ipcMain.handle('stable:market:toggle', (_event, value) => market().toggle(requireText(value?.id, '条目 ID', 100), Boolean(value.enabled)))
   ipcMain.handle('stable:market:remove', (_event, value) => market().remove(requireText(value?.id, '条目 ID', 100)))
   ipcMain.handle('stable:market:update', (_event, value) => market().checkUpdate(requireText(value?.id, '条目 ID', 100)))
-  ipcMain.handle('stable:market:use', async (_event, value) => { const id=await market().use(requireText(value?.id, '条目 ID', 100)); return { ...agentState(id), skills: store.listSkills() } })
+  ipcMain.handle('stable:market:use', async (_event, value) => { const entryId=requireText(value?.id, '条目 ID', 100); const catalog=market(); const id=await catalog.use(entryId); return { ...agentState(id), draftPrompt: catalog.prompt(entryId), skills: store.listSkills() } })
   ipcMain.handle('stable:skills:enabled', (_event, payload) => { require('./services/ops-skill-bundle.cjs').setSkillEnabled(store, requireText(payload?.id, 'Skill ID', 100), Boolean(payload?.enabled)); return store.listSkills() })
   ipcMain.handle('stable:skills:remove', (_event, payload) => { require('./services/ops-skill-bundle.cjs').removeSkill(store, requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
   ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())

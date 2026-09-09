@@ -394,7 +394,7 @@ export function App() {
         {page !== 'agent' && page !== 'workflows' && !isRepositoryPage(page) && <div className="page-stage" data-page={page} key={page}>
           {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
-          {page === 'market' && <SkillMarket renderContent={content => <MarkdownContent content={content}/>} onUse={agent => { setState(current => current ? { ...current, ...agent } : current); setPage('agent') }}/> }
+          {page === 'market' && <SkillMarket renderContent={content => <MarkdownContent content={content}/>} onUse={agent => { setState(current => current ? { ...current, ...agent } : current); setAgentPrefill(agent.draftPrompt || ''); setPage('agent') }}/> }
           {page === 'mcp-cli' && <McpCliPage onUseWending={openWendingConversation} />}
         </div>}
 

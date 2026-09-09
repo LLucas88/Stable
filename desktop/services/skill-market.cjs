@@ -48,6 +48,11 @@ class SkillMarket {
     if(typeof value.version!=='string'||typeof value.content!=='string')throw new Error('更新源必须提供 version 和 content。')
     return {available:value.version!==item.version,currentVersion:item.version,version:value.version,content:value.content,name:item.name,description:typeof value.description==='string'?value.description:item.description,updateURL:item.updateURL,kind:item.kind,id:item.id}
   }
+  prompt(id) {
+    const pluginSkill = plugins.findSkill(id)?.skill
+    const item = pluginSkill || this.detail(id)
+    return item?.defaultPrompt || (item ? `请使用「${item.name}」完成以下任务：\n\n【请填写任务要求】` : '')
+  }
   use(id) {
     if (plugins.findSkill(id)) return plugins.installSkill(this.store, this.root, id).then(skill => {
       const conversationId = this.store.createConversation()

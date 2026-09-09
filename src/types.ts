@@ -240,6 +240,7 @@ export interface ConversationSearchResult {
 }
 
 export interface AgentState {
+  draftPrompt?: string
   recoveryText?: string
   recoveryDiagnostic?: string
   syncNotice?: string

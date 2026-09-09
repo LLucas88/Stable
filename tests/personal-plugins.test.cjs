@@ -11,7 +11,10 @@ test('both bundled plugins install complete resources and bind each chosen skill
   assert.deepEqual(market.entries().filter(i => i.kind === 'plugin').map(i => i.pluginSkills.length), [3, 7])
   for (const plugin of catalog) {
     for (const skill of plugin.skills) {
+      assert.equal(market.prompt(skill.id), skill.defaultPrompt)
+      assert(skill.defaultPrompt.includes('【'))
       const id = await market.use(skill.id)
+      assert.deepEqual(store.listMessages(id), [])
       assert.deepEqual(store.getSetting(`conversation-skills:${id}`), [skill.id])
       assert.equal(store.getSetting(`draft-reference:${id}`).name, skill.name)
       const installed = store.listSkills().find(s => s.id === skill.id)
