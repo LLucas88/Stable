@@ -35,3 +35,14 @@ test('bridge sends official parameters only in body, across repeated turns and d
    assert.deepEqual(requests[0].messages,requests[1].messages);assert.deepEqual(requests[0].messages,requests[2].messages)
  }
 })
+
+
+test('current DeepSeek model IDs preserve direct and cloud reasoning controls',()=>{
+ const {cloudReasoningProfile}=require('../desktop/services/model-reasoning.cjs')
+ for(const id of ['deepseek-flash','deepseek-v4-pro']){
+   const direct={baseURL:'https://api.deepseek.com',model:id}
+   assert.deepEqual(reasoningParameters(direct,'max'),{thinking:{type:'enabled'},reasoning_effort:'max'})
+   const cloud={...cloudReasoningProfile({id,provider:'deepseek'}),providerId:'stable-cloud',baseURL:'http://127.0.0.1:1234/v1',model:id}
+   assert.deepEqual(reasoningParameters(cloud,'high'),{reasoning_effort:'high'})
+ }
+})

@@ -3,7 +3,7 @@
 const { existsSync, readFileSync, realpathSync, statSync } = require('node:fs')
 const path = require('node:path')
 
-const MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
+const MAX_MARKDOWN_BYTES = 50 * 1024 * 1024
 
 function normalizeWebUrl(value) {
   const raw = String(value || '').trim()
@@ -51,7 +51,7 @@ function resolveWorkspaceEntry(value, workspace, options = {}) {
 function resolveMarkdownFile(value, workspace) {
   const resolved = resolveWorkspaceEntry(value, workspace, { fileOnly: true })
   if (!['.md', '.markdown'].includes(resolved.extension)) throw new Error('只能预览 .md 或 .markdown 文件。')
-  if (resolved.size > MAX_MARKDOWN_BYTES) throw new Error('Markdown 文件不能超过 2 MB。')
+  if (resolved.size > MAX_MARKDOWN_BYTES) throw new Error('Markdown 文件不能超过 50 MB。')
   return { ...resolved, content: readFileSync(resolved.path, 'utf8') }
 }
 

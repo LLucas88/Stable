@@ -4,8 +4,10 @@ const { BrowserTool } = require('./browser-tool.cjs')
 const { executeExcel } = require('./excel-tool.cjs')
 
 class BuiltinTools {
-  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true }) {
+  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill }) {
+    this.installSkill = installSkill
     this.workspace = writableRoots?.length ? writableRoots : workspace
+    this.localHtml = new (require('./local-html-preview.cjs').LocalHtmlPreview)(this.workspace)
     this.browserEnabled=browserEnabled
     this.sharedBrowser = browserSession
     this.conversationId = conversationId
@@ -18,18 +20,24 @@ class BuiltinTools {
     if (this.controllers.has(requestId)) throw new Error('重复的工具请求。')
     if (!args || typeof args !== 'object' || JSON.stringify(args).length > 2_000_000) throw new Error('工具参数无效或过大。')
     const mutatesBrowser = name === 'stable_browser' && ['open', 'click', 'fill', 'select', 'key', 'drag'].includes(args.action)
-    const writesFile = name === 'stable_excel' && ['create', 'update'].includes(args.action)
+    const writesFile = name === 'stable_skill_install' || name === 'stable_excel' && ['create', 'update'].includes(args.action)
     if (sandboxMode === 'read-only' && (mutatesBrowser || writesFile)) throw new Error('当前为只读模式，请切换访问权限后再操作。')
+    if (name === 'stable_skill_install' && approved !== true) throw Error('安装 Skill 需要审批。')
     if (mutatesBrowser && approved !== true) throw new Error('网页交互需要单次审批。')
     const controller = new AbortController(); this.controllers.set(requestId, controller)
     try {
+      if (name === 'stable_browser' && args.action === 'open' && typeof args.url === 'string' && /^(?:file:|[a-z]:[\\/]|\/)/i.test(args.url)) args = { ...args, url: await this.localHtml.open(args.url) }
       if (name === 'stable_browser') return await (this.sharedBrowser ? this.browser.execute(this.conversationId, args, controller.signal, requestId) : this.browser.execute(args, controller.signal))
+      if (name === 'stable_skill_install') {
+        if (!this.installSkill) throw Error('当前运行环境未提供 Skill 安装入口。')
+        return await this.installSkill(args.path, controller.signal)
+      }
       if (name === 'stable_excel') return await executeExcel({ workspace: this.workspace, dependencyRoot: this.dependencyRoot, args, signal: controller.signal })
       throw new Error('未知内置工具。')
     } finally { this.controllers.delete(requestId) }
   }
   cancel(id) { this.controllers.get(id)?.abort() }
-  dispose() { for (const controller of this.controllers.values()) controller.abort(); this.controllers.clear(); if (!this.sharedBrowser) this.browser.dispose() }
+  dispose() { this.localHtml.dispose(); for (const controller of this.controllers.values()) controller.abort(); this.controllers.clear(); if (!this.sharedBrowser) this.browser.dispose() }
 }
 
 module.exports = { BuiltinTools }

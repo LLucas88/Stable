@@ -1,3 +1,4 @@
+import { TemplateLibrary } from './TemplateLibrary'
 import { EffortSlider } from './EffortSlider'
 import { CloseWindowDialog } from './CloseWindowDialog'
 import { useTransientScrollbar } from './use-transient-scrollbar'
@@ -55,6 +56,7 @@ const WORK_NAV: Array<{ id: PrimaryNavId; label: string; icon: typeof Home }> = 
   { id: 'automations', label: '定时', icon: Clock3 },
   { id: 'repository', label: '仓库', icon: Library },
   { id: 'market', label: '技能市场', icon: Braces },
+  { id: 'templates', label: '模板库', icon: BookOpenText },
 ]
 
 const WENDING_CLI_PREFILL = '调用问鼎cli：我需要做...'
@@ -84,9 +86,6 @@ function attachmentIsImage(item: { name?: string; path?: string; type?: string; 
   return /\.(?:png|jpe?g|webp)$/i.test(String(item.path || item.name || '')) || /^(?:png|jpe?g|webp)$/i.test(String(item.type || ''))
 }
 
-function profileIsDeepSeek(item?: Pick<ModelProfile, 'id' | 'providerId' | 'displayName' | 'model'>) {
-  return Boolean(item && [item.id, item.providerId, item.displayName, item.model].some((value) => value.toLowerCase().includes('deepseek')))
-}
 
 function DropTarget({ label, onPaths, className = '', children }: { label: string; onPaths: (paths: string[]) => void | Promise<void>; className?: string; children: ReactNode }) {
   const [dragging, setDragging] = useState(false)
@@ -394,6 +393,7 @@ export function App() {
         {page !== 'agent' && page !== 'workflows' && !isRepositoryPage(page) && <div className="page-stage" data-page={page} key={page}>
           {page === 'automations' && <AutomationsPage state={state.automations} update={(automations) => update('automations', automations)} goChat={() => { setAgentPrefill('帮我创建一个定时任务：'); setPage('agent') }} action={action} />}
           {page === 'team' && <TeamPage state={state} updateTeam={(team) => update('team', team)} action={action} />}
+          {page === 'templates' && <TemplateLibrary skills={state.skills} onUse={agent => { setState(current => current ? { ...current, ...agent } : current); setAgentPrefill(agent.draftPrompt || ''); setPage('agent') }}/> }
           {page === 'market' && <SkillMarket renderContent={content => <MarkdownContent content={content}/>} onUse={agent => { setState(current => current ? { ...current, ...agent } : current); setAgentPrefill(agent.draftPrompt || ''); setPage('agent') }}/> }
           {page === 'mcp-cli' && <McpCliPage onUseWending={openWendingConversation} />}
         </div>}
@@ -762,9 +762,9 @@ function HomePage({ state, go }: { state: BootstrapData; go: (page: Page) => voi
 
 
 const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; detail: string }> = [
-  { id: 'request', label: '请求审批', detail: '常规读取、计算和工作区文件操作自动执行；越界或敏感操作由你确认。' },
-  { id: 'auto', label: '帮我审批', detail: '常规操作自动执行；其余交给审批 Agent，破坏性操作由你确认。' },
-  { id: 'full', label: '完全访问权限', detail: '普通命令、计算、联网及安装依赖自动执行；删除、清理和敏感操作仍需确认。' },
+  { id: 'request', label: '请求审批', detail: '收到的审批请求由你确认；已有精确对话授权可复用。' },
+  { id: 'auto', label: '帮我审批', detail: '收到的审批请求交给审批 Agent；无法判断时由你确认。' },
+  { id: 'full', label: '完全访问权限', detail: '自动允许收到的全部审批请求，包括删除和敏感操作；仍受运行时沙箱限制。' },
 ]
 
 interface AgentTraceRun {
@@ -893,7 +893,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || defaultModel
   const capabilityOptions = activeModel?.reasoningOptions || []
   const activeCapability = capabilityOptions.find(item => item.id === activeConversation?.capability) || { id: 'auto', label: '默认' }
-  const deepSeekImageBlocked = imageAttachments.length > 0 && profileIsDeepSeek(activeModel)
   const attachmentStatus = attachmentStatusMap[state.activeConversationId] || ''
   const conversationIsEmpty = state.messages.length === 0 && !pendingPrompt
   const reduceConversationMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -1318,11 +1317,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
 
   function send() {
     if (!prompt.trim() && !attachments.length && !selectedReferences.length) return
-    if (deepSeekImageBlocked) {
-      setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: 'DeepSeek 暂不支持图片分析，请切换其他模型。' }))
-      window.requestAnimationFrame(() => promptRef.current?.focus())
-      return
-    }
     const conversationId = state.activeConversationId
     try {
       const pendingQueue = outbox.snapshot(conversationId)
@@ -1449,7 +1443,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             try { const page = await window.stable.agent.messages(id, beforeCursor); setOlderPages(current => ({ ...current, [id]: { messages: [...page.messages, ...(current[id]?.messages || [])], beforeCursor: page.beforeCursor } })); window.requestAnimationFrame(() => { if (element && activeConversationIdRef.current === id) element.scrollTop = top + element.scrollHeight - height }) }
             finally { setLoadingOlder(false) }
           })}>{loadingOlder ? '读取中…' : '加载更早的消息'}</button>}
-          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn message={message} onCatch={message.role === 'assistant' ? () => void catchReply(message) : undefined} catching={Boolean(catchingId)} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} onCatch={message.role === 'assistant' ? () => void catchReply(message) : undefined} catching={Boolean(catchingId)} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
           {liveTrace && <RunTrace items={liveTrace.items} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
 
@@ -1518,7 +1512,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
               {documentAttachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
             </div>}
-            {deepSeekImageBlocked && <div className="composer-warning" role="status"><CircleAlert size={16} aria-hidden="true" /><span>DeepSeek 暂不支持图片分析，请切换其他模型后发送。</span></div>}
             {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
@@ -1632,12 +1625,12 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ message, workspace, onCatch, catching, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { message: MessageItem; workspace: string; onCatch?: () => void; catching?: boolean; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function MessageTurn({ conversationId, artifactRefreshKey, message, workspace, onCatch, catching, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { conversationId: string; artifactRefreshKey: string; message: MessageItem; workspace: string; onCatch?: () => void; catching?: boolean; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
   return <article className="assistant-turn" data-message-id={message.id} data-message-seq={message.seq}>
     {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} onCatch={onCatch} catching={catching} /> : <div className="trace-header"><span /><CatchButton onCatch={onCatch} catching={catching} /></div>}
     <div className="assistant-answer">
-      <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
+      <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
     </div>
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
       <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
@@ -1820,11 +1813,27 @@ function localArtifactPaths(content: string, workspace: string) {
   return [...matches.values()]
 }
 
-function ArtifactLinks({ content, workspace, onOpen }: { content: string; workspace: string; onOpen: (item: { name: string; path: string }) => void }) {
-  const artifacts = localArtifactPaths(content, workspace)
+function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', onOpen }: { content: string; workspace: string; conversationId: string; refreshKey?: string; onOpen: (item: { name: string; path: string }) => void }) {
+  const requestKey = JSON.stringify([content, workspace, conversationId, refreshKey])
+  const [verified, setVerified] = useState<{ key: string; paths: string[] }>({ key: '', paths: [] })
+  useEffect(() => {
+    let active = true; let revision = 0
+    const candidates = localArtifactPaths(content, workspace).map(item => item.path)
+    const refresh = async () => {
+      const current = ++revision
+      try {
+        const paths = candidates.length ? await window.stable.preview.existingFiles(conversationId, candidates) : []
+        if (active && current === revision) setVerified({ key: requestKey, paths })
+      } catch { if (active && current === revision) setVerified({ key: requestKey, paths: [] }) }
+    }
+    void refresh()
+    window.addEventListener('focus', refresh)
+    return () => { active = false; window.removeEventListener('focus', refresh) }
+  }, [content, workspace, conversationId, requestKey])
+  const artifacts = verified.key === requestKey ? localArtifactPaths(content, workspace).filter(item => verified.paths.includes(item.path)) : []
   if (!artifacts.length) return null
   return <div className="conversation-file-list artifact-links" aria-label="交付文件">
-    {artifacts.map((item) => <ConversationFileCard item={{ ...item, detail: '生成文件 · 侧栏预览' }} onOpen={() => onOpen(item)} key={item.path} />)}
+    {artifacts.map((item) => <ConversationFileCard item={{ ...item, detail: '本地文件 · 侧栏预览' }} onOpen={() => onOpen(item)} key={item.path} />)}
   </div>
 }
 

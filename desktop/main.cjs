@@ -214,7 +214,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -393,6 +393,7 @@ async function loadGeneratedFilePreview(view, html, prefix) {
   mkdirSync(previewDirectory, { recursive: true })
   writeFileSync(previewPath, html, 'utf8')
   requireActivePreviewView(view)
+  cleanupPreviewTemporaryFile()
   previewTemporaryPath = previewPath
   await view.webContents.loadFile(previewPath)
   requireActivePreviewView(view)
@@ -417,7 +418,18 @@ async function openFilePreview(value, bounds) {
     } else if (['.md', '.markdown'].includes(resolved.extension)) {
       try {
         const markdown = resolveMarkdownFile(resolved.path, paths.writableRoots || paths.workspace)
-        await loadGeneratedFilePreview(view, renderMarkdownDocument(markdown.content, title, theme), 'markdown-preview')
+        const {markdownPages,markdownPageDocument}=require('./services/markdown-pages.cjs')
+        const pages=markdownPages(markdown.content)
+        let changingPage=false
+        view.webContents.on('will-navigate', (event,url) => {
+          const match=/^stable-markdown-page:(\d+)$/.exec(url)
+          if(!match)return
+          event.preventDefault()
+          const page=Number(match[1]);if(changingPage||page>=pages.length)return
+          changingPage=true
+          void loadGeneratedFilePreview(view,markdownPageDocument(pages,page,title,theme),'markdown-preview').catch(error=>sendPreviewEvent({error:error.message},view)).finally(()=>{changingPage=false})
+        })
+        await loadGeneratedFilePreview(view,markdownPageDocument(pages,0,title,theme),'markdown-preview')
       } catch (error) {
         await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, `Stable 无法渲染这个 Markdown 文件。\n\n${error.message}`), 'file-preview')
       }
@@ -1452,7 +1464,6 @@ async function prepareAgentMessage(payload, conversationId, modelRoute) {
   const catchAttachments = rawAttachments.filter(item => catchService.isCatchPath(conversationId, item?.path)).map(item => catchService.prepare(conversationId, item.path))
   const ordinaryPaths = rawAttachments.filter(item => !catchService.isCatchPath(conversationId, item?.path)).map(item => item?.path)
   const requestedAttachments = ordinaryPaths.length ? inspectAgentAttachments(ordinaryPaths) : []
-  if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
   const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
   const attachments = [...extractedAttachments.items, ...catchAttachments]
   const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : skillReferences(store, conversationId)
@@ -1546,6 +1557,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.eventType === 'agent/answer' ? { content: String(source.content || '') } : {}),
       status: ['running', 'completed', 'failed', 'cancelled'].includes(source.status) ? source.status : 'running',
       ...(source.actionDigest ? { actionDigest: source.actionDigest } : {}),
+      ...(source.kind === 'approval' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request') ? { automaticApproval: true } : {}),
       ...(source.reviewerSource ? { reviewerSource: source.reviewerSource } : {}),
       time: Number.isFinite(source.time) ? source.time : Date.now(),
       ...(source.sessionId ? { sessionId: String(source.sessionId) } : {}),
@@ -1560,7 +1572,6 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.toolName ? { toolName: redactApproval(source.toolName).slice(0, source.kind === 'approval' ? 16000 : 160) } : {}),
       ...(source.reason ? { reason: redactApproval(source.reason).slice(0, 500) } : {}),
       ...(source.danger ? { danger: true } : {}),
-      ...(['safe', 'unknown', 'high'].includes(source.approvalRisk) ? { approvalRisk: source.approvalRisk } : {}),
       ...(source.approvalCategory ? { approvalCategory: String(source.approvalCategory).slice(0, 300) } : {}),
     }
     const existing = trace.findIndex((item) => item.id === event.id)
@@ -1570,7 +1581,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.eventType === 'tool/start' ? event.detail : undefined)
     }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
-    if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
+    const silentApproval = source.kind === 'approval' && source.status === 'running' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request')
+    if (!silentApproval && broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if(source.kind==='approval'&&source.requestId&&source.actualDecision){
       const ledger=new ApprovalLedger(store),request=ledger.register({conversationId,runId,source,query,cwd:paths.workspace})
       const row=store.db.prepare('SELECT decision_json FROM approval_requests WHERE id=?').get(request.id)
@@ -1582,13 +1594,13 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       const ledger = new ApprovalLedger(store)
       const request = ledger.register({ conversationId, runId, source, query, cwd: paths.workspace })
       const mode = permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request'
-      if (canAutoApprove(mode, source)) {
-        ledger.finish(request.id, { decision: 'approved', reasonCode: 'STATIC_SAFE', rationale: '当前范围内的已核验操作', reviewerSource: 'static_policy' })
+      if (canAutoApprove(mode)) {
+        ledger.finish(request.id, { decision: 'approved', reasonCode: 'FULL_ACCESS', rationale: '用户选择完全访问权限，自动批准本次请求', reviewerSource: 'permission_mode' })
         if(!executionRunner.answerApproval(source.requestId, true))return
         publish({ ...source, id: source.id, detail: '当前权限策略已自动批准本次操作', status: 'completed' })
       } else if(mode==='auto'&&ledger.limited(conversationId)){publish({...source,reason:'审核拒绝已达到重试上限，需要你核实具体操作。'+(source.reason||''),status:'awaiting_user'})
       } else if(mode==='auto'&&!featureFlags.compatibilityReviewer){publish({...source,reason:'兼容自动审核已关闭，请人工确认。'+(source.reason||''),status:'awaiting_user'})
-      } else if (mode === 'auto' && !source.danger) {
+      } else if (mode === 'auto') {
         const reviewer = createHarnessRunner()
         const control = agentRunners.get(conversationId)
         control?.reviewers.add(reviewer)
@@ -1703,7 +1715,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, cwd: paths.workspace, writableRoots: paths.writableRoots, networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, userQuery: effectiveQuery, cwd: paths.workspace, writableRoots: paths.writableRoots, networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
@@ -2096,6 +2108,19 @@ function registerIpc() {
     return store.listLibrary()
   })
 
+  const templates = () => new (require('./services/template-library.cjs').TemplateLibrary)(store, paths.userData)
+  ipcMain.handle('stable:templates:list', () => templates().list())
+  ipcMain.handle('stable:templates:detail', (_event, value) => templates().detail(requireText(value?.id,'模板 ID',100)))
+  ipcMain.handle('stable:templates:save', (_event, value) => templates().save(requireText(value?.id,'模板 ID',100),value.value || {}))
+  ipcMain.handle('stable:templates:import', async () => {
+    const result=await dialog.showOpenDialog(mainWindow,{title:'导入 HTML 模板（图片和样式请嵌入文件）',properties:['openFile','multiSelections'],filters:[{name:'HTML',extensions:['html','htm']}]})
+    if(!result.canceled)for(const file of result.filePaths)templates().import(file)
+    return templates().list()
+  })
+  ipcMain.handle('stable:templates:use', (_event,value) => {
+    const result=templates().use(requireText(value?.id,'模板 ID',100),paths.workspace)
+    return {...agentState(result.conversationId),draftPrompt:result.prompt,skills:store.listSkills()}
+  })
   const market = () => new SkillMarket(store, paths.userData)
   ipcMain.handle('stable:market:list', () => market().entries())
   ipcMain.handle('stable:market:detail', (_event, value) => market().detail(requireText(value?.id, '条目 ID', 100)))
@@ -2686,6 +2711,12 @@ function registerIpc() {
     }
     return service.snapshot(id)
   })
+  ipcMain.handle('stable:preview:existingFiles', (_event, payload) => {
+    const id = requireText(payload?.conversationId, '对话 ID', 100)
+    if (!store.conversation(id)) return []
+    const roots = conversationPaths(id).writableRoots
+    return require('./services/artifact-files.cjs').existingArtifactFiles(payload?.paths, roots)
+  })
   ipcMain.handle('stable:preview:openWeb', (_event, payload) => openWebPreview(payload?.url, payload?.bounds))
   ipcMain.handle('stable:preview:openFile', (_event, payload) => openFilePreview(payload?.path, payload?.bounds))
   ipcMain.handle('stable:preview:setBounds', (_event, payload) => updatePreviewBounds(payload?.bounds))
@@ -2773,6 +2804,16 @@ function createWindow() {
     } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
+  // A failed renderer handshake must not leave the desktop app invisible.
+  if (!process.env.STABLE_QA_CAPTURE) {
+    const reveal = () => {
+      if (!window.isDestroyed() && !window.isVisible()) { window.show(); window.focus() }
+    }
+    const revealTimer = setTimeout(reveal, 8000)
+    window.webContents.once('did-finish-load', reveal)
+    window.webContents.once('did-fail-load', reveal)
+    window.once('closed', () => clearTimeout(revealTimer))
+  }
   windowAppearance.watch(window)
   require('./services/window-close-choice.cjs').installWindowCloseChoice(window, app, ipcMain, { get: () => store?.getSetting('windowCloseChoice'), set: value => store.setSetting('windowCloseChoice', value) })
   window.setMenuBarVisibility(false)
@@ -2892,6 +2933,7 @@ async function boot() {
   modelRegistry = new ModelRegistry(store, secrets, cloudGateway)
   modelRegistry.migrateLegacySecret()
   applyLocalModelConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, cloudEnabled, registry: modelRegistry, safeStorage })
+  modelRegistry.migrateDeepSeekModels()
   runner = createHarnessRunner()
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),

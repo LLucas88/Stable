@@ -4,114 +4,61 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { classifyCodexApproval, canAutoApprove, splitCommand, checkPaths } = require('../desktop/services/codex-approval.cjs')
-const method = 'item/commandExecution/requestApproval'
-const shellQuote = (value) => `'${value.replace(/'/g, `'"'"'`)}'`
-const executable = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
-const command = (script) => [executable, '-NoProfile', '-Command', script].map(shellQuote).join(' ')
+const { canAutoApprove, approvalScope } = require('../desktop/services/codex-approval.cjs')
+const { CodexHarnessRunner } = require('../desktop/services/codex-harness.cjs')
 
-test('approval display argv round-trips quotes and never ignores trailing tokens', () => {
-  const script = '$f="数据\\测试.md"; Select-String -Path "$f" -Pattern "A店|summary"'
-  assert.deepEqual(splitCommand(command(script)), [executable, '-NoProfile', '-Command', script])
-  assert.deepEqual(splitCommand('"C:\\\\Windows\\\\powershell.exe" -Command "Get-Content \'D:\\\\report.md\'"'), ['C:\\Windows\\powershell.exe', '-Command', "Get-Content 'D:\\report.md'"])
-  assert.equal(splitCommand('powershell.exe -Command "unfinished'), null)
-  assert.equal(splitCommand(`${command(script)} ; evil`).length, 6)
-})
-
-test('all modes approve verified safe operations and preserve destructive approvals', () => {
-  for (const risk of ['safe', 'unknown', 'high']) {
-    assert.equal(canAutoApprove('full', { approvalRisk: risk, danger: risk === 'high' }), risk === 'safe')
-    assert.equal(canAutoApprove('request', { approvalRisk: risk }), risk === 'safe')
-    assert.equal(canAutoApprove('auto', { approvalRisk: risk }), risk === 'safe')
-  }
-  assert.equal(canAutoApprove('full', { danger: true }), false)
-})
-
-test('PowerShell assessment handles screenshot reads and workspace editing without executing code', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-approval-'))
-  const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace)
-  fs.writeFileSync(path.join(workspace, 'report.md'), 'original')
-  const assess = (script, extra = {}) => classifyCodexApproval(method, { command: command(script), cwd: workspace, ...extra }, workspace)
-  try {
-    for (const script of [
-      '[Math]::Round(28.963, 2)',
-      '10 * 3 + 2',
-      '$f="report.md"; Select-String -Path "$f" -Pattern "A店|B店|C店|sales|summary|校验" -Context 2,2 -ErrorAction SilentlyContinue | Select-Object -First 40 | Format-List',
-      "Get-ChildItem -Path . -Force -Directory | Where-Object { $_.Name -like '.*' } | Select-Object Name,LastWriteTime | Format-Table -AutoSize",
-      "Write-Host '--- input ---'; Get-Content -LiteralPath 'report.md'",
-      "Set-Content -LiteralPath 'summary.json' -Value '{\"total\":260}'",
-      "Add-Content -LiteralPath 'sales.csv' -Value 'C店,30'",
-      "New-Item -Path 'outputs' -ItemType Directory",
-      "'report text' | Out-File -FilePath 'report.md' -Encoding utf8",
-      "Write-Output 'Remove-Item -Recurse -Force is text, not a command'",
-      "Get-Item -LiteralPath 'qa-activity-effect-raw.json','qa-activity-product-raw.json' | Select-Object FullName,Length,LastWriteTime; Get-Content -LiteralPath 'qa-activity-effect-raw.json' -Raw -Encoding UTF8 | Select-Object -First 1",
-      "Get-Content -LiteralPath 'report.md','sales.csv' -Encoding UTF8",
-    ]) {
-      const result = await assess(script)
-      assert.equal(result.risk, 'safe', `${script}: ${JSON.stringify(result)}`)
-      assert.equal(canAutoApprove('full', { approvalRisk: result.risk }), true)
+test('approval modes do not infer authorization from command text or legacy risk flags', () => {
+  for (const toolName of ['Get-Content report.md', 'Remove-Item data -Recurse', 'git reset --hard HEAD', 'powershell -EncodedCommand AAAA', 'crm-brand-cli third login switch-brand', 'python analysis.py']) {
+    for (const approvalRisk of ['safe', 'unknown', 'high', undefined]) {
+      const event = { toolName, approvalRisk, danger: true }
+      assert.equal(canAutoApprove('request', event), false)
+      assert.equal(canAutoApprove('auto', event), false)
+      assert.equal(canAutoApprove('full', event), true)
+      assert.equal(canAutoApprove(undefined, event), false)
     }
-    for (const script of [
-      "Get-Content 'report.md'; Remove-Item -Recurse -Force .",
-      "Set-Content -LiteralPath '../outside.txt' -Value 'changed'",
-      "Get-Content -LiteralPath '.env'",
-      "Get-Content -LiteralPath '.ssh/id_rsa'",
-      'git reset --hard HEAD',
-      "Get-Content -LiteralPath 'report.md','.env'",
-      "Set-Content -LiteralPath 'report.md','../outside.txt' -Value 'changed'",
-      "Get-Content -LiteralPath '.crm-cli/config.json'",
-    ]) assert.equal((await assess(script)).risk, 'high', script)
-    for (const script of [
-      "Get-Content 'report.md' > '../outside.txt'",
-      "Get-Content -LiteralPath 'crm-cli.config.json'",
-      "Get-Content -LiteralPath '*'",
-      "& ('Remove-' + 'Item') 'report.md'",
-      'Invoke-Expression "Write-Output hi"',
-      'Get-Content -Path $env:USERPROFILE',
-      '$f="report.md"; $f=".env"; Get-Content $f',
-      "Set-Content -LiteralPath 'report.md' -Value ([IO.File]::ReadAllText('secret'))",
-      "Get-Content -Path 'report.md' -OutVariable secret",
-      "Get-Content -Pa 'report.md'",
-      "New-Item -Path 'shortcut' -ItemType SymbolicLink -Value '../outside'",
-      "node arbitrary-script.cjs",
-      "Write-Output @args",
-      "Write-Output $(Start-Process evil)",
-      "Get-ChildItem -Path . | Where-Object { [IO.File]::WriteAllText('report.md','bad') }",
-      "Get-Content -LiteralPath 'report.md',($env:USERPROFILE + '/.env')",
-      "Get-Content -LiteralPath:$env:USERPROFILE",
-    ]) assert.notEqual((await assess(script)).risk, 'safe', script)
-    // Friendly summaries, a harmless first clause, or an encoded wrapper must
-    // never be treated as authority to approve arbitrary execution.
-    assert.equal((await assess('Remove-Item report.md', { commandActions: [{ type: 'read', path: 'report.md' }] })).risk, 'high')
-    assert.equal((await classifyCodexApproval(method, { cwd: workspace, command: `${command('Get-Content report.md')} ; evil` }, workspace)).risk, 'unknown')
-    assert.equal((await classifyCodexApproval(method, { command: `${shellQuote(executable)} -EncodedCommand abc` }, workspace)).risk, 'unknown')
-    assert.equal((await assess('Get-Content report.md', { networkApprovalContext: { host: 'example.com' } })).risk, 'unknown')
-    assert.equal((await assess("Set-Content -LiteralPath 'relative.txt' -Value 'data'", { cwd: null })).risk, 'unknown')
-    assert.equal((await classifyCodexApproval('item/fileChange/requestApproval', {}, workspace)).risk, 'unknown')
-    assert.deepEqual(fs.readdirSync(workspace), ['report.md'])
-    assert.equal(fs.readFileSync(path.join(workspace, 'report.md'), 'utf8'), 'original')
-    assert.equal(fs.existsSync(path.join(root, 'outside.txt')), false)
-  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+  }
 })
 
-test('file writes through junctions cannot escape the workspace', { skip: process.platform !== 'win32' }, () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-approval-paths-'))
+for (const mode of ['request', 'auto', 'full']) test('native approval remains pending until routed: ' + mode, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-approval-routing-'))
+  const runner = new CodexHarnessRunner({userData: root, workspace: root, executable: process.execPath,
+    executableArgs: [path.join(__dirname, 'fixtures/codex-approval-app-server.cjs')]})
+  let requests = 0
   try {
-    const workspace = path.join(root, 'workspace'); const outside = path.join(root, 'outside')
-    fs.mkdirSync(workspace); fs.mkdirSync(outside)
-    fs.symlinkSync(outside, path.join(workspace, 'link'), 'junction')
-    assert.equal(checkPaths([{ mode: 'write', path: 'link/new.txt' }], workspace, workspace).risk, 'high')
-    assert.equal(checkPaths([{ mode: 'write', path: 'new.txt' }], workspace, workspace), null)
-    fs.writeFileSync(path.join(outside, 'original.txt'), 'original')
-    fs.linkSync(path.join(outside, 'original.txt'), path.join(workspace, 'alias.txt'))
-    assert.equal(checkPaths([{ mode: 'write', path: 'alias.txt' }], workspace, workspace).risk, 'unknown')
-  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+    const answer = await runner.run('Remove-Item sensitive.txt', {model:'mock',providerId:'mock',baseURL:'https://unused.invalid'}, 'unused', 10000, event => {
+      if (event.kind !== 'approval' || event.status !== 'running') return
+      requests++
+      assert.equal(event.approvalRisk, undefined)
+      assert.equal(event.danger, undefined)
+      assert.match(event.actionDigest, /^[a-f0-9]{64}$/)
+      // Simulate a user/reviewer denial, or the selected full-access policy.
+      assert.equal(runner.answerApproval(event.requestId, canAutoApprove(mode)), true)
+      assert.equal(runner.answerApproval(event.requestId, true), false)
+    }, 'workspace-write', [], {key: mode, permissionMode: mode})
+    assert.equal(requests, 1)
+    assert.equal(answer, mode === 'full' ? 'accept' : 'decline')
+  } finally { fs.rmSync(root, {recursive:true,force:true}) }
 })
 
-test('full mode permits ordinary unclassified commands but asks for destructive and opaque execution', () => {
-  const event = command => ({actionType: method, approvalRisk: 'unknown', toolName: command})
-  for (const command of ['npm ci', 'python analysis.py', 'node build.cjs']) assert.equal(canAutoApprove('full', event(command)), true)
-  for (const command of ['Remove-Item data -Recurse', 'git reset --hard HEAD', 'python -c "import shutil; shutil.rmtree(123)"', 'powershell -EncodedCommand AAAA']) assert.equal(canAutoApprove('full', event(command)), false)
-  assert.equal(canAutoApprove('request', event('npm ci')), false)
-  assert.equal(canAutoApprove('auto', event('npm ci')), false)
+test('approval still rejects a script changed while the user is deciding', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-approval-changed-'))
+  fs.writeFileSync(path.join(root,'job.py'), 'print(1)')
+  const runner = new CodexHarnessRunner({userData:root, workspace:root, executable:process.execPath,
+    executableArgs:[path.join(__dirname,'fixtures/codex-approval-app-server.cjs')]})
+  try {
+    const answer = await runner.run('python job.py', {model:'mock',providerId:'mock',baseURL:'https://unused.invalid'}, 'unused', 10000, event => {
+      if(event.kind!=='approval'||event.status!=='running')return
+      fs.writeFileSync(path.join(root,'job.py'), 'print(2)')
+      assert.equal(runner.answerApproval(event.requestId,true),false)
+    }, 'workspace-write', [], {key:'changed'})
+    assert.equal(answer,'decline')
+  } finally {fs.rmSync(root,{recursive:true,force:true})}
+})
+
+test('grants retain exact commands, working directories and permission scopes', () => {
+  const method='item/commandExecution/requestApproval', p={cwd:__dirname,command:'one'}
+  const scope=params=>approvalScope(method,params,{}).key
+  assert.notEqual(scope(p),scope({...p,command:'two'}))
+  assert.notEqual(scope(p),scope({...p,cwd:os.tmpdir()}))
+  assert.notEqual(scope(p),scope({...p,additionalPermissions:{network:{enabled:true}}}))
 })

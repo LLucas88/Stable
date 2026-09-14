@@ -9,11 +9,12 @@ const { CodexRpc } = require('./codex-rpc.cjs')
 const { CodexResponsesBridge } = require('./codex-responses-bridge.cjs')
 const { isDeepSeekModel, isZhipuModel } = require('./model-registry.cjs')
 const { cleanupHarnessRunDirectory } = require('./harness.cjs')
-const { classifyCodexApproval, approvalScope } = require('./codex-approval.cjs')
+const { approvalScope } = require('./codex-approval.cjs')
 const { CODEX_BUILTIN_TOOLS } = require('./codex-builtin-tools.cjs')
 const { CLARIFICATION_GUIDANCE, WAIT_MARKER, clarificationStream } = require('./clarification.cjs')
 
 const PINNED_CODEX_VERSION = '0.142.2'
+const { RunProgress, failureKind, EXECUTION_GUIDANCE, isPermissionAudit } = require('./run-progress.cjs')
 const activeHomes = new Set()
 function readableCodexErrorMessage(error) {
   let message = String(error?.message || error)
@@ -85,10 +86,15 @@ class CodexHarnessRunner {
   async run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = [], session = {}) {
     if (this.busy) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先配置模型服务。')
-    if (imageAttachments.length && isDeepSeekModel(model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
     if (!this.ready()) throw new Error(this.options.packaged ? 'Codex 运行时不完整，请重新安装 Stable。' : 'Codex 运行时不完整，请先运行 npm run runtime:codex。')
     const workspace = path.resolve(session.cwd || this.options.workspace)
     const writableRoots = [...new Set([workspace,...(session.writableRoots || []).map(root=>path.resolve(root))])]
+    // One shared lock across conversations; grant only its directory, never auth data.
+    const lockDirectory = this.options.environment?.WENDING_SESSION_LOCK_DIR
+    if (lockDirectory && sandboxMode !== 'read-only') {
+      fs.mkdirSync(lockDirectory, { recursive: true })
+      writableRoots.push(fs.realpathSync(lockDirectory))
+    }
     // Full access authorizes networking, not unrestricted filesystem access.
     // Recompute for each run so resuming a thread cannot retain an old grant.
     const networkAccess = sandboxMode !== 'read-only' && (typeof session.networkAccess === 'boolean' ? session.networkAccess : session.permissionMode === 'full')
@@ -113,7 +119,7 @@ class CodexHarnessRunner {
     const pointer = path.join(home, 'stable-thread.json')
     let saved
     let migrated = false
-    let timer; let rpc; let bridge; let settled = false; let rejectTurn; let resolveTurn
+    let timer; let progressTimer; let stopReason; let rpc; let bridge; let settled = false; let rejectTurn; let resolveTurn
     const turn = new Promise((resolve, reject) => { resolveTurn = resolve; rejectTurn = reject })
     turn.catch(() => {})
     const answers = new Map(); const finalAnswers = new Map(); const parents = new Map(); const answerSteps = new Map()
@@ -124,7 +130,16 @@ class CodexHarnessRunner {
     this.approvalConversation = session.key
     const fail = (error) => { if (!settled) { settled = true; rejectTurn(error) } }
     this.failRun = fail
+    const progress = new RunProgress({ permissionAudit: isPermissionAudit(session.userQuery) })
+    const stopForProgress = (reason) => {
+      if (settled || this.cancelled) return
+      stopReason = reason
+      publish({ id: 'run-progress', kind: 'status', title: '任务已暂停：需要调整执行方式', detail: reason, status: 'failed' })
+      fail(new Error(reason))
+      this.cancel()
+    }
     const handleNotification = ({ method, params: p = {} }) => {
+      if (method === 'item/agentMessage/delta' || method.includes('reasoning')) progress.touch()
       const child = p.threadId && this.threadId && p.threadId !== this.threadId
       if (method === 'thread/started' && p.thread?.parentThreadId) {
         const thread = p.thread; parents.set(thread.id, thread.parentThreadId)
@@ -139,11 +154,19 @@ class CodexHarnessRunner {
         publish({ ...base, id: `${p.threadId}:${p.itemId}`, kind: 'answer', eventType: 'agent/answer-delta', delta: visibleDelta(p.itemId, p.delta), turn: 0, step: answerSteps.get(p.itemId), status: 'running' })
       } else if (['item/started', 'item/completed'].includes(method)) {
         const item = p.item || {};if(session.key&&!child)this.options.onRuntimeItem?.(session.key,p.threadId,p.turnId||this.turnId,item); const completed = method === 'item/completed'
-        const status = ['failed', 'declined', 'errored'].includes(item.status) ? 'failed' : completed ? 'completed' : 'running'
+        let progressIssue
+        let status = ['failed', 'declined', 'errored'].includes(item.status) ? 'failed' : completed ? 'completed' : 'running'
+        if (item.type === 'commandExecution') {
+          const key = `${p.threadId}:${item.id}`
+          const issue = completed ? progress.complete(key, item) : progress.start(key, item.command)
+          if (completed && failureKind(item)) status = 'failed'
+          progressIssue = issue
+        }
         if (item.type === 'agentMessage') { if (!child && completed) { answers.set(item.id, item.text || ''); if (item.phase === 'final_answer') finalAnswers.set(item.id, item.text || '') }; return }
-        if (item.type === 'userMessage') return
+        if (item.type === 'userMessage' || item.type === 'dynamicToolCall') return // Builtin call handler owns these events, including error details.
         publish({ ...base, id: `${p.threadId}:${item.id}`, kind: ['reasoning', 'plan', 'contextCompaction'].includes(item.type) ? 'reasoning' : 'tool', entity: 'tool', eventType: completed ? 'tool/end' : 'tool/start',
           title: item.type === 'reasoning' ? '分析任务与上下文' : `使用工具 ${item.tool || item.type}`, detail: String(status === 'failed' ? item.error?.message || item.aggregatedOutput || item.command || '' : item.command || item.query || item.text || item.prompt || '').slice(0, 500), status })
+        if (progressIssue) { stopForProgress(progressIssue); return }
         if (item.type === 'collabAgentToolCall') for (const id of item.receiverThreadIds || []) {
           parents.set(id, item.senderThreadId || this.threadId)
           const state = item.agentsStates?.[id]
@@ -174,14 +197,12 @@ class CodexHarnessRunner {
         const key = String(id)
         const toolName = p.command || (method.includes('fileChange') ? '修改文件' : '扩大访问权限')
         this.approvals.set(key, { id, method, params: p })
-        // commandActions is a best-effort display summary, not a safety verdict.
-        const assessment = await classifyCodexApproval(method, p, workspace, this.options.trustedCli)
         if (settled || this.cancelled || !this.approvals.has(key)) return
-        const danger = assessment.risk === 'high'
+        const assessment = {} // Retain the exact-scope grant format; no risk classification.
         const scope = approvalScope(method, p, assessment, approvalExecution)
         const event = { id: `approval:${key}`, requestId: key, sessionId: p.threadId, ...(p.threadId !== this.threadId ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : {}), kind: 'approval', eventType: 'approval/request', toolName, approvalCategory: scope.label, actionDigest: scope.key, actionType: method, approvalParameters: p,
-          title: danger ? '高风险操作需要确认' : assessment.risk === 'unknown' ? '此操作需要复核' : '需要权限审批',
-          reason: [p.reason, assessment.reason].filter(Boolean).join('；'), detail: toolName, danger, approvalRisk: assessment.risk, status: 'running' }
+          title: '需要权限审批',
+          reason: p.reason || '运行时请求确认本次操作。', detail: toolName, status: 'running' }
         Object.assign(this.approvals.get(key), { scope, event, assessment, execution: approvalExecution })
         if (sandboxMode !== 'read-only' && session.key && this.options.hasConversationApproval?.(session.key, scope.key)) this.answerApproval(key, true)
         else publish(event)
@@ -189,23 +210,23 @@ class CodexHarnessRunner {
         const key = `builtin:${id}`
         const event = { id: `${p.threadId}:${p.callId}`, sessionId: p.threadId, kind: 'tool', entity: 'tool', title: `使用工具 ${p.tool}`,
           ...(p.threadId !== this.threadId ? { parentSessionId: parents.get(p.threadId) || this.threadId, depth: depthOf(p.threadId) || 1 } : { depth: 0 }) }
+        progress.start(key, p.tool)
         publish({ ...event, eventType: 'tool/start', status: 'running' })
         try {
-          if (p.tool==='stable_browser' && p.arguments?.action==='screenshot' && isDeepSeekModel(model)) throw new Error('当前模型不支持图片，截图未采集。')
           if (!this.builtins || p.namespace || !CODEX_BUILTIN_TOOLS.some((tool) => tool.name === p.tool)) throw new Error('不支持此内置工具。')
-          const needsApproval = p.tool === 'stable_browser' && ['open', 'click', 'fill', 'select', 'key', 'drag'].includes(p.arguments?.action)
+          const needsApproval = p.tool === 'stable_skill_install' || p.tool === 'stable_browser' && ['open', 'click', 'fill', 'select', 'key', 'drag'].includes(p.arguments?.action)
           if (needsApproval) {
-            if (sandboxMode === 'read-only') throw new Error('只读模式不允许网页交互。')
+            if (sandboxMode === 'read-only') throw new Error('只读模式不允许安装 Skill 或网页交互。')
             const allowed = await new Promise((resolve) => {
               const scope = approvalScope('builtin', { command: p.tool + ' ' + JSON.stringify(p.arguments), cwd: workspace, arguments: p.arguments }, {}, approvalExecution)
               const approvalEvent = { ...event, id: `approval:${key}`, requestId: key, kind: 'approval', eventType: 'approval/request', toolName: p.tool, approvalCategory: scope.label,
-                actionDigest: scope.key, actionType: 'builtin', approvalParameters: { arguments: p.arguments, cwd: workspace, threadId: p.threadId, turnId: p.turnId }, title: '网页操作需要确认', reason: `网页操作 ${p.arguments.action}，目标 ${p.arguments.url || p.arguments.ref || '(当前页面)'}；可能提交表单或改变网站数据。`,
-                danger: true, approvalRisk: 'high', status: 'running' }
+                actionDigest: scope.key, actionType: 'builtin', approvalParameters: { arguments: p.arguments, cwd: workspace, threadId: p.threadId, turnId: p.turnId }, title: p.tool === 'stable_skill_install' ? '安装 Skill 需要确认' : '网页操作需要确认', reason: p.tool === 'stable_skill_install' ? `将 ${p.arguments.path} 安装到当前 Stable 技能库；不会执行 Skill。` : `网页操作 ${p.arguments.action}，目标 ${p.arguments.url || p.arguments.ref || '(当前页面)'}；可能提交表单或改变网站数据。`,
+                status: 'running' }
               this.approvals.set(key, { resolve, scope, event: approvalEvent })
               if (sandboxMode !== 'read-only' && session.key && this.options.hasConversationApproval?.(session.key, scope.key)) this.answerApproval(key, true)
               else publish(approvalEvent)
             })
-            if (!allowed) throw new Error('用户未批准本次网页操作，未执行。')
+            if (!allowed) throw new Error('用户未批准本次操作，未执行。')
           }
           if (settled || this.cancelled) throw new Error('任务已停止。')
           const value = await this.builtins.execute({ requestId: key, name: p.tool, args: p.arguments, approved: needsApproval }, sandboxMode)
@@ -218,7 +239,7 @@ class CodexHarnessRunner {
             rpc.reply(id, { contentItems: [{ type: 'inputText', text: error.message }], success: false })
             publish({ ...event, eventType: 'tool/end', status: 'failed', detail: error.message })
           }
-        } finally { this.approvals.delete(key) }
+        } finally { progress.complete(key, { status: 'completed' }); this.approvals.delete(key) }
       } else if (method === 'item/tool/requestUserInput') {
         // Never manufacture an empty user answer. Resume through the next user turn.
         const question = (p.questions || []).map(q => q.question).filter(Boolean).join('\n') || '请补充任务目标和交付要求。'
@@ -235,7 +256,7 @@ class CodexHarnessRunner {
       fs.mkdirSync(home, { recursive: true })
       if (session.key && fs.existsSync(pointer)) {
         try { saved = JSON.parse(fs.readFileSync(pointer, 'utf8')) } catch { throw new Error('Codex 会话索引损坏，历史已保留。请在任务菜单选择“从本地历史重建上下文”，不必清空消息。') }
-        if (saved.threadId && (saved.reasoningVersion !== 1 || (this.builtins && saved.builtinToolsVersion !== 1))) {
+        if (saved.threadId && (saved.reasoningVersion !== 1 || (this.builtins && saved.builtinToolsVersion !== 2))) {
           if (!session.initialPrompt) throw new Error('旧版 Codex 会话缺少模型上下文，请从 Stable 对话继续或新建对话重试。')
           // Old releases discarded provider state. Seed a compatible thread from
           // Stable's visible history; keep original rollouts and workspace files.
@@ -252,6 +273,13 @@ class CodexHarnessRunner {
       rpc = new CodexRpc({ executable, args: this.options.executableArgs, cwd: workspace, env: codexEnvironment(this.options.environment || process.env, home, bridge.token, executable),
         spawnImpl: this.options.spawn, onNotification: handleNotification, onRequest: (message) => { void handleRequest(message).catch(fail) }, onClose: (error) => fail(this.cancelled ? new Error('任务已停止。') : error) })
       this.rpc = rpc
+      progressTimer = setInterval(() => {
+        if (settled || this.cancelled) return
+        const waiting = this.approvals.size > 0
+        const issue = progress.check(waiting)
+        if (issue) { stopForProgress(issue); return }
+        publish({ id: 'run-progress', kind: 'status', title: waiting ? '等待权限审批' : progress.active.size ? '正在执行工具' : '等待模型响应', detail: progress.detail(), status: 'running' })
+      }, 15000)
       if (timeoutMs > 0) timer = setTimeout(() => { this.cancel(); fail(new Error('Codex 任务执行超时。')) }, timeoutMs)
       await rpc.request('initialize', { clientInfo: { name: 'stable', version: require('../../package.json').version }, capabilities: { experimentalApi: Boolean(this.builtins) } })
       rpc.send({ method: 'initialized', params: {} })
@@ -260,13 +288,17 @@ class CodexHarnessRunner {
           '你在 Stable 中工作。遵循用户提供的任务、资源和交付约束。联网查询优先使用 stable_search。',
           ...(session.globalInstructions?.trim() ? ['本机全局 Agent 对话规则：\n' + session.globalInstructions.trim()] : []),
           CLARIFICATION_GUIDANCE,
+          EXECUTION_GUIDANCE,
+          isPermissionAudit(session.userQuery) ? '本轮是用户明确要求的命令权限盘点：只检查官方帮助列出的只读查询命令，每个命令使用最小数据范围。某命令无权限应记录为盘点结果并继续其他命令；禁止更换数据集 ID 猜测权限、重复尝试已拒绝命令或执行写操作。最后汇总成功、无权限、参数错误和未验证，不将未验证称为有权限。' : '',
+          '用户要求安装 Skill 时使用 stable_skill_install，支持工作区内 ZIP 或文件夹。禁止猜测 AppData 目录、修改 stable.db 或通过 shell 安装。安装后仍由用户手动选择调用。',
+          ...(this.options.trustedCli ? [require('./wending-cli.cjs').wendingCliAgentInstruction()] : []),
           MANUAL_SKILL_POLICY,
-          ...(writableRoots.length>1 ? ['本项目源文件夹（均可读取和编辑；默认交付目录为当前工作目录）：\n'+writableRoots.join('\n')] : []),
+          ...(session.writableRoots?.length>1 ? ['本项目源文件夹（均可读取和编辑；默认交付目录为当前工作目录）：\n'+session.writableRoots.join('\n')] : []),
           ...(session.textOnly ? ['本轮仅澄清需求，禁止任何工具调用；按当前请求要求返回澄清 JSON。'] : []),
           ...(process.platform === 'win32' ? [
             '本机 shell_command 使用 PowerShell。禁止 Bash 的 <<EOF/<<PATCH 写法。有原生 apply_patch 工具时直接传入补丁；没有时用 PowerShell New-Item 创建文件或 Set-Content 编辑文件。不要用 shell 管道调用 apply_patch。',
             '读取 JSON/CSV 文本使用 encoding="utf-8-sig"，兼容 Windows UTF-8 BOM。输出普通文本使用 UTF-8。不要把中文字段改为列序号来绕过乱码，应修正编码。',
-            '本地数据聚合优先使用静态 Python 内联脚本与 json、collections 等标准库，文件路径写为明确的工作区路径。创建 Excel 优先使用 stable_excel。',
+            '本地数据聚合优先使用 Python 与 json、collections 等标准库，文件路径写为明确的工作区路径。创建 Excel 优先使用 stable_excel。',
             ...(windowsPython ? [`需要 Python 时使用内置运行时 ${windowsPython} -I -X utf8；PowerShell here-string 使用 @\' 换行、代码、换行 \'@ | & \'运行时路径\' -I -X utf8 -。不要安装或改用 PATH 上其他 Python。`] : []),
           ] : []),
         ].join('\n') }
@@ -275,7 +307,7 @@ class CodexHarnessRunner {
         : await rpc.request('thread/start', { ...params, ephemeral: !session.key, ...(this.builtins ? { dynamicTools: CODEX_BUILTIN_TOOLS } : {}) })
       this.threadId = started.thread.id
       if (session.key) {
-        fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: Boolean(saved?.seeded), version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 1 : 0 }))
+        fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: Boolean(saved?.seeded), version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 2 : 0 }))
         await replacePointer(`${pointer}.tmp`, pointer)
       }
       publish({ id: `${this.threadId}:agent`, sessionId: this.threadId, depth: 0, kind: 'status', entity: 'agent', eventType: 'agent/start', title: 'Stable 总控', detail: saved ? '继续已有 Codex 会话' : '启动 Codex 会话', status: 'running' })
@@ -293,17 +325,19 @@ class CodexHarnessRunner {
       this.options.onTurnAccepted?.(session.key,this.threadId,this.turnId)
       this.steerReady = !settled && !this.cancelled
       if (session.key) {
-        fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: true, version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 1 : 0 }))
+        fs.writeFileSync(`${pointer}.tmp`, JSON.stringify({ threadId: this.threadId, seeded: true, version: PINNED_CODEX_VERSION, reasoningVersion: 1, builtinToolsVersion: this.builtins ? 2 : 0 }))
         await replacePointer(`${pointer}.tmp`, pointer)
       }
       if (this.cancelled) void rpc.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => {})
       return await turn
     } catch (error) {
+      if (stopReason) throw new Error(stopReason)
       if (this.cancelled) throw new Error('任务已停止。')
       error.message = readableCodexErrorMessage(error)
       throw error
     } finally {
-      settled = true; if (timer) clearTimeout(timer)
+      settled = true; if (timer) clearTimeout(timer); if (progressTimer) clearInterval(progressTimer)
+      if (!stopReason) publish({ id: 'run-progress', kind: 'status', title: this.cancelled ? '执行已取消' : '执行已结束', detail: progress.detail(), status: this.cancelled ? 'cancelled' : 'completed' })
       this.steerReady = false
       for (const entry of this.approvals.values()) entry.resolve?.(false)
       this.builtins?.dispose(); this.builtins = null

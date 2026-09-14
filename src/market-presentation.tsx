@@ -1,6 +1,7 @@
 import skillCategories from './skill-categories.json'
 import { BarChart3, BookOpen, Puzzle, Bot, Code2, Compass, FileText, Globe2, Layers3, Mail, Palette, ShieldCheck, Sparkles, Users, Workflow, type LucideIcon } from 'lucide-react'
 import type { MarketItem } from './types'
+import { skillPurpose } from './skill-purpose'
 
 // Presentation only: keep original instructions, provenance and resource paths
 // in storage so display cleanup cannot change execution or subsequent edits.
@@ -12,7 +13,7 @@ export function marketText(text = '') {
 export function marketPresentation(item: MarketItem): MarketItem {
   const name = item.name.replace(/\s*[·|｜]\s*(?:work[\s_-]*buddy|trae[\s_-]*work|doubao(?:[\s_-]*work)?|豆包(?:\s*工作(?:台)?)?)\s*$/gi, '')
   const category = item.kind === 'skill' ? (skillCategories as Record<string, { group: string; tags: string[] }>)[item.id] : undefined
-  return { ...item, ...(category || {}), name: marketText(name), description: marketText(item.description), content: marketText(item.content), group: category?.group || marketText(item.group), source: undefined, compatibilityReason: marketText(item.compatibilityReason) }
+  return { ...item, ...(category || {}), name: item.kind === 'skill' ? skillPurpose(item) : marketText(name), description: marketText(item.description), content: item.kind === 'skill' ? item.content : marketText(item.content), group: category?.group || marketText(item.group), source: undefined, compatibilityReason: marketText(item.compatibilityReason) }
 }
 export function MarketIcon({ item }: { item: MarketItem }) {
   const text = `${item.name} ${item.group} ${item.id}`

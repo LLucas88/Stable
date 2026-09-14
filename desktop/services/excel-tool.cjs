@@ -17,7 +17,7 @@ async function executeExcel({ workspace, dependencyRoot, args, signal }) {
       if (error) reject(error); else resolve(value)
     }
     const abort = () => { void finish(new Error('Excel 操作已取消，未写入输出文件。')) }
-    const timer = setTimeout(() => { void finish(new Error('Excel 处理超过 30 秒，请拆分工作簿。')) }, 30_000)
+    const timer = setTimeout(() => { void finish(new Error('Excel 初始化或处理超过 60 秒，请重试或拆分工作簿。')) }, 60_000)
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) abort()
     worker.once('message', message => { void finish(message.error ? new Error(message.error) : null, message.value) })

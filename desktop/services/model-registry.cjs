@@ -5,7 +5,7 @@ const { randomUUID } = require('node:crypto')
 const { reasoningOptions, cloudReasoningProfile } = require('./model-reasoning.cjs')
 
 const SECRET_PREFIX = 'model:'
-const MODEL_DISPLAY_NAMES = { 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
+const MODEL_DISPLAY_NAMES = { 'deepseek-flash': 'DeepSeek-Flash', 'deepseek-v4-pro': 'DeepSeek-V4-Pro', 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
 function displayName(model, fallback) { return MODEL_DISPLAY_NAMES[String(model).toLowerCase()] || fallback }
 
 function requireModelText(value, label, limit) {
@@ -60,6 +60,29 @@ class ModelRegistry {
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
     return { items, defaultModelId: items[0]?.id || '' }
+  }
+
+  migrateDeepSeekModels() {
+    const catalog = this.store.modelCatalog()
+    let flash
+    for (const item of catalog.items) {
+      let host
+      try { host = new URL(item.baseURL).hostname } catch { continue }
+      if (host !== 'api.deepseek.com') continue
+      if (['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-flash'].includes(item.model)) {
+        flash = { ...item, model: 'deepseek-flash', displayName: 'DeepSeek-Flash' }
+        this.store.saveModelProfile(flash)
+      }
+    }
+    if (flash) {
+      const existing = this.store.modelCatalog().items.find(item => item.model === 'deepseek-v4-pro' && item.baseURL === flash.baseURL)
+      const id = existing?.id || (this.store.modelProfile('deepseek-v4-pro') ? randomUUID() : 'deepseek-v4-pro')
+      if (!existing) this.store.saveModelProfile({ ...flash, id, model: 'deepseek-v4-pro', displayName: 'DeepSeek-V4-Pro' })
+      if (!this.secrets.has(modelSecretKey(id))) {
+        const source = this.secrets.has(modelSecretKey(flash.id)) ? modelSecretKey(flash.id) : flash.id === catalog.legacyModelId && this.secrets.has('apiKey') ? 'apiKey' : null
+        if (source) this.secrets.set(modelSecretKey(id), this.secrets.get(source))
+      }
+    }
   }
 
   migrateLegacySecret() {

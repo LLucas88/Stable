@@ -13,7 +13,13 @@ export function traceItemStatus(item: AgentTraceItem, runStatus: AgentTraceStatu
 // Generic model lifecycle messages are not a thinking summary.
 export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): AgentTraceItem[] {
   const finalText = finalContent.trim()
-  return items.filter((item) => {
+  const automatic = items.filter(item => item.kind === 'approval' && item.automaticApproval && item.status === 'completed')
+  const entries = automatic.length ? [...items, { ...automatic[0], id: 'automatic-approvals', kind: 'status' as const,
+    title: `完全访问权限 · 已自动放行 ${automatic.length} 次`, reason: undefined,
+    detail: automatic.map(item => item.toolName || item.detail || item.title).join('\n') }] : items
+  return entries.filter((item) => {
+    if (item.id === 'automatic-approvals' || item.id === 'run-progress') return true
+    if (item.kind === 'approval' && item.automaticApproval && item.status === 'completed') return false
     if (item.eventType === 'agent/answer') return Boolean(item.content?.trim()) && item.content!.trim() !== finalText
     if (item.kind === 'tool' || item.kind === 'approval') return true
     if (item.entity === 'agent' && item.parentSessionId && item.eventType !== 'agent/descriptor') return true

@@ -20,6 +20,13 @@ rl.on('line', (line) => {
     send({ id, result: { turn: { id: 'turn' } } })
     if (p.input[0].text === 'EARLY_EXIT') { process.exit(7); return }
     notify('turn/started', { threadId: 'root', turn: { id: 'turn' } })
+    if (p.input[0].text === 'REPEAT_FAILURE') {
+      for(let i=0;i<3;i++){
+        notify('item/started',{threadId:'root',item:{type:'commandExecution',id:'fail'+i,command:'crm-brand-cli query'}})
+        notify('item/completed',{threadId:'root',item:{type:'commandExecution',id:'fail'+i,command:'crm-brand-cli query',exitCode:0,status:'completed',aggregatedOutput:JSON.stringify({success:false})}})
+      }
+      return
+    }
     notify('thread/started', { thread: { id: 'child', parentThreadId: 'root', agentNickname: 'Research' } })
     notify('thread/started', { thread: { id: 'grandchild', parentThreadId: 'child', agentNickname: 'Check' } })
     notify('item/agentMessage/delta', { threadId: 'child', turnId: 'child-turn', itemId: 'child-message', delta: 'CHILD_PRIVATE_OUTPUT' })

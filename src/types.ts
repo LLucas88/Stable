@@ -1,4 +1,4 @@
-export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market' | 'templates'
 export type ThemeMode = 'dark' | 'light'
 
 export interface WendingCliStatus {
@@ -310,6 +310,7 @@ export interface AgentTraceItem {
   reason?: string
   danger?: boolean
   approvalRisk?: 'safe' | 'unknown' | 'high'
+  automaticApproval?: boolean
   approvalCategory?: string
 }
 
@@ -521,6 +522,8 @@ export interface BootstrapData {
 }
 
 export interface StableBridge {
+  templates: {list():Promise<TemplateItem[]>;detail(id:string):Promise<TemplateItem & {html:string}>;import():Promise<TemplateItem[]>;save(id:string,value:Partial<TemplateItem>):Promise<TemplateItem[]>;use(id:string):Promise<AgentState>}
+
   windowClose: {
     onRequest(handler: () => void): () => void
     decide(choice: 'minimize' | 'quit' | 'cancel', remember: boolean): Promise<boolean>
@@ -680,6 +683,7 @@ export interface StableBridge {
     saveGlobalInstructions(content: string): Promise<GlobalInstructionsFile>
   }
   preview: {
+    existingFiles(conversationId: string, paths: string[]): Promise<string[]>
     openWeb(url: string, bounds: PreviewBounds): Promise<PreviewState>
     openFile(path: string, bounds: PreviewBounds): Promise<PreviewState>
     setBounds(bounds: PreviewBounds): Promise<boolean>
@@ -711,3 +715,5 @@ declare global {
     stable: StableBridge
   }
 }
+
+export interface TemplateItem { id:string; name:string; category:string; description:string; tags:string[]; skillId:string; prompt:string; favorite:boolean; builtin?:boolean }

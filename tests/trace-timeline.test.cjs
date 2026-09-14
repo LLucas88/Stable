@@ -60,3 +60,11 @@ test('action labels describe commands, file reads, searches and unknown tools', 
   assert.equal(traceActionLabel(item('a', 0, { kind: 'tool', toolName: 'crm-brand-cli' })), '调用了 crm-brand-cli')
   assert.equal(traceActionLabel(item('a', 0, { kind: 'approval', title: '你已批准本次操作' })), '你已批准本次操作')
 })
+
+
+test('full access approvals collapse into one expandable summary and other modes stay visible',()=>{
+ const original=[item('auto1',1,{kind:'approval',automaticApproval:true,toolName:'read a'}),item('auto2',2,{kind:'approval',automaticApproval:true,toolName:'read b'}),item('manual',3,{kind:'approval'}),item('run-progress',4,{status:'running'})]
+ const rows=buildTraceTimeline(original)
+ assert.deepEqual(rows.map(x=>x.id),['automatic-approvals','manual','run-progress'])
+ assert.match(rows[0].detail,/read a\nread b/);assert.equal(original.length,4)
+})

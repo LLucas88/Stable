@@ -320,3 +320,45 @@ test('existing drive-root project starts and resumes without mkdir; missing work
     assert.equal(rootMkdirCalls, 0)
   } finally { mkdir.mock.restore(); fs.rmSync(root, { recursive: true, force: true }) }
 })
+
+
+test('shared lock directory is writable across projects without granting auth directory',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-lock-policy-'))
+ const lock=path.join(root,'shared-lock'),auth=path.join(root,'auth')
+ const options={userData:root,workspace:path.join(root,'default'),environment:{...process.env,WENDING_SESSION_LOCK_DIR:lock,WENDING_SHARED_AUTH_DIR:auth},executable:process.execPath,executableArgs:[path.join(__dirname,'fixtures','codex-app-server.cjs')]}
+ try{
+  for(const name of ['project-a','project-b']){
+   const cwd=path.join(root,name)
+   await new CodexHarnessRunner(options).run('test',model,'never-sent',5000,()=>{},'workspace-write',[],{key:name,cwd})
+   const turn=JSON.parse(fs.readFileSync(path.join(sessionDirectory(root,name),'fixture-input.json')))
+   assert.deepEqual(turn.sandboxPolicy.writableRoots,[cwd,fs.realpathSync(lock)])
+   assert(!turn.sandboxPolicy.writableRoots.includes(auth))
+  }
+ }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
+test('repeated business failures interrupt the runner and preserve the actionable reason',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-progress-stop-')),events=[]
+ const runner=new CodexHarnessRunner({userData:root,workspace:path.join(root,'workspace'),executable:process.execPath,executableArgs:[path.join(__dirname,'fixtures','codex-app-server.cjs')]})
+ try{
+  await assert.rejects(runner.run('REPEAT_FAILURE',model,'never-sent',5000,e=>events.push(e)),/业务失败.*3 次/)
+  assert.equal(runner.busy,false);assert(events.some(e=>e.id==='run-progress'&&e.status==='failed'))
+ }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
+
+
+test('DeepSeek Flash bridge forwards actual image bytes for direct and cloud routes', async () => {
+  const image = 'data:image/png;base64,cGl4ZWw=';
+  for (const providerId of ['deepseek', 'stable-cloud']) {
+    let sent;
+    const bridge = new CodexResponsesBridge({ model: { ...model, providerId, model: 'deepseek-flash' }, apiKey: 'key', expectedImages: 1,
+      fetchImpl: async (_url, options) => { sent = JSON.parse(options.body); return upstream([completion({ content: 'OK' }, 'stop')]) } });
+    await bridge.start();
+    try {
+      const response = await fetch(bridge.baseURL + '/responses', { method: 'POST', headers: { authorization: 'Bearer ' + bridge.token }, body: JSON.stringify({ input: [{ role: 'user', content: [{ type: 'input_text', text: 'inspect' }, { type: 'input_image', image_url: image }] }] }) });
+      await response.text();
+      assert.equal(response.status, 200);
+      assert.ok(JSON.stringify(sent).includes(image));
+      assert.equal(sent.model, 'deepseek-flash');
+    } finally { await bridge.close() }
+  }
+});

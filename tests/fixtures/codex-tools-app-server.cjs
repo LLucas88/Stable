@@ -17,6 +17,7 @@ rl.on('line', (line) => {
     send({ method: 'turn/started', params: { threadId: 'root', turn: { id: 'turn' } } })
     send({ id: 'call', method: 'item/tool/call', params: { threadId: 'root', turnId: 'turn', callId: 'tool', namespace: null, tool: 'stable_browser', arguments: { action: 'click', ref: 'e1' } } })
   } else if (id === 'call') {
+    send({ method: 'item/completed', params: { threadId: 'root', item: { id: 'tool', type: 'dynamicToolCall', tool: 'stable_browser', status: result.success ? 'completed' : 'failed' } } })
     send({ method: 'turn/completed', params: { threadId: 'root', turn: { id: 'turn', status: 'completed', items: [{ type: 'agentMessage', id: 'answer', phase: 'final_answer', text: JSON.stringify(result) }] } } })
   } else if (id !== undefined) send({ id, result: {} })
 })

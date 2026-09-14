@@ -28,10 +28,14 @@ for (const mode of ['allow', 'deny', 'read-only', 'cancel']) test(`Codex browser
   try {
     const home = sessionDirectory(root, 'old'); fs.mkdirSync(home, { recursive: true })
     fs.writeFileSync(path.join(home, 'stable-thread.json'), JSON.stringify({ threadId: 'legacy', seeded: true, reasoningVersion: 1 }))
+    const toolEvents = []
     const run = runner.run('NEXT', model, 'unused', 10000, (event) => {
+      if (event.kind === 'tool') toolEvents.push(event)
       if (event.kind !== 'approval' || event.status !== 'running') return
       approvals++
-      assert.equal(canAutoApprove('full', event), false)
+      assert.equal(canAutoApprove('request', event), false)
+      assert.equal(canAutoApprove('full', event), true)
+      assert.equal(event.approvalRisk, undefined)
       if (mode === 'cancel') runner.cancel()
       else assert.equal(runner.answerApproval(event.requestId, mode === 'allow'), true)
     }, mode === 'read-only' ? 'read-only' : 'workspace-write', [], { key: 'old', initialPrompt: 'RESTORED_HISTORY' })
@@ -41,6 +45,9 @@ for (const mode of ['allow', 'deny', 'read-only', 'cancel']) test(`Codex browser
       assert.equal(result.success, mode === 'allow')
       assert.match(result.contentItems[0].text, mode === 'allow' ? /clicked/ : mode === 'deny' ? /未批准/ : /只读/)
     }
+    if (mode === 'deny' || mode === 'read-only') {
+      const end = toolEvents.filter(e=>e.eventType==='tool/end'); assert.equal(end.length,1); assert.match(end[0].detail,/未批准|只读/)
+    }
     assert.equal(executed, mode === 'allow' ? 1 : 0)
     assert.equal(approvals, mode === 'read-only' ? 0 : 1)
     assert.ok(disposed >= 1)
@@ -48,7 +55,7 @@ for (const mode of ['allow', 'deny', 'read-only', 'cancel']) test(`Codex browser
     assert.equal(runner.steerReady, false)
     const recorded = JSON.parse(fs.readFileSync(path.join(home, 'fixture-start.json')))
     assert.equal(recorded.start.method, 'thread/start')
-    assert.equal(recorded.start.params.dynamicTools.length, 2)
+    assert.equal(recorded.start.params.dynamicTools.length, 3)
     assert.match(recorded.input[0].text, /RESTORED_HISTORY/)
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })

@@ -106,3 +106,24 @@ test('profile validation and deletion preserve deterministic routing', () => {
     rmSync(context.root, { recursive: true, force: true })
   }
 })
+
+
+test('DeepSeek migration preserves profile IDs, conversations and credentials and adds Pro once', () => {
+  const context=setup()
+  try {
+    const id=context.store.modelCatalog().defaultModelId
+    const old=context.store.modelProfile(id)
+    context.store.saveModelProfile({...old,model:'deepseek-v4-flash'})
+    context.secrets.set(modelSecretKey(id),'test-key')
+    context.registry.migrateDeepSeekModels()
+    context.registry.migrateDeepSeekModels()
+    const catalog=context.store.modelCatalog()
+    assert.equal(catalog.items.length,2)
+    assert.equal(catalog.defaultModelId,id)
+    assert.equal(context.store.modelProfile(id).model,'deepseek-flash')
+    assert.equal(context.store.conversation(context.store.activeConversationId()).modelId,id)
+    const pro=catalog.items.find(x=>x.model==='deepseek-v4-pro')
+    assert.equal(context.registry.resolve(pro.id).apiKey,'test-key')
+    assert.equal(context.registry.resolve(id).apiKey,'test-key')
+  } finally {context.store.close();rmSync(context.root,{recursive:true,force:true})}
+})
