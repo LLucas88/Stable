@@ -139,7 +139,7 @@ async function main() {
       if (phase === 'read-full') assert.match(JSON.stringify(requests.at(-1).messages.filter((message) => message.role === 'tool')), /A店 summary 170/)
     }
     assert.match(fs.readFileSync(path.join(workspace, 'write-full.txt'), 'utf8'), /CODEX_FILE_OK/)
-    assert.equal(fs.existsSync(path.join(workspace, 'sentinel.txt')), false)
+    assert.equal(fs.existsSync(path.join(workspace, 'sentinel.txt')), false, JSON.stringify(requests.filter(r=>r.messages.some(m=>m.tool_call_id==='call_danger-full')).map(r=>r.messages.filter(m=>m.role==='tool'))))
     assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['read-full', 'write-full', 'danger-full', 'unknown-full'])
     assert.deepEqual(manualApprovals, [{ phase: 'write', risk: undefined }, { phase: 'deny', risk: undefined }])
     phase = 'search'; issuedTool = false
