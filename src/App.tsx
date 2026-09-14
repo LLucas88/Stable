@@ -1,5 +1,6 @@
 import { TemplateLibrary } from './TemplateLibrary'
 import { EffortSlider } from './EffortSlider'
+import { ModelProviderIcon } from './ModelProviderIcon'
 import { CloseWindowDialog } from './CloseWindowDialog'
 import { useTransientScrollbar } from './use-transient-scrollbar'
 import { SidebarActionMenu } from './SidebarActionMenu'
@@ -1580,6 +1581,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                     const selected = item.id === activeModel?.id
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
+                      <ModelProviderIcon model={item} />
                       <span className="model-option-copy"><strong>{item.displayName}</strong></span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
