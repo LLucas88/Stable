@@ -25,7 +25,7 @@ test('bridge fails closed on denied approval and routes cancellation without too
   const ctx = { tools: { register: definition => definitions.set(definition.name, definition) }, get: () => ({ request: async () => 'rejected' }) }
   const bridge = installBuiltinBridge(TOOL_SPECS, x => x, event => events.push(event))
   bridge.register({ ctx }); bridge.register({ ctx })
-  assert.equal(definitions.size, 2)
+  assert.deepEqual([...definitions.keys()].sort(), ['stable_browser', 'stable_excel', 'stable_skill_install'])
   const exec = { signal: new AbortController().signal, agent: {}, callId: 'fixture' }
   await assert.rejects(definitions.get('stable_browser').execute({ action: 'click', ref: 'test' }, exec), /未批准/)
   assert.equal(events.length, 0)

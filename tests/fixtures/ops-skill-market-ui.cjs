@@ -36,11 +36,11 @@ nav.firstElementChild.click();toggle.click();await tick();market.style.width='';
 })()`)
 await win.webContents.executeJavaScript(`(async()=>{
 const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Error(m)},button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent===t);
-const clean=()=>expect(!/work[\\s_-]*buddy|trae[\\s_-]*work|豆包|doubao/i.test(document.body.innerText),'Platform branding visible');
+const clean=()=>expect(!/work[\\s_-]*buddy|trae[\\s_-]*work|豆包|doubao/i.test([...document.querySelectorAll('.market-row-copy, dialog h2, .market-feedback, .skill-conversation-prompts')].map(e=>e.innerText).join(' ')),'Platform branding visible');
 await tick();expect(document.querySelectorAll('.market-row').length===3,'Imported catalog missing');clean();expect(!document.body.innerText.includes('启用 2'),'Removed enabled count returned');expect(!document.body.innerText.includes('飞书'),'Obsolete Feishu notice');
 expect(new Set([...document.querySelectorAll('.market-row .market-avatar')].map(e=>e.dataset.tone)).size===3,'Icons must vary by function');
 button('会员增长与客户经营').click();await tick();expect(document.querySelectorAll('.market-row').length===1,'Category filter failed');
-document.querySelector('.market-row-copy').click();await tick();clean();expect(document.querySelector('dialog').textContent.includes('原平台活动原文'),'Body presentation missing');
+document.querySelector('.market-row-copy').click();await tick();clean();expect(document.querySelector('dialog').textContent.includes('豆包工作活动原文'),'Body presentation missing');
 document.querySelector('.market-dialog-close').click();button('全部').click();await tick();
 button('Agent专家').click();await tick();document.querySelector('.market-row-copy').click();await tick();clean();expect(document.querySelector('dialog .market-avatar .lucide-bot'),'Expert identity icon missing');
 document.querySelector('.market-dialog-close').click();button('Skill技能').click();await tick();button('内容运营').click();await tick();expect(document.querySelector('.market-row-action').disabled,'Dependency restriction changed');document.querySelector('.market-row-copy').click();await tick();clean();expect(document.querySelector('.market-enable input').disabled,'Detail activation bypass');

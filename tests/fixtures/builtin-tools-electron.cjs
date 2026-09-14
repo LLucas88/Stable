@@ -105,7 +105,7 @@ async function run() {
   const stage = path.join(root, 'stage'), resources = path.join(root, 'resources')
   fs.mkdirSync(path.join(stage, 'desktop/services'), { recursive: true })
   fs.mkdirSync(resources)
-  for (const filename of ['builtin-tools.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
+  for (const filename of ['builtin-tools.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs', 'local-html-preview.cjs', 'markdown-pages.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
   fs.cpSync(path.join(__dirname, '../../vendor/agent-tools'), path.join(resources, 'agent-tools'), { recursive: true })
   const archive = path.join(resources, 'app.asar')
   await asar.createPackage(stage, archive)
