@@ -30,6 +30,7 @@ jobs:
       - run: npm ci
       - run: npm run tools:install
       - run: npm run runtime:codex
+      - run: npm run python:verify
       - run: npm run typecheck
       - run: npm run build
       - run: npm test

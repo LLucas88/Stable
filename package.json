@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Stable local agent workbench powered by Codex Harness",
   "main": "desktop/main.cjs",
   "private": true,
@@ -110,11 +110,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.0.1"
+      "output": "release-1.0.2"
     },
     "win": {
       "icon": "build/stable_app_icon.png",
-      "artifactName": "Stable-Setup-1.0.01-${arch}.${ext}",
+      "artifactName": "Stable-Setup-1.0.02-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -145,5 +145,5 @@
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.0.01"
+  "releaseVersion": "1.0.02"
 }
