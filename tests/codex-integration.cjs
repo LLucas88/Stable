@@ -139,7 +139,17 @@ async function main() {
       if (phase === 'read-full') assert.match(JSON.stringify(requests.at(-1).messages.filter((message) => message.role === 'tool')), /A店 summary 170/)
     }
     assert.match(fs.readFileSync(path.join(workspace, 'write-full.txt'), 'utf8'), /CODEX_FILE_OK/)
-    assert.equal(fs.existsSync(path.join(workspace, 'sentinel.txt')), false, JSON.stringify(requests.filter(r=>r.messages.some(m=>m.tool_call_id==='call_danger-full')).map(r=>r.messages.filter(m=>m.role==='tool'))))
+    // Automatic approval does not override the OS ACL on a host-created file.
+    // Hosted Windows runners can deny DELETE while allowing workspace writes.
+    const deleteResult = requests.flatMap(r => r.messages).find(m => m.role === 'tool' && m.tool_call_id === 'call_danger-full')?.content
+    assert.equal(typeof deleteResult, 'string')
+    assert.doesNotMatch(deleteResult, /rejected|declined|未批准|已拒绝本次操作/i)
+    if (fs.existsSync(path.join(workspace, 'sentinel.txt'))) {
+      assert.match(deleteResult, /Exit code: 1/)
+      assert.match(deleteResult, /Access to the path .*sentinel\.txt.* is denied|拒绝访问/i)
+      assert.equal(fs.readFileSync(path.join(workspace, 'sentinel.txt'), 'utf8'), 'DO_NOT_DELETE')
+    } else assert.match(deleteResult, /Exit code: 0/)
+
     assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['read-full', 'write-full', 'danger-full', 'unknown-full'])
     assert.deepEqual(manualApprovals, [{ phase: 'write', risk: undefined }, { phase: 'deny', risk: undefined }])
     phase = 'search'; issuedTool = false
