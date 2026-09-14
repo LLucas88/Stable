@@ -260,7 +260,7 @@ class CodexResponsesBridge {
       const response = await this.fetch('https://api.deepseek.com/anthropic/v1/messages', {
         method: 'POST', redirect: 'error', signal,
         headers: { authorization: `Bearer ${this.apiKey}`, 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'deepseek-v4-flash', max_tokens: 4096, messages: [{ role: 'user', content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }] }], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }] }),
+        body: JSON.stringify({ model: 'deepseek-flash', max_tokens: 4096, messages: [{ role: 'user', content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }] }], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }] }),
       })
       if (!response.ok) throw new Error(`DeepSeek 联网搜索失败（HTTP ${response.status}）。`)
       const payload = await response.json(); const blocks = payload.content || []

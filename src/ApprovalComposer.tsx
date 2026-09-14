@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Terminal } from 'lucide-react'
+import { Terminal } from 'lucide-react'
 import type { AgentTraceItem } from './types'
 
 export function ApprovalComposer({ item, onDecision }: { item: AgentTraceItem; onDecision: (decision: 'deny' | 'once' | 'conversation') => Promise<void> }) {
@@ -20,7 +20,7 @@ export function ApprovalComposer({ item, onDecision }: { item: AgentTraceItem; o
     <div className="approval-actions">
       <button ref={firstButton} type="button" disabled={busy} onClick={() => void decide('deny')}>拒绝</button>
       <button className="approval-allow" type="button" disabled={busy} onClick={() => void decide('once')}>{busy ? '处理中…' : '允许一次'}</button>
-      <details className="approval-options"><summary aria-label="更多授权选项"><ChevronDown size={16}/></summary><button type="button" disabled={busy} onClick={() => void decide('conversation')}>在此对话记住此操作</button></details>
+      <button type="button" disabled={busy} onClick={() => void decide('conversation')}>本次对话允许</button>
     </div>
   </div>
 }

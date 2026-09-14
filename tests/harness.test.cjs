@@ -206,7 +206,7 @@ test('each harness run keeps its model settings and credentials isolated', async
     const secondRaw = readFileSync(path.join(secondHome, 'settings.yaml'), 'utf8')
     assert.equal(YAML.parse(firstRaw)['agent-default-model'].provider, 'deepseek')
     assert.equal(YAML.parse(secondRaw)['agent-default-model'].provider, 'private-gateway')
-    assert.deepEqual(YAML.parse(firstRaw)['llm-pi-ai'].providers.deepseek.models[0].input, ['text'])
+    assert.deepEqual(YAML.parse(firstRaw)['llm-pi-ai'].providers.deepseek.models[0].input, ['text', 'image'])
     assert.deepEqual(YAML.parse(secondRaw)['llm-pi-ai'].providers['private-gateway'].models[0].input, ['text', 'image'])
     assert.equal(readFileSync(path.join(firstHome, 'settings.yaml'), 'utf8'), firstRaw)
     assert.doesNotMatch(`${firstRaw}\n${secondRaw}`, /deepseek-secret|private-secret/)
@@ -226,14 +226,6 @@ test('each harness run keeps its model settings and credentials isolated', async
   }
 })
 
-test('DeepSeek routes reject image input before starting the runtime', () => {
-  const runner = new HarnessRunner({ userData: os.tmpdir(), workspace: os.tmpdir(), packaged: false, resourcesPath: os.tmpdir() })
-  const model = { id: 'deepseek-chat', providerId: 'stable-cloud', displayName: 'DeepSeek Chat', baseURL: 'https://example.test/v1', model: 'deepseek-chat' }
-  assert.throws(
-    () => runner.run('分析图片', model, 'secret', 0, () => {}, 'workspace-write', [{ path: 'image.png', mediaType: 'image/png', name: 'image.png' }]),
-    /DeepSeek 暂不支持图片分析，请切换其他模型/,
-  )
-})
 
 test('Harness final response excludes earlier streamed commentary and child-agent text', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-final-answer-'))
@@ -271,7 +263,7 @@ test('bundled Harness sends a workspace image as real multimodal request content
     const runner = new HarnessRunner({ userData: root, workspace, packaged: false, resourcesPath: root, environment: {} })
     const answer = await runner.run(
       '请分析这张图片。',
-      { id: 'vision-probe', providerId: 'vision-probe', displayName: 'Vision Probe', baseURL: `${server.baseURL}/v1`, model: 'vision-probe' },
+      { id: 'vision-probe', providerId: 'deepseek', displayName: 'DeepSeek Flash', baseURL: `${server.baseURL}/v1`, model: 'deepseek-flash' },
       'vision-secret', 60_000, () => {}, 'read-only',
       [{ path: imagePath, mediaType: 'image/png', name: 'pixel.png' }],
     )

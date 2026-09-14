@@ -112,7 +112,16 @@ async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onC
   for (let attempt = 0; ; attempt += 1) {
     delivery = getDelivery?.() || delivery
     const after = artifactSnapshot(workspace, delivery.extensions)
-    const created = changedArtifacts(before, after)
+    const changed = changedArtifacts(before, after)
+    const answerPaths = String(answer || '').replace(/\\/g, '/')
+    const named = changed.filter(file => {
+      const normalized = file.replace(/\\/g, '/')
+      const offset = answerPaths.indexOf(normalized)
+      return offset >= 0 && !/[\p{L}\p{N}_.\-/]/u.test(answerPaths[offset + normalized.length] || '')
+    })
+    // Explicit deliveries win over intermediate files discovered by the scan.
+    // Keep fallback discovery for agents that omit the final path, excluding scratch paths.
+    const created = named.length ? named : changed.filter(file => !path.relative(workspace, file).split(/[\\/]/).some(part => /^[_.]/.test(part) || /^(?:tmp|temp|cache)$/i.test(part)))
     const reason = deliveryBlocker(answer)
     const reused = !reason ? referencedExistingArtifacts(answer, before, after) : []
     const artifacts = [...new Set([...created, ...reused])]

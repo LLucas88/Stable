@@ -11,7 +11,7 @@ const DEFAULT_IDENTITY = 'Stable 是你的本地智能工作助理，擅长数�
 const LEGACY_MODEL_PROFILE_ID = 'legacy-default-model'
 const DEFAULT_MODEL_SETTING = {
   providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com',
-  model: 'deepseek-v4-flash', hasApiKey: false,
+  model: 'deepseek-flash', hasApiKey: false,
 }
 
 function legacyModelProfile(value) {

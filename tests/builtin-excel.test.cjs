@@ -94,3 +94,15 @@ test('actual builder resource filters ship usable Excel dependencies in full and
     assert.equal(book.getWorksheet('Sheet').getCell('B1').value, 170)
   }
 })
+
+test('streamed reads preserve sparse rows, dates, formulas and full sheet dimensions', async t => {
+  const workspace=fs.mkdtempSync(path.join(os.tmpdir(),'stable-stream-excel-'));t.after(()=>fs.rmSync(workspace,{recursive:true,force:true}));
+  const workbook=new ExcelJS.Workbook(),sheet=workbook.addWorksheet('稀疏数据');
+  sheet.getCell('A1').value='表头';sheet.getCell('C4').value={formula:'1+2',result:3};sheet.getCell('B4').value=new Date('2026-09-10T00:00:00.000Z');
+  await workbook.xlsx.writeFile(path.join(workspace,'sparse.xlsx'));
+  const result=await executeExcel({workspace,dependencyRoot,args:{action:'read',path:'sparse.xlsx',startRow:2,rowCount:3}});
+  assert.equal(result.totalRows,4);assert.equal(result.totalColumns,3);
+  assert.deepEqual(result.rows[0],{row:2,values:[null,null,null]});
+  assert.equal(result.rows[2].values[1],'2026-09-10T00:00:00.000Z');
+  assert.deepEqual(result.rows[2].values[2],{formula:'1+2',cachedResult:3});
+});

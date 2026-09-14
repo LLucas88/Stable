@@ -51,7 +51,7 @@ test('authenticated cloud catalog replaces local provider keys and resolves thro
   const store = { modelCatalog: () => ({ items: [{ id: 'local' }], defaultModelId: 'local' }) }
   const secrets = { has: () => true, get: () => 'provider-secret' }
   const registry = new ModelRegistry(store, secrets, gateway)
-  assert.deepEqual(registry.publicCatalog(), { items: [{ ...route.model, hasApiKey: true }], defaultModelId: 'cloud-model' })
+  assert.deepEqual(registry.publicCatalog(), { items: [{ ...route.model, hasApiKey: true, cloudReasoning: false, reasoningOptions: [] }], defaultModelId: 'cloud-model' })
   assert.equal(registry.resolve('missing'), route)
   assert.throws(() => registry.save({}), /管理员统一维护/)
 })

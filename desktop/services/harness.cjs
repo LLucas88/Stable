@@ -232,7 +232,7 @@ class HarnessRunner {
       'agent-default-model': { provider: model.providerId, model: model.model },
       'llm-pi-ai': { providers: { [model.providerId]: {
         displayName: model.displayName, apiKeyEnv: 'STABLE_API_KEY', api: 'openai-completions', baseURL: model.baseURL,
-        models: [{ id: model.model, name: model.model, input: isDeepSeekModel(model) ? ['text'] : ['text', 'image'] }],
+        models: [{ id: model.model, name: model.model, input: ['text', 'image'] }],
       } } },
       'tool-subagent': { maxDepth: 3 },
       'tool-subagent-fork': { maxDepth: 3 },
@@ -244,7 +244,6 @@ class HarnessRunner {
   run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = []) {
     if (this.child) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先在“设置”中保存 API Key。')
-    if (imageAttachments.length && isDeepSeekModel(model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
     const paths = this.runtimePaths()
     if (!this.ready()) throw new Error(this.options.packaged
       ? 'Stable 的 Harness 运行时缺失或不完整。请使用 Stable-Setup 完整安装包覆盖修复，保留现有用户数据；Stable-Update 轻量更新包无法补齐运行时。'

@@ -194,6 +194,14 @@ html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srg
 .plugin-skill-list article { display: flex; align-items: center; gap: 20px; padding: 16px; border-radius: 16px; background: var(--surface-hover, #f6f6f6); }
 .plugin-skill-list article > div { flex: 1; min-width: 0; }
 .plugin-skill-list p { margin: 6px 0 0; color: var(--text-secondary, #888); font-size: 13px; }
+.skill-conversation-prompts > h3 { margin: 0 0 8px; }
+.skill-conversation-prompts > p { color: var(--color-muted); margin: 0 0 16px; }
+.skill-conversation-prompts .plugin-skill-list p { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; }
+.skill-conversation-prompts .button { flex-shrink: 0; }
+.skill-conversation-prompts .skill-source-title { margin: 28px 0 16px; padding-top: 20px; border-top: 1px solid var(--color-rule-soft); }
+@media (max-width: 640px) {
+  .skill-conversation-prompts .plugin-skill-list article { flex-direction: column; align-items: stretch; gap: 12px; }
+}
 
 .conversation .conversation-topbar { padding-inline-end:8px; gap:6px; }
 .conversation-topbar .browser-launch, .conversation-topbar .conversation-wending-button { display:inline-flex; align-items:center; justify-content:center; flex:none; height:1.375rem; min-height:1.375rem; padding:0 6px; border-radius:6px; font-size:12px; line-height:1; }

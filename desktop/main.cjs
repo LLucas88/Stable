@@ -1,7 +1,7 @@
 'use strict'
 const { skillReferences, saveSkillReferences, selectedSkillContext } = require('./services/skill-selection.cjs')
 
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme } = require('electron')
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme, Notification } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
@@ -113,6 +113,70 @@ const featureFlags={compatibilityReviewer:process.env.STABLE_COMPATIBILITY_REVIE
 const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
 if (process.env.STABLE_STARTUP_PROBE) require('./services/startup-probe.cjs').installStartupProbe(require('electron'), () => store)
 
+function pendingApproval(conversationId, requestId) {
+  const control = agentRunners.get(conversationId)
+  if (!control || control.cancelled) return null
+  return store.db.prepare("SELECT id,request_json FROM approval_requests WHERE conversation_id=? AND json_extract(request_json,'$.requestId')=? AND state IN ('pending','needs_user') ORDER BY created_at DESC LIMIT 1").get(conversationId, requestId) || null
+}
+function answerTaskApproval(payload, expected) {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    const requestId = requireText(payload?.requestId, '审批 ID', 200)
+    const decision = payload?.decision ?? (payload?.allowed === true ? 'once' : 'deny')
+    if (!['deny', 'once', 'conversation'].includes(decision)) throw new Error('未知的审批决定')
+    const control = agentRunners.get(conversationId)
+    const runner = control?.runner
+    const pending = pendingApproval(conversationId, requestId)
+    if (!pending || control?.cancelled || (expected && (expected.runner !== runner || expected.id !== pending.id))) return false
+    if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
+    const accepted = runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
+    if (accepted) taskAlerts.resolve(conversationId, requestId)
+    if (accepted) { new ApprovalLedger(store); store.db.prepare("UPDATE approval_requests SET state=?,decision_json=?,decided_at=? WHERE id=? AND state IN ('pending','reviewing','needs_user')").run(decision === 'deny' ? 'denied' : 'approved', JSON.stringify({ reviewerSource: 'user', decision, rationale: '用户在审批面板明确选择' }),new Date().toISOString(),pending.id) }
+    return accepted
+}
+
+const { TaskAlerts } = require('./services/task-alerts.cjs')
+const taskAlerts = new TaskAlerts({ notify: (id, kind, requestId) => {
+  const title = kind === 'approval' ? '任务等待审批' : kind === 'input' ? '任务等待补充信息' : '任务可能停滞'
+  const detail = kind === 'stalled' ? '连续 3 分钟没有收到新进展，可能仍在思考或执行工具。点击查看任务。' : '需要你处理后才能继续。点击返回对应任务。'
+  const body = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${detail}`
+  const open = () => {
+    if (!store.conversation(id) || !mainWindow || mainWindow.isDestroyed()) return
+    store.selectConversation(id)
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show(); mainWindow.focus(); mainWindow.flashFrame(false)
+    mainWindow.webContents.send('stable:task:open', agentState(id))
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('stable:task:notice', { id, title, body })
+    if (!mainWindow.isFocused()) mainWindow.flashFrame(true)
+  }
+  let notice, disposeApproval
+  const request = kind === 'approval' && requestId ? pendingApproval(id, requestId) : null
+  if (request && mainWindow && !mainWindow.isDestroyed()) {
+    const approval = JSON.parse(request.request_json)
+    const runner = agentRunners.get(id)?.runner
+    const authorization = redactApproval(`${approval.reason || ''}\n${approval.action || ''}`).trim()
+    const summary = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${authorization.slice(0,360)}${authorization.length > 360 ? '…' : ''}\n点击正文查看完整授权内容。`
+    disposeApproval = require('./services/approval-notification.cjs').approvalNotification({
+      Notification, window: mainWindow, title: '需要你审批', summary,
+      persistent: Boolean(runner?.supportsPersistentSessions),
+      pending: () => pendingApproval(id, requestId)?.id === request.id && agentRunners.get(id)?.runner === runner,
+      decide: decision => answerTaskApproval({conversationId:id,requestId,decision}, {id:request.id,runner}), open,
+    })
+  }
+  try {
+    if (!request && Notification.isSupported()) {
+      notice = new Notification({ title: `Stable · ${title}`, body, timeoutType: 'never' })
+      notice.on('click', open)
+      notice.on('failed', () => {}) // In-app notice remains if OS notifications are unavailable.
+      notice.show()
+    }
+  } catch {}
+  return () => { disposeApproval?.(); notice?.close(); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:task:notice', { id, clear: true }) }
+} })
+const taskAlertClock = setInterval(() => taskAlerts.tick(), 1000)
+taskAlertClock.unref()
+
 app.setAppUserModelId(APP_ID)
 if (process.platform === 'win32' && app.isPackaged) {
   app.commandLine.appendSwitch('no-sandbox')
@@ -150,7 +214,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -329,6 +393,7 @@ async function loadGeneratedFilePreview(view, html, prefix) {
   mkdirSync(previewDirectory, { recursive: true })
   writeFileSync(previewPath, html, 'utf8')
   requireActivePreviewView(view)
+  cleanupPreviewTemporaryFile()
   previewTemporaryPath = previewPath
   await view.webContents.loadFile(previewPath)
   requireActivePreviewView(view)
@@ -353,7 +418,18 @@ async function openFilePreview(value, bounds) {
     } else if (['.md', '.markdown'].includes(resolved.extension)) {
       try {
         const markdown = resolveMarkdownFile(resolved.path, paths.writableRoots || paths.workspace)
-        await loadGeneratedFilePreview(view, renderMarkdownDocument(markdown.content, title, theme), 'markdown-preview')
+        const {markdownPages,markdownPageDocument}=require('./services/markdown-pages.cjs')
+        const pages=markdownPages(markdown.content)
+        let changingPage=false
+        view.webContents.on('will-navigate', (event,url) => {
+          const match=/^stable-markdown-page:(\d+)$/.exec(url)
+          if(!match)return
+          event.preventDefault()
+          const page=Number(match[1]);if(changingPage||page>=pages.length)return
+          changingPage=true
+          void loadGeneratedFilePreview(view,markdownPageDocument(pages,page,title,theme),'markdown-preview').catch(error=>sendPreviewEvent({error:error.message},view)).finally(()=>{changingPage=false})
+        })
+        await loadGeneratedFilePreview(view,markdownPageDocument(pages,0,title,theme),'markdown-preview')
       } catch (error) {
         await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, `Stable 无法渲染这个 Markdown 文件。\n\n${error.message}`), 'file-preview')
       }
@@ -1388,7 +1464,6 @@ async function prepareAgentMessage(payload, conversationId, modelRoute) {
   const catchAttachments = rawAttachments.filter(item => catchService.isCatchPath(conversationId, item?.path)).map(item => catchService.prepare(conversationId, item.path))
   const ordinaryPaths = rawAttachments.filter(item => !catchService.isCatchPath(conversationId, item?.path)).map(item => item?.path)
   const requestedAttachments = ordinaryPaths.length ? inspectAgentAttachments(ordinaryPaths) : []
-  if (requestedAttachments.some(isImageAttachment) && isDeepSeekModel(modelRoute.model)) throw new Error('DeepSeek 暂不支持图片分析，请切换其他模型。')
   const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
   const attachments = [...extractedAttachments.items, ...catchAttachments]
   const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : skillReferences(store, conversationId)
@@ -1452,6 +1527,9 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const trace = []
   const transcript = createStreamTranscript()
   const publish = (source) => {
+    taskAlerts.progress(conversationId)
+    if (source.kind === 'approval' && source.requestId && ['completed', 'failed', 'cancelled'].includes(source.status)) taskAlerts.resolve(conversationId, source.requestId)
+    if (source.kind === 'approval' && source.status === 'awaiting_user') taskAlerts.wait(conversationId, source.requestId)
     if (source.eventType === 'agent/answer-delta') {
       const delta = String(source.delta || '')
       if (!delta) return
@@ -1479,6 +1557,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.eventType === 'agent/answer' ? { content: String(source.content || '') } : {}),
       status: ['running', 'completed', 'failed', 'cancelled'].includes(source.status) ? source.status : 'running',
       ...(source.actionDigest ? { actionDigest: source.actionDigest } : {}),
+      ...(source.kind === 'approval' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request') ? { automaticApproval: true } : {}),
       ...(source.reviewerSource ? { reviewerSource: source.reviewerSource } : {}),
       time: Number.isFinite(source.time) ? source.time : Date.now(),
       ...(source.sessionId ? { sessionId: String(source.sessionId) } : {}),
@@ -1493,7 +1572,6 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(source.toolName ? { toolName: redactApproval(source.toolName).slice(0, source.kind === 'approval' ? 16000 : 160) } : {}),
       ...(source.reason ? { reason: redactApproval(source.reason).slice(0, 500) } : {}),
       ...(source.danger ? { danger: true } : {}),
-      ...(['safe', 'unknown', 'high'].includes(source.approvalRisk) ? { approvalRisk: source.approvalRisk } : {}),
       ...(source.approvalCategory ? { approvalCategory: String(source.approvalCategory).slice(0, 300) } : {}),
     }
     const existing = trace.findIndex((item) => item.id === event.id)
@@ -1503,7 +1581,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.eventType === 'tool/start' ? event.detail : undefined)
     }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
-    if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
+    const silentApproval = source.kind === 'approval' && source.status === 'running' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request')
+    if (!silentApproval && broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if(source.kind==='approval'&&source.requestId&&source.actualDecision){
       const ledger=new ApprovalLedger(store),request=ledger.register({conversationId,runId,source,query,cwd:paths.workspace})
       const row=store.db.prepare('SELECT decision_json FROM approval_requests WHERE id=?').get(request.id)
@@ -1515,13 +1594,13 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       const ledger = new ApprovalLedger(store)
       const request = ledger.register({ conversationId, runId, source, query, cwd: paths.workspace })
       const mode = permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request'
-      if (canAutoApprove(mode, source)) {
-        ledger.finish(request.id, { decision: 'approved', reasonCode: 'STATIC_SAFE', rationale: '当前范围内的已核验操作', reviewerSource: 'static_policy' })
+      if (canAutoApprove(mode)) {
+        ledger.finish(request.id, { decision: 'approved', reasonCode: 'FULL_ACCESS', rationale: '用户选择完全访问权限，自动批准本次请求', reviewerSource: 'permission_mode' })
         if(!executionRunner.answerApproval(source.requestId, true))return
         publish({ ...source, id: source.id, detail: '当前权限策略已自动批准本次操作', status: 'completed' })
       } else if(mode==='auto'&&ledger.limited(conversationId)){publish({...source,reason:'审核拒绝已达到重试上限，需要你核实具体操作。'+(source.reason||''),status:'awaiting_user'})
       } else if(mode==='auto'&&!featureFlags.compatibilityReviewer){publish({...source,reason:'兼容自动审核已关闭，请人工确认。'+(source.reason||''),status:'awaiting_user'})
-      } else if (mode === 'auto' && !source.danger) {
+      } else if (mode === 'auto') {
         const reviewer = createHarnessRunner()
         const control = agentRunners.get(conversationId)
         control?.reviewers.add(reviewer)
@@ -1541,7 +1620,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
           executionRunner.answerApproval(source.requestId, false)
           publish({ ...source, title: '审核未完成，未执行操作', reason: decision.rationale, detail: '审核技术失败，未默认放行。', status: 'failed' })
         }).finally(() => control?.reviewers.delete(reviewer))
-      }
+      } else { taskAlerts.wait(conversationId, source.requestId) }
     }
   }
   if (installedSkills.length) publish({ id: 'stable-skill-install', kind: 'tool', title: '安装全局 Skill', detail: `已识别并安装：${installedSkills.join('、')}`, status: 'completed' })
@@ -1636,7 +1715,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, cwd: paths.workspace, writableRoots: paths.writableRoots, networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, userQuery: effectiveQuery, cwd: paths.workspace, writableRoots: paths.writableRoots, networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
@@ -2029,6 +2108,19 @@ function registerIpc() {
     return store.listLibrary()
   })
 
+  const templates = () => new (require('./services/template-library.cjs').TemplateLibrary)(store, paths.userData)
+  ipcMain.handle('stable:templates:list', () => templates().list())
+  ipcMain.handle('stable:templates:detail', (_event, value) => templates().detail(requireText(value?.id,'模板 ID',100)))
+  ipcMain.handle('stable:templates:save', (_event, value) => templates().save(requireText(value?.id,'模板 ID',100),value.value || {}))
+  ipcMain.handle('stable:templates:import', async () => {
+    const result=await dialog.showOpenDialog(mainWindow,{title:'导入 HTML 模板（图片和样式请嵌入文件）',properties:['openFile','multiSelections'],filters:[{name:'HTML',extensions:['html','htm']}]})
+    if(!result.canceled)for(const file of result.filePaths)templates().import(file)
+    return templates().list()
+  })
+  ipcMain.handle('stable:templates:use', (_event,value) => {
+    const result=templates().use(requireText(value?.id,'模板 ID',100),paths.workspace)
+    return {...agentState(result.conversationId),draftPrompt:result.prompt,skills:store.listSkills()}
+  })
   const market = () => new SkillMarket(store, paths.userData)
   ipcMain.handle('stable:market:list', () => market().entries())
   ipcMain.handle('stable:market:detail', (_event, value) => market().detail(requireText(value?.id, '条目 ID', 100)))
@@ -2036,7 +2128,7 @@ function registerIpc() {
   ipcMain.handle('stable:market:toggle', (_event, value) => market().toggle(requireText(value?.id, '条目 ID', 100), Boolean(value.enabled)))
   ipcMain.handle('stable:market:remove', (_event, value) => market().remove(requireText(value?.id, '条目 ID', 100)))
   ipcMain.handle('stable:market:update', (_event, value) => market().checkUpdate(requireText(value?.id, '条目 ID', 100)))
-  ipcMain.handle('stable:market:use', async (_event, value) => { const id=await market().use(requireText(value?.id, '条目 ID', 100)); return { ...agentState(id), skills: store.listSkills() } })
+  ipcMain.handle('stable:market:use', async (_event, value) => { const entryId=requireText(value?.id, '条目 ID', 100); const catalog=market(); const id=await catalog.use(entryId); return { ...agentState(id), draftPrompt: catalog.prompt(entryId), skills: store.listSkills() } })
   ipcMain.handle('stable:skills:enabled', (_event, payload) => { require('./services/ops-skill-bundle.cjs').setSkillEnabled(store, requireText(payload?.id, 'Skill ID', 100), Boolean(payload?.enabled)); return store.listSkills() })
   ipcMain.handle('stable:skills:remove', (_event, payload) => { require('./services/ops-skill-bundle.cjs').removeSkill(store, requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
   ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())
@@ -2223,12 +2315,14 @@ function registerIpc() {
     if (!conversation) throw new Error('找不到这个对话。')
     await require('./services/stop-before-delete.cjs').stopBeforeDelete(id, agentRunners, conversationId => {
       const control = agentRunners.get(conversationId)
+      taskAlerts.finish(conversationId)
       control.cancelled = true
       new ApprovalLedger(store)
       store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
       for (const reviewer of control.reviewers) reviewer.cancel()
       control.runner.cancel()
     })
+    taskAlerts.finish(id)
     const result=await conversationLifecycle.sync(id,'delete')
     if(!result.pending)wendingCli.removeConversation(id)
     return {...agentState(store.activeConversationId()),syncNotice:result.error}
@@ -2288,6 +2382,7 @@ function registerIpc() {
     if(delivery.duplicate){if(delivery.state==='completed')return {...agentState(conversationId),answer:''};throw Error('此条消息已有发送记录（'+delivery.state+'），请先核实历史，不会重复发送。')}
     const control = { deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
+    taskAlerts.start(conversationId)
     try {
       control.phase = 'clarifying'
       const globalInstructions = readGlobalInstructions().content
@@ -2308,6 +2403,8 @@ function registerIpc() {
           conversationLifecycle.status(deliveryId, 'completed', { assistantMessageId: message })
           store.db.exec('COMMIT')
         } catch (error) { store.db.exec('ROLLBACK'); throw error }
+        control.waitingForInput = true
+        taskAlerts.wait(conversationId, 'input', 'input')
         publishAgentState(conversationId)
         return { answer: clarification.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
       }
@@ -2343,6 +2440,7 @@ function registerIpc() {
         if (control.cancelled) throw new Error('任务已停止。')
         result.trace.push(clarificationTrace({ ...executionPayload, attachments: prepared.attachments }, result.answer, 'clarification', card))
       }
+      if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
       store.db.exec('BEGIN IMMEDIATE')
@@ -2354,6 +2452,7 @@ function registerIpc() {
       conversationLifecycle.status(deliveryId,journal?.state==='preparing'?'rejected':control.cancelled?'interrupted':'unknown',{error:error.message})
       throw new Error(error.message)
     } finally {
+      if (!control.waitingForInput || control.cancelled) taskAlerts.finish(conversationId)
       control.phase = 'finished'
       for (const reviewer of control.reviewers) reviewer.cancel()
       if (agentRunners.get(conversationId) === control) agentRunners.delete(conversationId)
@@ -2403,6 +2502,7 @@ function registerIpc() {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const control = agentRunners.get(conversationId)
     if (!control) return false
+    taskAlerts.finish(conversationId)
     control.cancelled = true
     new ApprovalLedger(store)
     store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
@@ -2410,21 +2510,12 @@ function registerIpc() {
     control.runner.cancel()
     return true
   })
-  ipcMain.handle('stable:agent:answerApproval', (_event, payload) => {
-    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
-    const requestId = requireText(payload?.requestId, '审批 ID', 200)
-    const decision = payload?.decision ?? (payload?.allowed === true ? 'once' : 'deny')
-    if (!['deny', 'once', 'conversation'].includes(decision)) throw new Error('未知的审批决定')
-    const runner = agentRunners.get(conversationId)?.runner
-    if (decision === 'conversation' && runner && !runner.supportsPersistentSessions) throw new Error('当前执行器不支持保存对话授权，请选择允许一次')
-    const accepted = runner?.answerApproval(requestId, decision !== 'deny', decision === 'conversation' ? 'conversation' : 'once') || false
-    if (accepted) { new ApprovalLedger(store); store.db.prepare("UPDATE approval_requests SET state=?,decision_json=?,decided_at=? WHERE conversation_id=? AND json_extract(request_json,'$.requestId')=? AND state IN ('pending','reviewing','needs_user')").run(decision === 'deny' ? 'denied' : 'approved', JSON.stringify({ reviewerSource: 'user', decision, rationale: '用户在审批面板明确选择' }),new Date().toISOString(),conversationId,requestId) }
-    return accepted
-  })
+  ipcMain.handle('stable:agent:answerApproval', (_event, payload) => answerTaskApproval(payload))
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     if (agentRunners.has(id)) throw new Error('请先停止当前任务，再清空对话。')
+    taskAlerts.finish(id)
     clearCodexSession(paths.userData, id)
     store.revokeConversationGrants(id)
     store.clearMessages(id)
@@ -2620,6 +2711,12 @@ function registerIpc() {
     }
     return service.snapshot(id)
   })
+  ipcMain.handle('stable:preview:existingFiles', (_event, payload) => {
+    const id = requireText(payload?.conversationId, '对话 ID', 100)
+    if (!store.conversation(id)) return []
+    const roots = conversationPaths(id).writableRoots
+    return require('./services/artifact-files.cjs').existingArtifactFiles(payload?.paths, roots)
+  })
   ipcMain.handle('stable:preview:openWeb', (_event, payload) => openWebPreview(payload?.url, payload?.bounds))
   ipcMain.handle('stable:preview:openFile', (_event, payload) => openFilePreview(payload?.path, payload?.bounds))
   ipcMain.handle('stable:preview:setBounds', (_event, payload) => updatePreviewBounds(payload?.bounds))
@@ -2707,6 +2804,16 @@ function createWindow() {
     } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
+  // A failed renderer handshake must not leave the desktop app invisible.
+  if (!process.env.STABLE_QA_CAPTURE) {
+    const reveal = () => {
+      if (!window.isDestroyed() && !window.isVisible()) { window.show(); window.focus() }
+    }
+    const revealTimer = setTimeout(reveal, 8000)
+    window.webContents.once('did-finish-load', reveal)
+    window.webContents.once('did-fail-load', reveal)
+    window.once('closed', () => clearTimeout(revealTimer))
+  }
   windowAppearance.watch(window)
   require('./services/window-close-choice.cjs').installWindowCloseChoice(window, app, ipcMain, { get: () => store?.getSetting('windowCloseChoice'), set: value => store.setSetting('windowCloseChoice', value) })
   window.setMenuBarVisibility(false)
@@ -2826,6 +2933,7 @@ async function boot() {
   modelRegistry = new ModelRegistry(store, secrets, cloudGateway)
   modelRegistry.migrateLegacySecret()
   applyLocalModelConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, cloudEnabled, registry: modelRegistry, safeStorage })
+  modelRegistry.migrateDeepSeekModels()
   runner = createHarnessRunner()
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),

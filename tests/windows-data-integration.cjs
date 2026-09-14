@@ -36,7 +36,7 @@ async function main() {
       }})
     await runner.run('Run this local synthetic data test once.',{model:'mock',providerId:'mock',baseURL:'https://unused.invalid'},'local-synthetic',60000,event=>{
       if(event.kind==='approval'&&event.status==='running'){
-        prompts++;assert.equal(event.approvalRisk,'safe',event.reason)
+        prompts++;assert.equal(event.approvalRisk,undefined)
         runner.answerApproval(event.requestId,true,decision)
       }
     },'workspace-write',[],{key:id,permissionMode:'request'})
@@ -47,7 +47,7 @@ async function main() {
     if (!process.argv.includes('--patch-only')) {
     await run(script,'conversation',1,'青岛虾饺')
     store.db.close();store=new StableStore(root)
-    await run(`@'\nimport json\nrows=json.load(open('input.json',encoding='utf-8-sig'))['result']\nprint('SECOND_SUM',sum(r['数量'] for r in rows))\n'@ | python -`,'once',0,'SECOND_SUM 5')
+    await run(`@'\nimport json\nrows=json.load(open('input.json',encoding='utf-8-sig'))['result']\nprint('SECOND_SUM',sum(r['数量'] for r in rows))\n'@ | python -`,'once',1,'SECOND_SUM 5')
     console.log('NATIVE_DATA_GRANT_REUSE_PASSED')
     }
     // A native patch tool may be automatically allowed within the workspace.

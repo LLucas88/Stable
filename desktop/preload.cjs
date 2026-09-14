@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('stable', {
     },
   },
   browser: { command: payload => invoke('stable:browser:command', payload), onChanged: callback => { const listener=()=>callback();ipcRenderer.on('stable:browser:changed',listener);return()=>ipcRenderer.removeListener('stable:browser:changed',listener) } },
+  templates: { list:()=>invoke('stable:templates:list'),detail:id=>invoke('stable:templates:detail',{id}),import:()=>invoke('stable:templates:import'),save:(id,value)=>invoke('stable:templates:save',{id,value}),use:id=>invoke('stable:templates:use',{id}) },
   market: {
     list: () => invoke('stable:market:list'), detail: id => invoke('stable:market:detail', { id }), save: value => invoke('stable:market:save', value),
     toggle: (id, enabled) => invoke('stable:market:toggle', { id, enabled }), remove: id => invoke('stable:market:remove', { id }),
@@ -108,6 +109,8 @@ contextBridge.exposeInMainWorld('stable', {
   },
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
   agent: {
+    onTaskOpen: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:open', listener); return () => ipcRenderer.removeListener('stable:task:open', listener) },
+    onTaskNotice: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:notice', listener); return () => ipcRenderer.removeListener('stable:task:notice', listener) },
     setSkillReferences: (id, ids) => invoke('stable:agent:skillReferences', { id, ids }),
     lifecycle: (id,action)=>invoke('stable:agent:lifecycle',{id,action}),
     configureNetwork: (id, enabled) => invoke('stable:agent:network', { id, enabled }),
@@ -204,6 +207,7 @@ contextBridge.exposeInMainWorld('stable', {
     saveGlobalInstructions: (content) => invoke('stable:settings:saveGlobalInstructions', { content }),
   },
   preview: {
+    existingFiles: (conversationId, paths) => invoke('stable:preview:existingFiles', { conversationId, paths }),
     openWeb: (url, bounds) => invoke('stable:preview:openWeb', { url, bounds }),
     openFile: (path, bounds) => invoke('stable:preview:openFile', { path, bounds }),
     setBounds: (bounds) => invoke('stable:preview:setBounds', { bounds }),

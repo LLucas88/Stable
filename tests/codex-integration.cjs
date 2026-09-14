@@ -139,9 +139,9 @@ async function main() {
       if (phase === 'read-full') assert.match(JSON.stringify(requests.at(-1).messages.filter((message) => message.role === 'tool')), /A店 summary 170/)
     }
     assert.match(fs.readFileSync(path.join(workspace, 'write-full.txt'), 'utf8'), /CODEX_FILE_OK/)
-    assert.equal(fs.readFileSync(path.join(workspace, 'sentinel.txt'), 'utf8'), 'DO_NOT_DELETE')
-    assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['write', 'read-full', 'write-full', 'unknown-full'])
-    assert.deepEqual(manualApprovals, [{ phase: 'deny', risk: 'high' }, { phase: 'danger-full', risk: 'high' }])
+    assert.equal(fs.existsSync(path.join(workspace, 'sentinel.txt')), false)
+    assert.deepEqual(autoApprovals.map((entry) => entry.phase), ['read-full', 'write-full', 'danger-full', 'unknown-full'])
+    assert.deepEqual(manualApprovals, [{ phase: 'write', risk: undefined }, { phase: 'deny', risk: undefined }])
     phase = 'search'; issuedTool = false
     let searchCalled = false
     currentRunner = new CodexHarnessRunner({ ...options, search: async ({ query }) => { assert.equal(query, 'mock query'); searchCalled = true; return { sources: [{ url: 'https://example.com/source', title: 'MOCK_SEARCH_RESULT' }], truncated: false } } })

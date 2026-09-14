@@ -14,7 +14,7 @@ let window
 async function run() {
   await app.whenReady()
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: /^https?:/.test(details.url) }))
-  window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
+  window = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false, sandbox: true, contextIsolation: true, nodeIntegration: false } })
   const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')
   const card = source.slice(source.indexOf('function ConversationFileCard('), source.indexOf('function useAttachmentImageSource('))
   const artifacts = source.slice(source.indexOf('function localArtifactPaths('), source.indexOf('function formatAutomationSchedule('))
@@ -28,10 +28,11 @@ async function run() {
     ${card}
     ${artifacts}
     window.expected = ${JSON.stringify(file)}; window.calls = []; window.failOpen = true;
-    window.stable = { system: { showItemInFolder: async value => {
+    window.fileExists = true;
+    window.stable = { preview: { existingFiles: async (_id, paths) => window.fileExists ? paths : [] }, system: { showItemInFolder: async value => {
       window.calls.push(value); if (window.failOpen) throw new Error('无法打开文件所在文件夹：fixture access denied'); return true;
     } } };
-    createRoot(document.getElementById('root')).render(<ArtifactLinks content={${JSON.stringify('完整路径：`' + file + '`')}} workspace={${JSON.stringify(workspace)}} onOpen={()=>{}}/>);
+    createRoot(document.getElementById('root')).render(<ArtifactLinks conversationId="fixture" content={${JSON.stringify('完整路径：`' + file + '`')}} workspace={${JSON.stringify(workspace)}} onOpen={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } }).outputFiles[0].text
   await window.loadURL('data:text/html,<div id="root"></div>')
   await window.webContents.executeJavaScript(bundle)
@@ -50,6 +51,11 @@ async function run() {
     expect(window.calls[0]===window.expected,'Menu corrupted the Windows path');
     window.failOpen=false; await reveal(); await wait(()=>window.calls.length===2&&!document.querySelector('[role=alert]'));
     expect(window.calls[1]===window.expected,'Retry corrupted the path');
+    window.fileExists=false;window.dispatchEvent(new Event('focus'));
+    await wait(()=>!document.querySelector('.conversation-file-card'));
+    window.fileExists=true;window.dispatchEvent(new Event('focus'));
+    await wait(()=>document.querySelector('.conversation-file-card'));
+    expect(!document.querySelector('.conversation-file-card').textContent.includes('生成文件'),'A mentioned path must not claim generated output');
   })()`)
   console.log('FILE_LOCATION_UI_PASSED')
   window.destroy(); app.exit(0)

@@ -57,7 +57,7 @@ test('plus menu opens the image and file picker while Skill installation stays s
   assert.match(main, /skillPaths\.has\(inspected\[index\]\.path\)\) inspected\[index\] = inspectSkillFolder/)
 })
 
-test('conversation images support selection, drag, paste, thumbnail removal and DeepSeek blocking', () => {
+test('conversation images support selection, drag, paste, thumbnail removal without provider-wide image blocking', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
@@ -71,7 +71,7 @@ test('conversation images support selection, drag, paste, thumbnail removal and 
   assert.doesNotMatch(app, /image-selection-chip|<figcaption>/)
   assert.match(app, /className="user-turn-stack"/)
   assert.match(app, /className="message-image"/)
-  assert.match(app, /DeepSeek 暂不支持图片分析，请切换其他模型/)
+  assert.doesNotMatch(app, /deepSeekImageBlocked|DeepSeek 暂不支持图片分析/)
   assert.match(app, /role="status" aria-live="polite"/)
   assert.match(preload, /stable:agent:savePastedImage/)
   assert.match(preload, /stable:agent:discardDraftImage/)
@@ -79,8 +79,8 @@ test('conversation images support selection, drag, paste, thumbnail removal and 
   assert.match(main, /ipcMain\.handle\('stable:agent:saveImageAs'/)
   assert.match(main, /dialog\.showSaveDialog\(mainWindow/)
   assert.match(main, /copyFileSync\(inspected\.path, result\.filePath\)/)
-  assert.match(main, /requestedAttachments\.some\(isImageAttachment\) && isDeepSeekModel/)
-  assert.match(harness, /input: isDeepSeekModel\(model\) \? \['text'\] : \['text', 'image'\]/)
+  assert.doesNotMatch(main, /requestedAttachments\.some\(isImageAttachment\) && isDeepSeekModel/)
+  assert.match(harness, /input: \['text', 'image'\]/)
   assert.match(harness, /attachments\.saveImage/)
   assert.match(css, /\.message-image-gallery/)
   assert.match(css, /\.message-image \{[^}]*width: fit-content;[^}]*height: auto;[^}]*background: transparent;/)
@@ -120,7 +120,7 @@ test('generated deliverables and materialized uploads share clickable file cards
   assert.match(app, /item\.kind === 'attachment' && item\.path/)
   assert.match(app, /kind: 'file', value: item\.path, title: item\.name/)
   assert.match(app, /previewRequestRef\.current \+= 1[\s\S]*requestId: previewRequestRef\.current/)
-  assert.match(app, /生成文件 · 侧栏预览/)
+  assert.match(app, /本地文件 · 侧栏预览/)
   assert.match(app, /上传附件 · \$\{item\.type\.toUpperCase\(\)\}/)
   assert.match(css, /\.conversation-file-card[^}]*min-height: 3\.5rem/)
   assert.match(css, /\.conversation-file-card:focus-visible[^}]*outline-color: var\(--color-focus\)/)

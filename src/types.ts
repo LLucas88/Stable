@@ -1,4 +1,4 @@
-export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market'
+export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market' | 'templates'
 export type ThemeMode = 'dark' | 'light'
 
 export interface WendingCliStatus {
@@ -240,6 +240,7 @@ export interface ConversationSearchResult {
 }
 
 export interface AgentState {
+  draftPrompt?: string
   recoveryText?: string
   recoveryDiagnostic?: string
   syncNotice?: string
@@ -309,6 +310,7 @@ export interface AgentTraceItem {
   reason?: string
   danger?: boolean
   approvalRisk?: 'safe' | 'unknown' | 'high'
+  automaticApproval?: boolean
   approvalCategory?: string
 }
 
@@ -520,6 +522,8 @@ export interface BootstrapData {
 }
 
 export interface StableBridge {
+  templates: {list():Promise<TemplateItem[]>;detail(id:string):Promise<TemplateItem & {html:string}>;import():Promise<TemplateItem[]>;save(id:string,value:Partial<TemplateItem>):Promise<TemplateItem[]>;use(id:string):Promise<AgentState>}
+
   windowClose: {
     onRequest(handler: () => void): () => void
     decide(choice: 'minimize' | 'quit' | 'cancel', remember: boolean): Promise<boolean>
@@ -600,6 +604,8 @@ export interface StableBridge {
   }
   projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
+    onTaskOpen?(handler: (state: AgentState) => void): () => void
+    onTaskNotice?(handler: (notice: {id:string; title?:string; body?:string; clear?:boolean}) => void): () => void
     setSkillReferences(id: string, ids: string[]): Promise<AgentReference[]>
     lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
     configureNetwork(id: string, enabled: boolean): Promise<AgentState>
@@ -677,6 +683,7 @@ export interface StableBridge {
     saveGlobalInstructions(content: string): Promise<GlobalInstructionsFile>
   }
   preview: {
+    existingFiles(conversationId: string, paths: string[]): Promise<string[]>
     openWeb(url: string, bounds: PreviewBounds): Promise<PreviewState>
     openFile(path: string, bounds: PreviewBounds): Promise<PreviewState>
     setBounds(bounds: PreviewBounds): Promise<boolean>
@@ -708,3 +715,5 @@ declare global {
     stable: StableBridge
   }
 }
+
+export interface TemplateItem { id:string; name:string; category:string; description:string; tags:string[]; skillId:string; prompt:string; favorite:boolean; builtin?:boolean }
