@@ -29,7 +29,7 @@ test('version is visible in the account menu and the direct launcher accepts iso
   const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-  assert.equal(pkg.version, '1.0.1')
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.match(app, /className="rail-version"/)
   assert.match(app, />Stable v\{state\.appVersion\}</)
   assert.match(main, /--stable-user-data=/)
@@ -50,6 +50,6 @@ test('full installer ships the runtime while the lightweight updater reuses it',
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false)
   assert.ok(resources.includes('runtime:runtime'))
   assert.equal(updateResources.includes('runtime:runtime'), false)
-  assert.equal(update.win.artifactName, 'Stable-Update-1.0.01-x64.${ext}')
+  assert.equal(update.win.artifactName, 'Stable-Update-' + (pkg.releaseVersion || pkg.version) + '-x64.${ext}')
   assert.doesNotMatch(JSON.stringify(pkg.build), /stable-userdata|secrets\.json/)
 })

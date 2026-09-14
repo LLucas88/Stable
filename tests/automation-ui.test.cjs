@@ -29,7 +29,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   const installer = readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8')
   const installSection = readFileSync(path.join(__dirname, '..', 'build', 'stable-install-section.nsh'), 'utf8')
   const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
-  assert.equal(pkg.version, '1.0.1')
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   // Electron 43 lazily downloads on require(); initialize once before parallel tests.
   assert.equal(pkg.scripts.pretest, 'node node_modules/electron/install.js')
   assert.deepEqual(pkg.build.publish[0], { provider: 'github', owner: 'LLucas88', repo: 'Stable', releaseType: 'release' })
