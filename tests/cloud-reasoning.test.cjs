@@ -3,7 +3,7 @@ const {ModelRegistry}=require('../desktop/services/model-registry.cjs')
 const {CloudGatewayProxy}=require('../desktop/services/cloud-gateway-proxy.cjs')
 const {reasoningOptions,reasoningParameters}=require('../desktop/services/model-reasoning.cjs')
 const {CodexResponsesBridge,readSSE}=require('../desktop/services/codex-responses-bridge.cjs')
-for (const [id,provider] of [['glm-5.3-flash','zhipu'],['deepseek-flash','deepseek'],['deepseek-v4-pro','deepseek']]) test('cloud reasoning crosses the local gateway: '+id,async()=>{
+for (const [id,provider] of [['glm-5.3-flash','zhipu'],['deepseek-flash','deepseek']]) test('cloud reasoning crosses the local gateway: '+id,async()=>{
  const requests=[]
  const account={baseURL:'https://cloud.test',token:()=> 'fixture',publicState:()=>({status:'authenticated',models:[{id,provider,display_name:id}]})}
  const gateway=new CloudGatewayProxy({account,fetchImpl:async(_url,request)=>{requests.push(JSON.parse(request.body));return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}})}})

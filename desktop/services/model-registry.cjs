@@ -7,6 +7,8 @@ const { reasoningOptions, cloudReasoningProfile } = require('./model-reasoning.c
 const SECRET_PREFIX = 'model:'
 const MODEL_DISPLAY_NAMES = { 'deepseek-flash': 'DeepSeek-Flash', 'deepseek-v4-pro': 'DeepSeek-V4-Pro', 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
 function displayName(model, fallback) { return MODEL_DISPLAY_NAMES[String(model).toLowerCase()] || fallback }
+function retiredModel(item) { return String(item.model || item.id || '').toLowerCase() === 'deepseek-v4-pro' }
+function flashModel(items) { return items.find(item => ['deepseek-flash', 'deepseek-v4-flash'].includes(String(item.model || item.id).toLowerCase())) }
 
 function requireModelText(value, label, limit) {
   const text = String(value || '').trim()
@@ -54,33 +56,23 @@ class ModelRegistry {
   cloudCatalog() {
     const state = this.cloudGateway?.account?.publicState()
     if (state?.status !== 'authenticated') return null
-    const items = state.models.map((item) => ({
+    const items = state.models.filter(item => !retiredModel(item)).map((item) => ({
       ...cloudReasoningProfile(item), id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
-    return { items, defaultModelId: items[0]?.id || '' }
+    return { items, defaultModelId: flashModel(items)?.id || items[0]?.id || '' }
   }
 
   migrateDeepSeekModels() {
     const catalog = this.store.modelCatalog()
-    let flash
     for (const item of catalog.items) {
       let host
       try { host = new URL(item.baseURL).hostname } catch { continue }
       if (host !== 'api.deepseek.com') continue
       if (['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-flash'].includes(item.model)) {
-        flash = { ...item, model: 'deepseek-flash', displayName: 'DeepSeek-Flash' }
+        const flash = { ...item, model: 'deepseek-flash', displayName: 'DeepSeek-Flash' }
         this.store.saveModelProfile(flash)
-      }
-    }
-    if (flash) {
-      const existing = this.store.modelCatalog().items.find(item => item.model === 'deepseek-v4-pro' && item.baseURL === flash.baseURL)
-      const id = existing?.id || (this.store.modelProfile('deepseek-v4-pro') ? randomUUID() : 'deepseek-v4-pro')
-      if (!existing) this.store.saveModelProfile({ ...flash, id, model: 'deepseek-v4-pro', displayName: 'DeepSeek-V4-Pro' })
-      if (!this.secrets.has(modelSecretKey(id))) {
-        const source = this.secrets.has(modelSecretKey(flash.id)) ? modelSecretKey(flash.id) : flash.id === catalog.legacyModelId && this.secrets.has('apiKey') ? 'apiKey' : null
-        if (source) this.secrets.set(modelSecretKey(id), this.secrets.get(source))
       }
     }
   }
@@ -97,9 +89,10 @@ class ModelRegistry {
     const cloud = this.cloudCatalog()
     if (cloud) return cloud
     const catalog = this.store.modelCatalog()
+    const items = catalog.items.filter(item => !retiredModel(item))
     return {
-      items: catalog.items.map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
-      defaultModelId: catalog.defaultModelId,
+      items: items.map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
+      defaultModelId: items.some(item => item.id === catalog.defaultModelId) ? catalog.defaultModelId : flashModel(items)?.id || items[0]?.id || '',
     }
   }
 
@@ -111,7 +104,12 @@ class ModelRegistry {
       return this.cloudGateway.modelRoute(id)
     }
     const catalog = this.store.modelCatalog()
-    const id = String(modelId || catalog.defaultModelId)
+    let id = String(modelId || catalog.defaultModelId)
+    if (retiredModel(this.store.modelProfile(id) || { id })) {
+      const flash = flashModel(catalog.items)
+      if (!flash) throw new Error('DeepSeek-V4-Pro 已下架，请重新选择可用模型。')
+      id = flash.id
+    }
     const model = this.store.modelProfile(id)
     if (!model) throw new Error('所选模型已不存在，请重新选择模型。')
     const secretKey = modelSecretKey(id)
@@ -121,6 +119,7 @@ class ModelRegistry {
   }
 
   save(input = {}) {
+    if (retiredModel(input)) throw new Error('DeepSeek-V4-Pro 已下架，请选择 DeepSeek-Flash。')
     if (this.cloudCatalog()) throw new Error('云端模型由管理员统一维护，桌面端不能修改。')
     const existing = input.id ? this.store.modelProfile(String(input.id)) : undefined
     const requestedId = String(input.id || '').trim()
@@ -155,6 +154,7 @@ class ModelRegistry {
   }
 
   setDefault(id) {
+    if (retiredModel(this.store.modelProfile(String(id || '')) || { id })) throw new Error('DeepSeek-V4-Pro 已下架，请选择 DeepSeek-Flash。')
     if (this.cloudCatalog()) throw new Error('云端模式下请在对话输入区选择模型。')
     this.store.setDefaultModel(String(id || ''))
     return this.publicCatalog()

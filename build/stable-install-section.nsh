@@ -297,6 +297,13 @@ WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR
 WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString '"$INSTDIR\${UNINSTALL_FILENAME}" $0 /S _?=$INSTDIR'
 !insertmacro addStartMenuLink $keepShortcuts
 !insertmacro addDesktopLink $keepShortcuts
+; Preserve installer identity while separating production taskbar grouping from development.
+${if} ${FileExists} "$newStartMenuLink"
+  WinShell::SetLnkAUMI "$newStartMenuLink" "com.stable.agent.production"
+${endif}
+${if} ${FileExists} "$newDesktopLink"
+  WinShell::SetLnkAUMI "$newDesktopLink" "com.stable.agent.production"
+${endif}
 
 ${if} ${FileExists} "$newStartMenuLink"
   StrCpy $launchLink "$newStartMenuLink"

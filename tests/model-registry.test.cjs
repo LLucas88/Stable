@@ -108,7 +108,7 @@ test('profile validation and deletion preserve deterministic routing', () => {
 })
 
 
-test('DeepSeek migration preserves profile IDs, conversations and credentials and adds Pro once', () => {
+test('DeepSeek migration preserves profile IDs, conversations and credentials without adding Pro', () => {
   const context=setup()
   try {
     const id=context.store.modelCatalog().defaultModelId
@@ -118,12 +118,46 @@ test('DeepSeek migration preserves profile IDs, conversations and credentials an
     context.registry.migrateDeepSeekModels()
     context.registry.migrateDeepSeekModels()
     const catalog=context.store.modelCatalog()
-    assert.equal(catalog.items.length,2)
+    assert.equal(catalog.items.length,1)
     assert.equal(catalog.defaultModelId,id)
     assert.equal(context.store.modelProfile(id).model,'deepseek-flash')
     assert.equal(context.store.conversation(context.store.activeConversationId()).modelId,id)
-    const pro=catalog.items.find(x=>x.model==='deepseek-v4-pro')
-    assert.equal(context.registry.resolve(pro.id).apiKey,'test-key')
+    assert.equal(catalog.items.some(x=>x.model==='deepseek-v4-pro'),false)
     assert.equal(context.registry.resolve(id).apiKey,'test-key')
   } finally {context.store.close();rmSync(context.root,{recursive:true,force:true})}
+})
+
+test('retired local Pro is hidden and old selections use Flash without deleting history or credentials', () => {
+  const context = setup()
+  try {
+    const flash = context.store.modelProfile(LEGACY_MODEL_PROFILE_ID)
+    context.store.saveModelProfile({ ...flash, model: 'deepseek-flash' })
+    const pro = { ...flash, id: 'old-pro', model: 'deepseek-v4-pro' }
+    context.store.saveModelProfile(pro)
+    context.store.setDefaultModel(pro.id)
+    const conversation = context.store.createConversation({ modelId: pro.id })
+    context.secrets.set(modelSecretKey(flash.id), 'flash-key')
+    context.secrets.set(modelSecretKey(pro.id), 'pro-key')
+    assert.equal(context.registry.publicCatalog().items.some(item => item.id === pro.id), false)
+    assert.equal(context.registry.publicCatalog().defaultModelId, flash.id)
+    assert.equal(context.registry.resolve(pro.id).model.model, 'deepseek-flash')
+    assert.equal(context.registry.resolve(pro.id).apiKey, 'flash-key')
+    assert.equal(context.store.conversation(conversation).modelId, pro.id)
+    assert.equal(context.secrets.get(modelSecretKey(pro.id)), 'pro-key')
+    assert.throws(() => context.registry.save(pro), /已下架/)
+    assert.throws(() => context.registry.setDefault(pro.id), /已下架/)
+    context.store.saveModelProfile({ ...flash, model: 'another-model' })
+    assert.throws(() => context.registry.resolve(pro.id), /已下架/)
+  } finally { context.store.close(); rmSync(context.root, { recursive: true, force: true }) }
+})
+
+test('stale cloud Pro selections fall back to Flash and cannot appear in the catalog', () => {
+  const registry = new ModelRegistry(null, null, {
+    baseURL: 'http://localhost',
+    account: { publicState: () => ({ status: 'authenticated', models: [{ id: 'deepseek-v4-pro' }, { id: 'glm-5.3-flash' }, { id: 'deepseek-flash' }] }) },
+    modelRoute: id => ({ id }),
+  })
+  assert.deepEqual(registry.publicCatalog().items.map(item => item.id), ['glm-5.3-flash', 'deepseek-flash'])
+  assert.equal(registry.resolve('deepseek-v4-pro').id, 'deepseek-flash')
+  assert.equal(registry.resolve('glm-5.3-flash').id, 'glm-5.3-flash')
 })

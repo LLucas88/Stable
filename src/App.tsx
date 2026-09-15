@@ -1094,33 +1094,39 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     })
   }
 
-  async function addPastedImages(files: File[]) {
+  async function addPastedAttachments(files: File[]) {
     const saved: AgentAttachment[] = []
     setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))
-    setAttachmentStatus('正在读取剪贴板图片。')
+    setAttachmentStatus('正在读取剪贴板附件。')
     try {
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]
+      // Explorer copies carry real file paths; screenshots carry only image bytes.
+      const entries = files.map(file => ({ file, path: window.stable.files.path(file) }))
+      const paths = [...new Set(entries.map(item => item.path).filter(Boolean))]
+      const inspected = paths.length ? await window.stable.agent.inspectAttachments(paths) : []
+      const images = entries.filter(item => !item.path).map(item => item.file)
+      if (images.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) throw new Error('无法读取剪贴板文件路径，请从资源管理器复制文件后粘贴。')
+      for (let index = 0; index < images.length; index += 1) {
+        const file = images[index]
         const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
         const name = file.name && !/^image\.(?:png|jpe?g|webp)$/i.test(file.name) ? file.name : `粘贴截图-${Date.now()}-${index + 1}.${extension}`
         saved.push(await window.stable.agent.savePastedImage(state.activeConversationId, name, file.type, new Uint8Array(await file.arrayBuffer())))
       }
       const merged = [...attachments]
-      for (const item of saved) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
+      for (const item of [...inspected, ...saved]) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
       if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
       if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
       setAttachments(merged)
-      setAttachmentStatus(`已从剪贴板添加 ${saved.length} 张图片。`)
+      setAttachmentStatus(`已从剪贴板添加 ${merged.length - attachments.length} 个附件。`)
     } catch (error) {
       for (const item of saved) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
       setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: errorMessage(error) }))
-      setAttachmentStatus('剪贴板图片未添加。')
+      setAttachmentStatus('剪贴板附件未添加。')
     }
   }
 
   function handlePromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
     const files = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === 'file' && ['image/png', 'image/jpeg', 'image/webp'].includes(item.type))
+      .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile()).filter((item): item is File => Boolean(item))
     if (!files.length) return
     event.preventDefault()
@@ -1130,7 +1136,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       const end = event.currentTarget.selectionEnd
       setPrompt((current) => `${current.slice(0, start)}${pastedText}${current.slice(end)}`)
     }
-    void addPastedImages(files)
+    void addPastedAttachments(files)
   }
 
   async function catchReply(message: MessageItem) {
@@ -1582,7 +1588,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
                       <ModelProviderIcon model={item} />
-                      <span className="model-option-copy"><strong>{item.displayName}</strong></span>
+                      <span className="model-option-copy"><strong>{item.displayName}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}</span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
                   })}</fieldset> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}

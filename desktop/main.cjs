@@ -76,7 +76,8 @@ const {
 const { createWindowAppearance } = require('./services/window-appearance.cjs')
 const windowAppearance = createWindowAppearance({ app, nativeTheme })
 
-const APP_ID = 'com.stable.agent'
+// Keep production taskbar identity separate from Electron development launches.
+const APP_ID = app.isPackaged ? 'com.stable.agent.production' : 'com.stable.agent.development'
 
 let mainWindow
 let tray
@@ -2331,7 +2332,10 @@ function registerIpc() {
     const id = requireText(payload?.id, '对话 ID', 100)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     const capability = String(payload?.capability || 'auto')
-    const profile = modelRegistry.publicCatalog().items.find(item => item.id === (store.conversation(id).modelId || modelRegistry.publicCatalog().defaultModelId))
+    const catalog = modelRegistry.publicCatalog()
+    // Match the model shown by the renderer and the execution route when an old local ID is no longer in the cloud catalog.
+    const profile = catalog.items.find(item => item.id === store.conversation(id).modelId)
+      || catalog.items.find(item => item.id === catalog.defaultModelId) || catalog.items[0]
     if (!AGENT_CAPABILITIES.has(capability) || (capability !== 'auto' && !reasoningOptions(profile).some(item => item.id === capability))) throw new Error('当前模型 API 不支持此思考强度。')
     const requestedIds = Array.isArray(payload?.dataIds) ? [...new Set(payload.dataIds.map(String))].slice(0, 50) : []
     const enabledIds = new Set(store.listData().filter((item) => item.enabled).map((item) => item.id))
@@ -2768,13 +2772,11 @@ function registerIpc() {
     const paths=conversationPaths(store.activeConversationId())
     const requested = requireText(payload?.path, '路径', 1000)
     const resolved = resolveWorkspaceEntry(requested, paths.writableRoots || paths.workspace)
-    if (process.platform === 'win32') {
-      // The Windows reveal API returns no result and can fail inside Explorer.
-      // Open the verified containing directory so failures reach the file card.
-      const directory = resolved.isDirectory ? resolved.path : path.dirname(resolved.path)
-      const openError = await shell.openPath(directory)
+    if (resolved.isDirectory) {
+      const openError = await shell.openPath(resolved.path)
       if (openError) throw new Error(`无法打开文件所在文件夹：${openError}`)
     } else {
+      // Pass the file itself so Explorer opens its parent and selects the file row.
       shell.showItemInFolder(resolved.path)
     }
     return true
@@ -2804,6 +2806,15 @@ function createWindow() {
     } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: false },
   })
+  if (process.platform === 'win32' && app.isPackaged) {
+    window.setAppDetails({
+      appId: APP_ID,
+      appIconPath: process.execPath,
+      appIconIndex: 0,
+      relaunchCommand: `"${process.execPath}" "--stable-user-data=${app.getPath('userData')}"`,
+      relaunchDisplayName: 'Stable',
+    })
+  }
   // A failed renderer handshake must not leave the desktop app invisible.
   if (!process.env.STABLE_QA_CAPTURE) {
     const reveal = () => {

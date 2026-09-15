@@ -1113,11 +1113,12 @@ html[data-theme="dark"] .conversation-start-animation { filter: invert(1) hue-ro
 .model-option input:focus-visible ~ .model-option-mark { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .model-option-mark { display: grid; width: 1.25rem; height: 1.25rem; place-items: center; color: var(--color-ink); }
 .model-option-mark > span { width: 0.85rem; height: 0.85rem; border-radius: 50%; outline: 1px solid var(--color-rule); outline-offset: -1px; }
-.model-option-copy { display: flex; min-width: 0; flex-direction: column; gap: var(--space-3xs); }
+.model-option-copy { display: flex; min-width: 0; align-items: baseline; gap: var(--space-2xs); }
 .model-option-copy strong,
 .model-option-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-option-copy strong { font-size: var(--text-sm); font-weight: 400; }
 .model-option-copy small { color: var(--color-muted); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 400; }
+.model-option-copy .model-version-label { flex-shrink: 0; color: var(--color-ink-2); font-family: inherit; }
 .model-option em { padding: var(--space-3xs) var(--space-xs); border-radius: 999px; background: var(--color-paper-3); color: var(--color-muted); font-size: var(--text-xs); font-style: normal; white-space: nowrap; }
 
 /* Approval choices replace the input while a request is pending. */
