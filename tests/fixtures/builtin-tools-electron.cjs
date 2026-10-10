@@ -8,7 +8,7 @@ const os = require('node:os')
 const http = require('node:http')
 const { BuiltinTools } = require('../../desktop/services/builtin-tools.cjs')
 const { BrowserTool } = require('../../desktop/services/browser-tool.cjs')
-const { HarnessRunner } = require('../../desktop/services/harness.cjs')
+const { HarnessRunner } = require('../../desktop/services/execution-harness.cjs')
 const { removeWithoutFollowingLinks } = require('../../desktop/services/safe-remove.cjs')
 const ExcelJS = require('../../vendor/agent-tools/node_modules/exceljs')
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-builtin-e2e-'))
@@ -26,7 +26,7 @@ async function run() {
     for (const [content, finish_reason] of [[delta, null], [{}, reason]]) response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: content, finish_reason }] })}\n\n`)
     response.end('data: [DONE]\n\n')
   }
-  const call = (response, name, args) => finish(response, { tool_calls: [{ index: 0, id: `fixture-${step}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }, 'tool_calls')
+  const call = (response, name, args) => finish(response, { tool_calls: [{ index: 0, id: `fixture-${step}`, type: 'function', function: { name: `mcp__stable__${name}`, arguments: JSON.stringify(args) } }] }, 'tool_calls')
   const html = '<!doctype html><title>工具验证</title><label>备注<input name="note"></label><input name="password" type="password"><button id="apply" onclick="document.getElementById(\'status\').textContent=document.querySelector(\'input[name=note]\').value">应用</button><div id="status">等待填写</div><table><tr><th>门店</th><th>金额</th></tr><tr><td>A店</td><td>120</td></tr></table><a href="file:///C:/Windows/win.ini">禁止文件</a><script>window.nodeExposed=typeof require;window.open("https://example.invalid/");</script>'
   server = http.createServer(async (request, response) => {
     if (request.url === '/page') { response.writeHead(200, { 'content-type': 'text/html;charset=utf-8' }); response.end(html); return }
@@ -36,14 +36,14 @@ async function run() {
       const chunks = []; for await (const chunk of request) chunks.push(chunk)
       const body = JSON.parse(Buffer.concat(chunks))
       if (!body.tools?.length) { finish(response, { content: '工具验证' }); return }
-      const names = body.tools.map(tool => tool.function?.name)
+      const names = body.tools.map(tool => tool.function?.name?.replace(/^mcp__stable__/, ''))
       assert.ok(names.includes('stable_browser'), `browser not advertised: ${names.join(',')}`)
       assert.ok(names.includes('stable_excel'), 'Excel not advertised')
       const last = body.messages.filter(m => m.role === 'tool').at(-1)
       let result
       if (last) {
         const content = typeof last.content === 'string' ? last.content : last.content.map(c => c.text || '').join('')
-        try { result = JSON.parse(content) } catch { throw new Error(`Tool failed: ${content.slice(0, 1200)}`) }
+        try { result = JSON.parse(content.split('<system-reminder>')[0].trim()) } catch { throw new Error(`Tool failed: ${content.slice(0, 1200)}`) }
         responses.push(result)
       }
       step++
@@ -69,7 +69,7 @@ async function run() {
   runner = new HarnessRunner({ userData: root, workspace: root, packaged: false, environment: {}, builtinTools: factory })
   const answer = await runner.run('Use the requested built-in tools on the local test fixture.', { providerId: 'builtin-test', model: 'builtin-test', baseURL: `${origin}/v1` }, 'fake-test-key', 50_000, event => {
     events.push(event); console.log('HARNESS_TRACE',event.kind,event.title,event.detail||'')
-    if (event.kind === 'approval') { approvals++; runner.answerApproval(event.requestId, true) } // fixture only
+    if (event.kind === 'approval' && event.status === 'running') { approvals++; runner.answerApproval(event.requestId, true) } // fixture only
   }, 'workspace-write')
   assert.equal(answer, 'BUILTIN_AGENT_OK')
   assert.equal(step, 7); assert.equal(approvals, 3)

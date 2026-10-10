@@ -4,6 +4,16 @@ const {normalizeWindowsCall}=require('../desktop/services/windows-command.cjs')
 const {executeExcel}=require('../desktop/services/excel-tool.cjs')
 const python=path.resolve(__dirname,'../vendor/wending-cli/python/python.exe')
 const shell=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
+
+test('new exec_command preserves Chinese, uses cmd, and does not rewrite another shell', {skip:process.platform!=='win32'},()=>{
+ const result=normalizeWindowsCall({name:'exec_command'},{cmd:"Write-Output '中文命令'",yield_time_ms:10000},new Map(),python)
+ assert.equal(result.args.timeout_ms,undefined);assert.equal(result.args.command,undefined)
+ assert.equal(result.args.yield_time_ms,10000)
+ const output=execFileSync(shell,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(result.args.cmd,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000})
+ assert.match(output,/中文命令/)
+ const args={cmd:'echo hello',shell:'cmd.exe'}
+ assert.deepEqual(normalizeWindowsCall({name:'exec_command'},args,new Map(),python).args,args)
+})
 test('PowerShell 5 Python stdin handles BOM and Chinese in full and constrained language', {skip:process.platform!=='win32'},()=>{
  for(const constrained of [false,true])for(const variable of [false,true])for(const codeVariable of [false,true]){
   const command=(variable?`$py = '${python}'\n`:'')+(codeVariable?'$code = ':'')+`@'\nprint('中文成功')\n'@`+(codeVariable?'\n$code':'')+` | & ${variable?'$py':`'${python}'`} -I -X utf8 -`

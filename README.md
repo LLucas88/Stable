@@ -1,5 +1,9 @@
 # Stable
 
+> `2cluade-agent` 分支：本机执行入口统一为 Claude Agent SDK，命令改为 WSL2 沙箱。旧引擎运行程序和启动/打包依赖已移除。以下历史版本记录不代表本分支当前架构；当前配置见 [WSL2 文档](docs/CLAUDE_AGENT_SDK.md)。
+
+> 当前工作区源码（2026-09-30）：聊天、工作流、定时和协作的本机模型执行默认使用官方 Claude Agent SDK，沿用已有模型服务与加密 Key，不需要 Stable Cloud 登录。本次未生成正式安装器或发布。接入与验证记录见 [Claude Agent SDK 文档](docs/CLAUDE_AGENT_SDK.md)。以下版本章节保留历史记录。
+
 Stable 是一个 Windows 本地 Agent 工作台。当前 GitHub 正式发布版本为 **v1.0.01**，当前 `main` 的包版本为 **1.0.1**。项目包含云端内部账号与金额额度、云端多模型切换、对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
 
 ## v1.0.01 开发与交付总结
@@ -67,11 +71,6 @@ Stable 是一个 Windows 本地 Agent 工作台。当前 GitHub 正式发布版�
 - 模型请求先原子预占金额，再按实际 usage 结算并释放差额；usage 不可靠时进入 `uncertain` 队列。供应商 Key 只保存在服务端 Secret，客户端不能提交任意上游地址。
 - 修复生产初始化 PBKDF2 参数上限、D1 Trigger 部署/成功判断、后台导航和模型上游白名单映射问题；41 项本地测试和 15 项隔离 HTTP 全流程验收通过，首个管理员已实际创建。
 
-## v0.91.2 Codex Harness
-
-保留 Stable 界面和账号，默认使用 Codex `app-server` 执行任务，模型请求经本机协议桥继续发往已有 Chat Completions 服务。已接入持久会话、工具审批、流式事件、图片、搜索 MCP 和取消；保留显式切回旧引擎的开发选项。固定使用 Codex `0.142.2`，无需个人 Codex 登录。
-
-开发、架构、验证范围、兼容限制和回退步骤见 [Codex Harness 接入文档](docs/CODEX_HARNESS.md)。下面旧版本段落保留当时的发布与验证记录，不代表本分支已发布。
 
 ## v0.9.39 账号与云端模型（发布准备中）
 
@@ -146,7 +145,7 @@ Stable-Setup-1.0.01-x64.exe
 
 ```powershell
 npm ci
-npm run runtime:codex
+npm run sandbox:setup
 npm run typecheck
 npm test
 npm run dev
@@ -161,7 +160,7 @@ npm start
 
 ## Harness 运行时
 
-运行 `npm run runtime:codex` 从固定的 npm 依赖准备 `runtime/codex`，完整 Agent 默认使用该运行时。`runtime/` 不提交到 Git。完整安装包仍需要原有 Node / DeepSeek Runtime 供回退及既有资源功能使用；可通过 `STABLE_HARNESS=deepseek` 明确切回旧实现。完整包和轻量更新包都会包含 Codex 二进制及沙箱助手。
+`npm ci` 安装固定的 Claude Agent SDK。命令使用专用 StableAgent WSL2 环境中的 Anthropic sandbox-runtime，运行 `npm run sandbox:setup` 安装，运行 `npm run test:wsl-integration` 验证。本分支只有 Claude 执行入口；模型服务仍取 Stable 当前配置。详见 [接入文档](docs/CLAUDE_AGENT_SDK.md)。
 
 ## 构建安装包
 

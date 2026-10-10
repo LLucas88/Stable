@@ -53,7 +53,7 @@ class CloudGatewayProxy {
     if (!item) throw new Error('所选云端模型已不可用，请重新选择。')
     if (!this.baseURL) throw new Error('Stable Cloud 本机网关尚未就绪。')
     return {
-      model: { ...cloudReasoningProfile(item), id: item.id, providerId: 'stable-cloud', displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id },
+      model: { ...cloudReasoningProfile(item), id: item.id, providerId: 'stable-cloud', displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id, contextWindow: item.context_window, maxOutputTokens: item.max_output_tokens },
       apiKey: this.secret,
     }
   }

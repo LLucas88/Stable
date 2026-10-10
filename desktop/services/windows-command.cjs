@@ -6,11 +6,15 @@ const stripUtf8Prefix = script => script.startsWith(UTF8_PREFIX) ? script.slice(
 const quote = value => `'${value.replace(/'/g, "''")}'`
 
 function normalizeWindowsCall(spec, args, catalog, python) {
-  if (spec.custom || spec.name !== 'shell_command' || typeof args.command !== 'string') return { spec, args }
-  let script = stripUtf8Prefix(args.command)
+  const field = spec.name === 'exec_command' ? 'cmd' : 'command'
+  if (spec.custom || !['shell_command', 'exec_command'].includes(spec.name) || typeof args[field] !== 'string') return { spec, args }
+  if (args.shell && !/(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i.test(args.shell)) return { spec, args }
+  let script = stripUtf8Prefix(args[field])
   // Only an entire literal patch wrapper is rewritten, never a mixed command.
   const patch = script.match(/^\s*apply_patch\s+<<'PATCH'\r?\n([\s\S]*?)\r?\nPATCH\s*$/)
     || script.match(/^\s*@'\r?\n([\s\S]*?)\r?\n'@\s*\|\s*apply_patch\s*$/)
+    || script.match(/^\s*apply_patch\s+@'\r?\n([\s\S]*?)\r?\n'@\s*$/)
+    || script.match(/^\s*apply_patch\s+(\*\*\* Begin Patch\r?\n[\s\S]*?\r?\n\*\*\* End Patch)\s*$/)
   const nativePatch = [...catalog.values()].find(item => item.name === 'apply_patch' && item.custom)
   if (patch && nativePatch && patch[1].startsWith('*** Begin Patch') && patch[1].trimEnd().endsWith('*** End Patch')) return { spec: nativePatch, args: { input: patch[1] } }
   if (patch && !nativePatch) {
@@ -53,6 +57,6 @@ function normalizeWindowsCall(spec, args, catalog, python) {
       script = script.replace(stdinPython, (_whole, head, exe, flags) => head + exe + flags + '-c ' + quote(decoder))
     }
   }
-  return { spec, args: { ...args, command: UTF8_PREFIX + script, login: false } }
+  return { spec, args: { ...args, ...(field === 'command' ? { timeout_ms: args.timeout_ms ?? 60_000 } : {}), [field]: UTF8_PREFIX + script, login: false } }
 }
 module.exports = { UTF8_PREFIX, stripUtf8Prefix, normalizeWindowsCall }

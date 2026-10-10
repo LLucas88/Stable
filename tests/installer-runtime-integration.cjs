@@ -108,6 +108,7 @@ SectionEnd
     { name: 'in-app-embedded', old: true, updated: true, runtime: 'embedded', code: 0 },
     { name: 'in-app-persistent', old: true, updated: true, runtime: 'persistent', code: 0 },
     { name: 'manual-fresh-rejected', code: 21 },
+    { name: 'full-manual-fresh-accepted', full: true, fresh: true, code: 0 },
     { name: 'full-updated-wrong-path-rejected', full: true, updated: true, code: 21 },
     { name: 'in-app-missing-runtime', old: true, updated: true, code: 11 },
     { name: 'manual-rollback', old: true, runtime: 'embedded', healthExit: 4, code: 12 },
@@ -145,9 +146,12 @@ SectionEnd
     })
     assert.equal(result.error, undefined, result.error?.message)
     assert.equal(result.status, scenario.code, `${scenario.name}: ${result.stderr}`)
-    assert.equal(fs.existsSync(path.join(home, 'legacy-uninstall-called')), false, `${scenario.name}: must not uninstall`)
+    assert.equal(fs.existsSync(path.join(home, 'legacy-uninstall-called')), Boolean(scenario.fresh), `${scenario.name}: installer dispatch`)
     assert.equal(fs.readFileSync(sentinel, 'utf8'), 'preserve-user-data')
-    if (scenario.code === 0) {
+    if (scenario.fresh) {
+      assert.equal(fs.readFileSync(path.join(app, 'resources/app.asar'), 'utf8'), 'new-app')
+      assert.equal(fs.existsSync(path.join(app, 'Stable.exe')), true)
+    } else if (scenario.code === 0) {
       assert.equal(fs.readFileSync(path.join(persistent, 'node/node.exe'), 'utf8'), 'runtime-sentinel')
       assert.equal(fs.readFileSync(path.join(persistent, 'dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'), 'utf8'), 'runtime-sentinel')
       assert.equal(fs.readFileSync(path.join(app, 'resources/app.asar'), 'utf8'), 'new-app')

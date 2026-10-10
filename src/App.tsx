@@ -1,4 +1,5 @@
 import { TemplateLibrary } from './TemplateLibrary'
+import { ModelConnectionSettings } from './ModelConnectionSettings'
 import { EffortSlider } from './EffortSlider'
 import { ModelProviderIcon } from './ModelProviderIcon'
 import { CloseWindowDialog } from './CloseWindowDialog'
@@ -14,7 +15,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEv
 import { createPortal } from 'react-dom'
 import {
   Globe2, Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Copy, Database, Download, ExternalLink, Eye, FilePlus2, FileText, FlaskConical, FolderInput, FolderOpen, Home, Library, ListTree,
+  CircleStop, Clock3, Copy, Database, Download, ExternalLink, Eye, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderOpen, Home, Library, ListTree,
   Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, MoreHorizontal, MoreVertical, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Play, Plus, Save,
   RotateCw, SendHorizontal, Share2, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
 } from 'lucide-react'
@@ -24,7 +25,7 @@ import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import { buildTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus } from './trace-timeline'
+import { buildTraceTimeline, groupTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus } from './trace-timeline'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { taskErrorMessage } from './task-feedback'
 import { ConversationWending } from './ConversationWending'
@@ -111,9 +112,7 @@ export function App() {
   const requestedPage = new URLSearchParams(window.location.search).get('page') as Page | null
   const initialPage = requestedPage && PAGE_IDS.includes(requestedPage) ? requestedPage : 'agent'
   const [page, setPage] = useState<Page>(initialPage)
-  const [taskNotices, setTaskNotices] = useState<Record<string,{title?:string;body?:string}>>({})
   useEffect(() => window.stable.agent.onTaskOpen?.(agent => {setState(current=>current?{...current,...agent}:current);setPage('agent');setMode('work')}), [])
-  useEffect(() => window.stable.agent.onTaskNotice?.(notice => setTaskNotices(current=>{const next={...current};if(notice.clear)delete next[notice.id];else next[notice.id]=notice;return next})), [])
 
   const [mode, setMode] = useState<WorkspaceMode>(LAB_NAV.some((item) => item.id === initialPage) ? 'lab' : 'work')
   const [repositoryTab, setRepositoryTab] = useState<RepositoryPageId>(isRepositoryPage(initialPage) ? initialPage : 'data')
@@ -177,6 +176,17 @@ export function App() {
     }, 2100)
     return () => window.clearTimeout(timer)
   }, [launchRunning, showLaunch])
+
+  useEffect(() => {
+    if (state?.cloud.status !== 'checking') return
+    let cancelled = false
+    void window.stable.cloud.startup().then(value => {
+      if (!cancelled) setState(value)
+    }).catch(reason => {
+      if (!cancelled) setState(current => current ? { ...current, cloud: { ...current.cloud, status: 'unavailable', error: errorMessage(reason) } } : current)
+    })
+    return () => { cancelled = true }
+  }, [state?.cloud.status])
 
   function finishLaunch() {
     setShowLaunch(false)
@@ -344,7 +354,7 @@ export function App() {
   if (!['disabled', 'authenticated'].includes(state.cloud.status)) return <><div className="window-shell"><WindowTitlebar /><CloudAccessPage state={state} onComplete={(value) => { document.documentElement.dataset.theme = value.theme; setState(value); setError('') }} /></div>{launch}</>
 
   return (
-    <><div className="task-notices" aria-live="polite">{Object.entries(taskNotices).map(([id,notice])=><div key={id} role="status"><button type="button" onClick={()=>{void window.stable.agent.select(id).then(agent=>{setState(current=>current?{...current,...agent}:current);setPage('agent')}).catch(reason=>setError(errorMessage(reason)))}}><strong>{notice.title}</strong><span>{notice.body}</span></button><button type="button" aria-label="关闭提醒" onClick={()=>setTaskNotices(current=>{const next={...current};delete next[id];return next})}>×</button></div>)}</div><div className="window-shell">
+    <><div className="window-shell">
       <WindowTitlebar railCollapsed={railCollapsed} searchOpen={conversationSearchOpen} searchButtonRef={conversationSearchButtonRef} onToggleRail={() => setRailCollapsed((current) => !current)} onSearch={openConversationSearch} />
       <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
       {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">
@@ -536,6 +546,8 @@ function CloudAccessPage({ state, onComplete }: { state: BootstrapData; onComple
   const errorRef = useRef<HTMLDivElement>(null)
   const mustChange = state.cloud.status === 'password_change_required'
   const unavailable = state.cloud.status === 'unavailable'
+  const checking = state.cloud.status === 'checking'
+  useEffect(() => { setMessage(state.cloud.error || '') }, [state.cloud.error])
 
   async function submit(run: () => Promise<BootstrapData>) {
     setPending(true); setMessage('')
@@ -550,11 +562,11 @@ function CloudAccessPage({ state, onComplete }: { state: BootstrapData; onComple
     <section className="cloud-access-card" aria-labelledby="cloud-access-title">
       <div className="cloud-access-brand"><img src={logoUrl} alt="" width="52" height="52" /><span>STABLE CLOUD</span></div>
       <div className="cloud-access-copy">
-        <h1 id="cloud-access-title">{mustChange ? '设置你的正式密码' : unavailable ? '暂时无法连接云端' : '登录 Stable'}</h1>
-        <p>{mustChange ? '这是一次性临时密码。修改完成后，其他设备会话将失效，本机继续使用新会话。' : unavailable ? '已保存的登录凭据仍在 Windows 安全存储中。网络恢复后可直接重试。' : '使用管理员分配的内部账号登录。模型凭据由 Stable 平台统一保管。'}</p>
+        <h1 id="cloud-access-title">{checking ? '正在连接云端' : mustChange ? '设置你的正式密码' : unavailable ? '暂时无法连接云端' : '登录 Stable'}</h1>
+        <p>{checking ? '正在恢复登录状态，请稍候。' : mustChange ? '这是一次性临时密码。修改完成后，其他设备会话将失效，本机继续使用新会话。' : unavailable ? '已保存的登录凭据仍在 Windows 安全存储中。网络恢复后可直接重试。' : '使用管理员分配的内部账号登录。模型凭据由 Stable 平台统一保管。'}</p>
       </div>
       {message && <div className="cloud-auth-error" role="alert" tabIndex={-1} ref={errorRef}><CircleAlert size={18} aria-hidden="true" /><span>{message}</span></div>}
-      {mustChange ? <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.changePassword(currentPassword, newPassword, confirmPassword)) }}>
+      {checking ? <div role="status"><LoaderCircle className="spin" size={20} aria-label="正在连接" /></div> : mustChange ? <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.changePassword(currentPassword, newPassword, confirmPassword)) }}>
         <div className="field"><label htmlFor="current-password">当前临时密码</label><input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
         <div className="field"><label htmlFor="new-password">新密码</label><input id="new-password" type="password" autoComplete="new-password" required minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-describedby="new-password-help" /><small id="new-password-help">至少 12 个字符，建议使用密码管理器生成并保存。</small></div>
         <div className="field"><label htmlFor="confirm-password">确认新密码</label><input id="confirm-password" type="password" autoComplete="new-password" required minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></div>
@@ -820,8 +832,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [imageViewer, setImageViewer] = useState<ImageViewerTarget>()
   const [olderPages, setOlderPages] = useState<Record<string, { messages: MessageItem[]; beforeCursor: number | null }>>({})
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const [cancelledMessages, setCancelledMessages] = useState<Record<string, MessageItem[]>>({})
   const olderPage = olderPages[state.activeConversationId]
-  const visibleMessages = [...new Map([...(olderPage?.messages || []), ...state.messages].map(item => [item.id, item])).values()]
+  const visibleMessages = [...new Map([...(olderPage?.messages || []), ...state.messages, ...(cancelledMessages[state.activeConversationId] || [])].map(item => [item.id, item])).values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const beforeCursor = olderPage ? olderPage.beforeCursor : state.beforeCursor
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
@@ -885,7 +898,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const imageAttachments = attachments.filter(attachmentIsImage)
   const annotationAttachments = attachments.filter(item => item.annotation)
   const documentAttachments = attachments.filter((item) => !attachmentIsImage(item) && !item.annotation)
-  const selectedReferences = referenceMap[state.activeConversationId] || []
+  const selectedReferences = (referenceMap[state.activeConversationId] || []).filter(item => item.kind !== 'data' && item.kind !== 'knowledge')
   const hasComposerContent = Boolean(prompt.trim() || attachments.length || selectedReferences.length)
   const showComposerStop = running && !hasComposerContent
   const composerError = composerErrorMap[state.activeConversationId] || ''
@@ -895,13 +908,11 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const capabilityOptions = activeModel?.reasoningOptions || []
   const activeCapability = capabilityOptions.find(item => item.id === activeConversation?.capability) || { id: 'auto', label: '默认' }
   const attachmentStatus = attachmentStatusMap[state.activeConversationId] || ''
-  const conversationIsEmpty = state.messages.length === 0 && !pendingPrompt
+  const conversationIsEmpty = visibleMessages.length === 0 && !pendingPrompt && !liveTrace
   const reduceConversationMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const enabledData = state.data.filter((item) => item.enabled)
   const enabledSkills = state.skills.filter((item) => item.enabled)
-  const enabledKnowledge = state.knowledge.filter((item) => item.enabled)
   const scripts = state.library.filter((item) => item.kind === 'script')
-  const listedConversations = state.conversations.filter(item => item.messageCount > 0 || Boolean(runningMap[item.id]))
+  const listedConversations = state.conversations.filter(item => item.messageCount > 0 || Boolean(runningMap[item.id]) || Boolean(cancelledMessages[item.id]?.length))
   const pinnedConversations = listedConversations.filter((item) => item.pinned && !item.archivedAt)
   const remoteTeamDevices = state.team.devices.filter((item) => item.id !== state.team.profile?.deviceId)
   activeConversationIdRef.current = state.activeConversationId
@@ -1094,33 +1105,39 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     })
   }
 
-  async function addPastedImages(files: File[]) {
+  async function addPastedAttachments(files: File[]) {
     const saved: AgentAttachment[] = []
     setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))
-    setAttachmentStatus('正在读取剪贴板图片。')
+    setAttachmentStatus('正在读取剪贴板附件。')
     try {
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]
+      // Explorer copies carry real file paths; screenshots carry only image bytes.
+      const entries = files.map(file => ({ file, path: window.stable.files.path(file) }))
+      const paths = [...new Set(entries.map(item => item.path).filter(Boolean))]
+      const inspected = paths.length ? await window.stable.agent.inspectAttachments(paths) : []
+      const images = entries.filter(item => !item.path).map(item => item.file)
+      if (images.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) throw new Error('无法读取剪贴板文件路径，请从资源管理器复制文件后粘贴。')
+      for (let index = 0; index < images.length; index += 1) {
+        const file = images[index]
         const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
         const name = file.name && !/^image\.(?:png|jpe?g|webp)$/i.test(file.name) ? file.name : `粘贴截图-${Date.now()}-${index + 1}.${extension}`
         saved.push(await window.stable.agent.savePastedImage(state.activeConversationId, name, file.type, new Uint8Array(await file.arrayBuffer())))
       }
       const merged = [...attachments]
-      for (const item of saved) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
+      for (const item of [...inspected, ...saved]) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
       if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
       if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
       setAttachments(merged)
-      setAttachmentStatus(`已从剪贴板添加 ${saved.length} 张图片。`)
+      setAttachmentStatus(`已从剪贴板添加 ${merged.length - attachments.length} 个附件。`)
     } catch (error) {
       for (const item of saved) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
       setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: errorMessage(error) }))
-      setAttachmentStatus('剪贴板图片未添加。')
+      setAttachmentStatus('剪贴板附件未添加。')
     }
   }
 
   function handlePromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
     const files = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === 'file' && ['image/png', 'image/jpeg', 'image/webp'].includes(item.type))
+      .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile()).filter((item): item is File => Boolean(item))
     if (!files.length) return
     event.preventDefault()
@@ -1130,7 +1147,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       const end = event.currentTarget.selectionEnd
       setPrompt((current) => `${current.slice(0, start)}${pastedText}${current.slice(end)}`)
     }
-    void addPastedImages(files)
+    void addPastedAttachments(files)
   }
 
   async function catchReply(message: MessageItem) {
@@ -1354,6 +1371,16 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     let terminalStatus: AgentTraceStatus = 'failed'
     let previousMessageIds: Set<string> | undefined
     let dispatched = false
+    let retainedCancellation = false
+    const startedAt = Date.now()
+    const retainCancelledMessage = () => {
+      retainedCancellation = true
+      const time = Date.now()
+      setCancelledMessages(current => ({ ...current, [conversationId]: [...(current[conversationId] || []),
+        { id: entry.id, role: 'user', content: value, attachments: messageAttachments, createdAt: new Date(startedAt).toISOString() },
+        { id: `${entry.id}-cancelled`, role: 'assistant', content: '', createdAt: new Date(time).toISOString(), trace: [{ id: 'runtime', runId: entry.id, kind: 'status', title: '已取消', status: 'cancelled', startedAt, time }] },
+      ] }))
+    }
     try {
       await skillSaves.current[conversationId]
       const before = await window.stable.agent.state(conversationId)
@@ -1364,6 +1391,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       if (cancelBeforeDispatchRef.current[conversationId]) {
         terminalStatus = 'cancelled'
         cancelledDrafts.current[conversationId] = entry.payload
+        retainCancelledMessage()
         return { accepted: false, continue: false, cancelled: true }
       }
       dispatched = true
@@ -1384,6 +1412,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       if (cancelBeforeDispatchRef.current[conversationId] && !messageAccepted) {
         terminalStatus = 'cancelled'
         cancelledDrafts.current[conversationId] = entry.payload
+        retainCancelledMessage()
         return { accepted: false, continue: false, cancelled: true }
       }
       const detail = errorMessage(error)
@@ -1395,7 +1424,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
       setTraceMap((current) => {
         const trace = current[conversationId]
-        return { ...current, [conversationId]: completed || !trace ? undefined : { ...trace, status: trace.status === 'running' ? terminalStatus : trace.status, endedAt: trace.endedAt || Date.now() } }
+        return { ...current, [conversationId]: completed || !trace || retainedCancellation ? undefined : { ...trace, status: trace.status === 'running' ? terminalStatus : trace.status, endedAt: trace.endedAt || Date.now() } }
       })
       setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
       setRunningMap((current) => ({ ...current, [conversationId]: false }))
@@ -1436,7 +1465,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.deliveries?.some(d=>['unknown','interrupted','failed'].includes(d.state))&&<div className="recovery-notice" role="status"><strong>上次运行结果需要核实</strong><p>消息已保留，系统不会自动重发或重做操作。</p><button onClick={()=>void action('核实运行记录',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'reconcile')))}>核实消息记录</button>{state.recoveryText&&<details><summary>查看已收到的部分回复</summary><pre>{state.recoveryText}</pre></details>}{state.recoveryDiagnostic&&<p>{state.recoveryDiagnostic}</p>}</div>}
+          {state.deliveries?.some(d=>['unknown','interrupted','failed'].includes(d.state))&&<div className="recovery-notice" role="status"><strong>上次运行结果需要核实</strong><p>消息已保留，系统不会自动重发或重做操作。</p><button onClick={()=>void action('核实运行记录',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'reconcile')))}>核实消息记录</button><button disabled={running} onClick={()=>void action('重建模型上下文',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'rebuild')))}>从本地历史重建上下文</button>{state.recoveryText&&<details><summary>查看已收到的部分回复</summary><pre>{state.recoveryText}</pre></details>}{state.recoveryDiagnostic&&<p>{state.recoveryDiagnostic}</p>}</div>}
 
           {beforeCursor && <button className="history-load-more" disabled={loadingOlder} onClick={() => void action('正在读取更早消息', async () => {
             const id = state.activeConversationId, element = scrollRef.current, height = element?.scrollHeight || 0, top = element?.scrollTop || 0
@@ -1511,14 +1540,21 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             </div>}
             {(selectedReferences.length > 0 || documentAttachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与文件">
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
-              {documentAttachments.map((item) => <div className="selection-chip" data-kind={item.type === 'skill' ? 'skill' : 'attachment'} key={item.path} title={`${item.name} · ${formatBytes(item.size)}`}>{item.type === 'skill' ? <Braces size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}<strong>{item.name}</strong><button type="button" onClick={() => removeAttachment(item)} aria-label={`移除附件 ${item.name}`}><X size={13} /></button></div>)}
+              {documentAttachments.map((item) => <ConversationFileCard compact item={{ name: item.name, path: item.path, detail: item.type.toUpperCase() }} onOpen={() => openConversationPreview({ kind: 'file', value: item.path, title: item.name })} onRemove={() => removeAttachment(item)} key={item.path} />)}
             </div>}
             {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
             <textarea ref={promptRef} id="agent-prompt" value={prompt} onPaste={handlePromptPaste} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send() }
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                if (event.altKey) {
+                  event.preventDefault()
+                  const input = event.currentTarget, start = input.selectionStart, end = input.selectionEnd
+                  setPrompt(input.value.slice(0, start) + '\n' + input.value.slice(end))
+                  window.requestAnimationFrame(() => { input.setSelectionRange(start + 1, start + 1) })
+                } else if (!event.shiftKey) { event.preventDefault(); send() }
+              }
             }} placeholder={running ? '继续输入，发送后将排队等待…' : '给 Stable 一个任务，或选择、拖入、粘贴图片与文件'} />
             <div className="composer-actions">
               <div className="composer-tools">
@@ -1532,7 +1568,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   <summary className="composer-tool" aria-label="选择 Skill"><Braces size={18} aria-hidden="true" /><span>Skill 技能</span><ChevronRight size={14}/></summary>
                   <div className="composer-popover">
                     <div className="composer-popover-head"><strong>选择 Skills</strong><span>可多选</span></div>
-                    {enabledSkills.length ? enabledSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.description || '手动选择后在当前对话持续生效'}</small></span></button> }) : <p className="composer-menu-empty">还没有已启用的 Skill。</p>}
+                    {enabledSkills.length ? enabledSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.invocationMode === 'auto' ? '自动匹配 · ' : ''}{item.description || '手动选择后在当前对话持续生效'}</small></span></button> }) : <p className="composer-menu-empty">还没有已启用的 Skill。</p>}
                     <button className="composer-install-skill" type="button" onClick={addSkillFolder}><FolderInput size={15} />安装新的 Skill 文件夹</button>
                   </div>
                 </details>
@@ -1554,10 +1590,8 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                   <summary className="composer-tool" aria-label={`选择引用资源${selectedReferences.filter((item) => item.kind !== 'skill').length ? `，已选择 ${selectedReferences.filter((item) => item.kind !== 'skill').length} 个` : ''}`}><Database size={18} aria-hidden="true" /><span>引用本地资源</span><ChevronRight size={14}/></summary>
                   <div className="composer-popover">
                     <div className="composer-popover-head"><strong>引用本地资源</strong><span>可多选</span></div>
-                    <ResourceGroup title="数据库" items={enabledData.map((item) => ({ id: item.id, kind: 'data' as const, name: item.name, size: item.size, type: item.type }))} selected={selectedReferences} toggle={toggleReference} />
                     <ResourceGroup title="脚本" items={scripts.map((item) => ({ id: item.id, kind: 'script' as const, name: item.name, size: new Blob([item.content || '']).size, type: item.extension || 'script' }))} selected={selectedReferences} toggle={toggleReference} />
-                    <ResourceGroup title="知识库" items={enabledKnowledge.map((item) => ({ id: item.id, kind: 'knowledge' as const, name: item.name, size: item.size, type: 'markdown' }))} selected={selectedReferences} toggle={toggleReference} />
-                    {!enabledData.length && !scripts.length && !enabledKnowledge.length && <p className="composer-menu-empty">还没有可引用的本地资源。</p>}
+                    {!scripts.length && <p className="composer-menu-empty">还没有可引用的脚本。</p>}
                   </div>
                 </details>
                   </div>
@@ -1582,7 +1616,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
                       <ModelProviderIcon model={item} />
-                      <span className="model-option-copy"><strong>{item.displayName}</strong></span>
+                      <span className="model-option-copy"><strong>{item.displayName}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}</span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
                   })}</fieldset> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
@@ -1650,11 +1684,14 @@ interface ConversationFileItem {
   detail: string
 }
 
-function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; onOpen: () => void }) {
+function ConversationFileCard({ item, onOpen, compact = false, onRemove }: { item: ConversationFileItem; onOpen: () => void; compact?: boolean; onRemove?: () => void }) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>()
   const [menuError, setMenuError] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const isHtml = /\.html?$/i.test(item.path)
+  const extension = item.name.split('.').pop()?.toLowerCase() || ''
+  const isMarkdown = compact && /^(md|markdown|mdx)$/.test(extension)
+  const isSpreadsheet = /^(xlsx?|xlsm|xlsb|csv|tsv|ods)$/.test(extension)
 
   useEffect(() => {
     if (!menuPosition) return
@@ -1687,12 +1724,13 @@ function ConversationFileCard({ item, onOpen }: { item: ConversationFileItem; on
     catch (reason) { setMenuError(errorMessage(reason)) }
   }
 
-  return <div className="conversation-file-card-shell">
+  return <div className="conversation-file-card-shell" data-compact={compact || undefined} data-pill={isMarkdown || undefined} data-removable={Boolean(onRemove) || undefined}>
     <button className="conversation-file-card" type="button" onClick={onOpen} onContextMenu={openContextMenu} title={item.path} aria-label={`在 Stable 内置浏览器预览 ${item.name}`} aria-haspopup="menu">
-      <span className="conversation-file-icon"><FileText size={18} aria-hidden="true" /></span>
-      <span className="conversation-file-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
-      <ChevronRight size={16} aria-hidden="true" />
+      <span className="conversation-file-icon" data-spreadsheet={compact && isSpreadsheet || undefined}>{compact && isSpreadsheet ? <FileSpreadsheet size={23} aria-hidden="true" /> : <FileText size={isMarkdown ? 14 : 18} aria-hidden="true" />}</span>
+      <span className="conversation-file-copy"><strong>{item.name}</strong>{!isMarkdown && <small>{compact ? extension.toUpperCase() || item.detail : item.detail}</small>}</span>
+      {!compact && <ChevronRight size={16} aria-hidden="true" />}
     </button>
+    {onRemove && <button className="attachment-card-remove" type="button" onClick={onRemove} aria-label={`移除附件 ${item.name}`}><X size={14} aria-hidden="true" /></button>}
     {menuPosition && <div className="conversation-file-menu" role="menu" aria-label={`${item.name} 附件操作`} ref={menuRef} style={{ left: menuPosition.x, top: menuPosition.y }}>
       <button type="button" role="menuitem" onClick={() => void showInFolder()}><FolderOpen size={14} aria-hidden="true" /><span>打开文件所在位置</span></button>
       {isHtml && <button type="button" role="menuitem" onClick={() => void openInExternalBrowser()}><ExternalLink size={14} aria-hidden="true" /><span>用外部浏览器打开</span></button>}
@@ -1803,7 +1841,7 @@ function ImageLightbox({ items, index, onIndexChange, onClose }: { items: Viewer
 
 function localArtifactPaths(content: string, workspace: string) {
   const root = workspace.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLocaleLowerCase()
-  const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?=$|[\s`)\]}，。；、])/gi
+  const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?::\d+(?::\d+)?)?(?=$|[\s`)\]}，。；、])/gi
   const matches = new Map<string, { name: string; path: string }>()
   for (const match of content.matchAll(pattern)) {
     let filePath = match[1].replace(/\//g, '\\')
@@ -1858,15 +1896,14 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
           ? <button className="message-image" type="button" onClick={() => onPreviewImages(imageFiles, index)} aria-label={`预览图片 ${item.name}`} key={`${item.path}-${index}`}><AttachmentImage item={item} /></button>
           : <span className="message-image" key={`${item.path}-${index}`}><AttachmentImage item={item} /></span>)}
       </div>}
-      <div className="user-bubble"><div className="turn-label">你</div>{content && <p>{content}</p>}
       {documentFiles.length > 0 && <div className="conversation-file-list message-file-cards" aria-label="随消息上传的文件">
-        {documentFiles.map((item, index) => <ConversationFileCard item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
+        {documentFiles.map((item, index) => <ConversationFileCard compact item={{ name: item.name, path: item.path!, detail: `上传附件 · ${item.type.toUpperCase()} · ${formatBytes(item.size)}` }} onOpen={() => onPreviewAttachment?.(item)} key={`${item.path}-${index}`} />)}
       </div>}
       {staticAttachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的引用">
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
+      {content && <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p></div>}
       {onCopy && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息到主输入框"><Copy size={15} aria-hidden="true" /></button></div>}
-      </div>
     </div>
   </article>
 }
@@ -1900,8 +1937,8 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   return <details className="trace-action" data-status={itemStatus}>
     <summary>
       <Icon size={15} aria-hidden="true" />
-      <span>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceActionLabel(item)}</span>
-      <span className="trace-action-state">{itemStatus === 'running' && <LoaderCircle className="spin" size={13} aria-hidden="true" />}{statusLabel}</span>
+      <span className={itemStatus === 'running' && item.kind === 'tool' ? 'trace-running-label' : undefined}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceActionLabel(item)}</span>
+      <span className="trace-action-state">{statusLabel}</span>
       <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
     </summary>
     <div className="trace-action-detail">
@@ -1914,6 +1951,28 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
 
 function CatchButton({ onCatch, catching }: { onCatch?: () => void; catching?: boolean }) {
   return onCatch ? <button className="catch-button" type="button" disabled={catching} onClick={onCatch} title="将本轮提问和完整回复作为附件带入新任务"><Copy size={14} aria-hidden="true" />Catch</button> : null
+}
+
+function TraceActionGroup({ items, status, agentNames }: { items: AgentTraceItem[]; status: AgentTraceStatus; agentNames: Map<string, string> }) {
+  const runningCount = items.filter(item => traceItemStatus(item, status) === 'running').length
+  const failedCount = items.filter(item => item.status === 'failed').length
+  const cancelledCount = items.filter(item => traceItemStatus(item, status) === 'cancelled').length
+  const labels = [...new Set(items.filter(item => item.kind === 'tool').map(traceActionLabel))]
+  const title = labels.length ? labels.slice(0, 3).join('、') + (labels.length > 3 ? '等' : '') : '执行操作'
+  return <details className="trace-group">
+    <summary>
+      <Wrench size={15} aria-hidden="true" />
+      <span className={`trace-group-label${runningCount > 0 ? ' trace-running-label' : ''}`}>{title}</span>
+      <span className="trace-group-count">{items.length} 项操作</span>
+      {runningCount > 0 && <span className="trace-action-state">{runningCount} 项运行中</span>}
+      {failedCount > 0 && <span className="trace-issue">{failedCount} 项失败</span>}
+      {cancelledCount > 0 && <span className="trace-group-count">{cancelledCount} 项已取消</span>}
+      <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
+    </summary>
+    <div className="trace-group-items">
+      {items.map(item => <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />)}
+    </div>
+  </details>
 }
 
 function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent, onCatch, catching }: { onCatch?: () => void; catching?: boolean; items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
@@ -1930,7 +1989,10 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
       : items
     return buildTraceTimeline(entries, finalContent)
   }, [items, streaming, finalContent])
-  const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId, item.title]))
+  const groups = groupTraceTimeline(timeline, status)
+  const failedCount = timeline.filter(item => item.status === 'failed').length
+  const pendingCount = timeline.filter(item => item.kind === 'approval' && traceItemStatus(item, status) === 'running').length
+  const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId!, item.title]))
   useEffect(() => {
     if (active && status === 'running') { setExpanded(true); return }
     if (status !== 'running') setExpanded(false)
@@ -1944,16 +2006,19 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
   const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
     <div className="trace-header"><button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
-      {status === 'running' && <LoaderCircle className="spin" size={14} aria-hidden="true" />}
       <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status === 'running' ? '思考中 · ' : '用时 '}{elapsed}</span>
       {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
+      {failedCount > 0 && <span className="trace-issue">{failedCount} 项操作失败</span>}
+      {pendingCount > 0 && <span className="trace-pending">{pendingCount} 项待审批</span>}
       <ChevronRight className="trace-chevron" data-open={expanded} size={15} aria-hidden="true" />
     </button>
     <CatchButton onCatch={onCatch} catching={catching} /></div>
     {expanded && <div className="trace-timeline" id={timelineId}>
-      {timeline.map((item) => item.eventType === 'agent/answer'
-        ? <TraceText key={item.id} content={item.content!} live={item.id === streaming?.id} />
-        : <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId) || '子 Agent' : undefined} />)}
+      {groups.map(group => group.kind === 'actions'
+        ? <TraceActionGroup key={group.id} items={group.items} status={status} agentNames={agentNames} />
+        : group.kind === 'text'
+          ? <TraceText key={group.id} content={group.item.content!} live={group.item.id === streaming?.id} />
+          : <TraceAction key={group.id} item={group.item} status={status} />)}
       {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在准备任务…' : '本次任务没有额外执行记录。'}</p>}
     </div>}
   </section>
@@ -2372,7 +2437,7 @@ function KnowledgePage({ items, update, action }: {
 
   return <DropTarget className="page-drop-target" label="导入知识库 Markdown" onPaths={(paths) => { if (paths.length) void action('正在导入知识库', async () => update((await window.stable.knowledge.importPaths(paths)).items)) }}><section className="knowledge-layout reveal">
     <div className="knowledge-toolbar">
-      <div><h2>知识库</h2><p>管理供 Agent 检索调用的 Markdown 文档。文件副本只保存在本机。</p></div>
+      <div><h2>知识库</h2><p>管理本机 Markdown 文档，库内内容不会作为对话资料发送给模型。</p></div>
       <button className="button primary" onClick={() => void action('正在导入知识库', async () => update((await window.stable.knowledge.importFiles()).items))}><FolderInput size={17} />导入 Markdown</button>
     </div>
     <div className="knowledge-workbench">
@@ -2506,9 +2571,10 @@ function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: st
   </article>
 }
 
-type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history'
+type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history' | 'models'
 
 const ACCOUNT_MODULES: Array<{ id: AccountModuleId; label: string; detail: string; icon: typeof Home }> = [
+  { id: 'models', label: '模型连接', detail: '本地直连与设备配置', icon: Network },
   { id: 'appearance', label: '主题设置', detail: '深色或浅色界面', icon: Sun },
   { id: 'account', label: '账号情况', detail: '身份、额度与用量', icon: ShieldCheck },
   { id: 'updates', label: '软件更新', detail: '版本与安装状态', icon: RotateCw },
@@ -2562,7 +2628,7 @@ function AccountDock({ state, replaceState, updateTheme, action }: { state: Boot
     {open && <section className="account-menu-popover" id="account-menu-popover" aria-label="账号与设置菜单">
       <div className="account-menu-identity">
         <span className="account-avatar" aria-hidden="true">{avatar}</span>
-        <span><strong>{displayName}</strong><small>{account ? `@${account.username}` : '本地开发模式'}</small></span>
+        <span><strong>{displayName}</strong><small>{account ? `@${account.username}` : '本地直连'}</small></span>
       </div>
       <nav aria-label="账号设置模块">
         {ACCOUNT_MODULES.map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" data-active={activeModule === id || undefined} data-update-ready={id === 'updates' && updateReady || undefined} aria-pressed={activeModule === id} onClick={() => setActiveModule(id)}>
@@ -2594,6 +2660,7 @@ function AccountDock({ state, replaceState, updateTheme, action }: { state: Boot
 }
 
 function AccountModuleContent({ module, state, replaceState, updateTheme, action }: { module: AccountModuleId; state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+  if (module === 'models') return <ModelConnectionSettings state={state} replaceState={replaceState} />
   if (module === 'appearance') return <ThemeSettingsModule state={state} updateTheme={updateTheme} action={action} />
   if (module === 'account') return <CloudAccountModule state={state} replaceState={replaceState} action={action} />
   if (module === 'updates') return <UpdateSettingsModule state={state} action={action} />
@@ -2628,7 +2695,7 @@ function CloudAccountModule({ state, replaceState, action }: { state: BootstrapD
   const account = state.cloud.account
   const quota = state.cloud.quota
   const usage = state.cloud.usage?.totals
-  if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>当前未连接云端账号</strong><span>本地开发模式不会显示账号额度与云端用量。</span></div>
+  if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>本地直连模式</strong><span>无需 Stable Cloud 登录。模型连接在设置中配置，用量与额度由模型供应商管理。</span></div>
   const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
   const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
   return <section className="cloud-account-settings account-module">

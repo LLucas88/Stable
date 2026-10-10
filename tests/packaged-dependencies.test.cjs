@@ -1,0 +1,26 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const asar = require('@electron/asar')
+const { verifyPackagedDependencies } = require('../scripts/verify-packaged-dependencies.cjs')
+test('packaged dependency audit rejects host fallback and accepts nested dependencies', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-dependency-audit-'))
+  const source = path.join(root, 'app')
+  const write = (name, value) => {
+    const file = path.join(source, name)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify(value))
+  }
+  write('package.json', { name: 'app', dependencies: { updater: '1' } })
+  write('node_modules/updater/package.json', { name: 'updater', dependencies: { 'fs-extra': '1' } })
+  const broken = path.join(root, 'broken.asar')
+  await asar.createPackage(source, broken)
+  assert.throws(() => verifyPackagedDependencies(broken), /updater: fs-extra/)
+  write('node_modules/updater/node_modules/fs-extra/package.json', { name: 'fs-extra' })
+  const complete = path.join(root, 'complete.asar')
+  await asar.createPackage(source, complete)
+  assert.equal(verifyPackagedDependencies(complete), 3)
+})

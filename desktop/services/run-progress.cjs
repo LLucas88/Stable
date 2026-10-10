@@ -4,6 +4,9 @@ const EXECUTION_GUIDANCE = [
   '相同操作失败后必须根据新证据修正，不能重复碰运气。权限不足不是空数据；报告已取得结果与缺口。',
   '实时查询不得递归扫描磁盘寻找旧数据。只搜索任务提供或文档明确指出的目录。',
   '普通查询命令设 60 秒超时；较慢查询最多 180 秒。长任务拆成可观察的步骤，不在单条命令内批量探测或循环重试。',
+  'WSL 每次命令的 /tmp 与临时环境相互隔离，不用于跨调用保存依赖或产物。后续需要的 JS 库、数据与脚本保存到当前授权工作区的 _work 目录；执行前检查文件确实存在，不重复搜索已消失的 /tmp 文件。',
+  'grep/rg 的退出码 1 表示没有匹配；若这是预期的检查结果，显式使用 if grep ...; then ...; else code=$?; [ "$code" -eq 1 ] || exit "$code"; fi，仍保留退出码 2 等真实错误。不要把可能失败的检查放在写文件或清理命令末尾导致整条命令回滚。',
+  '数据计算前先验证类型并把数值字符串转换为数值；空值、非数值和零分母单独处理，不直接相减或格式化缺失值。HTML 校验使用解析器识别标签，不对包含内嵌脚本的全文用 </body> 字符串出现次数断言文档结构。',
 ].join('\n')
 function isPermissionAudit(query) {
   return /权限/.test(String(query || '')) && /哪些命令|命令.*(?:权限|可用)|权限.*(?:清单|盘点|检查)|(?:检查|盘点|核查).*权限/.test(String(query || ''))
@@ -24,22 +27,23 @@ function failureKind(item) {
   return null
 }
 class RunProgress {
-  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = 10*60_000, permissionAudit = false } = {}) {
+  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = 10*60_000, toolIdleMs = 2*60_000, permissionAudit = false } = {}) {
     this.permissionAudit = permissionAudit
-    this.now=now; this.idleMs=idleMs; this.toolMs=toolMs; this.started=now(); this.lastActivity=this.started
+    this.now=now; this.idleMs=idleMs; this.toolMs=toolMs; this.toolIdleMs=toolIdleMs; this.started=now(); this.lastActivity=this.started
     this.active=new Map(); this.failures=new Map(); this.help=new Map(); this.helpCount=0; this.completed=0; this.seen=new Set(); this.pausedAt=null
   }
   touch() { this.lastActivity=this.now() }
-  start(id, command='') {
+  start(id, command='', monitorOutput=false) {
     if(this.seen.has(id)) return null
     this.seen.add(id); this.touch()
-    this.active.set(id,{started:this.now(),command:String(command)})
+    this.active.set(id,{started:this.now(),lastOutput:this.now(),monitorOutput,command:String(command)})
     if(/--help\b/.test(command)) {
       const key=String(command).trim(); const count=(this.help.get(key)||0)+1; this.help.set(key,count); this.helpCount++
       if(count>2 || this.helpCount>12) return '帮助查询重复或超过 12 次，已停止无效探索。请根据已有命令说明继续，或补充缺少的接口信息。'
     }
     return null
   }
+  output(id) { const entry=this.active.get(id); if(entry){entry.lastOutput=this.now();this.touch()} }
   complete(id,item) {
     const entry=this.active.get(id)
     if(!entry) return null
@@ -60,7 +64,8 @@ class RunProgress {
   check(waiting=false) {
     const now=this.now()
     if(waiting){this.pausedAt ??= now; return null}
-    if(this.pausedAt!==null){const pause=now-this.pausedAt;for(const entry of this.active.values())entry.started+=pause;this.lastActivity+=pause;this.pausedAt=null}
+    if(this.pausedAt!==null){const pause=now-this.pausedAt;for(const entry of this.active.values()){entry.started+=pause;entry.lastOutput+=pause}this.lastActivity+=pause;this.pausedAt=null}
+    if([...this.active.values()].some(entry=>entry.monitorOutput && now-entry.lastOutput>=this.toolIdleMs)) return '工具连续 2 分钟没有返回输出，已停止等待。命令可能卡在启动或执行阶段，请检查工作目录与运行环境；已有文件保留。'
     if([...this.active.values()].some(entry=>now-entry.started>=this.toolMs)) return '单次工具执行超过 10 分钟未完成，已停止任务。请缩小查询范围或拆分步骤后继续。'
     if(!this.active.size && now-this.lastActivity>=this.idleMs) return '连续 5 分钟未收到模型或工具进展，已停止等待。请检查模型连接后继续，已有结果保留。'
     return null

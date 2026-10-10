@@ -1,6 +1,6 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path')
-const {canAutoApprove}=require('../desktop/services/codex-approval.cjs')
+const {canAutoApprove}=require('../desktop/services/tool-approval.cjs')
 const {parseDecision}=require('../desktop/services/approval-ledger.cjs')
 const source=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8').replace(/\r\n/g,'\n')
 const start=source.indexOf("    if (source.kind === 'approval' && source.requestId && source.status === 'running') {")

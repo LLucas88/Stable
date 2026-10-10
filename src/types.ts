@@ -108,7 +108,7 @@ export interface ScriptLogEvent {
 }
 
 export interface SkillItem {
-  invocationMode?: 'manual'
+  invocationMode?: 'manual' | 'auto'
   id: string
   name: string
   description: string
@@ -530,6 +530,7 @@ export interface StableBridge {
   }
   bootstrap(): Promise<BootstrapData>
   cloud: {
+    startup(): Promise<BootstrapData>
     login(username: string, password: string): Promise<BootstrapData>
     changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<BootstrapData>
     refresh(): Promise<BootstrapData>
@@ -605,7 +606,6 @@ export interface StableBridge {
   projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
     onTaskOpen?(handler: (state: AgentState) => void): () => void
-    onTaskNotice?(handler: (notice: {id:string; title?:string; body?:string; clear?:boolean}) => void): () => void
     setSkillReferences(id: string, ids: string[]): Promise<AgentReference[]>
     lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
     configureNetwork(id: string, enabled: boolean): Promise<AgentState>
@@ -677,6 +677,12 @@ export interface StableBridge {
     save(profile: ModelProfile & { apiKey?: string }): Promise<ModelCatalog>
     remove(id: string): Promise<ModelCatalog>
     setDefault(id: string): Promise<ModelCatalog>
+  }
+  provisioning: {
+    identity(): Promise<{ issuerFingerprint: string; trustedIssuer: string }>
+    request(): Promise<{ canceled: boolean }>
+    issue(modelId: string, apiKey: string): Promise<{ canceled: boolean }>
+    import(issuerFingerprint: string): Promise<{ canceled: boolean; modelName?: string }>
   }
   settings: {
     globalInstructions(): Promise<GlobalInstructionsFile>

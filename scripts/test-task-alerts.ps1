@@ -17,7 +17,7 @@ try {
         'tests/cloud-gateway-proxy.test.cjs',
         'tests/model-switching-ui.test.cjs',
         'tests/effort-alerts-ui.test.cjs',
-        'tests/codex-surfaces-ui.test.cjs'
+        'tests/workbench-surfaces-ui.test.cjs'
     )
     & node --test --test-concurrency=1 @testFiles
     if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed. See the failing case above.' }

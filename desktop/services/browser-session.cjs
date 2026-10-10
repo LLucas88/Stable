@@ -129,7 +129,29 @@ class BrowserSessionService {
     try{
       if(args.action==='open'){this.permit(tab.conversationId,args.url);await tab.view.webContents.loadURL(normalizeWebUrl(args.url));assert()}
       else if(args.action==='close'){this.close(tab.conversationId,tab.id);return {closed:true}}
-      else if(args.action==='screenshot'){assert();const image=await tab.view.webContents.capturePage();assert();return {tabId:tab.id,epoch:tab.epoch,image:image.toDataURL()}}
+      else if(args.action==='screenshot'){
+        assert()
+        const view=tab.view, wc=view.webContents, bounds=view.getBounds()
+        let captureWindow
+        try {
+          // A collapsed tab has no compositor owner. Keep the same live page,
+          // but attach it to a hidden host while capturing its rendered pixels.
+          if(this.shown!==tab){
+            captureWindow=new this.electron.BrowserWindow({show:false,skipTaskbar:true,width:bounds.width,height:bounds.height,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}})
+            captureWindow.contentView.addChildView(view);view.setVisible(true)
+          }
+          if(captureWindow||!this.getWindow()?.isVisible()){
+            wc.setBackgroundThrottling(false)
+            view.setBounds({...bounds,width:bounds.width+1});view.setBounds(bounds)
+            await new Promise(resolve=>setTimeout(resolve,250));assert()
+          }
+          const image=await wc.capturePage(undefined,{stayHidden:true,stayAwake:true});assert()
+          if(image.isEmpty())throw Error('浏览器尚未产生可用截图，请等待页面渲染后重试。')
+          return {tabId:tab.id,epoch:tab.epoch,image:image.toDataURL()}
+        } finally {
+          if(captureWindow){if(captureWindow.contentView.children.includes(view))captureWindow.contentView.removeChildView(view);captureWindow.destroy()}
+        }
+      }
       else if(args.action==='history'){if(!this.store.getSetting(`browser-history-allow:${tab.conversationId}`))throw Error('浏览历史需要单独授权。');return {history:this.history(tab.conversationId)}}
       else if(args.action==='diagnostics'){if(!tab.diagnostics)throw Error('请由用户启用此标签页的诊断权限。');return {logs:tab.logs.slice(-50)}}
       else if(args.action==='frames'){const wc=tab.view.webContents;if(!wc.debugger.isAttached())wc.debugger.attach('1.3');const result=await wc.debugger.sendCommand('Page.getFrameTree');assert();return result}
@@ -138,7 +160,7 @@ class BrowserSessionService {
       else if(args.action==='hover'||args.action==='drag'){const point=await this.inputPoint(tab,args,args.action);assert();await this.input(tab,{type:'mouseMove',x:Math.round(point.x),y:Math.round(point.y)});if(args.action==='drag'){const target=await this.inputPoint(tab,{...args,ref:args.targetRef},'drag');assert();await this.input(tab,{type:'mouseDown',x:Math.round(point.x),y:Math.round(point.y),button:'left',clickCount:1});await this.input(tab,{type:'mouseMove',x:Math.round(target.x),y:Math.round(target.y)});await this.input(tab,{type:'mouseUp',x:Math.round(target.x),y:Math.round(target.y),button:'left',clickCount:1})}}
       else if(['click','fill','select','scroll','locate'].includes(args.action)){const result=await this.evaluate(tab,args,args.action);assert();if(args.action==='locate')return {refs:result};if(['click','select'].includes(args.action)){await new Promise(r=>setTimeout(r,150));while(tab.view.webContents.isLoading()){assert();await new Promise(r=>setTimeout(r,50))}}}
       else if(args.action!=='read')throw Error('不支持的浏览器动作。')
-      assert();const value=await this.evaluate(tab,{...args,ref:undefined},'read');assert();return {tabId:tab.id,epoch:tab.epoch,...value}
+      assert();const value=await this.evaluate(tab,{...args,ref:undefined},'read');assert();return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
     }finally{if(tab.state==='agent_controlled')tab.state='idle';this.persist();this.emit()}
   }
   recordHistory(tab){if(tab.state==='user_controlled')return;const url=durableURL(tab.url);if(url==='about:blank')return;const history=this.store.getSetting('browser-history-v2')||[];if(history[0]?.url===url&&history[0]?.tabId===tab.id)return;this.store.setSetting('browser-history-v2',[{id:randomUUID(),tabId:tab.id,conversationId:tab.conversationId,url,title:tab.title,time:new Date().toISOString()},...history].slice(0,2000))}

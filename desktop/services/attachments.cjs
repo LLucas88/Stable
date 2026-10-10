@@ -311,6 +311,7 @@ async function extractAttachmentText(sourcePath) {
 }
 
 module.exports = {
+  ensureAttachmentDestination,
   MAX_IMAGE_BYTES, MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, imageMediaTypeForPath, inspectAttachmentPath,
   isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage, scanAttachmentFolder, safeZipEntryName,
 }

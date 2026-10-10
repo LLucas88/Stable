@@ -1,0 +1,10 @@
+.model-connection-settings { display: grid; gap: 14px; }
+.model-connection-settings fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--border, #9996); border-radius: 10px; }
+.model-connection-settings label { display: grid; gap: 6px; font-size: 13px; }
+.model-connection-settings input, .model-connection-settings select { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; color: inherit; background: var(--panel, transparent); border: 1px solid var(--border, #9998); border-radius: 6px; }
+.model-connection-settings p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.model-connection-settings summary { cursor: pointer; padding: 8px 0; }
+.model-connection-fields { display: grid; gap: 12px; padding-top: 10px; }
+.model-connection-summary { margin: 0; color: var(--color-muted); }
+.model-connection-settings :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.model-connection-settings [role=alert] { color: #c63c30; }

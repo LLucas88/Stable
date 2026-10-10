@@ -14,7 +14,7 @@ let items=[
 createRoot(document.getElementById('root')).render(<SkillMarket onUse={()=>{}} renderContent={c=><pre>{c}</pre>}/>);`
 const js=(await build({stdin:{contents:source,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"'}})).outputFiles[0].text
 await win.loadURL('data:text/html,<html data-theme="light"><body><div id="root"></div></body></html>')
-for(const name of ['tokens.css','app.css','codex-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',name),'utf8'))
+for(const name of ['tokens.css','app.css','workbench-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',name),'utf8'))
 await win.webContents.executeJavaScript(js)
 await win.webContents.executeJavaScript(`(async()=>{
 const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(v,m)=>{if(!v)throw Error(m)};

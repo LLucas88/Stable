@@ -110,7 +110,6 @@ stableFailedDirReady:
   ${endif}
 
   ${if} ${FileExists} "$stableRuntimeDir\node\node.exe"
-  ${andIf} ${FileExists} "$stableRuntimeDir\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
     Goto stableRuntimeReady
   ${endif}
 
@@ -118,14 +117,13 @@ stableFailedDirReady:
   CreateDirectory "$stableRuntimeDir"
   RMDir "$stableRuntimeDir"
   ${if} ${FileExists} "$stableStageDir\resources\runtime\node\node.exe"
-  ${andIf} ${FileExists} "$stableStageDir\resources\runtime\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
     ClearErrors
-    Rename "$stableStageDir\resources\runtime" "$stableRuntimeDir"
+    CreateDirectory "$stableRuntimeDir\node"
+    CopyFiles /SILENT "$stableStageDir\resources\runtime\node\*" "$stableRuntimeDir\node"
     IfErrors stableCopyStagedRuntime stableRuntimeReady
   ${endif}
 
   ${if} ${FileExists} "$INSTDIR\resources\runtime\node\node.exe"
-  ${andIf} ${FileExists} "$INSTDIR\resources\runtime\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
     ClearErrors
     Rename "$INSTDIR\resources\runtime" "$stableRuntimeDir"
     IfErrors stableCopyOldRuntime stableOldRuntimeMoved
@@ -159,7 +157,6 @@ stableRuntimeFailed:
 
 stableRuntimeReady:
   ${ifNot} ${FileExists} "$stableRuntimeDir\node\node.exe"
-  ${orIfNot} ${FileExists} "$stableRuntimeDir\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
     Goto stableRuntimeFailed
   ${endif}
 
@@ -297,6 +294,13 @@ WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR
 WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString '"$INSTDIR\${UNINSTALL_FILENAME}" $0 /S _?=$INSTDIR'
 !insertmacro addStartMenuLink $keepShortcuts
 !insertmacro addDesktopLink $keepShortcuts
+; Preserve installer identity while separating production taskbar grouping from development.
+${if} ${FileExists} "$newStartMenuLink"
+  WinShell::SetLnkAUMI "$newStartMenuLink" "com.stable.agent.production"
+${endif}
+${if} ${FileExists} "$newDesktopLink"
+  WinShell::SetLnkAUMI "$newDesktopLink" "com.stable.agent.production"
+${endif}
 
 ${if} ${FileExists} "$newStartMenuLink"
   StrCpy $launchLink "$newStartMenuLink"

@@ -3,6 +3,8 @@
 const { spawn, spawnSync } = require('node:child_process')
 const path = require('node:path')
 const { StringDecoder } = require('node:string_decoder')
+const { powershellPath, requirePowerShell } = require('./powershell-runtime.cjs')
+const { UTF8_PREFIX } = require('./windows-command.cjs')
 
 const ALLOWED_EXTENSIONS = new Set(['.py', '.ps1', '.cmd', '.bat'])
 const MAX_OUTPUT = 1_000_000
@@ -10,6 +12,7 @@ const MAX_OUTPUT = 1_000_000
 function powershellInteractiveCommand(filePath) {
   const quotedPath = String(filePath).replace(/'/g, "''")
   return [
+    UTF8_PREFIX,
     'function global:Read-Host {',
     '  [CmdletBinding()] param([Parameter(Position=0)][object]$Prompt, [switch]$AsSecureString, [switch]$MaskInput)',
     "  if ($null -ne $Prompt) { [Console]::Out.Write(([string]$Prompt) + ': ') }",
@@ -21,15 +24,15 @@ function powershellInteractiveCommand(filePath) {
   ].join('\n')
 }
 
-function commandFor(filePath) {
+function commandFor(filePath, options = {}) {
   const extension = path.extname(filePath).toLowerCase()
   if (!ALLOWED_EXTENSIONS.has(extension)) throw new Error('只允许执行 PY、PS1、CMD 或 BAT 脚本。')
   if (extension === '.py') return { command: process.env.STABLE_PYTHON || 'python.exe', args: [filePath] }
-  if (extension === '.ps1') return { command: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', powershellInteractiveCommand(filePath)] }
+  if (extension === '.ps1') return { command: requirePowerShell(options), args: ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', powershellInteractiveCommand(filePath)] }
   return { command: 'cmd.exe', args: ['/d', '/s', '/c', filePath] }
 }
 
-function scriptEnvironment() {
+function scriptEnvironment(options = {}) {
   const environment = { ...process.env }
   for (const key of Object.keys(environment)) {
     if (/(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION)/i.test(key)) delete environment[key]
@@ -37,6 +40,10 @@ function scriptEnvironment() {
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
   delete environment.ELECTRON_RUN_AS_NODE
+  const pathKeys = Object.keys(environment).filter(key => key.toUpperCase() === 'PATH')
+  const originalPath = pathKeys.map(key => environment[key]).filter(Boolean).join(path.delimiter)
+  for (const key of pathKeys) delete environment[key]
+  environment.PATH = [path.dirname(powershellPath(options)), originalPath].filter(Boolean).join(path.delimiter)
   return environment
 }
 
@@ -59,9 +66,10 @@ function childIsRunning(child) {
 }
 
 class ScriptRunner {
-  constructor({ workspace, timeoutMs = 5 * 60_000 }) {
+  constructor({ workspace, timeoutMs = 5 * 60_000, packaged = false, resourcesPath }) {
     this.workspace = workspace
     this.timeoutMs = timeoutMs
+    this.runtimeOptions = { packaged, resourcesPath }
     this.child = null
     this.itemId = ''
     this.onEvent = null
@@ -78,7 +86,7 @@ class ScriptRunner {
   async run(item, onEvent = () => {}, options = {}) {
     if (this.child && !childIsRunning(this.child)) this.release(this.child)
     if (this.child) throw new Error('已有脚本正在执行，请等待完成或先停止。')
-    const spec = commandFor(item.path)
+    const spec = commandFor(item.path, this.runtimeOptions)
     const timeoutMs = options.timeoutMs === 0 ? 0 : Number(options.timeoutMs || this.timeoutMs)
     const idleNoticeMs = Math.max(0, Number(options.idleNoticeMs || 0))
     this.cancelRequested = false
@@ -126,7 +134,7 @@ class ScriptRunner {
       }
       const child = spawn(spec.command, spec.args, {
         cwd: path.dirname(item.path) || this.workspace,
-        env: scriptEnvironment(),
+        env: scriptEnvironment(this.runtimeOptions),
         windowsHide: true,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],

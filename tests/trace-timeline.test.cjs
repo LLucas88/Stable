@@ -1,8 +1,13 @@
 'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { buildTraceTimeline, traceItemStatus, savedTraceStatus, traceActionLabel } = require('../src/trace-timeline.ts')
+const { buildTraceTimeline, groupTraceTimeline, traceItemStatus, savedTraceStatus, traceActionLabel } = require('../src/trace-timeline.ts')
 const item = (id, time, props = {}) => ({ id, runId: 'r1', kind: 'status', title: id, status: 'completed', time, ...props })
+
+test('verified runtime version is retained in the expandable execution details', () => {
+  const entry = item('runtime-info', 1, { title: '执行环境', detail: 'Claude Agent SDK 0.3.296 · Claude Code 2.1.296 · WSL2 命令沙箱' })
+  assert.deepEqual(buildTraceTimeline([entry]), [entry])
+})
 
 test('public summaries and tool calls interleave by start time even after tools finish', () => {
   const entries = [
@@ -67,4 +72,32 @@ test('full access approvals collapse into one expandable summary and other modes
  const rows=buildTraceTimeline(original)
  assert.deepEqual(rows.map(x=>x.id),['automatic-approvals','manual','run-progress'])
  assert.match(rows[0].detail,/read a\nread b/);assert.equal(original.length,4)
+})
+
+test('consecutive operations share a goal group until the next public progress message', () => {
+  const entries = [item('intro', 1, {eventType:'agent/answer',content:'探查数据源'}),
+    item('excel1',2,{kind:'tool'}),item('excel2',3,{kind:'tool',status:'failed'}),
+    item('next',4,{eventType:'agent/answer',content:'生成报告'}),item('write',5,{kind:'tool'})]
+  const snapshot = JSON.stringify(entries)
+  const groups = groupTraceTimeline(buildTraceTimeline(entries), 'running')
+  assert.deepEqual(groups.map(g=>g.kind), ['text','actions','text','actions'])
+  assert.deepEqual(groups[1].items.map(x=>x.id), ['excel1','excel2'])
+  assert.equal(groups[1].items[1].status, 'failed')
+  assert.equal(JSON.stringify(entries), snapshot)
+  const updated = groupTraceTimeline(buildTraceTimeline([...entries,item('more',6,{kind:'tool'})]), 'running')
+  assert.equal(updated[3].id, groups[3].id, 'streamed operations retain the group identity')
+})
+
+test('pending approvals remain outside folded groups, and completed histories have no pending notice', () => {
+  const entries = [item('a',1,{kind:'tool'}),item('approval',2,{kind:'approval',status:'running'}),item('b',3,{kind:'tool',status:'running'})]
+  assert.deepEqual(groupTraceTimeline(entries,'running').map(g=>g.kind), ['actions','notice','actions'])
+  const finished = groupTraceTimeline(entries,'cancelled')
+  assert.equal(finished.length,1);assert.equal(finished[0].items.length,3)
+  assert.deepEqual(groupTraceTimeline([], 'completed'), [])
+})
+
+test('Stable command and spreadsheet calls receive concise activity labels', () => {
+  assert.equal(traceActionLabel(item('exec',0,{kind:'tool',title:'使用工具 stable_exec'})), '运行了命令')
+  assert.equal(traceActionLabel(item('excel',0,{kind:'tool',toolName:'stable_excel'})), '处理了表格')
+  assert.equal(traceActionLabel(item('edit',0,{kind:'tool',toolName:'Edit'})), '编辑了文件')
 })

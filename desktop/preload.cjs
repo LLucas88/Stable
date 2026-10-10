@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('stable', {
     onSelectAllMessages: (handler) => { const listener = () => handler(); ipcRenderer.on('stable:editor:selectAllMessages', listener); return () => ipcRenderer.removeListener('stable:editor:selectAllMessages', listener) },
   },
   cloud: {
+    startup: () => invoke('stable:cloud:startup'),
     login: (username, password) => invoke('stable:cloud:login', { username, password }),
     changePassword: (currentPassword, newPassword, confirmPassword) => invoke('stable:cloud:changePassword', { currentPassword, newPassword, confirmPassword }),
     refresh: () => invoke('stable:cloud:refresh'),
@@ -110,7 +111,6 @@ contextBridge.exposeInMainWorld('stable', {
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
   agent: {
     onTaskOpen: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:open', listener); return () => ipcRenderer.removeListener('stable:task:open', listener) },
-    onTaskNotice: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:notice', listener); return () => ipcRenderer.removeListener('stable:task:notice', listener) },
     setSkillReferences: (id, ids) => invoke('stable:agent:skillReferences', { id, ids }),
     lifecycle: (id,action)=>invoke('stable:agent:lifecycle',{id,action}),
     configureNetwork: (id, enabled) => invoke('stable:agent:network', { id, enabled }),
@@ -201,6 +201,12 @@ contextBridge.exposeInMainWorld('stable', {
     save: (profile) => invoke('stable:model:save', profile),
     remove: (id) => invoke('stable:model:remove', { id }),
     setDefault: (id) => invoke('stable:model:setDefault', { id }),
+  },
+  provisioning: {
+    identity: () => invoke('stable:provisioning:identity'),
+    request: () => invoke('stable:provisioning:request'),
+    issue: (modelId, apiKey) => invoke('stable:provisioning:issue', { modelId, apiKey }),
+    import: (issuerFingerprint) => invoke('stable:provisioning:import', { issuerFingerprint }),
   },
   settings: {
     globalInstructions: () => invoke('stable:settings:globalInstructions'),

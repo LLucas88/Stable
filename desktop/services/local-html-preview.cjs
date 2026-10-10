@@ -7,7 +7,19 @@ const types = { '.html':'text/html', '.htm':'text/html', '.css':'text/css', '.js
 class LocalHtmlPreview {
   constructor(roots) { this.roots=roots; this.entries=new Map() }
   async open(value) {
-    const file=resolveWorkspaceEntry(value.startsWith('file:') ? fileURLToPath(value) : value, this.roots, {fileOnly:true})
+    let requested = value, search = '', hash = ''
+    if (value.startsWith('file:')) {
+      const url = new URL(value); requested = fileURLToPath(url); search = url.search; hash = url.hash
+    } else if (!fs.existsSync(value)) {
+      // Existing filenames can legitimately contain '#'. Only split a suffix
+      // when the literal path is absent, and still validate the underlying file.
+      const parts = value.match(/^(.*?\.html?)([?#].*)$/i)
+      if (parts) {
+        requested = parts[1]
+        const suffix = new URL('http://localhost/' + parts[2]); search = suffix.search; hash = suffix.hash
+      }
+    }
+    const file=resolveWorkspaceEntry(requested, this.roots, {fileOnly:true})
     const filename = typeof file === 'string' ? file : file.path
     if (!/\.html?$/i.test(filename)) throw Error('本地浏览器预览仅支持工作区 HTML 文件。')
     if (!this.server) {
@@ -31,7 +43,7 @@ class LocalHtmlPreview {
       this.server.unref()
     }
     const token=randomUUID();this.entries.set(token,path.dirname(filename))
-    return `http://127.0.0.1:${this.server.address().port}/${token}/${encodeURIComponent(path.basename(filename))}`
+    return `http://127.0.0.1:${this.server.address().port}/${token}/${encodeURIComponent(path.basename(filename))}${search}${hash}`
   }
   dispose(){this.server?.close();this.server?.closeAllConnections();this.entries.clear();this.server=undefined}
 }

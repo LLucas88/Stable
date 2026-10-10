@@ -1,7 +1,7 @@
 {
   "name": "stable-desktop",
   "version": "1.0.2",
-  "description": "Stable local agent workbench powered by Codex Harness",
+  "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
   "license": "MIT",
@@ -13,23 +13,24 @@
     "typecheck": "tsc --noEmit",
     "pretest": "node node_modules/electron/install.js",
     "test": "node --test --test-concurrency=1 tests/*.test.cjs",
-    "test:feature-v2": "node --test tests/skill-selection.test.cjs tests/manual-skills-ui.test.cjs tests/prompts.test.cjs tests/conversation-state.test.cjs tests/project-ipc.test.cjs tests/project-controls-ui.test.cjs tests/sidebar-controls-ui.test.cjs tests/feature-v2-services.test.cjs tests/browser-downloads.test.cjs tests/shared-browser.test.cjs tests/runtime-lifecycle.test.cjs tests/conversation-tools-ui.test.cjs tests/skill-market-ui.test.cjs tests/codex-harness.test.cjs tests/codex-approval.test.cjs tests/conversation-approval.test.cjs tests/agent-steer-ipc.test.cjs tests/store.test.cjs tests/catch-and-conversation-tools.test.cjs tests/file-location.test.cjs tests/model-switching-ui.test.cjs tests/navigation-workspace-ui.test.cjs tests/feature-v2-startup.test.cjs",
+    "test:feature-v2": "node --test tests/skill-selection.test.cjs tests/manual-skills-ui.test.cjs tests/prompts.test.cjs tests/conversation-state.test.cjs tests/project-ipc.test.cjs tests/project-controls-ui.test.cjs tests/sidebar-controls-ui.test.cjs tests/feature-v2-services.test.cjs tests/browser-downloads.test.cjs tests/shared-browser.test.cjs tests/claude-lifecycle.test.cjs tests/conversation-tools-ui.test.cjs tests/skill-market-ui.test.cjs tests/claude-harness.test.cjs tests/tool-approval.test.cjs tests/claude-tools.test.cjs tests/agent-steer-ipc.test.cjs tests/store.test.cjs tests/catch-and-conversation-tools.test.cjs tests/file-location.test.cjs tests/model-switching-ui.test.cjs tests/navigation-workspace-ui.test.cjs tests/feature-v2-startup.test.cjs",
     "test:clarification": "node --test tests/clarification.test.cjs tests/clarification-ipc.test.cjs tests/clarification-interaction.test.cjs tests/clarification-card-ui.test.cjs tests/clarification-agent-page-ui.test.cjs tests/message-outbox.test.cjs",
-    "test:integration": "node tests/harness-integration.cjs",
-    "test:codex-integration": "node tests/codex-integration.cjs",
-    "test:codex-network": "node tests/codex-network-integration.cjs",
-    "test:codex-packaged": "node tests/codex-packaged.cjs",
-    "runtime:codex": "node scripts/prepare-codex-runtime.cjs",
+    "test:integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs",
+    "test:claude-integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs",
+    "runtime:powershell": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-powershell-runtime.ps1",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "tools:install": "npm ci --prefix vendor/agent-tools --ignore-scripts --no-audit --no-fund",
     "tools:verify": "node scripts/verify-builtin-tools.cjs",
-    "dist:dir": "npm run python:verify && npm run tools:verify && npm run runtime:codex && npm run build && electron-builder --win --x64 --dir",
-    "dist": "npm run python:verify && npm run tools:verify && npm run runtime:codex && npm run build && electron-builder --win --x64",
-    "dist:update": "npm run python:verify && npm run tools:verify && npm run runtime:codex && electron-builder --config build/update-builder.config.cjs --win --x64 --publish never",
+    "dist:dir": "npm run runtime:powershell && npm run python:verify && npm run tools:verify && npm run build && electron-builder --win --x64 --dir",
+    "dist": "npm run runtime:powershell && npm run python:verify && npm run tools:verify && npm run build && electron-builder --win --x64",
+    "dist:update": "npm run runtime:powershell && npm run python:verify && npm run tools:verify && electron-builder --config build/update-builder.config.cjs --win --x64 --publish never",
     "python:install": "uv pip install --target vendor/wending-cli/python/Lib/site-packages -r scripts/python-requirements.txt",
-    "python:verify": "node scripts/verify-python-tools.cjs"
+    "python:verify": "node scripts/verify-python-tools.cjs",
+    "sandbox:setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-wsl-sandbox.ps1",
+    "test:wsl-integration": "node --test tests/wsl-sandbox-integration.cjs"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.296",
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.8",
     "@xyflow/react": "^12.8.6",
@@ -43,10 +44,10 @@
     "react-dom": "^18.3.1",
     "ws": "^8.18.3",
     "xlsx": "^0.18.5",
-    "yaml": "^2.7.0"
+    "yaml": "^2.7.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "@openai/codex": "0.142.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
@@ -68,7 +69,8 @@
       "build/stable_logo_transparent.png",
       "build/stable_app_icon.png",
       "package.json",
-      "!desktop/skills/filtered/bundle/**/*"
+      "!desktop/skills/filtered/bundle/**/*",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-win32-*/claude.exe"
     ],
     "extraResources": [
       {
@@ -95,8 +97,8 @@
         "from": "runtime",
         "to": "runtime",
         "filter": [
-          "**/*",
-          "!codex/**/*"
+          "node/**/*",
+          "powershell/**/*"
         ]
       },
       {
@@ -104,8 +106,26 @@
         "to": "wending-cli"
       },
       {
-        "from": "runtime/codex",
-        "to": "codex"
+        "from": "node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe",
+        "to": "claude/claude.exe"
+      },
+      {
+        "from": "vendor/wsl-agent",
+        "to": "wsl-agent",
+        "filter": [
+          "package.json",
+          "package-lock.json",
+          "runner.cjs",
+          "workspace-copy.cjs"
+        ]
+      },
+      {
+        "from": "scripts",
+        "to": "wsl-setup",
+        "filter": [
+          "setup-wsl-sandbox.ps1",
+          "setup-wsl-sandbox.sh"
+        ]
       }
     ],
     "directories": {

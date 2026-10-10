@@ -6,7 +6,6 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { WendingCliService } = require('../desktop/services/wending-cli.cjs')
-const { codexEnvironment } = require('../desktop/services/codex-harness.cjs')
 const root = path.resolve(__dirname, '..')
 
 function save(cli, brand) {
@@ -14,7 +13,7 @@ function save(cli, brand) {
   fs.writeFileSync(path.join(cli.options.configDirectory, 'config.json'), JSON.stringify(Object.fromEntries(Object.entries(cfg).map(([key, value]) => [key, Buffer.from(value).toString('base64')]))))
 }
 function query(cli, cwd, scenario = 'ok') {
-  const env = codexEnvironment(cli.environment(), path.join(cwd, 'mock-codex'), 'fixture-gateway', 'C:\\runtime\\bin\\codex.exe')
+  const env = require('../desktop/services/wending-agent-tool.cjs').wendingEnvironment(cli.environment())
   return new Promise((resolve, reject) => {
     const child = spawn(path.join(cli.root(), 'python/python.exe'), ['-B', '-X', 'utf8', path.join(__dirname, 'fixtures/wending-task-scope.py'), scenario], { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = '', error = ''

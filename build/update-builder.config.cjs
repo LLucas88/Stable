@@ -5,7 +5,10 @@ const pkg = require('../package.json')
 module.exports = {
   ...pkg.build,
   directories: { ...pkg.build.directories, output: `release-${pkg.version}-update` },
-  extraResources: (pkg.build.extraResources || []).filter((item) => item?.to !== 'runtime'),
+  extraResources: [
+    ...(pkg.build.extraResources || []).filter((item) => item?.to !== 'runtime'),
+    { from: 'runtime/powershell', to: 'runtime/powershell', filter: ['**/*'] },
+  ],
   nsis: {
     ...pkg.build.nsis,
     include: 'build/update-installer.nsh',

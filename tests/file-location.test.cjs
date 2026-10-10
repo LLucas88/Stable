@@ -34,14 +34,14 @@ function fixture(t) {
   return { temporary, workspace, directory, file }
 }
 
-test('Windows file location opens the canonical containing directory, preserving Unicode and special characters', async t => {
+test('Windows file location selects the canonical file, preserving Unicode and special characters', async t => {
   const { workspace, directory, file } = fixture(t)
   const calls = []
-  const open = handler({ openPath: async value => { calls.push(value); return '' }, showItemInFolder: () => assert.fail('Windows reveal must not be used') }, workspace)
+  const open = handler({ openPath: async value => { calls.push(['directory',value]); return '' }, showItemInFolder: value => calls.push(['file',value]) }, workspace)
   assert.equal(await open(file), true)
   assert.equal(await open(file.replaceAll('\\', '/')), true)
   assert.equal(await open(directory), true)
-  assert.deepEqual(calls, [directory, directory, directory])
+  assert.deepEqual(calls, [['file',file], ['file',file], ['directory',directory]])
 })
 
 test('missing and outside-workspace files never reach Explorer', async t => {
@@ -54,11 +54,11 @@ test('missing and outside-workspace files never reach Explorer', async t => {
 })
 
 test('Windows folder opening waits for completion and propagates shell errors', async t => {
-  const { workspace, file } = fixture(t)
+  const { workspace, directory } = fixture(t)
   let complete
   const open = handler({ openPath: () => new Promise(resolve => { complete = resolve }) }, workspace)
   let settled = false
-  const pending = open(file).finally(() => { settled = true })
+  const pending = open(directory).finally(() => { settled = true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(settled, false)
   complete('fixture access denied')

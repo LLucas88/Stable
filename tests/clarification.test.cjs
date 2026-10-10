@@ -2,8 +2,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {clarifyBeforeExecution,pendingClarification,clarificationTrace,waitingAnswer,WAIT_MARKER,clarificationStream}=require('../desktop/services/clarification.cjs');
 const {runWithDeliveryChecks,deliveryRequest}=require('../desktop/services/delivery.cjs');
-const {CodexResponsesBridge,readSSE}=require('../desktop/services/codex-responses-bridge.cjs');
-const {CodexHarnessRunner}=require('../desktop/services/codex-harness.cjs');
 const rules=fs.readFileSync(path.resolve(__dirname,'../desktop/defaults/AGENTS.md'),'utf8');
 const payload={prompt:'请生成 Word 报告',attachments:[{path:'report.csv',name:'report.csv'}],references:[{kind:'skill',id:'report',name:'报告'}]};
 const history=result=>[{role:'user',content:payload.prompt},{role:'assistant',content:result.answer,trace:result.trace}];
@@ -57,44 +55,9 @@ test('streamed waiting marker is hidden even across token boundaries and leaves 
  assert.equal(answer,'');assert.equal(filter('b','[正常引用]'),'[正常引用]');assert.equal(filter('c','完成'),'完成');
 });
 
-test('text-only bridge strips tools and rejects hallucinated calls before execution',async t=>{
- let captured;const bridge=new CodexResponsesBridge({model:{model:'mock',baseURL:'http://127.0.0.1:1/v1'},apiKey:'mock-only',textOnly:true,fetchImpl:async(_url,options)=>{captured=JSON.parse(options.body);return upstream([chunk({tool_calls:[{index:0,id:'attack',function:{name:'shell_command',arguments:'{"command":"write"}'}}]}),chunk({},'tool_calls')])}});
- await bridge.start();t.after(()=>bridge.close());
- const response=await fetch(bridge.baseURL+'/responses',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({input:'ask first',tools:[{type:'function',name:'shell_command',parameters:{type:'object'}}],tool_choice:'required'})});
- const events=[];for await(const e of readSSE(response.body))events.push(e);
- assert.equal(captured.tools,undefined);assert.equal(captured.tool_choice,undefined);assert.ok(events.some(e=>e.type==='error'));assert.ok(!events.some(e=>e.item?.type==='function_call'));
- const search=await fetch(bridge.baseURL+'/search',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:'{}'});assert.ok(!search.ok);
-});
-
-test('bundled Codex passes high-priority global rules and cannot expose tools during preflight',async t=>{
- const root=sandbox(t),workspace=path.join(root,'workspace');fs.mkdirSync(workspace);let captured;
- const runner=new CodexHarnessRunner({userData:root,workspace,executable:path.resolve(__dirname,'../runtime/codex/bin/codex.exe'),onModelRequest:body=>captured=body,fetchImpl:async()=>upstream([chunk({content:'{"status":"waiting","question":"报告给谁看？"}'}),chunk({},'stop')])});
- const answer=await runner.run('先澄清',{model:'mock',providerId:'mock',baseURL:'http://127.0.0.1:1/v1'},'mock-only',20000,()=>{},'read-only',[],{textOnly:true,globalInstructions:rules});
- assert.match(answer,/报告给谁看/);assert.equal(captured.tools,undefined);assert.ok(captured.messages.some(m=>m.role==='system'&&String(m.content).includes('95%')));
-});
-
 test('a current explicit instruction can skip the initial question without rewriting global rules',async()=>{
  const result=await clarifyBeforeExecution({payload:{prompt:'请生成报告，不用提问，直接执行'},messages:[],instructions:rules,ask:async()=>{throw Error('must not ask')}});
  assert.equal(result.status,'ready');
-});
-
-test('a provider cannot continue with tools in the same response as its waiting question',async t=>{
- const bridge=new CodexResponsesBridge({model:{model:'mock',baseURL:'http://127.0.0.1:1/v1'},apiKey:'mock-only',fetchImpl:async()=>upstream([chunk({content:WAIT_MARKER+'\n请问给谁看？',tool_calls:[{index:0,id:'do-not-run',function:{name:'shell_command',arguments:'{"command":"write"}'}}]}),chunk({},'tool_calls')])});
- await bridge.start();t.after(()=>bridge.close());
- const response=await fetch(bridge.baseURL+'/responses',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({input:'ask first',tools:[{type:'function',name:'shell_command',parameters:{type:'object'}}]})});
- const events=[];for await(const e of readSSE(response.body))events.push(e);
- assert.ok(events.some(e=>e.type==='response.completed'));assert.ok(!events.some(e=>e.item?.type==='function_call'));assert.ok(events.some(e=>e.type==='response.output_item.done'&&e.item?.phase==='final_answer'));
-});
-
-test('native input requests interrupt and surface the question instead of fabricating empty user answers',async t=>{
- const root=sandbox(t),workspace=path.join(root,'workspace');fs.mkdirSync(workspace);
- const options={userData:root,workspace,executable:process.execPath,executableArgs:[path.resolve(__dirname,'fixtures/clarification-app-server.cjs')]};
- const model={model:'mock',providerId:'mock',baseURL:'http://127.0.0.1:1/v1'};
- const answer=await new CodexHarnessRunner(options).run('ask',model,'test-only',10000,()=>{},'read-only',[],{key:'same-task'});
- assert.equal(answer,WAIT_MARKER+'\n报告给谁看？');
- const home=require('../desktop/services/codex-harness.cjs').sessionDirectory(root,'same-task');
- assert.equal(fs.existsSync(path.join(home,'fabricated-answer.json')),false);assert.ok(fs.existsSync(path.join(home,'interrupted.json')));
- assert.equal(await new CodexHarnessRunner(options).run('管理层',model,'test-only',10000,()=>{},'read-only',[],{key:'same-task'}),'用户补充已接收');
 });
 
 test('waiting task is restored after reopening the actual store and disappears when messages are cleared',t=>{

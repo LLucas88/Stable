@@ -1,7 +1,6 @@
  'use strict'
-const fs=require('node:fs'),path=require('node:path'),{randomUUID,createHash}=require('node:crypto')
-const {CodexRpc}=require('./codex-rpc.cjs')
-const {sessionDirectory,codexEnvironment,clearCodexSession}=require('./codex-harness.cjs')
+const {createHash}=require('node:crypto')
+const {createClaudeLifecycle}=require('./claude-lifecycle.cjs')
 const {redact}=require('./approval-ledger.cjs')
 function initialize(store){store.db.exec(`
  CREATE TABLE IF NOT EXISTS message_deliveries (id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,payload_digest TEXT NOT NULL,state TEXT NOT NULL,user_message_id TEXT,assistant_message_id TEXT,thread_id TEXT,turn_id TEXT,error TEXT,updated_at TEXT NOT NULL);
@@ -10,7 +9,7 @@ function initialize(store){store.db.exec(`
  CREATE INDEX IF NOT EXISTS delivery_conversation ON message_deliveries(conversation_id,updated_at);
 `)}
 class ConversationLifecycle {
- constructor(store,{userData,executable,workspace,rpcFactory=options=>new CodexRpc(options)}={}){Object.assign(this,{store,userData,executable,workspace,rpcFactory});initialize(store);this.locks=new Set()}
+ constructor(store,{userData,executable,workspace,runtimeAdapter=createClaudeLifecycle({userData})}={}){Object.assign(this,{store,userData,executable,workspace,runtimeAdapter});initialize(store);this.locks=new Set()}
  begin(id,conversationId,payload){if(!/^[\w-]{1,100}$/.test(id))throw Error('无效发送标识。');const digest=createHash('sha256').update(JSON.stringify(payload)).digest('hex');const old=this.store.db.prepare('SELECT * FROM message_deliveries WHERE id=?').get(id);if(old){if(old.conversation_id!==conversationId||old.payload_digest!==digest)throw Error('发送标识与内容冲突。');if(old.state==='rejected'){this.status(id,'preparing');return {duplicate:false,id}}return {duplicate:true,...old}}this.store.db.prepare('INSERT INTO message_deliveries(id,conversation_id,payload_digest,state,updated_at) VALUES(?,?,?,?,?)').run(id,conversationId,digest,'preparing',new Date().toISOString());return {duplicate:false,id}}
  status(id,state,patch={}){this.store.db.prepare('UPDATE message_deliveries SET state=?,user_message_id=COALESCE(?,user_message_id),assistant_message_id=COALESCE(?,assistant_message_id),thread_id=COALESCE(?,thread_id),turn_id=COALESCE(?,turn_id),error=?,updated_at=? WHERE id=?').run(state,patch.userMessageId?.id||patch.userMessageId||null,patch.assistantMessageId?.id||patch.assistantMessageId||null,patch.threadId||null,patch.turnId||null,patch.error?redact(patch.error):null,new Date().toISOString(),id)}
  interrupted(){this.store.db.prepare("UPDATE steer_deliveries SET state='unknown' WHERE state='pending'").run();this.store.db.prepare("UPDATE message_deliveries SET state='unknown',error='上次发送结果尚未核实；不会自动重发。',updated_at=? WHERE state IN ('preparing','saved','submitted','running')").run(new Date().toISOString())}
@@ -20,9 +19,8 @@ class ConversationLifecycle {
  item(id,threadId,turnId,item){if(!item?.id||!this.store.conversation(id)||this.store.conversationContext(id).deletionState==='pending')return;this.store.db.prepare('INSERT INTO runtime_items VALUES(?,?,?,?,?) ON CONFLICT(conversation_id,thread_id,turn_id,item_id) DO UPDATE SET value_json=excluded.value_json').run(id,threadId,turnId||'unknown',item.id,JSON.stringify(item))}
  recoveryText(id){const pending=this.store.db.prepare("SELECT content FROM steer_deliveries WHERE conversation_id=? AND state='unknown'").all(id).map(r=>'用户补充（接收待核实）：'+r.content).join('\n');return pending+'\n'+this.store.db.prepare("SELECT r.value_json FROM runtime_items r JOIN message_deliveries d ON d.conversation_id=r.conversation_id AND d.thread_id=r.thread_id AND d.turn_id=r.turn_id WHERE d.conversation_id=? AND d.state IN ('unknown','interrupted','failed') ORDER BY d.updated_at DESC LIMIT 100").all(id).map(r=>JSON.parse(r.value_json)).filter(i=>i.type==='agentMessage'&&i.text).map(i=>i.text).join('\n\n')}
  async startup(onChange){const ids=this.store.db.prepare("SELECT DISTINCT conversation_id FROM message_deliveries WHERE state='unknown'").all();for(const row of ids){if(!this.store.conversation(row.conversation_id)||this.store.conversationContext(row.conversation_id).deletionState==='pending')continue;try{await this.reconcile(row.conversation_id);onChange?.(row.conversation_id)}catch(error){this.store.setSetting(`recovery-diagnostic:${row.conversation_id}`,redact(error.message));onChange?.(row.conversation_id)}}}
- async rpc(id,action){if(this.locks.has(id))throw Error('此对话正在同步，请稍后重试。');this.locks.add(id);let rpc
-   try{const home=sessionDirectory(this.userData,id),pointer=path.join(home,'stable-thread.json');if(!fs.existsSync(pointer))return {noRuntime:true};const saved=JSON.parse(fs.readFileSync(pointer,'utf8'));if(!saved.threadId)throw Error('运行时映射不完整，历史仍保留。');rpc=this.rpcFactory({executable:this.executable,cwd:fs.existsSync(home)?home:this.workspace,env:codexEnvironment(process.env,home,'',this.executable)});await rpc.request('initialize',{clientInfo:{name:'stable_history',version:'0.91.7'},capabilities:{experimentalApi:true}},15000);rpc.send?.({method:'initialized',params:{}});return await action(rpc,saved.threadId)
-   }finally{await rpc?.close();this.locks.delete(id)}}
+ async rpc(id,action){if(this.locks.has(id))throw Error('此对话正在同步，请稍后重试。');this.locks.add(id)
+   try{const data=await this.runtimeAdapter.read(id);if(data.noRuntime)return data;return await action({request:(method)=>method==='thread/read'?this.runtimeAdapter.read(id):this.runtimeAdapter.sync(id,method.split('/')[1])},data.thread.id)}finally{this.locks.delete(id)}}
  async sync(id,kind){if(!['archive','unarchive','delete'].includes(kind))throw Error('未知同步操作。');const previous=this.store.db.prepare("SELECT id FROM sync_operations WHERE conversation_id=? AND kind=? AND state='pending' ORDER BY updated_at DESC LIMIT 1").get(id,kind);const operation=this.store.syncOperation(id,kind,'pending',{},previous?.id);this.store.db.prepare("UPDATE sync_operations SET state='superseded' WHERE conversation_id=? AND kind IN ('archive','unarchive') AND id<>? AND state='pending'").run(id,operation)
    if(kind==='delete'){this.store.db.prepare('INSERT OR IGNORE INTO conversation_contexts(conversation_id) VALUES(?)').run(id);this.store.db.prepare("UPDATE conversation_contexts SET deletion_state='pending' WHERE conversation_id=?").run(id)}else this.store.archiveConversation(id,kind==='archive')
    try{await this.rpc(id,async(rpc,threadId)=>{try{return await rpc.request('thread/'+kind,{threadId},15000)}catch(error){
@@ -31,7 +29,7 @@ class ConversationLifecycle {
       try{await rpc.request('thread/read',{threadId,includeTurns:false},15000)}catch(confirmation){if(absent(confirmation))return {alreadyDeleted:true};throw confirmation}
       throw error
     }});this.store.syncOperation(id,kind,'completed',{},operation);if(kind==='delete'){
-      clearCodexSession(this.userData,id);this.store.revokeConversationGrants(id);this.store.removeConversation(id)
+      this.store.revokeConversationGrants(id);this.store.removeConversation(id)
       for(const table of ['runtime_sessions','runtime_items','message_deliveries','steer_deliveries','approval_requests','approval_grants_v3','conversation_view_state'])this.store.db.prepare(`DELETE FROM ${table} WHERE conversation_id=?`).run(id)
       for(const prefix of ['draft-reference:','permission-boundary:','recovery-diagnostic:'])this.store.db.prepare('DELETE FROM settings WHERE key=?').run(prefix+id)
     }}catch(error){this.store.syncOperation(id,kind,'pending',{error:redact(error.message)},operation);return {pending:true,error:'本地状态已保存，运行时同步待重试：'+redact(error.message)}}return {pending:false}

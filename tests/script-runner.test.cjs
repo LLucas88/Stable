@@ -7,10 +7,12 @@ const path = require('node:path')
 const os = require('node:os')
 const { ScriptRunner, commandFor, scriptEnvironment } = require('../desktop/services/script-runner.cjs')
 const { looksLikeScriptPrompt } = require('../desktop/services/script-interaction.cjs')
+const { powershellPath } = require('../desktop/services/powershell-runtime.cjs')
 
 test('script commands are allowlisted and do not use a shell wrapper', () => {
   assert.equal(commandFor('C:\\tasks\\collect.py').command, process.env.STABLE_PYTHON || 'python.exe')
   assert.deepEqual(commandFor('C:\\tasks\\clean.ps1').args.slice(0, 2), ['-NoLogo', '-NoProfile'])
+  assert.equal(commandFor('C:\\tasks\\clean.ps1').command, powershellPath())
   assert.equal(commandFor('C:\\tasks\\run.cmd').command, 'cmd.exe')
   assert.throws(() => commandFor('C:\\tasks\\unsafe.exe'), /只允许执行/)
 })
@@ -28,6 +30,16 @@ test('script environment removes common credential variables', () => {
 test('runner defaults to a five minute safety timeout', () => {
   const runner = new ScriptRunner({ workspace: 'C:\\Stable' })
   assert.equal(runner.timeoutMs, 5 * 60_000)
+})
+
+test('PS1 scripts run on bundled PowerShell 7 with UTF-8', async t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'stable-pwsh7-'))
+  const target = path.join(root, '版本 probe.ps1')
+  writeFileSync(target, '$PSVersionTable.PSVersion.ToString(); $PSVersionTable.PSEdition; Write-Output "中文测试"', 'utf8')
+  const runner = new ScriptRunner({ workspace: root, timeoutMs: 15_000 })
+  t.after(() => { runner.cancel(); assert.equal(path.dirname(root), os.tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const result = await runner.run({ id: 'pwsh-version', path: target })
+  assert.match(result.output, /7\.6\.6[\s\S]*Core[\s\S]*中文测试/)
 })
 
 test('runner streams and returns output from an allowed cmd script', async () => {

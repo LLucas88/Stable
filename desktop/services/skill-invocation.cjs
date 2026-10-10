@@ -2,7 +2,7 @@
 
 // Skills are resources selected by a human, never ambient retrieval context.
 const { SKILL_SELECTION_POLICY } = require('./skill-selection.cjs')
-const MANUAL_SKILL_POLICY = SKILL_SELECTION_POLICY + ' 定时触发和团队自动分配不使用已选技能。包含 Skill 节点的工作流仅在用户手动运行时使用这些节点。'
+const MANUAL_SKILL_POLICY = SKILL_SELECTION_POLICY + ' 定时触发和团队自动分配只可自动使用授权目录中的技能。工作流中的其他 Skill 节点仍需用户手动运行。'
 
 function explicitlyNamedSkill(query, skills = []) {
   const text = String(query || '').trim()
@@ -26,8 +26,9 @@ function manualSkillContext(context = {}) {
   return context.manualSkillInvocation === true ? [...(context.skills || [])] : []
 }
 
-function assertWorkflowSkillInvocation(graph, manual) {
-  if (!manual && graph.nodes.some(node => node.type === 'skill')) throw Error('此工作流包含仅允许手动调用的 Skill，请手动运行工作流。')
+function assertWorkflowSkillInvocation(graph, manual, automaticSkills = []) {
+  const allowed = new Set(automaticSkills.map(item => item.id))
+  if (!manual && graph.nodes.some(node => node.type === 'skill' && !allowed.has(node.resourceId))) throw Error('此工作流包含仅允许手动调用的 Skill，请手动运行工作流。')
 }
 
 module.exports = { MANUAL_SKILL_POLICY, explicitlyNamedSkill, manualSkillContext, assertWorkflowSkillInvocation }

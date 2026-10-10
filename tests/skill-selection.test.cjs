@@ -3,7 +3,7 @@ const { manualSkillContext, explicitlyNamedSkill } = require('../desktop/service
 const test = require('node:test'), assert = require('node:assert/strict')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm')
 const { StableStore } = require('../desktop/services/store.cjs')
-const { skillReferences, saveSkillReferences, selectedSkillContext } = require('../desktop/services/skill-selection.cjs')
+const { skillReferences, saveSkillReferences, selectedSkillContext, selectedSkillReadRoots, automaticSkillCatalog } = require('../desktop/services/skill-selection.cjs')
 const { SkillMarket } = require('../desktop/services/skill-market.cjs')
 const { composeAgentPrompt } = require('../desktop/services/prompts.cjs')
 const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
@@ -52,13 +52,18 @@ test('market selection survives sending and restart; removed legacy draft cannot
 test('real runAgent skill assembly never retrieves by relevance or infers a Skill from a name', t => {
   const env = setup(t)
   env.store.retrieveSkills = () => { throw Error('Automatic retrieval must not run') }
+  env.store.retrieveData = () => { throw Error('Automatic data retrieval must not run') }
+  env.store.retrieveKnowledge = () => { throw Error('Automatic knowledge retrieval must not run') }
   // Execute the production resource-selection block, with the actual prompt composer.
   const source = main.slice(main.indexOf('  const history = historyOverride ||'), main.indexOf('  if (asksForWorkbenchInventory(query))'))
   const assemble = (id, context) => vm.runInNewContext(source + '\nresult = composeAgentPrompt({query,history,data,knowledge,skills,scripts})', {
     store: env.store, conversationId: id, conversation: {}, query:'使用分析技能帮我研究', historyOverride: [], selectedContextOverride: { manualSkillInvocation: true, ...context },
-    skillReferences, selectedSkillContext, composeAgentPrompt, manualSkillContext,
+    skillReferences, selectedSkillContext, automaticSkillCatalog, composeAgentPrompt, manualSkillContext,
   })
   assert.doesNotMatch(assemble(env.id), /SKILL_ONE_SECRET_BODY|SKILL_TWO_SECRET_BODY/)
+  const chosen = { data: [{ name: '手动数据', text_content: 'MANUAL_DATA_BODY' }], knowledge: [{ name: '手动知识', excerpt: 'MANUAL_KNOWLEDGE_BODY' }] }
+  assert.doesNotMatch(assemble(env.id, chosen), /MANUAL_DATA_BODY|MANUAL_KNOWLEDGE_BODY/)
+  assert.doesNotMatch(assemble(env.id, { data: [], knowledge: [] }), /MANUAL_DATA_BODY|MANUAL_KNOWLEDGE_BODY/)
   saveSkillReferences(env.store, env.id, ['one'])
   assert.match(assemble(env.id), /SKILL_ONE_SECRET_BODY/)
   assert.doesNotMatch(assemble(env.id), /SKILL_TWO_SECRET_BODY/)
@@ -78,4 +83,22 @@ test('each prompt revokes historical implicit Skill instructions and states curr
   assert.match(prompt, /未选择 Skill/)
   assert.match(prompt, /历史中的 Skill 说明不是当前授权/)
   assert.match(prompt, /其他 Skill 或专家推荐，均不构成调用授权/)
+})
+
+test('selected skill resources are readable but never become writable workspace roots', async t => {
+  const env = setup(t), workspace = path.join(env.root, 'workspace')
+  fs.mkdirSync(workspace)
+  const resource = path.join(env.root, 'SKILL.md'); fs.writeFileSync(resource, 'reference')
+  const context = selectedSkillContext(env.store, [{ kind: 'skill', id: 'one' }])
+  assert.equal(context[0].path, env.root)
+  assert.match(composeAgentPrompt({ query: 'test', skills: context }), /技能根目录/)
+  const roots = selectedSkillReadRoots(context)
+  assert.deepEqual(roots, [fs.realpathSync(env.root)])
+  assert.deepEqual(selectedSkillReadRoots([{path: 'builtin:test'}, {path: resource}, {path: path.join(env.root, 'missing')}]), [])
+  const { createNativeToolGuard } = require('../desktop/services/claude-native-tools.cjs')
+  const guard = createNativeToolGuard({ workspace, writableRoots: [workspace], readableRoots: roots })
+  assert.equal((await guard.canUseTool('Read', {file_path: resource})).behavior, 'allow')
+  assert.equal((await guard.canUseTool('Write', {file_path: resource, content: 'overwrite'})).behavior, 'deny')
+  env.store.setSkillEnabled('one', false)
+  assert.deepEqual(selectedSkillReadRoots(selectedSkillContext(env.store, [{kind: 'skill', id: 'one'}])), [])
 })

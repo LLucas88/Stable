@@ -37,15 +37,17 @@ async function run() {
     const tick=()=>new Promise(r=>setTimeout(r,60));
     await wait(()=>document.querySelector('#agent-prompt'));await tick();
     const input=document.querySelector('#agent-prompt');const initial=input.offsetHeight;
+    const cap=()=>{const s=getComputedStyle(input);return 4*parseFloat(s.lineHeight)+parseFloat(s.paddingTop)+parseFloat(s.paddingBottom)};
+    const capped=()=>Math.abs(input.getBoundingClientRect().height-cap())<1;
     const set=async value=>{window.setText(value);await tick();};
     const nativeInput=async value=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));await tick();};
     const long=Array.from({length:30},(_,i)=>'第 '+i+' 行长文本').join('\\n');
     const colors=[];
     for(const theme of ['light','dark']){
       document.documentElement.dataset.theme=theme;await tick();
-      for(const lines of [0,1,2,3,4]){await set(Array.from({length:lines},()=> '短文本').join('\\n'));expect(input.offsetHeight===initial,theme+' <=4 lines changed height');}
-      await nativeInput('1\\n2\\n3\\n4\\n5');expect(input.offsetHeight>initial&&input.offsetHeight<=2*initial,'Fifth line must expand within 2x');
-      await set(long);expect(input.offsetHeight===2*initial,'Long text must cap at exactly 2x');
+      for(const lines of [0,1,2,3,4]){await set(Array.from({length:lines},()=> '短文本').join('\\n'));expect(input.offsetHeight>=initial&&input.getBoundingClientRect().height<=cap()+1,theme+' height exceeds four lines');}
+      await nativeInput('1\\n2\\n3\\n4\\n5');expect(capped(),'Fifth line must stop at four visible lines');
+      await set(long);expect(capped(),'Long text must cap at four lines');
       expect(input.scrollHeight>input.clientHeight,'Overflow must remain scrollable');
       input.scrollTop=input.scrollHeight;expect(input.scrollTop>0,'Cannot reach bottom');
       input.focus();await nativeInput(long+'\\n末尾继续输入');
@@ -67,22 +69,23 @@ async function run() {
     expect(colors[0]!==colors[1],'Scrollbar has no light/dark treatment');
     // Soft wraps, sidebar/preview width changes, and long unbroken text.
     const box=document.querySelector('.composer-box');box.style.width='850px';await tick();
-    const wrapped='会员经营数据分析'.repeat(15);await set(wrapped);expect(input.offsetHeight===initial,'Wide short wrap unexpectedly expanded');
-    box.style.width='280px';await tick();expect(input.offsetHeight===2*initial,'Narrow soft wraps did not expand');
+    const wrapped='会员经营数据分析'.repeat(15);await set(wrapped);expect(input.getBoundingClientRect().height<=cap()+1,'Wide wrap exceeded four lines');
+    box.style.width='280px';await tick();expect(capped(),'Narrow soft wraps did not cap at four lines');
     expect(input.scrollWidth===input.clientWidth,'Long text created horizontal scrolling');
-    box.style.width='850px';await tick();expect(input.offsetHeight===initial,'Widening did not restore height');
-    await set('x'.repeat(2000));expect(input.offsetHeight===2*initial&&input.scrollWidth===input.clientWidth,'Unbroken text sizing/overflow failed');
-    window.setActive(false);await tick();await set(long);window.setActive(true);await tick();expect(input.offsetHeight===2*initial,'Returning from hidden page lost sizing');
+    box.style.width='850px';await tick();expect(input.getBoundingClientRect().height<=cap()+1,'Widening exceeded four lines');
+    await set('x'.repeat(2000));expect(capped()&&input.scrollWidth===input.clientWidth,'Unbroken text sizing/overflow failed');
+    window.setActive(false);await tick();await set(long);window.setActive(true);await tick();expect(capped(),'Returning from hidden page lost sizing');
     await set('');expect(input.offsetHeight===initial,'New draft height did not reset');
     // Reduced-motion CSS also transitions the root font for 150ms. Measure the
     // final 24px scale, not an intermediate frame after an arbitrary 60ms sleep.
+    const noTransitions=document.createElement('style');noTransitions.textContent='* { transition: none !important; }';document.head.append(noTransitions);
     document.documentElement.style.fontSize='24px';
     await wait(()=>getComputedStyle(document.documentElement).fontSize==='24px');
     window.dispatchEvent(new Event('resize'));
     await wait(()=>input.offsetHeight===102); // 4.25rem at 24px
     const enlarged=input.offsetHeight;
-    expect(enlarged>initial,'Baseline must follow font scaling');await set(long);expect(input.offsetHeight===204,'Scaled height did not cap at 2x: '+JSON.stringify({initial,enlarged,height:input.offsetHeight,min:getComputedStyle(input).minHeight,max:getComputedStyle(input).maxHeight,inline:input.style.height}));
-    return {initial,max:initial*2,themes:2,explicitAndSoftWraps:true,shrinkClearHiddenResize:true,focusSelectionScrollPreserved:true};
+    expect(enlarged>initial,'Baseline must follow font scaling');await set(long);expect(capped(),'Scaled height did not cap at four lines: '+JSON.stringify({initial,enlarged,height:input.offsetHeight,min:getComputedStyle(input).minHeight,max:getComputedStyle(input).maxHeight,inline:input.style.height}));
+    return {initial,max:cap(),themes:2,explicitAndSoftWraps:true,shrinkClearHiddenResize:true,focusSelectionScrollPreserved:true};
   })()`)
   console.log('COMPOSER_AUTOSIZE_UI_PASSED', JSON.stringify(result))
   window.destroy();app.exit(0)

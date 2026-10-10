@@ -7,6 +7,7 @@ const { inspectBundle } = require('../desktop/services/filtered-skill-bundle.cjs
 // electron-builder filters metadata even in extraResources. The locked bundle
 // must retain every manifest entry, including .gitkeep and dependency metadata.
 module.exports = async function copyBundledSkills(context) {
+  require('./verify-packaged-dependencies.cjs').verifyPackagedDependencies(path.join(context.appOutDir, 'resources/app.asar'))
   const source = path.join(context.packager.projectDir, 'desktop/skills/filtered/bundle')
   const target = path.join(context.appOutDir, 'resources/filtered-skills')
   inspectBundle(source)

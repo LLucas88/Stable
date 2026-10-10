@@ -3,6 +3,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { CloudAccountService, DEVICE_TOKEN_KEY } = require('../desktop/services/cloud-account.cjs')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
 
 function context(routes, savedToken = '') {
   const settings = new Map(); const secrets = new Map(savedToken ? [[DEVICE_TOKEN_KEY, savedToken]] : [])
@@ -67,4 +70,25 @@ test('restore clears rejected sessions but preserves a retryable network state',
   const offline = context({ '/api/account': () => { throw new Error('offline') } }, 'saved')
   assert.equal((await offline.service.restore()).status, 'unavailable')
   assert.equal(offline.secrets.get(DEVICE_TOKEN_KEY), 'saved')
+})
+
+test('reconnect IPC returns the login screen when a previously offline session is rejected', async () => {
+  let offline = true
+  const ctx = context({ '/api/account': () => {
+    if (offline) throw new Error('offline')
+    return { status: 401, body: { error: { message: '登录已失效，请重新登录。', code: 'invalid_authentication' } } }
+  } }, 'expired-session')
+  assert.equal((await ctx.service.restore()).status, 'unavailable')
+  const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const match = main.match(/ipcMain\.handle\('stable:cloud:refresh', (async \(\) => \{[\s\S]*?\n  \})\)/)
+  assert.ok(match)
+  const reconnect = vm.runInNewContext(`(${match[1]})`, { cloudAccount: ctx.service, bootstrap: () => ({ cloud: ctx.service.publicState() }) })
+  const stillOffline = await reconnect()
+  assert.equal(stillOffline.cloud.status, 'unavailable')
+  assert.equal(ctx.secrets.get(DEVICE_TOKEN_KEY), 'expired-session')
+  offline = false
+  const result = await reconnect()
+  assert.equal(result.cloud.status, 'signed_out')
+  assert.equal(result.cloud.account, null)
+  assert.equal(ctx.secrets.has(DEVICE_TOKEN_KEY), false)
 })

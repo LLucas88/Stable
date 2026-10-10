@@ -1,6 +1,21 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path')
 const {LocalHtmlPreview}=require('../desktop/services/local-html-preview.cjs')
 const {runWithDeliveryChecks}=require('../desktop/services/delivery.cjs')
+
+test('local HTML keeps anchors and queries without treating them as filenames',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-anchor-'));const preview=new LocalHtmlPreview(root)
+ try {
+  const file=path.join(root,'报告 空格.html');fs.writeFileSync(file,'<div id="c_prio">ok</div>')
+  for(const target of [file+'#c_prio',require('node:url').pathToFileURL(file).href+'?mode=review#c_prio']) {
+   const url=await preview.open(target);assert.equal(new URL(url).hash,'#c_prio');assert.equal((await fetch(url)).status,200)
+   if(target.startsWith('file:'))assert.equal(new URL(url).search,'?mode=review')
+  }
+  const literal=path.join(root,'report#literal.html');fs.writeFileSync(literal,'literal')
+  assert.equal(await (await fetch(await preview.open(literal))).text(),'literal')
+  await assert.rejects(preview.open(path.join(root,'missing.html')+'#c_prio'),/文件不存在/)
+  await assert.rejects(preview.open(path.join(root,'..','outside.html')+'#c_prio'),/工作区/)
+ }finally{preview.dispose();fs.rmSync(root,{recursive:true,force:true})}
+})
 test('local HTML serves relative assets but not outside files or unsupported data',async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-html-'));const preview=new LocalHtmlPreview(root)
  try{

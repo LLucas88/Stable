@@ -466,7 +466,7 @@ class StableStore {
     return this.db.prepare('SELECT name,content FROM knowledge_items WHERE enabled=1').all()
       .map((row) => ({ ...row, score: terms.reduce((score, term) => score + occurrences(row.content.toLowerCase(), term), 0) }))
       .filter((row) => row.score > 0).sort((a, b) => b.score - a.score).slice(0, limit)
-      .map((row) => ({ name: row.name, excerpt: knowledgeExcerpt(row.content, terms) }))
+      .map((row) => ({ name: row.name, excerpt: knowledgeExcerpt(row.content, terms), fullText: row.content }))
   }
 
   enabledKnowledge(limit = 2) {
@@ -634,7 +634,8 @@ class StableStore {
   }
 
   listSkills() {
-    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().map((row) => ({ ...row, enabled: Boolean(row.enabled), invocationMode: 'manual', createdAt: row.created_at }))
+    const meta = this.getSetting('skillMarketMeta') || {}
+    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().map((row) => ({ ...row, enabled: Boolean(row.enabled), invocationMode: meta[row.id]?.invocationMode === 'auto' ? 'auto' : 'manual', createdAt: row.created_at }))
   }
 
   upsertSkill(item) {

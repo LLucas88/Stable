@@ -10,7 +10,7 @@ async function main(){
  window.used=[];window.stable={market:{list:async()=>[item],detail:async()=>item,use:async id=>{window.used.push(id);return {draftPrompt:'default',activeConversationId:'new',selectedSkillIds:[id]}}}};
  createRoot(document.getElementById('root')).render(<SkillMarket onUse={s=>window.delivered=s} renderContent={s=><pre data-source>{s}</pre>}/>);`,loader:'tsx',resolveDir:root},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"'}})).outputFiles[0].text;
  await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html data-theme="light"><body><div id="root"></div></body></html>'));
- for(const file of ['tokens.css','app.css','codex-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'));
+ for(const file of ['tokens.css','app.css','workbench-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'));
  await win.webContents.executeJavaScript(code);
  await win.webContents.executeJavaScript(`(async()=>{
  const wait=()=>new Promise(r=>setTimeout(r,100)),check=(v,m)=>{if(!v)throw Error(m)};await wait();

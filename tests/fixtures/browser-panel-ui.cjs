@@ -26,7 +26,7 @@ async function main() {
     createRoot(document.getElementById('root')).render(<Test/>);
   `,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife'})).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html data-theme="light"><body style="margin:0"><div id="root"></div></body></html>'))
-  for(const file of ['tokens.css','app.css','codex-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'))
+  for(const file of ['tokens.css','app.css','workbench-surfaces.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'))
   await win.webContents.executeJavaScript(bundle)
   await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));const expect=(v,m)=>{if(!v)throw Error(m)};

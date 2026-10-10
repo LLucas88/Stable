@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Restore bundled Harness runtime
+      - name: Restore bundled Windows Node runtime
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -26,15 +26,15 @@ jobs:
           gh release download runtime-v1 --repo $env:GITHUB_REPOSITORY --pattern stable-runtime-win-x64.zip --output stable-runtime-win-x64.zip
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the bundled Harness runtime.' }
           Expand-Archive -LiteralPath stable-runtime-win-x64.zip -DestinationPath runtime
-          if (-not (Test-Path -LiteralPath runtime/node/node.exe) -or -not (Test-Path -LiteralPath runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)) { throw 'Runtime archive is incomplete.' }
+          if (-not (Test-Path -LiteralPath runtime/node/node.exe)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
       - run: npm run tools:install
-      - run: npm run runtime:codex
+      - run: npm run runtime:powershell
       - run: npm run python:verify
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-      - run: npm run test:codex-integration
+      - run: npm run test:claude-integration
       - name: Verify isolated installer runtime migration and rollback
         run: node tests/installer-runtime-integration.cjs
       - name: Build full installer and lightweight updater
@@ -44,7 +44,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Full installer build failed.' }
           npm run dist:update
           if ($LASTEXITCODE -ne 0) { throw 'Lightweight updater build failed.' }
-      - run: npm run test:codex-packaged
+      - name: Verify packaged desktop without source dependency fallback
+        shell: pwsh
+        run: |
+          $output = node -p "require('./package.json').build.directories.output"
+          ./tests/verify-packaged-startup.ps1 -PackageDirectory "$output/win-unpacked"
       - name: Download previous Stable installer
         shell: pwsh
         env:

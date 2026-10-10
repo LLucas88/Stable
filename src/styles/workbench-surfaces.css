@@ -1,0 +1,247 @@
+/* Codex 26.901.5280.0 inspired surfaces. Values are derived from its default
+ * theme generator; this stylesheet has no dependency on its runtime.
+ * The native host owns Mica. The application-menu reference exposes that material without a shell tint. */
+:root {
+  --surface-shell: var(--surface-under);
+  --surface-floating: var(--surface-elevated-solid);
+  --surface-composer-current: var(--surface-control-solid);
+  --surface-composer-filter: none;
+  --shadow-soft: 0 0 0 .5px var(--color-rule-soft);
+  --shadow-float: 0 0 0 .5px var(--color-rule), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
+  --shadow-hover: 0 0 0 .5px var(--color-rule-2), 0 3px 7.5px #00000008;
+  --shadow-composer: inset 0 0 1px #fff3;
+}
+[data-theme="light"] {
+  --shadow-composer: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006;
+}
+html[data-window-material="mica"] {
+  --surface-shell: transparent;
+  --surface-floating: var(--surface-elevated);
+  --surface-composer-current: var(--surface-composer);
+  --surface-composer-filter: blur(16px);
+}
+html, body, #root { background: var(--surface-under); }
+html[data-window-material="mica"],
+html[data-window-material="mica"] body,
+html[data-window-material="mica"] #root { background: transparent; }
+.window-shell { background: var(--surface-shell); }
+.window-titlebar, .app-shell, .side-rail { background: transparent; }
+.side-rail { border-inline-end: 0; }
+.main-frame { background: var(--color-paper); }
+
+/* Keep actual reading and preview surfaces opaque, including embedded views. */
+.conversation-main, .conversation-preview, .preview-viewport, .browser-panel {
+  background: var(--color-paper);
+}
+.rail-mode-switch { background: var(--surface-selected); }
+.rail-mode-switch button[data-active="true"] { background: var(--surface-control-solid); box-shadow: var(--shadow-soft); }
+
+/* The legacy component sheet uses !important for these states. Match only
+ * those components instead of changing every button or workflow node. */
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option)[data-active="true"],
+#root .conversation-history-card .conversation-list-item[data-active="true"],
+#root .conversation-pinned .conversation-list-item[data-active="true"],
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option)[data-active="true"]:hover {
+  background: var(--surface-selected) !important;
+  color: var(--color-ink) !important;
+}
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option):not(:disabled):hover,
+.window-titlebar-tools button:not(:disabled):hover,
+.sidebar-project-heading:hover,
+.sidebar-project-more:not(:disabled):hover,
+.sidebar-project-new:not(:disabled):hover { background: var(--surface-hover) !important; }
+#root :is(.rail-button, .conversation-list-item, .composer-option, .capability-option):not(:disabled):active {
+  background: var(--surface-active) !important;
+  transform: none;
+}
+
+#root .composer-box,
+#root .composer-box:hover,
+#root .composer-box:focus,
+#root .composer-box:focus-within {
+  border: 0 !important;
+  border-radius: var(--radius-composer);
+  background: var(--surface-composer-current) !important;
+  backdrop-filter: var(--surface-composer-filter);
+  box-shadow: var(--shadow-composer) !important;
+}
+#root .composer-box[data-dragging="true"] { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+:is(.composer-popover, .conversation-action-menu, .conversation-file-menu,
+    .conversation-search-dialog, .project-picker, .project-dialog, .remove-dialog,
+    .confirm-modal, .account-module-panel) {
+  background: var(--surface-floating);
+  color: var(--color-ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float) !important;
+}
+.conversation-action-menu::before { background: var(--surface-floating); }
+#root .conversation-action-menu button:not(:disabled):hover,
+#root .conversation-file-menu button:not(:disabled):hover { background: var(--surface-hover) !important; }
+#root .conversation-action-menu button:not(:disabled):active,
+#root .conversation-file-menu button:not(:disabled):active { background: var(--surface-active) !important; }
+.confirm-backdrop, .conversation-search-backdrop {
+  background: var(--surface-scrim);
+  backdrop-filter: none;
+}
+.project-dialog::backdrop, .remove-dialog::backdrop { background: var(--surface-scrim); }
+
+/* Inputs own their fill. Textarea inside the composer stays transparent. */
+.field input:not([type="checkbox"]):not([type="radio"]), .field textarea, .field select, .project-name, .project-folders {
+  background: var(--surface-control-solid);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+}
+.user-bubble { background: var(--surface-selected); border-color: transparent; }
+
+/* Screenshot correction: Windows application-menu chrome does not use the
+ * 70% sidebar overlay of Codex's other chrome variant. Keep native tint visible.
+ * Use system UI text and primary ink for content; muted ink is for metadata. */
+:root {
+  --font-body: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-display: var(--font-body);
+}
+body { font-weight: 400; }
+.assistant-answer .markdown-body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--color-ink);
+  font-weight: 400;
+  line-height: 1.65;
+}
+.rail-button { min-height: 2.25rem; padding: .375rem .625rem; gap: .625rem; border-radius: .5rem; color: var(--color-ink); font-weight: 400; }
+.rail-button span { font-size: .875rem; line-height: 1.4; }
+.rail-nav { gap: .125rem; padding-block: .5rem; }
+.sidebar-project-title { color: var(--color-ink); font-size: .875rem; }
+.conversation-topbar { min-height: 3.25rem; }
+#root .conversation-topbar { border-block-end: 1px solid var(--color-rule-2) !important; }
+.conversation-topbar > div strong { font-family: var(--font-body); font-size: .875rem; font-weight: 600; }
+.rail-account-trigger { min-height: 2.75rem; background: transparent; border: 0; border-radius: .5rem; }
+.rail-account-name { font-weight: 400; font-size: .875rem; }
+.rail-account-trigger .account-avatar { width: 1.5rem; height: 1.5rem; font-size: .65rem; }
+.user-bubble { border-radius: 1.125rem; padding: .625rem 1rem; }
+/* Retain the role label for accessibility, without a second visible text row. */
+.user-bubble .turn-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer #agent-prompt { height: 3.5rem; min-height: 3.5rem; }
+.composer-actions { margin-block-start: .25rem; }
+.composer-send:not(:disabled) .composer-action-visual { background: var(--color-ink); color: var(--color-paper); }
+
+/* Native Mica is allowed to fall back at OS level. Forced-colors additionally
+ * replaces every translucent reading/control surface inside this renderer. */
+@media (forced-colors: active) {
+  :root {
+    --color-paper: Canvas;
+    --color-paper-2: Canvas;
+    --color-paper-3: ButtonFace;
+    --color-paper-4: ButtonFace;
+    --color-ink: CanvasText;
+    --color-ink-2: CanvasText;
+    --color-muted: GrayText;
+    --color-rule: ButtonText;
+    --color-rule-2: ButtonText;
+    --color-rule-soft: ButtonText;
+    --color-focus: Highlight;
+    --surface-under: Canvas;
+    --surface-shell: Canvas !important;
+    --surface-floating: Canvas !important;
+    --surface-control-solid: Field;
+    --surface-composer-current: Field !important;
+    --surface-composer-filter: none !important;
+    --surface-selected: ButtonFace;
+    --surface-hover: ButtonFace;
+    --surface-active: ButtonFace;
+  }
+  #root .composer-box, :is(.composer-popover, .conversation-action-menu, .project-dialog, .remove-dialog, .confirm-modal) {
+    border: 1px solid ButtonText !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Skill identities share a quiet shape, with a distinct symbol and color. */
+.market-avatar { width: 2.75rem; height: 2.75rem; border: 0; border-radius: .875rem; background: var(--skill-icon-bg); color: var(--skill-icon-ink); }
+.market-avatar[data-tone="blue"] { --skill-icon-bg: #eaf2ff; --skill-icon-ink: #2767d8; }
+.market-avatar[data-tone="teal"] { --skill-icon-bg: #e4f5f2; --skill-icon-ink: #138577; }
+.market-avatar[data-tone="green"] { --skill-icon-bg: #e8f6eb; --skill-icon-ink: #278647; }
+.market-avatar[data-tone="pink"] { --skill-icon-bg: #fbeaf1; --skill-icon-ink: #c44b7b; }
+.market-avatar[data-tone="amber"] { --skill-icon-bg: #fff3db; --skill-icon-ink: #b87714; }
+.market-avatar[data-tone="violet"] { --skill-icon-bg: #f0eaff; --skill-icon-ink: #7854c8; }
+html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srgb, var(--skill-icon-ink) 18%, var(--color-paper)); color: color-mix(in srgb, var(--skill-icon-ink) 48%, white); }
+@media (forced-colors: active) { .market-avatar[data-tone] { background: Canvas !important; color: CanvasText !important; border: 1px solid CanvasText; } }
+
+/* Conversation text is two CSS pixels smaller; other interface text is unchanged. */
+.user-bubble > p,
+.composer #agent-prompt,
+.assistant-answer .markdown-body { font-size:calc(1rem - 2px); }
+.assistant-answer .markdown-body h2 { font-size:calc(var(--text-md) - 2px); }
+.assistant-answer .markdown-body h3,
+.assistant-answer .markdown-body h4 { font-size:calc(var(--text-base) - 2px); }
+.assistant-answer .markdown-body table { font-size:calc(var(--text-sm) - 2px); }
+
+/* Market navigation divider and purpose-based skill labels. */
+#root .skill-market-top { border-bottom:1px solid var(--color-rule-soft) !important; }
+.market-skill-tags { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem; }
+.market-skill-tags > span { padding:.1rem .4rem; border-radius:var(--radius-sm); background:var(--color-paper-3); color:var(--color-muted); font-size:var(--text-xs); line-height:1.5; }
+
+/* More space around the conversation; keep line height and font size intact. */
+.conversation .conversation-topbar { padding-inline:calc(var(--space-md) * 2); }
+.conversation .message-scroll { padding-block:calc(var(--space-xl) * 2) calc(var(--space-2xl) * 2); }
+.conversation .composer { padding-block:calc(var(--space-sm) * 2) var(--space-md); }
+.user-bubble > p,
+.composer #agent-prompt,
+.assistant-answer .markdown-body { letter-spacing:1px; }
+.plugin-skill-list { display: grid; gap: 12px; }
+.plugin-skill-list article { display: flex; align-items: center; gap: 20px; padding: 16px; border-radius: 16px; background: var(--surface-hover, #f6f6f6); }
+.plugin-skill-list article > div { flex: 1; min-width: 0; }
+.plugin-skill-list p { margin: 6px 0 0; color: var(--text-secondary, #888); font-size: 13px; }
+.skill-conversation-prompts > h3 { margin: 0 0 8px; }
+.skill-conversation-prompts > p { color: var(--color-muted); margin: 0 0 16px; }
+.skill-conversation-prompts .plugin-skill-list p { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; }
+.skill-conversation-prompts .button { flex-shrink: 0; }
+.skill-conversation-prompts .skill-source-title { margin: 28px 0 16px; padding-top: 20px; border-top: 1px solid var(--color-rule-soft); }
+@media (max-width: 640px) {
+  .skill-conversation-prompts .plugin-skill-list article { flex-direction: column; align-items: stretch; gap: 12px; }
+}
+
+.conversation .conversation-topbar { padding-inline-end:8px; gap:6px; }
+.conversation-topbar .browser-launch, .conversation-topbar .conversation-wending-button { display:inline-flex; align-items:center; justify-content:center; flex:none; height:1.375rem; min-height:1.375rem; padding:0 6px; border-radius:6px; font-size:12px; line-height:1; }
+.conversation-topbar .browser-launch { width:1.375rem; padding:0; }
+.conversation-topbar .conversation-wending-button { min-width:2.75rem; }
+/* One model and effort control, with nested model selection. */
+.model-effort-control{display:inline-flex;align-items:center;flex:none;gap:0;border-radius:999px;background:transparent}
+.model-effort-control .composer-menu>summary{min-height:1.875rem;border-radius:999px;padding-inline:8px;font-size:var(--text-xs)}
+.model-effort-control .model-menu>summary{color:var(--color-ink);padding-inline-start:12px}
+
+
+.model-effort-control .effort-popover{inset-inline:auto 0;width:min(20rem,calc(100vw - 3rem));padding:14px;border-radius:20px;background:var(--color-paper)}
+.effort-slider-heading{display:flex;align-items:center;justify-content:space-between;color:var(--color-muted)}
+.effort-slider-heading strong{color:var(--color-accent);font-size:var(--text-sm);font-weight:500}
+.effort-slider-heading button{display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
+.effort-slider-heading button:hover{background:var(--color-paper-3)}
+.effort-model-name{text-align:center;color:var(--color-muted);font-size:var(--text-xs);margin:0 0 16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.effort-slider-track{position:relative;height:30px;border-radius:999px;background:linear-gradient(to right,var(--color-accent) var(--effort-fill),var(--color-paper-3) var(--effort-fill));border:1px solid var(--color-rule-soft)}
+.effort-slider-ticks{position:absolute;inset:0 14px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+.effort-slider-ticks i{width:4px;height:4px;border-radius:50%;background:var(--color-muted);opacity:.55}
+.effort-slider-track input{position:absolute;inset:-2px 0;width:100%;height:34px;margin:0;padding:0;appearance:none;background:transparent;border:0;cursor:pointer;accent-color:var(--color-accent)}
+.effort-slider-track input::-webkit-slider-thumb{appearance:none;width:34px;height:34px;border-radius:50%;background:var(--color-paper);border:1px solid var(--color-rule-soft);box-shadow:0 1px 3px #0002}
+.effort-slider-track input:focus-visible{outline:2px solid var(--color-focus);outline-offset:3px;border-radius:999px}
+
+.model-effort-control .composer-menu[open]>summary:not(:hover){background:transparent;color:var(--color-ink)}
+.model-effort-control .composer-menu>summary:hover{background:var(--color-paper-3)}
+.model-effort-control .current-effort{color:var(--color-muted)}
+.effort-slider-heading .effort-heading-spacer{width:26px}
+.effort-slider-heading .effort-model-expand{display:inline-flex;width:auto;gap:6px;padding:0 8px;border-radius:8px}
+.effort-back{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--color-muted);padding:6px 8px;margin-bottom:4px;cursor:pointer;border-radius:8px}
+.effort-back:hover{background:var(--color-paper-3)}
+.composer-drop-target{position:relative}
+.composer-tools .composer-add-menu{position:static}
+.composer-add-menu>.composer-add-popover{inset-inline:0;inset-block-end:calc(100% + 8px);width:auto;max-height:min(25rem,55vh);padding:10px;border-radius:20px;background:var(--color-paper);overflow:auto}
+.composer-add-heading{padding:4px 10px 6px;color:var(--color-muted);font-size:var(--text-xs)}
+.composer-add-popover>.composer-tool,.composer-add-popover>.composer-menu>summary{display:flex;width:100%;min-height:36px;align-items:center;gap:10px;padding:7px 10px;border:0;border-radius:999px;background:transparent;color:var(--color-ink);font-size:var(--text-sm);cursor:pointer}
+.composer-add-popover>.composer-menu>summary>span{flex:1}
+.composer-add-popover>.composer-tool:hover,.composer-add-popover>.composer-menu>summary:hover{background:var(--color-paper-3)}
+.composer-add-popover>.composer-menu>.composer-popover{position:static;width:100%;max-height:18rem;margin:4px 0 8px;padding:4px 10px;box-shadow:none;border:0;border-radius:10px;background:transparent}
+.composer-add-popover .composer-option{min-height:36px;padding:7px 10px;border-radius:12px}
+.composer-add-popover .composer-option>span{display:flex;align-items:baseline;gap:8px;min-width:0}
+.composer-add-popover .composer-option strong{font-weight:400;flex-shrink:0}
+.composer-add-popover .composer-option small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

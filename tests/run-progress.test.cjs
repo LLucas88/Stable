@@ -38,3 +38,12 @@ test('watchdog distinguishes tools, model silence and approvals without timing r
  now=1051;assert.match(p.check(),/工具执行/)
  const q=new RunProgress({now:()=>now,idleMs:100});now+=99;assert.equal(q.check(),null);q.touch();now+=101;assert.match(q.check(),/模型/)
 })
+
+test('silent tools stop early, output refreshes silence and approval time is excluded',()=>{
+ let now=0;const p=new RunProgress({now:()=>now,toolIdleMs:120,toolMs:1000})
+ p.start('a','write file',true);now=119;assert.equal(p.check(),null)
+ p.output('a');now=200;assert.equal(p.check(),null)
+ p.check(true);now=1200;assert.equal(p.check(false),null)
+ now=1239;assert.match(p.check(),/没有返回输出/)
+ p.complete('a',{exitCode:0});assert.equal(p.active.size,0)
+})

@@ -18,7 +18,7 @@ export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): 
     title: `完全访问权限 · 已自动放行 ${automatic.length} 次`, reason: undefined,
     detail: automatic.map(item => item.toolName || item.detail || item.title).join('\n') }] : items
   return entries.filter((item) => {
-    if (item.id === 'automatic-approvals' || item.id === 'run-progress') return true
+    if (item.id === 'automatic-approvals' || item.id === 'run-progress' || item.id === 'runtime-info') return true
     if (item.kind === 'approval' && item.automaticApproval && item.status === 'completed') return false
     if (item.eventType === 'agent/answer') return Boolean(item.content?.trim()) && item.content!.trim() !== finalText
     if (item.kind === 'tool' || item.kind === 'approval') return true
@@ -31,8 +31,30 @@ export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): 
 export function traceActionLabel(item: AgentTraceItem): string {
   if (item.kind !== 'tool') return item.title
   const name = item.toolName || item.title.replace(/^使用工具\s*/, '')
-  if (/^(pwsh|powershell|bash|shell|exec_command)$/i.test(name)) return '运行了命令'
+  if (/^(pwsh|powershell|bash|shell|exec_command|stable_exec)$/i.test(name)) return '运行了命令'
   if (/^(read|read_file)$/i.test(name)) return '读取了文件'
+  if (/^(write|edit|notebookedit)$/i.test(name)) return '编辑了文件'
+  if (name === 'stable_excel') return '处理了表格'
   if (/^(glob|grep|rg|search)$/i.test(name)) return '搜索了文件'
   return `调用了 ${name}`
+}
+
+export type TraceGroup = { kind: 'text' | 'notice'; id: string; item: AgentTraceItem }
+  | { kind: 'actions'; id: string; items: AgentTraceItem[] }
+
+// Public progress messages delimit goals; do not infer intent from tool names.
+export function groupTraceTimeline(items: AgentTraceItem[], status: AgentTraceStatus): TraceGroup[] {
+  const groups: TraceGroup[] = []
+  for (const item of items) {
+    if (item.eventType === 'agent/answer') {
+      groups.push({ kind: 'text', id: item.id, item })
+    } else if (item.kind === 'approval' && traceItemStatus(item, status) === 'running') {
+      groups.push({ kind: 'notice', id: item.id, item })
+    } else {
+      const previous = groups.at(-1)
+      if (previous?.kind === 'actions') previous.items.push(item)
+      else groups.push({ kind: 'actions', id: `${item.runId}:${item.id}`, items: [item] })
+    }
+  }
+  return groups
 }

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {reasoningOptions,reasoningParameters}=require('../desktop/services/model-reasoning.cjs')
 const {composeAgentPrompt}=require('../desktop/services/prompts.cjs')
-const {CodexResponsesBridge,readSSE}=require('../desktop/services/codex-responses-bridge.cjs')
+const {ClaudeMessagesBridge}=require('../desktop/services/claude-messages-bridge.cjs');const {readSSE}=require('../desktop/services/model-provider.cjs')
 const ds={baseURL:'https://api.deepseek.com/v1',model:'deepseek-v4-flash'}
 const glm={baseURL:'https://open.bigmodel.cn/api/paas/v4',model:'glm-5.3-flash'}
 test('options match official model and endpoint; unknown routes get no guessed parameters',()=>{
@@ -19,14 +19,14 @@ test('all old and new strengths produce identical prompt text',()=>{
  for(const capability of ['auto','fast','analysis','reasoning','none','low','high','max'])assert.equal(composeAgentPrompt({...base,capability}),composeAgentPrompt(base))
 })
 test('bridge sends official parameters only in body, across repeated turns and default reset',async()=>{
- for(const profile of [ds,glm]){
+ for(const profile of [ds,glm,{...glm,model:'glm-5.3-flashx'}]){
   const model={...profile,reasoningSelection:'high'},requests=[]
    for(const selected of ['high','max','auto']){
     model.reasoningSelection=selected
-    const bridge=new CodexResponsesBridge({model,apiKey:'fixture',fetchImpl:async(_url,request)=>{requests.push(JSON.parse(request.body));return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')}})
+    const bridge=new ClaudeMessagesBridge({model,apiKey:'fixture',fetchImpl:async(_url,request)=>{requests.push(JSON.parse(request.body));return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')}})
     await bridge.start()
     try{
-    const response=await fetch(bridge.baseURL+'/responses',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({input:'计算总额',reasoning:{effort:'low'}})})
+    const response=await fetch(bridge.baseURL+'/v1/messages',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'计算总额'}],max_tokens:4096,stream:true,reasoning:{effort:'low'}})})
     for await(const _event of readSSE(response.body)){}
     }finally{await bridge.close()}
    }
