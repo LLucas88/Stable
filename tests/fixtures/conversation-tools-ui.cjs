@@ -26,13 +26,21 @@ async function main() {
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
     const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
-    const state=id=>({...initial,activeConversationId:id,messages:id==='a'?messages:[],catchAttachments:id==='b'?[draft]:[]});
+    const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
     window.stable={clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
       contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[],skills:[]}),
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
       catchReply:async(id,message)=>{window.caught.push({id,message});return state('b')},
       discardCatch:async id=>({...state(id),catchAttachments:[]}),
-      run:(id,prompt,attachments)=>{window.sent.push({id,prompt,attachments});return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAttachments:[],messages:id==='a'?messages:[{id:'new',role:'assistant',content:'完成'}]})})},
+      run:(id,prompt,attachments,_references,requestId)=>{window.sent.push({id,prompt,attachments});
+        if(window.failNextRun){
+          window.failNextRun=false;
+          listener({conversationId:id,runId:requestId,id:'partial',kind:'answer',eventType:'agent/answer-delta',delta:'已经收到的部分回复',status:'running',time:Date.now()});
+          const trace=[{id:'partial',runId:requestId,kind:'reasoning',eventType:'agent/answer',content:'已经收到的部分回复',title:'过程输出',status:'completed',time:Date.now()-1},{id:'cmd',runId:requestId,kind:'tool',toolName:'Bash',title:'运行命令',status:'cancelled',time:Date.now()-1},{id:'runtime',runId:requestId,kind:'status',title:'本轮执行失败',detail:'fixture disconnect',status:'failed',time:Date.now()}];
+          window.failureMessages=[...messages,{id:'failed-user',seq:3,role:'user',content:prompt,createdAt:new Date().toISOString()},{id:'failed-answer',seq:4,role:'assistant',content:'本轮执行失败：fixture disconnect',trace,createdAt:new Date().toISOString()}];
+          return Promise.reject(Error('fixture disconnect'));
+        }
+return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAttachments:[],messages:id==='a'?messages:[{id:'new',role:'assistant',content:'完成'}]})})},
     }};
     window.paste=text=>paste(text);window.selectAll=()=>selectAll();
     window.event=(status='running')=>listener({conversationId:'a',runId:'run-a',id:status==='completed'?'complete':'runtime',kind:'status',status,title:'任务状态',time:Date.now()});
@@ -161,6 +169,20 @@ async function main() {
     window.resolveRun();await tick();
     expect(!document.querySelector('.composer-selections .conversation-file-card'),'Completed Catch remains in composer');
     expect(window.uiErrors.length===0,JSON.stringify(window.uiErrors));
+    window.changeState(window.fixtureState('a'));await tick();window.failNextRun=true;
+    window.paste('测试中断后的记录');await tick();document.querySelector('#agent-prompt').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await tick();await tick();await tick();
+    expect(document.querySelectorAll('[data-message-id="failed-answer"]').length===1,'Failed answer missing or duplicated');
+    expect(!document.querySelector('.composer-error'),'Persisted failure is duplicated in the composer');
+    expect(!document.querySelector('.conversation-bottom-dots'),'Failed turn still appears running');
+    const failedTurn=document.querySelector('[data-message-id="failed-answer"]');
+    expect(failedTurn.querySelector('.trace-summary').getAttribute('aria-expanded')==='false','Failed execution record should be folded like other historical turns');
+    failedTurn.querySelector('.trace-summary').click();await tick();
+    expect(failedTurn.textContent.includes('已经收到的部分回复'),'Partial response missing from the normal turn');
+    expect(!failedTurn.textContent.includes('项运行中'),'Failed tools still look active');
+    const recovered={...window.fixtureState('a'),deliveries:[{id:'old',state:'unknown'}],recoveryText:'old recovery panel text',messages:[{id:'old-user',seq:1,role:'user',content:'旧提问',createdAt:'2020-01-01T00:00:00Z'},{...window.failureMessages.at(-1),id:'old-failure',seq:2,createdAt:'2030-01-01T00:00:00Z'},{id:'later-user',seq:3,role:'user',content:'后续提问',createdAt:'2020-01-02T00:00:00Z'}]};
+    window.changeState(recovered);await tick();
+    expect(!document.querySelector('.recovery-notice'),'Recovery panel still shown above the conversation');
+    expect([...document.querySelectorAll('[data-message-id]')].map(node=>node.dataset.messageId).join(',')==='old-user,old-failure,later-user','Recovered failure is outside its original turn');
     window.splash();await tick();
     expect(getComputedStyle(document.querySelector('.launch-splash')).backgroundColor==='rgb(255, 255, 255)','Splash is not white');
     const logo=document.querySelector('.launch-logo');await logo.decode();

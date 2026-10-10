@@ -828,7 +828,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [cancelledMessages, setCancelledMessages] = useState<Record<string, MessageItem[]>>({})
   const olderPage = olderPages[state.activeConversationId]
-  const visibleMessages = [...new Map([...(olderPage?.messages || []), ...state.messages, ...(cancelledMessages[state.activeConversationId] || [])].map(item => [item.id, item])).values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const visibleMessages = [...new Map([...(olderPage?.messages || []), ...state.messages, ...(cancelledMessages[state.activeConversationId] || [])].map(item => [item.id, item])).values()].sort((a, b) => a.seq !== undefined && b.seq !== undefined ? a.seq - b.seq : a.createdAt.localeCompare(b.createdAt))
   const beforeCursor = olderPage ? olderPage.beforeCursor : state.beforeCursor
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
@@ -1364,6 +1364,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         const recovered = await window.stable.agent.state(conversationId)
         messageAccepted = Boolean(dispatched && previousMessageIds && recovered.messages.some((item) => item.role === 'user' && !previousMessageIds!.has(item.id)))
         updateAgentForConversation(recovered, conversationId)
+        completed = recovered.messages.some(item => item.role === 'assistant' && !previousMessageIds?.has(item.id) && item.trace?.some(event => event.id === 'runtime' && event.runId === entry.id && ['failed', 'cancelled'].includes(event.status)))
       } catch { /* do not resend a possibly accepted message without a confirmed receipt */ }
       if (cancelBeforeDispatchRef.current[conversationId] && !messageAccepted) {
         terminalStatus = 'cancelled'
@@ -1374,7 +1375,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       const detail = errorMessage(error)
       const feedback = taskErrorMessage(detail)
       if (!feedback) terminalStatus = 'cancelled'
-      setComposerErrorMap((current) => ({ ...current, [conversationId]: feedback }))
+      setComposerErrorMap((current) => ({ ...current, [conversationId]: completed ? '' : feedback }))
       return { accepted: messageAccepted, continue: false, error: detail }
     } finally {
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
@@ -1421,7 +1422,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
       </header>
       <div className="message-scroll" ref={scrollRef}>
         <div className="conversation-stream">
-          {state.deliveries?.some(d=>['unknown','interrupted','failed'].includes(d.state))&&<div className="recovery-notice" role="status"><strong>上次运行结果需要核实</strong><p>消息已保留，系统不会自动重发或重做操作。</p><button onClick={()=>void action('核实运行记录',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'reconcile')))}>核实消息记录</button><button disabled={running} onClick={()=>void action('重建模型上下文',async()=>updateAgent(await window.stable.agent.lifecycle(state.activeConversationId,'rebuild')))}>从本地历史重建上下文</button>{state.recoveryText&&<details><summary>查看已收到的部分回复</summary><pre>{state.recoveryText}</pre></details>}{state.recoveryDiagnostic&&<p>{state.recoveryDiagnostic}</p>}</div>}
 
           {beforeCursor && <button className="history-load-more" disabled={loadingOlder} onClick={() => void action('正在读取更早消息', async () => {
             const id = state.activeConversationId, element = scrollRef.current, height = element?.scrollHeight || 0, top = element?.scrollTop || 0

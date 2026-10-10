@@ -7,7 +7,7 @@ function initialize(store){store.db.exec(`
  CREATE TABLE IF NOT EXISTS runtime_items (conversation_id TEXT NOT NULL,thread_id TEXT NOT NULL,turn_id TEXT NOT NULL,item_id TEXT NOT NULL,value_json TEXT NOT NULL,PRIMARY KEY(conversation_id,thread_id,turn_id,item_id));
  CREATE TABLE IF NOT EXISTS steer_deliveries(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,digest TEXT NOT NULL,content TEXT NOT NULL,state TEXT NOT NULL,message_id TEXT,updated_at TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS delivery_conversation ON message_deliveries(conversation_id,updated_at);
-`)}
+`);if(!store.db.prepare('PRAGMA table_info(message_deliveries)').all().some(row=>row.name==='trace_json'))store.db.exec('ALTER TABLE message_deliveries ADD COLUMN trace_json TEXT')}
 class ConversationLifecycle {
  constructor(store,{userData,executable,workspace,runtimeAdapter=createClaudeLifecycle({userData})}={}){Object.assign(this,{store,userData,executable,workspace,runtimeAdapter});initialize(store);this.locks=new Set()}
  begin(id,conversationId,payload){if(!/^[\w-]{1,100}$/.test(id))throw Error('无效发送标识。');const digest=createHash('sha256').update(JSON.stringify(payload)).digest('hex');const old=this.store.db.prepare('SELECT * FROM message_deliveries WHERE id=?').get(id);if(old){if(old.conversation_id!==conversationId||old.payload_digest!==digest)throw Error('发送标识与内容冲突。');if(old.state==='rejected'){this.status(id,'preparing');return {duplicate:false,id}}return {duplicate:true,...old}}this.store.db.prepare('INSERT INTO message_deliveries(id,conversation_id,payload_digest,state,updated_at) VALUES(?,?,?,?,?)').run(id,conversationId,digest,'preparing',new Date().toISOString());return {duplicate:false,id}}
@@ -17,8 +17,49 @@ class ConversationLifecycle {
  saveSteer(id,state,messageId){this.store.db.prepare('UPDATE steer_deliveries SET state=?,message_id=COALESCE(?,message_id),updated_at=? WHERE id=?').run(state,messageId?.id||messageId||null,new Date().toISOString(),id)}
  deliveries(id){return [...this.store.db.prepare('SELECT id,state,error,updated_at AS updatedAt FROM message_deliveries WHERE conversation_id=? ORDER BY updated_at DESC LIMIT 20').all(id),...this.store.db.prepare("SELECT id,state,'补充消息接收待核实' AS error,updated_at AS updatedAt FROM steer_deliveries WHERE conversation_id=? AND state='unknown' LIMIT 20").all(id)]}
  item(id,threadId,turnId,item){if(!item?.id||!this.store.conversation(id)||this.store.conversationContext(id).deletionState==='pending')return;this.store.db.prepare('INSERT INTO runtime_items VALUES(?,?,?,?,?) ON CONFLICT(conversation_id,thread_id,turn_id,item_id) DO UPDATE SET value_json=excluded.value_json').run(id,threadId,turnId||'unknown',item.id,JSON.stringify(item))}
+ checkpoint(deliveryId,trace){this.store.db.prepare("UPDATE message_deliveries SET trace_json=? WHERE id=? AND assistant_message_id IS NULL AND state NOT IN ('cleared','rejected')").run(JSON.stringify(trace),deliveryId)}
+ finishFailure(deliveryId,{error,state='failed'}={}){
+   const delivery=this.store.db.prepare('SELECT * FROM message_deliveries WHERE id=?').get(deliveryId)
+   if(!delivery||delivery.assistant_message_id||['cleared','rejected','completed'].includes(delivery.state)||!delivery.user_message_id)return false
+   const user=this.store.db.prepare('SELECT seq FROM messages WHERE id=? AND conversation_id=?').get(delivery.user_message_id,delivery.conversation_id)
+   if(!user||!this.store.conversation(delivery.conversation_id)||this.store.conversationContext(delivery.conversation_id).deletionState==='pending')return false
+   const trace=delivery.trace_json?JSON.parse(delivery.trace_json):[]
+   const items=this.store.db.prepare('SELECT value_json FROM runtime_items WHERE conversation_id=? AND thread_id=? AND turn_id=? ORDER BY rowid').all(delivery.conversation_id,delivery.thread_id,delivery.turn_id).map(row=>JSON.parse(row.value_json))
+   const time=Date.parse(delivery.updated_at)||Date.now()
+   const terminal=require('./failed-turn.cjs').failedTurn({id:delivery.id,trace,items,error:error||delivery.error,state,time})
+   this.store.db.exec('BEGIN IMMEDIATE')
+   try{
+     const previous=this.store.db.prepare('SELECT updated_at FROM conversations WHERE id=?').get(delivery.conversation_id).updated_at
+     const message=this.store.addMessage(delivery.conversation_id,'assistant',terminal.content,terminal.trace)
+     // Insert a recovered turn before the next original question, retaining all
+     // message IDs and integer pagination cursors. Steered input stays in its turn.
+     const boundary=this.store.db.prepare("SELECT MIN(m.seq) AS seq FROM messages m JOIN message_deliveries d ON d.user_message_id=m.id WHERE m.conversation_id=? AND m.seq>?").get(delivery.conversation_id,user.seq).seq
+     if(boundary){
+       this.store.db.prepare('UPDATE messages SET seq=NULL WHERE id=?').run(message.id)
+       const later=this.store.db.prepare('SELECT id,seq FROM messages WHERE conversation_id=? AND seq>=? ORDER BY seq DESC').all(delivery.conversation_id,boundary)
+       for(const row of later)this.store.db.prepare('UPDATE messages SET seq=? WHERE id=?').run(row.seq+1,row.id)
+       this.store.db.prepare('UPDATE messages SET seq=? WHERE id=?').run(boundary,message.id)
+     }
+     this.store.db.prepare('UPDATE messages SET created_at=? WHERE id=?').run(new Date(time).toISOString(),message.id)
+     this.store.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(previous,delivery.conversation_id)
+     this.status(delivery.id,state,{assistantMessageId:message,error:error||delivery.error})
+     this.store.db.exec('COMMIT');return true
+   }catch(error){this.store.db.exec('ROLLBACK');throw error}
+ }
+ settleInterrupted(id){
+   const rows=this.store.db.prepare("SELECT id,state,error FROM message_deliveries WHERE conversation_id=? AND state IN ('unknown','interrupted','failed') AND assistant_message_id IS NULL ORDER BY updated_at").all(id)
+   for(const row of rows)this.finishFailure(row.id,{state:row.state,error:row.error})
+ }
  recoveryText(id){const pending=this.store.db.prepare("SELECT content FROM steer_deliveries WHERE conversation_id=? AND state='unknown'").all(id).map(r=>'用户补充（接收待核实）：'+r.content).join('\n');return pending+'\n'+this.store.db.prepare("SELECT r.value_json FROM runtime_items r JOIN message_deliveries d ON d.conversation_id=r.conversation_id AND d.thread_id=r.thread_id AND d.turn_id=r.turn_id WHERE d.conversation_id=? AND d.state IN ('unknown','interrupted','failed') ORDER BY d.updated_at DESC LIMIT 100").all(id).map(r=>JSON.parse(r.value_json)).filter(i=>i.type==='agentMessage'&&i.text).map(i=>i.text).join('\n\n')}
- async startup(onChange){const ids=this.store.db.prepare("SELECT DISTINCT conversation_id FROM message_deliveries WHERE state='unknown'").all();for(const row of ids){if(!this.store.conversation(row.conversation_id)||this.store.conversationContext(row.conversation_id).deletionState==='pending')continue;try{await this.reconcile(row.conversation_id);onChange?.(row.conversation_id)}catch(error){this.store.setSetting(`recovery-diagnostic:${row.conversation_id}`,redact(error.message));onChange?.(row.conversation_id)}}}
+ async startup(onChange){
+   const ids=this.store.db.prepare("SELECT DISTINCT conversation_id FROM message_deliveries WHERE state IN ('unknown','interrupted','failed') AND assistant_message_id IS NULL").all()
+   for(const row of ids){
+     const id=row.conversation_id
+     if(!this.store.conversation(id)||this.store.conversationContext(id).deletionState==='pending')continue
+     try{await this.reconcile(id)}catch(error){this.store.setSetting(`recovery-diagnostic:${id}`,redact(error.message))}
+     this.settleInterrupted(id);onChange?.(id)
+   }
+ }
  async rpc(id,action){if(this.locks.has(id))throw Error('此对话正在同步，请稍后重试。');this.locks.add(id)
    try{const data=await this.runtimeAdapter.read(id);if(data.noRuntime)return data;return await action({request:(method)=>method==='thread/read'?this.runtimeAdapter.read(id):this.runtimeAdapter.sync(id,method.split('/')[1])},data.thread.id)}finally{this.locks.delete(id)}}
  async sync(id,kind){if(!['archive','unarchive','delete'].includes(kind))throw Error('未知同步操作。');const previous=this.store.db.prepare("SELECT id FROM sync_operations WHERE conversation_id=? AND kind=? AND state='pending' ORDER BY updated_at DESC LIMIT 1").get(id,kind);const operation=this.store.syncOperation(id,kind,'pending',{},previous?.id);this.store.db.prepare("UPDATE sync_operations SET state='superseded' WHERE conversation_id=? AND kind IN ('archive','unarchive') AND id<>? AND state='pending'").run(id,operation)
@@ -37,7 +78,7 @@ class ConversationLifecycle {
  async reconcile(id){const result=await this.rpc(id,(rpc,threadId)=>rpc.request('thread/read',{threadId,includeTurns:true},20000));if(result.noRuntime)return {added:0,status:'no_runtime'};const thread=result.thread;let added=0
    for(const turn of thread.turns||[]){for(const item of turn.items||[])this.item(id,thread.id,turn.id,item);const delivery=this.store.db.prepare('SELECT * FROM message_deliveries WHERE conversation_id=? AND thread_id=? AND turn_id=?').get(id,thread.id,turn.id);if(!delivery||delivery.state==='cleared')continue
      if(turn.status==='completed'&&!delivery.assistant_message_id){const items=(turn.items||[]).filter(i=>i.type==='agentMessage'),final=items.filter(i=>i.phase==='final_answer');const answer=(final.length?final:items.slice(-1)).map(i=>i.text||'').join('\n\n');if(answer){this.store.db.exec('BEGIN IMMEDIATE');try{const messageId=this.store.addMessage(id,'assistant',answer);this.status(delivery.id,'completed',{assistantMessageId:messageId});this.store.db.exec('COMMIT');added++}catch(error){this.store.db.exec('ROLLBACK');throw error}}}
-     else if(['failed','interrupted'].includes(turn.status))this.status(delivery.id,turn.status,{error:turn.error?.message||'运行已中断'})
+     else if(['failed','interrupted'].includes(turn.status)){this.status(delivery.id,turn.status,{error:turn.error?.message||delivery.error||'运行已中断'});this.finishFailure(delivery.id,{state:turn.status,error:turn.error?.message||delivery.error})}
    }return {added,status:'verified'}
  }
 }

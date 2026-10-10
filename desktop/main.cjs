@@ -1527,6 +1527,15 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const runId = store.startRun('agent', conversationId || null, query)
   const trace = []
   const transcript = createStreamTranscript()
+  let lastCheckpoint = 0
+  const checkpoint = (force = false) => {
+    const active = agentRunners.get(conversationId)
+    const deliveryId = broadcast && active?.runner === executionRunner && active.deliveryId
+    if (!deliveryId || (!force && Date.now() - lastCheckpoint < 250)) return
+    lastCheckpoint = Date.now()
+    const partial = transcript.snapshot()
+    conversationLifecycle.checkpoint(deliveryId, partial ? [...trace, partial] : trace)
+  }
   const publish = (source) => {
     taskAlerts.progress(conversationId)
     if (source.kind === 'approval' && source.requestId && ['completed', 'failed', 'cancelled'].includes(source.status)) taskAlerts.resolve(conversationId, source.requestId)
@@ -1543,6 +1552,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       }
       const previous = transcript.append(event)
       if (previous) publish(previous)
+      checkpoint()
       if (broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
       return
     }
@@ -1582,6 +1592,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.eventType === 'tool/start' ? event.detail : undefined)
     }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
+    checkpoint(true)
     const silentApproval = source.kind === 'approval' && source.status === 'running' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request')
     if (!silentApproval && broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if(source.kind==='approval'&&source.requestId&&source.actualDecision){
@@ -2470,7 +2481,10 @@ function registerIpc() {
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
       const journal=store.db.prepare('SELECT state FROM message_deliveries WHERE id=?').get(deliveryId)
-      conversationLifecycle.status(deliveryId,journal?.state==='preparing'?'rejected':control.cancelled?'interrupted':'unknown',{error:error.message})
+      const terminalState = journal?.state==='preparing'?'rejected':control.cancelled?'interrupted':'failed'
+      conversationLifecycle.status(deliveryId,terminalState,{error:error.message})
+      conversationLifecycle.finishFailure(deliveryId,{state:terminalState,error:error.message})
+      publishAgentState(conversationId)
       throw new Error(error.message)
     } finally {
       if (!control.waitingForInput || control.cancelled) taskAlerts.finish(conversationId)

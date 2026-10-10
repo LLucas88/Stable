@@ -18,6 +18,7 @@ function createStreamTranscript() {
       current.content += String(event.delta || '')
       return previous
     },
+    snapshot: () => current?.content ? { ...current } : undefined,
     flush,
   }
 }
