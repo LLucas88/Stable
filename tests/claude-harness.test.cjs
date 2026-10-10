@@ -320,3 +320,27 @@ test('a runner refuses linked session homes and pointers before starting the SDK
   })
 })
 
+
+
+test('steering during context statistics collection is not lost when the earlier result arrives', async t => {
+  const requested = deferred(), release = deferred()
+  const sdk = mockSdk(async function* ({ iterator, first }) {
+    yield { type: 'result', subtype: 'success', result: 'original', user_message_uuid: first.uuid }
+    const extra = (await iterator.next()).value
+    yield { type: 'user', uuid: extra.uuid }
+    yield { type: 'result', subtype: 'success', result: 'steered result', user_message_uuid: extra.uuid }
+  })
+  const query = sdk.query
+  sdk.query = parameters => {
+    const result = query(parameters)
+    result.getContextUsage = async () => { requested.resolve(); await release.promise; return { totalTokens: 100, categories: [] } }
+    return result
+  }
+  const { runner, workspace } = fixture(t, sdk)
+  const running = runner.run('start', model, secret, 5000, undefined, 'workspace-write', [], { key: 'usage-steer', cwd: workspace })
+  await requested.promise
+  const receipt = runner.steer('extra while collecting usage')
+  release.resolve()
+  assert.deepEqual(await receipt, { accepted: true })
+  assert.equal(await running, 'steered result')
+})

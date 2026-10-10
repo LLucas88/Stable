@@ -27,7 +27,8 @@ async function main() {
     const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?messages:[],catchAttachments:id==='b'?[draft]:[]});
-    window.stable={appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
+    window.stable={clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
+      contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[],skills:[]}),
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
       catchReply:async(id,message)=>{window.caught.push({id,message});return state('b')},
       discardCatch:async id=>({...state(id),catchAttachments:[]}),
@@ -39,11 +40,70 @@ async function main() {
       return <AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'context-usage.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
+  await new Promise(resolve => setTimeout(resolve, 300))
+  const bubble = await win.webContents.executeJavaScript(`(()=>{
+    document.querySelector('.message-scroll').scrollTop=0;
+    const rect=document.querySelector('.user-bubble').getBoundingClientRect();
+    if(getComputedStyle(document.querySelector('.user-turn-actions')).opacity!=='0') throw Error('Copy button visible without hover');
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...bubble})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  const copyPoint = await win.webContents.executeJavaScript(`(()=>{
+    const actions=document.querySelector('.user-turn-actions');
+    if(getComputedStyle(actions).opacity!=='1') throw Error('Copy button hidden on message hover');
+    const rect=actions.querySelector('button').getBoundingClientRect();
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...copyPoint})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{
+    if(getComputedStyle(document.querySelector('.user-turn-actions')).opacity!=='1') throw Error('Copy button disappears when moving onto it');
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',x:1,y:1})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{
+    if(getComputedStyle(document.querySelector('.user-turn-actions')).opacity!=='0') throw Error('Copy button remains visible after leaving');
+    const scroller=document.querySelector('.message-scroll');scroller.scrollTop=scroller.scrollHeight;
+  })()`)
+  const indicator = await win.webContents.executeJavaScript(`(()=>{
+    const rect=document.querySelector('.context-usage-button').getBoundingClientRect();
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...indicator})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{
+    const tooltip=document.querySelector('.context-usage-tooltip');
+    if(getComputedStyle(tooltip).opacity!=='1'||!tooltip.textContent.includes('286.2k / 1M (29%)')) throw Error('Context tooltip is incorrect');
+  })()`)
+  fs.writeFileSync(path.join(output,'context-hover.png'),(await win.webContents.capturePage()).toPNG())
+  for (const level of [1,2]) {
+    await win.webContents.executeJavaScript(`document.querySelector('.context-usage-button').click()`)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    await win.webContents.executeJavaScript(`(()=>{
+      const panel=document.querySelector('.context-usage-panel'),rect=panel.getBoundingClientRect();
+      if(rect.left<0||rect.right>innerWidth||rect.top<0||rect.bottom>innerHeight) throw Error('Context panel is clipped');
+      if(Boolean(panel.querySelector('.context-usage-details'))!==${level===2}) throw Error('Incorrect context disclosure level');
+    })()`)
+    fs.writeFileSync(path.join(output,level===1?'context-summary.png':'context-details.png'),(await win.webContents.capturePage()).toPNG())
+  }
+  await win.webContents.executeJavaScript(`(()=>{
+    const panel=document.querySelector('.context-usage-panel');
+    if(!panel.textContent.includes('MCP')||!panel.textContent.includes('713.8k')) throw Error('Context categories or free space missing');
+    panel.querySelector('.context-usage-group summary').click();
+    if(!panel.querySelector('.context-usage-group').open) throw Error('Context tool group did not expand');
+    panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  })()`)
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{
+    if(document.querySelector('.context-usage-panel')) throw Error('Escape failed to close context usage');
+    if(document.activeElement!==document.querySelector('.context-usage-button')) throw Error('Context focus was not restored');
+  })()`)
   const result = await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));const expect=(yes,msg)=>{if(!yes)throw Error(msg)};
     await tick();await tick();
@@ -84,18 +144,22 @@ async function main() {
     window.selectAll();expect(window.getSelection().toString().includes('完整回复'),'History select all failed');
     window.paste('草稿');await tick();const input=document.querySelector('#agent-prompt');
     input.setSelectionRange(1,2);window.paste('插入');await tick();expect(input.value==='草插入','History paste failed replacement into composer');
+    document.querySelector('.user-turn-actions button').click();await tick();
+    expect(window.copiedText==='本轮提问','Copy did not send this message text to clipboard');
+    expect(input.value==='草插入','Copy changed the existing composer draft');
     document.querySelector('.catch-button').click();await tick();
     expect(window.caught.length===1&&window.caught[0].message==='m','Catch did not capture selected answer');
     expect(window.sent.length===0,'Catch auto-sent task');
-    expect(document.querySelector('.selection-chip').textContent.includes('Catch'),'Catch attachment is not visible');
+    expect(document.querySelector('.composer-selections .conversation-file-card').textContent.includes('Catch'),'Catch attachment is not visible');
     expect(!document.querySelector('.assistant-turn'),'Catch did not switch new task');
-    document.querySelector('.selection-chip button').click();await tick();expect(!document.querySelector('.selection-chip'),'Remove Catch failed');
-    window.changeState(window.fixtureState('b'));await tick();expect(document.querySelector('.selection-chip'),'Restored draft is missing');
+    expect(document.querySelector('.context-usage-button').getAttribute('aria-label').includes('暂无数据'),'Context data leaked into another conversation');
+    document.querySelector('.composer-selections .attachment-card-remove').click();await tick();expect(!document.querySelector('.composer-selections .conversation-file-card'),'Remove Catch failed');
+    window.changeState(window.fixtureState('b'));await tick();expect(document.querySelector('.composer-selections .conversation-file-card'),'Restored draft is missing');
     document.querySelector('#agent-prompt').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await tick();
     expect(window.sent.length===1&&window.sent[0].attachments[0].type==='catch','Sending omitted Catch attachment');
-    expect(!document.querySelector('.selection-chip'),'Sent Catch remains in composer');
+    expect(!document.querySelector('.composer-selections .conversation-file-card'),'Sent Catch remains in composer');
     window.resolveRun();await tick();
-    expect(!document.querySelector('.selection-chip'),'Completed Catch remains in composer');
+    expect(!document.querySelector('.composer-selections .conversation-file-card'),'Completed Catch remains in composer');
     expect(window.uiErrors.length===0,JSON.stringify(window.uiErrors));
     window.splash();await tick();
     expect(getComputedStyle(document.querySelector('.launch-splash')).backgroundColor==='rgb(255, 255, 255)','Splash is not white');
@@ -105,7 +169,7 @@ async function main() {
     const pixels=ctx.getImageData(0,0,1254,1254).data;let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>128&&pixels[i]<100)ink++;
     expect(ink>1000,'Logo has no visible black pixels');
     return {catchCreatesUnsentTask:true,attachmentSentAndRemoved:true,scrollStatesAndPosition:true,historyPasteAndSelect:true,whiteSplashOriginalLogo:true};
-  })()`)
+  })().catch(error=>{throw new Error(error.stack)})`)
   console.log('CONVERSATION_TOOLS_UI_PASSED', JSON.stringify(result))
   win.destroy();app.exit(0)
 }

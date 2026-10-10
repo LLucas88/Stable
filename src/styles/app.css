@@ -869,7 +869,9 @@ html[data-theme="dark"] .conversation-start-animation { filter: invert(1) hue-ro
 .attachment-card-remove:hover { background: var(--color-paper-3); color: var(--color-ink); }
 .attachment-card-remove:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 .conversation-file-card-shell[data-compact] .conversation-file-card:hover { background: var(--color-paper-2); }
-.user-turn-actions { position: absolute; inset-inline-end: 0; inset-block-end: -2.1rem; display: flex; justify-content: flex-end; }
+.user-turn-actions { position: absolute; inset-inline-end: 0; inset-block-end: -2.1rem; display: flex; justify-content: flex-end; opacity: 0; pointer-events: none; }
+.user-turn:hover .user-turn-actions,
+.user-turn-actions:has(button:focus-visible) { opacity: 1; pointer-events: auto; }
 .user-turn-actions button { display: grid; width: 2rem; height: 2rem; padding: 0; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-muted); }
 .user-turn-actions button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .user-turn-actions button:active { background: var(--color-paper-4); color: var(--color-ink); }

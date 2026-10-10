@@ -2262,6 +2262,17 @@ function registerIpc() {
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     return agentState(id)
   })
+  ipcMain.handle('stable:agent:contextUsage', async (_event, payload) => {
+    const id = requireText(payload?.id, '对话 ID', 100)
+    const conversation = store.conversation(id)
+    if (!conversation) throw new Error('找不到这个对话。')
+    const { model } = modelRegistry.resolve(conversation.modelId)
+    const active = agentRunners.get(id)?.runner
+    const usage = active?.contextModel?.model === model.model && active.contextModel.baseURL === model.baseURL
+      ? await active.getContextUsage()
+      : require('./services/context-usage.cjs').readContextUsage(app.getPath('userData'), id, model)
+    return usage || { model: model.model, maxTokens: require('./services/model-limits.cjs').modelLimits(model).contextWindow, usedTokens: null, percentage: null, updatedAt: null, estimated: true, categories: [], mcpTools: [], memoryFiles: [], systemTools: [], skills: [] }
+  })
   ipcMain.handle('stable:agent:search', (_event, payload) => {
     if (typeof payload?.query !== 'string') throw new Error('搜索关键词无效。')
     if (payload.query.length > 200) throw new Error('搜索关键词不能超过 200 个字符。')

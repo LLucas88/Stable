@@ -1,0 +1,38 @@
+.context-usage { position: relative; flex: 0 0 auto; }
+.context-usage-button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.context-usage-button:hover, .context-usage[data-open] .context-usage-button { background: var(--color-paper-3); }
+.context-usage button:focus-visible, .context-usage summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.context-ring-track, .context-ring-value { fill: none; stroke-width: 3; }
+.context-ring-track { stroke: var(--color-rule-soft); }
+.context-ring-value { stroke: #2e7be6; stroke-linecap: round; }
+.context-usage-tooltip { position: absolute; z-index: 45; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 6px 10px; border-radius: 7px; background: #202020; color: #fff; font-size: 13px; line-height: 1.4; pointer-events: none; opacity: 0; }
+.context-usage-button:hover + .context-usage-tooltip, .context-usage-button:focus-visible + .context-usage-tooltip { opacity: 1; }
+.context-usage-panel { position: absolute; z-index: 44; right: 0; bottom: calc(100% + 12px); width: min(390px, calc(100vw - 48px)); padding: 14px; border: 1px solid var(--color-rule-soft); border-radius: 14px; background: var(--color-paper); color: var(--color-ink); box-shadow: 0 5px 24px #0002; font-size: 13px; line-height: 1.5; }
+.context-usage-heading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--color-muted); font: inherit; cursor: pointer; text-align: left; }
+.context-usage-heading > span:first-child { margin-right: auto; }
+.context-usage-heading > span:nth-child(2) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.context-usage-bar { display: flex; overflow: hidden; height: 5px; margin-top: 9px; border-radius: 4px; background: var(--color-rule-soft); }
+.context-usage-bar > span { flex-shrink: 0; height: 100%; border-right: 1px solid var(--color-paper); }
+.context-usage-details { max-height: min(380px, 48vh); overflow: auto; margin-top: 8px; scrollbar-width: thin; }
+.context-usage-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 48px; align-items: center; gap: 7px; min-height: 24px; }
+.context-usage-row > i { width: 10px; height: 10px; border-radius: 2px; }
+.context-free { background: var(--color-rule-soft); }
+.context-usage-row > span:nth-last-child(-n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+.context-usage-row > span:nth-last-child(2) { color: var(--color-muted); }
+.context-usage-group { margin-top: 6px; }
+.context-usage-group > summary { display: flex; gap: 5px; align-items: center; color: var(--color-muted); cursor: pointer; list-style: none; }
+.context-usage-group > summary::-webkit-details-marker { display: none; }
+.context-usage-group > summary > span:last-child { margin-left: auto; }
+.context-usage-group[open] > summary > svg { transform: rotate(90deg); }
+.context-usage-group ul { list-style: none; padding: 4px 0 4px 18px; margin: 0; }
+.context-usage-group li { display: flex; gap: 12px; padding: 3px 0; }
+.context-usage-group li > span:first-child { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.context-usage-group li > span:last-child { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.context-usage-note { margin: 9px 0 0; color: var(--color-muted); font-size: 12px; }
+.context-usage-footer { border-top: 1px solid var(--color-rule-soft); padding-top: 10px; margin-top: 10px; }
+.context-usage-footer > button { border: 1px solid var(--color-rule-soft); border-radius: 5px; padding: 2px 7px; background: var(--color-paper); color: var(--color-ink); font: inherit; cursor: pointer; }
+
+/* Match existing floating surfaces despite the app-wide flat border reset. */
+#root .context-usage-panel { border: 1px solid var(--color-rule) !important; box-shadow: 0 5px 24px #0002 !important; }
+#root .context-usage-footer { border-top: 1px solid var(--color-rule) !important; }
+#root .context-usage-footer > button { border: 1px solid var(--color-rule) !important; }

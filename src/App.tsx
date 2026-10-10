@@ -1,3 +1,4 @@
+import { ContextUsageButton } from './ContextUsageButton'
 import { TemplateLibrary } from './TemplateLibrary'
 import { ModelConnectionSettings } from './ModelConnectionSettings'
 import { EffortSlider } from './EffortSlider'
@@ -788,13 +789,6 @@ interface AgentTraceRun {
   endedAt?: number
 }
 
-interface CopyUndoState {
-  copiedPrompt: string
-  prompt: string
-  attachments: AgentAttachment[]
-  references: AgentReference[]
-}
-
 type ConversationPreviewTarget =
   | { requestId: number; kind: 'web'; value: string; title: string }
   | { requestId: number; kind: 'file'; value: string; title: string }
@@ -860,7 +854,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const previewRequestRef = useRef(0)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   useComposerAutosize(promptRef, prompt, active)
-  const copyUndoRef = useRef<Record<string, CopyUndoState | undefined>>({})
   const attachmentInputRef = useRef<HTMLInputElement>(null)
   const dataMenuRef = useRef<HTMLDetailsElement>(null)
   const skillMenuRef = useRef<HTMLDetailsElement>(null)
@@ -1204,24 +1197,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     })
   }
 
-  function referenceFromMessage(item: NonNullable<MessageItem['attachments']>[number]) {
-    if (item.kind === 'attachment') return undefined
-    if (item.kind === 'data') {
-      const value = state.data.find((entry) => entry.id === item.id) || state.data.find((entry) => entry.name === item.name)
-      return value ? { id: value.id, kind: item.kind, name: value.name, size: value.size, type: value.type } : undefined
-    }
-    if (item.kind === 'skill') {
-      const value = state.skills.find((entry) => entry.id === item.id) || state.skills.find((entry) => entry.name === item.name)
-      return value ? { id: value.id, kind: item.kind, name: value.name, size: new Blob([value.content || '']).size, type: 'skill' } : undefined
-    }
-    if (item.kind === 'script') {
-      const value = state.library.find((entry) => entry.kind === 'script' && (entry.id === item.id || entry.name === item.name))
-      return value ? { id: value.id, kind: item.kind, name: value.name, size: new Blob([value.content || '']).size, type: value.extension || 'script' } : undefined
-    }
-    const value = state.knowledge.find((entry) => entry.id === item.id) || state.knowledge.find((entry) => entry.name === item.name)
-    return value ? { id: value.id, kind: item.kind, name: value.name, size: value.size, type: 'markdown' } : undefined
-  }
-
   function previewMessageAttachment(item: NonNullable<MessageItem['attachments']>[number]) {
     if (item.kind === 'attachment' && item.path) openConversationPreview({ kind: 'file', value: item.path, title: item.name })
   }
@@ -1231,27 +1206,9 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   }
 
   async function copyUserMessage(message: MessageItem) {
-    const restoredReferences = (message.attachments || []).map(referenceFromMessage).filter((item): item is AgentReference => Boolean(item))
-    const restoredAttachments: AgentAttachment[] = []
-    for (const item of message.attachments || []) {
-      if (item.kind !== 'attachment' || !item.path) continue
-      if (item.type === 'catch') { restoredAttachments.push({ name: item.name, path: item.path, size: item.size, type: item.type }); continue }
-      try { restoredAttachments.push(...await window.stable.agent.inspectAttachments([item.path])) } catch { /* missing legacy attachment stays omitted */ }
-    }
-    copyUndoRef.current[state.activeConversationId] = { copiedPrompt: message.content, prompt, attachments: [...attachments], references: [...selectedReferences] }
-    setPrompt(message.content)
-    setAttachments(restoredAttachments)
-    setReferences(restoredReferences)
-    window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(message.content.length, message.content.length) })
-  }
-
-  function undoCopiedDraft() {
-    const undo = copyUndoRef.current[state.activeConversationId]
-    if (!undo || prompt !== undo.copiedPrompt) return false
-    setPrompt(undo.prompt); setAttachments(undo.attachments); setReferences(undo.references)
-    copyUndoRef.current[state.activeConversationId] = undefined
-    window.requestAnimationFrame(() => { promptRef.current?.focus(); promptRef.current?.setSelectionRange(undo.prompt.length, undo.prompt.length) })
-    return true
+    await action('正在复制消息', async () => {
+      await window.stable.clipboard.writeText(message.content)
+    })
   }
 
   function ConversationRow({ item, mobile }: { item: ConversationItem; mobile:boolean }) {
@@ -1345,7 +1302,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         attachments: attachments.map((item) => ({ ...item })),
         references: selectedReferences.map((item) => ({ ...item })),
       })).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
-      copyUndoRef.current[conversationId] = undefined
       setPrompt(''); setAttachments([]); setReferences(current => current.filter(item => item.kind === 'skill'))
       setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
       window.requestAnimationFrame(() => promptRef.current?.focus())
@@ -1546,7 +1502,6 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
             <textarea ref={promptRef} id="agent-prompt" value={prompt} onPaste={handlePromptPaste} onChange={(event) => { setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoCopiedDraft()) { event.preventDefault(); return }
               if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
                 if (event.altKey) {
                   event.preventDefault()
@@ -1625,6 +1580,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
                 </div>
               </details>
               </div>
+              <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />
               <button className={showComposerStop ? 'composer-stop' : 'composer-send'} type="button" onClick={showComposerStop ? stopConversation : send} disabled={!hasComposerContent && !running} aria-label={showComposerStop ? '停止执行' : (hasComposerContent && (running || queue.items.length) ? '加入排队' : '发送任务')} title={showComposerStop ? '停止执行' : (hasComposerContent ? (running ? '加入队列，当前任务结束后自动发送' : '发送任务') : '请输入内容或添加附件后发送')}>
                 <span className="composer-action-visual" aria-hidden="true">
                   {showComposerStop ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" /></svg> : <ArrowUp size={20} aria-hidden="true" />}
@@ -1903,7 +1859,7 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
       {content && <div className="user-bubble"><div className="turn-label">你</div><p>{content}</p></div>}
-      {onCopy && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息到主输入框"><Copy size={15} aria-hidden="true" /></button></div>}
+      {onCopy && content && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息" title="复制文字"><Copy size={15} aria-hidden="true" /></button></div>}
     </div>
   </article>
 }

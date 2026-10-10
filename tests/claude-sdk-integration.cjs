@@ -685,3 +685,37 @@ test('real SDK Agent delegation inherits bounded native file tools and keeps chi
   assert.equal(fs.existsSync(path.join(root, 'outside-child.txt')), false)
   assert(requests.length >= 5)
 })
+
+
+test('real SDK reports context summary and persists it before closing the session', { timeout: 45000 }, async t => {
+  const { root, workspace, runner, requests } = fixture(t, () => upstream({ text: 'CONTEXT_READY' }))
+  const profile = { ...model, contextWindow: 1_000_000 }
+  assert.equal(await runner.run('Inspect context statistics', profile, credential, 30000, undefined, 'read-only', [], { key: 'context-usage', cwd: workspace }), 'CONTEXT_READY')
+  const usage = require('../desktop/services/context-usage.cjs').readContextUsage(root, 'context-usage', profile)
+  assert(usage, 'real SDK must return context usage before the runtime closes')
+  assert(usage.usedTokens > 0)
+  assert.equal(usage.maxTokens, 1_000_000)
+  assert(usage.categories.length > 0)
+  assert.equal(requests.length, 1, 'summary must not send an additional inference request')
+  console.log('CONTEXT_USAGE_NATIVE', JSON.stringify({ total: usage.usedTokens, max: usage.maxTokens, categories: usage.categories }))
+})
+
+
+test('real SDK exposes context usage while a model response is streaming', { timeout: 45000 }, async t => {
+  const reached = deferred(), release = deferred()
+  const { workspace, runner } = fixture(t, (_body, _number, request) => {
+    reached.resolve()
+    return pendingUpstream(request, release.promise)
+  })
+  const running = runner.run('Stream while inspecting usage', model, credential, 30000, undefined, 'read-only', [], { key: 'live-usage', cwd: workspace })
+  const settled = running.then(value => ({ value }), error => ({ error }))
+  await Promise.race([reached.promise, settled.then(result => { throw result.error || Error('run ended before request') })])
+  try {
+    const usage = await runner.getContextUsage()
+    assert(usage?.usedTokens > 0, 'the live indicator must receive SDK usage before inference finishes')
+    assert.equal(runner.busy, true)
+  } finally { release.resolve() }
+  const result = await settled
+  if (result.error) throw result.error
+  assert.equal(result.value, 'FIRST_REPLY')
+})

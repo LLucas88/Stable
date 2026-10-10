@@ -256,6 +256,20 @@ export interface AgentState {
   messages: MessageItem[]
 }
 
+export interface ContextUsage {
+  model: string
+  maxTokens: number
+  usedTokens: number | null
+  percentage: number | null
+  updatedAt: number | null
+  estimated: boolean
+  categories: Array<{ name: string; tokens: number }>
+  mcpTools: Array<{ name: string; tokens: number }>
+  memoryFiles: Array<{ name: string; tokens: number }>
+  systemTools: Array<{ name: string; tokens: number }>
+  skills: Array<{ name: string; tokens: number }>
+}
+
 export interface AgentAttachment {
   annotation?: { text: string; comment: string; source: string; tag: string; thumbnail: string }
   name: string
@@ -612,6 +626,7 @@ export interface StableBridge {
     grants(id: string): Promise<Array<{key: string; label: string; expiresAt: string}>>
     revokeGrants(id: string, key?: string): Promise<Array<{key: string; label: string; expiresAt: string}>>
     messages(id: string, beforeCursor?: number): Promise<{ messages: MessageItem[]; beforeCursor: number | null }>
+    contextUsage(id: string): Promise<ContextUsage>
     viewState(id: string, value?: { anchor?: string; seq?: number; offset?: number; top?: number; following?: boolean }): Promise<{ anchor?: string; seq?: number; offset?: number; top?: number; following?: boolean }>
     inspectAttachments(paths: string[]): Promise<AgentAttachment[]>
     savePastedImage(conversationId: string, name: string, mediaType: string, data: Uint8Array): Promise<AgentAttachment>

@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('stable', {
     configureNetwork: (id, enabled) => invoke('stable:agent:network', { id, enabled }),
     grants: id => invoke('stable:agent:grants', { id }), revokeGrants: (id, key) => invoke('stable:agent:revokeGrants', { id, key }),
     messages: (id, beforeCursor) => invoke('stable:agent:messages', { id, beforeCursor }),
+    contextUsage: id => invoke('stable:agent:contextUsage', { id }),
     viewState: (id, value) => invoke('stable:agent:viewState', { id, value }),
     inspectAttachments: (paths) => invoke('stable:agent:inspectAttachments', { paths }),
     savePastedImage: (conversationId, name, mediaType, data) => invoke('stable:agent:savePastedImage', { conversationId, name, mediaType, data }),

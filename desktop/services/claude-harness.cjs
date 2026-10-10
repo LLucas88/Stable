@@ -137,6 +137,7 @@ class ClaudeHarnessRunner {
       if (saved.model !== model.model || saved.baseURL !== model.baseURL || saved.cwd !== workspace || saved.contextPolicy !== session.contextPolicy || saved.toolPolicy !== toolPolicy || saved.skillPolicy !== skillOptions.fingerprint || saved.memoryEnabled !== memory.enabled || saved.extensionPolicy !== extensions.fingerprint) saved = null
     }
     activeHomes.add(directory); this.busy = true; this.cancelled = false; this.steerReady = false
+    this.contextModel = model; this.contextSnapshot = saved?.contextUsage || null; this.contextPending = null
     this.threadId = saved?.threadId || randomUUID(); this.turnId = randomUUID(); this.expectedResultUuid = this.turnId
     this.approvalConversation = session.key; this.abortController = new AbortController()
     const queue = inputQueue(); this.input = queue
@@ -175,13 +176,14 @@ class ClaudeHarnessRunner {
       }
     }
     let cliVersion
-    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, toolPolicy, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded) })
+    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, toolPolicy, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded), contextUsage: this.contextSnapshot })
     const acceptTurn = () => {
       if (accepted) return
       accepted = true; this.steerReady = !session.textOnly
       this.options.onTurnAccepted?.(session.key, this.threadId, this.turnId)
       if (session.key && !session.textOnly) { writePointer(pointer, metadata()); this.options.saveRuntimeSession?.(session.key, { ...metadata(), state: 'ready', engine: 'claude' }) }
     }
+    this.saveContextSnapshot = () => { if (accepted && session.key && !session.textOnly) writePointer(pointer, metadata()) }
     let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit
     try {
       const sdk = this.options.sdk || await import('@anthropic-ai/claude-agent-sdk')
@@ -339,6 +341,10 @@ class ClaudeHarnessRunner {
           answer = message.result || answer
           if (this.pendingInputs.size) continue
           if (!answer.trim()) throw new Error('Claude Agent SDK 未返回最终回答。')
+          const resultFor = this.expectedResultUuid
+          if (session.key && !session.textOnly) await this.getContextUsage()
+          if (this.cancelled) throw new Error('任务已停止。')
+          if (this.pendingInputs.size || this.expectedResultUuid !== resultFor) continue
           record(answer.trim()); queue.close()
           publish({ id: `${this.threadId}:agent`, kind: 'status', entity: 'agent', eventType: 'agent/end', title: 'Stable 总控', status: 'completed' })
           return answer.trim()
@@ -364,10 +370,27 @@ class ClaudeHarnessRunner {
         await nativeExit
         try { this.builtins?.dispose() } finally { await bridge?.close() }
       } finally {
-        this.query = null; this.nativeProcess = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
+        this.saveContextSnapshot = null; this.query = null; this.nativeProcess = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
       }
       publish({ id: 'run-progress', kind: 'status', title: this.cancelled ? '任务已取消' : '执行已结束', status: this.cancelled ? 'cancelled' : 'completed', detail: progress.detail() })
     }
+  }
+  async getContextUsage() {
+    const query = this.query
+    if (!query?.getContextUsage || this.cancelled) return this.contextSnapshot || null
+    if (!this.contextPending) {
+      const request = Promise.resolve().then(() => query.getContextUsage({ detail: 'summary' })).then(raw => {
+        if (this.query !== query || this.cancelled) return
+        const snapshot = require('./context-usage.cjs').normalizeContextUsage(raw, this.contextModel)
+        if (snapshot) { this.contextSnapshot = snapshot; this.saveContextSnapshot?.() }
+      }).catch(() => { /* Usage display must not interrupt the conversation. */ })
+      this.contextPending = request
+      void request.finally(() => { if (this.contextPending === request) this.contextPending = null })
+    }
+    let timer
+    try { await Promise.race([this.contextPending, new Promise(resolve => { timer = setTimeout(resolve, 2500) })]) }
+    finally { clearTimeout(timer) }
+    return this.contextSnapshot || null
   }
   answerApproval(requestId, allowed, duration = 'once') {
     const key = String(requestId); const entry = this.approvals.get(key)
