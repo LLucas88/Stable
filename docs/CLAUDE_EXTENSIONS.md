@@ -1,3 +1,5 @@
+> 本文记录原 `2cluade-agent` 分支的实现与历史验收。当前 `cluade-sdk-bash` 的命令执行和权限差异见 [SDK 原生 Bash](CLAUDE_NATIVE_BASH.md)。
+
 # Claude 分支：记忆、工具搜索与外部扩展
 
 本文件仅适用于 `2cluade-agent`。共享用户数据库不需要迁移，主分支不读取这里新增的 Claude 配置。退出 Stable 后，从 `D:\stable-worktrees\Start-Claude-WSL2.cmd` 启动即可载入新的主进程代码；不需要重装安装包。

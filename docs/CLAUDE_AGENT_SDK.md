@@ -1,3 +1,5 @@
+> 本文记录原 `2cluade-agent` 分支的实现与历史验收。当前 `cluade-sdk-bash` 的命令执行和权限差异见 [SDK 原生 Bash](CLAUDE_NATIVE_BASH.md)。
+
 # Claude Agent SDK + WSL2
 
 `2cluade-agent` 分支仅使用官方 `@anthropic-ai/claude-agent-sdk@0.3.296`（Claude Code 运行时 2.1.296）。聊天、工作流 AI 节点、定时任务、协作规划/执行/综合、审批模型共用这个入口；旧的 STABLE_HARNESS 值不再切换引擎。

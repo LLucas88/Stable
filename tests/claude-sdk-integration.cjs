@@ -14,6 +14,92 @@ const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
 const credential = 'local-native-fixture-key'
 
+test('real SDK native Bash executes only after approval and reports output and errors', { timeout: 120_000 }, async t => {
+  for (const mode of ['allow', 'deny', 'failure', 'timeout', 'cancel-approval']) await t.test(mode, async t => {
+    let approvals = 0
+    const command = mode === 'failure' ? 'printf error-output >&2; exit 7'
+      : mode === 'timeout' ? 'sleep 5; printf late > too-late.txt'
+      : "printf '原生 Bash 中文' > result.txt; cat result.txt"
+    const { workspace, runner } = fixture(t, (body, number) => {
+      nativeTool(body, 'Bash')
+      assert(!body.tools.some(tool => tool.function.name === 'mcp__stable__stable_exec'))
+      if (number === 1) return upstream({ calls: [{ id: 'native-bash', name: 'Bash', input: { command, timeout: mode === 'timeout' ? 1000 : 10000 } }] })
+      const output = toolResult(body, 'native-bash')
+      assert.match(output || '', mode === 'allow' ? /原生 Bash 中文/ : mode === 'deny' ? /未批准|denied/i : mode === 'failure' ? /error-output/ : /timeout|timed out|超时|exceeded/i)
+      return upstream({ text: 'BASH_FINISHED' })
+    })
+    const events = []
+    const run = runner.run('Run the fixture command', model, credential, 25000, event => {
+      events.push(event)
+      if (event.kind !== 'approval' || event.status !== 'running') return
+      approvals++
+      assert.match(event.reason, /本机 Bash/)
+      assert.equal(fs.existsSync(path.join(workspace, 'result.txt')), false)
+      if (mode === 'cancel-approval') runner.cancel()
+      else runner.answerApproval(event.requestId, mode !== 'deny')
+    }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+    if (mode === 'cancel-approval') await assert.rejects(run, /停止/)
+    else assert.equal(await run, 'BASH_FINISHED')
+    assert.equal(approvals, 1)
+    assert.equal(fs.existsSync(path.join(workspace, 'result.txt')), mode === 'allow')
+    assert.equal(fs.existsSync(path.join(workspace, 'too-late.txt')), false)
+    if (mode === 'allow') {
+      assert.equal(fs.readFileSync(path.join(workspace, 'result.txt'), 'utf8'), '原生 Bash 中文')
+      assert(events.some(event => event.id === 'native-bash' && event.status === 'completed' && /原生 Bash 中文/.test(event.detail)))
+    }
+    if (mode === 'failure') assert(events.some(event => event.id === 'native-bash' && event.status === 'failed' && /error-output/.test(event.detail)))
+  })
+})
+
+test('real SDK hides native Bash in read-only and offline runs', { timeout: 60000 }, async t => {
+  for (const sandboxMode of ['read-only', 'workspace-write']) {
+    const { workspace, runner } = fixture(t, body => {
+      assert(!body.tools.some(tool => ['Bash', 'mcp__stable__stable_exec'].includes(tool.function.name)))
+      return upstream({ text: 'NO_BASH' })
+    })
+    assert.equal(await runner.run('Inspect tool catalog', model, credential, 25000, undefined, sandboxMode, [], { cwd: workspace, networkAccess: sandboxMode === 'read-only' }), 'NO_BASH')
+  }
+})
+
+test('real SDK cancellation stops an active native Bash command before its delayed write', { timeout: 30000 }, async t => {
+  const { workspace, runner } = fixture(t, (_body, number) => {
+    assert.equal(number, 1)
+    return upstream({ calls: [{ id: 'active-bash', name: 'Bash', input: { command: 'printf started > started.txt; sleep 3; printf orphan > orphan.txt', timeout: 10000 } }] })
+  })
+  const running = runner.run('Run cancellable command', model, credential, 20000, event => {
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  const settled = running.then(value => ({ value }), error => ({ error }))
+  await until(() => fs.existsSync(path.join(workspace, 'started.txt')))
+  assert.equal(runner.cancel(), true)
+  const outcome = await settled
+  assert.match(outcome.error?.message || '', /停止/)
+  await new Promise(resolve => setTimeout(resolve, 3500))
+  assert.equal(fs.existsSync(path.join(workspace, 'orphan.txt')), false)
+})
+
+test('real SDK child Agent uses native Bash with the same approval hook', { timeout: 45000 }, async t => {
+  let childCalls = 0, approvals = 0
+  const { workspace, runner } = fixture(t, (body, number) => {
+    if (body.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('CHILD_BASH_MARKER'))) {
+      nativeTool(body, 'Bash')
+      childCalls++
+      if (childCalls === 1) return upstream({ calls: [{ id: 'child-bash', name: 'Bash', input: { command: 'printf CHILD_NATIVE_OK', timeout: 10000 } }] })
+      assert.match(toolResult(body, 'child-bash'), /CHILD_NATIVE_OK/)
+      return upstream({ text: 'CHILD_DONE' })
+    }
+    if (number === 1) return upstream({ calls: [{ id: 'parent-agent', name: 'Agent', input: { description: 'Test child Bash', prompt: 'CHILD_BASH_MARKER: run the command', subagent_type: 'stable-worker' } }] })
+    assert.match(toolResult(body, 'parent-agent'), /CHILD_DONE/)
+    return upstream({ text: 'PARENT_DONE' })
+  })
+  const result = await runner.run('Delegate command', { ...model, contextWindow: 1000000 }, credential, 30000, event => {
+    if (event.kind === 'approval' && event.status === 'running') { approvals++; runner.answerApproval(event.requestId, true) }
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.equal(result, 'PARENT_DONE')
+  assert.equal(childCalls, 2)
+  assert.equal(approvals, 1)
+})
+
 test('real SDK external MCP connects only after approval and enforces per-call grants', { timeout: 120_000 }, async t => {
   for (const mode of ['disabled', 'read-only', 'deny-connect', 'allow', 'allow-sse', 'deny-tool', 'cancel-tool']) await t.test(mode, async t => {
     const http = require('node:http'); const remoteCalls = [], remoteRequests = []; let connectedApproved = false, sseResponse
@@ -260,8 +346,8 @@ function nativeCatalog(body) {
   const names = body.tools.map(tool => tool.function.name)
   assert.equal(new Set(names).size, names.length, 'native/MCP tools must not be registered twice')
   assert.equal(names.some(name => /(?:^|__)stable_file$/.test(name)), false, 'native file tools replace stable_file')
-  assert.equal(names.some(name => ['Bash', 'PowerShell', 'Shell', 'Execute'].includes(name)), false, 'shell remains behind stable_exec sandbox')
-  assert(names.includes('mcp__stable__stable_exec'))
+  assert.equal(names.some(name => ['Bash', 'PowerShell', 'Shell', 'Execute'].includes(name)), false, 'offline runs must not expose a host shell')
+  assert(!names.includes('mcp__stable__stable_exec'))
   assert(!names.includes('DeferredToolPlaceholder'))
 }
 

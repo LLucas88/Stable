@@ -1,13 +1,10 @@
 'use strict'
 
-// Supplement native Claude tools with Stable product capabilities and the
-// WSL2 command sandbox. File tools are provided by the SDK.
+// Supplement native Claude tools with Stable product capabilities.
 const fs = require('node:fs')
 const path = require('node:path')
 const z = require('zod/v4')
 const { TOOL_SPECS } = require('./builtin-tool-bridge.cjs')
-const { runWslCommand } = require('./wsl-sandbox.cjs')
-const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
 
 const inside = (root, target) => {
   const relative = path.relative(root, target)
@@ -86,10 +83,9 @@ function mcpContent(value) {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] }
 }
 
-function createClaudeTools({ sdk, workspace, writableRoots = [], readableRoots = [], sandboxMode = 'workspace-write', session = {}, executeCommand = runWslCommand, trustedCli, builtinTools, requestApproval, onToolEvent = () => {}, signal, search }) {
+function createClaudeTools({ sdk, workspace, writableRoots = [], sandboxMode = 'workspace-write', trustedCli, builtinTools, requestApproval, onToolEvent = () => {}, signal, search }) {
   const canonicalWorkspace = fs.realpathSync(path.resolve(workspace))
   const writes = rootsFor([canonicalWorkspace, ...writableRoots])
-  const reads = rootsFor([...writes, ...readableRoots])
   if (process.platform === 'win32' && sandboxMode !== 'read-only' && writes.some(root => samePath(root, path.parse(root).root))) throw new Error('不能将整个盘符根目录作为可写工作区。')
   let serial = 0
   const tools = []
@@ -111,20 +107,8 @@ function createClaudeTools({ sdk, workspace, writableRoots = [], readableRoots =
         onToolEvent({ ...event, status: 'failed', detail: error.message, ...(error.result ? { output: error.result } : {}) })
         return { content: [{ type: 'text', text: error.message }], isError: true }
       }
-    }, { alwaysLoad: name === 'stable_exec', annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }))
+    }, { annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }))
   }
-  add('stable_exec', '在 WSL2 Linux 沙箱中执行 Bash 命令；Windows 路径用 /mnt/c/... 或 /mnt/d/...。cwd 参数仍使用 Windows 路径。可写命令在 Linux 副本执行，成功后校验并回写普通文件；失败或取消不回写。每个可写根目录最多 20000 项和 512 MiB，过大时缩小目录或用原生文件工具。禁止改写 Git/代理规则、生成链接或 Windows 不兼容文件名。所有命令遵守任务目录、网络权限和审批规则；支持 UTF-8、超时、取消，不支持交互输入。文件优先用原生 Read/Write/Edit。禁止调用 Windows exe 或绕过沙箱。' + HTML_PREVIEW_GUIDANCE, {
-    command: z.string().min(1).max(100_000), cwd: z.string().min(1).max(4096).optional(), timeoutMs: z.number().int().min(1000).max(600_000).optional(),
-  }, async (args, context) => {
-    if (builtinTools && isBrowserScreenshotCommand(args.command)) throw Error('截图命令未执行。' + HTML_PREVIEW_GUIDANCE)
-    const cwd = resolveBoundPath(args.cwd || canonicalWorkspace, canonicalWorkspace, sandboxMode === 'read-only' ? reads : writes)
-    if (!fs.statSync(cwd).isDirectory()) throw new Error('命令工作目录不是文件夹。')
-    const networkAccess = sandboxMode !== 'read-only' && (typeof session.networkAccess === 'boolean' ? session.networkAccess : session.permissionMode === 'full')
-    await approved(requestApproval, { name: 'stable_exec', args: { ...args, cwd }, command: args.command, cwd }, context.signal)
-    if (!samePath(cwd, resolveBoundPath(args.cwd || canonicalWorkspace, canonicalWorkspace, sandboxMode === 'read-only' ? reads : writes))) throw new Error('审批期间工作目录已变化。')
-    return executeCommand({ command: args.command, cwd, writableRoots: writes, readableRoots: reads, sandboxMode, networkAccess, timeoutMs: args.timeoutMs || 60_000, signal: context.signal,
-      onOutput: (stream, chunk) => onToolEvent({ id: context.id, name: 'stable_exec', args, status: 'running', output: true, stream, detail: chunk.slice(-500) }) })
-  })
   if (typeof search === 'function') add('stable_search', '查询当前模型服务提供的联网搜索，返回可核对来源。', { query: z.string().min(1).max(1000) }, (args, context) => search(args, context.signal))
   if (trustedCli) add('stable_wending', '通过受控 Windows 接口调用内置问鼎 CLI。args 是逐项参数数组，例如 ["--help"]；不接受 shell 命令。每次调用需审批，使用本会话品牌配置。登录和凭据管理在 Stable 专用界面完成。', {
     args: z.array(z.string().min(1).max(4096)).min(1).max(100),

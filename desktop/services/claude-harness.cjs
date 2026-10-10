@@ -3,7 +3,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { approvalScope } = require('./tool-approval.cjs')
 const { RunProgress, EXECUTION_GUIDANCE, isPermissionAudit } = require('./run-progress.cjs')
 const { CLARIFICATION_GUIDANCE, clarificationStream } = require('./clarification.cjs')
@@ -16,7 +16,7 @@ const { prepareClaudeMemory } = require('./claude-memory.cjs')
 const { loadClaudeExtensions } = require('./claude-extensions.cjs')
 const { createExtensionRuntime } = require('./claude-extension-runtime.cjs')
 const SDK_VERSION = '0.3.296'
-const TOOL_POLICY = 'native-memory-search-extensions-v7'
+const TOOL_POLICY = 'native-bash-v8'
 
 function runtimePath(options = {}) {
   if (options.executable) return options.executable
@@ -30,6 +30,14 @@ function claudeEnvironment(base, home, bridge, memoryEnabled = false, toolSearch
   const env = { ...base }
   for (const name of Object.keys(env)) {
     if (/(API[_-]?KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION|CREDENTIAL|COOKIE|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)/i.test(name) || /^(CODEX|DSH|OPENAI|ANTHROPIC|CLAUDE|STABLE)_/i.test(name)) delete env[name]
+  }
+  // This non-secret SDK setting must survive the credential/environment scrub.
+  if (base.CLAUDE_CODE_GIT_BASH_PATH) env.CLAUDE_CODE_GIT_BASH_PATH = base.CLAUDE_CODE_GIT_BASH_PATH
+  else if (process.platform === 'win32') {
+    const candidates = [base.ProgramW6432, base.ProgramFiles, base['ProgramFiles(x86)']].filter(Boolean).map(root => path.join(root, 'Git', 'bin', 'bash.exe'))
+    if (base.LOCALAPPDATA) candidates.push(path.join(base.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe'))
+    const bash = candidates.find(file => fs.existsSync(file))
+    if (bash) env.CLAUDE_CODE_GIT_BASH_PATH = bash
   }
   delete env.NODE_OPTIONS; delete env.NODE_PATH; delete env.ELECTRON_RUN_AS_NODE
   const bypass = new Set(['127.0.0.1', 'localhost', '::1'])
@@ -63,13 +71,20 @@ function writePointer(pointer, saved) {
   fs.renameSync(temporary, pointer)
 }
 
+function terminateWindowsRuntime(child) {
+  if (process.platform !== 'win32' || !child?.pid || child.exitCode !== null || child.signalCode !== null) return
+  // Killing only claude.exe leaves Git Bash and its command children running.
+  // Reap this runtime's tree before SDK close/abort can detach the parent.
+  spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10000 })
+}
+
 class ClaudeHarnessRunner {
   constructor(options = {}) {
     this.options = options; this.supportsPersistentSessions = true; this.supportsTextOnly = true
     this.busy = false; this.steerReady = false; this.approvals = new Map(); this.pendingInputs = new Map()
   }
   runtimePaths() {
-    return { cli: runtimePath(this.options), sandbox: 'wsl2:StableAgent' }
+    return { cli: runtimePath(this.options), sandbox: 'native-bash:unsandboxed' }
   }
   ready() { return fs.existsSync(this.runtimePaths().cli) }
   async run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = [], session = {}) {
@@ -112,12 +127,14 @@ class ClaudeHarnessRunner {
     const skillOptions = prepareClaudeSkills({ directory, workspace, readableRoots,
       selectedSkills: session.textOnly ? [] : session.selectedSkills,
       automaticSkills: session.textOnly ? [] : [...(session.automaticSkills || []), ...extensions.skills] })
+    const networkAccess = sandboxMode !== 'read-only' && (typeof session.networkAccess === 'boolean' ? session.networkAccess : session.permissionMode === 'full')
+    const toolPolicy = `${TOOL_POLICY}:${sandboxMode}:${networkAccess}`
     const pointer = session.key && !session.textOnly ? assertSessionPath(this.options.userData, session.key, 'stable-thread.json') : path.join(directory, 'stable-thread.json')
     let saved
     if (session.key && !session.textOnly && fs.existsSync(pointer)) {
       try { saved = JSON.parse(fs.readFileSync(pointer, 'utf8')) }
       catch { throw new Error('Claude 会话索引损坏，历史已保留。请从本地历史重建上下文。') }
-      if (saved.model !== model.model || saved.baseURL !== model.baseURL || saved.cwd !== workspace || saved.contextPolicy !== session.contextPolicy || saved.toolPolicy !== TOOL_POLICY || saved.skillPolicy !== skillOptions.fingerprint || saved.memoryEnabled !== memory.enabled || saved.extensionPolicy !== extensions.fingerprint) saved = null
+      if (saved.model !== model.model || saved.baseURL !== model.baseURL || saved.cwd !== workspace || saved.contextPolicy !== session.contextPolicy || saved.toolPolicy !== toolPolicy || saved.skillPolicy !== skillOptions.fingerprint || saved.memoryEnabled !== memory.enabled || saved.extensionPolicy !== extensions.fingerprint) saved = null
     }
     activeHomes.add(directory); this.busy = true; this.cancelled = false; this.steerReady = false
     this.threadId = saved?.threadId || randomUUID(); this.turnId = randomUUID(); this.expectedResultUuid = this.turnId
@@ -125,16 +142,16 @@ class ClaudeHarnessRunner {
     const queue = inputQueue(); this.input = queue
     const publish = event => { if (!this.cancelled || event.status === 'cancelled' || event.kind === 'approval') onEvent({ time: Date.now(), sessionId: this.threadId, depth: 0, ...event }) }
     this.publish = publish
-    const networkAccess = sandboxMode !== 'read-only' && (typeof session.networkAccess === 'boolean' ? session.networkAccess : session.permissionMode === 'full')
-    const execution = { sandboxMode, networkAccess, workspace, writableRoots, readableRoots, cliProfile: this.options.environment?.WENDING_CONFIG_DIR || null }
+
+    const execution = { commandRuntime: 'sdk-native-bash', sandboxMode, networkAccess, workspace, writableRoots, readableRoots, cliProfile: this.options.environment?.WENDING_CONFIG_DIR || null }
     this.requestApproval = ({ name, args, command, cwd }) => {
       if (this.cancelled) return Promise.resolve(false)
-      const params = { command: command || name + ' ' + JSON.stringify(args), cwd: cwd || workspace, arguments: args }
+      const params = { tool: name, command: command || name + ' ' + JSON.stringify(args), cwd: cwd || workspace, arguments: args }
       const scope = approvalScope('claude/tool', params, {}, execution)
       const id = randomUUID()
       const event = { id: `approval:${id}`, requestId: id, kind: 'approval', eventType: 'approval/request', toolName: params.command,
         actionType: 'claude/tool', actionDigest: scope.key, approvalParameters: { ...params, threadId: this.threadId, turnId: this.turnId }, approvalCategory: scope.label,
-        title: '需要权限审批', reason: '请确认本次工具操作及其访问范围。', detail: params.command, status: 'running' }
+        title: '需要权限审批', reason: name === 'Bash' ? '允许本机 Bash 执行此命令？它可访问当前账户的文件和网络，不受 WSL2 隔离。' : '请确认本次工具操作及其访问范围。', detail: params.command, status: 'running' }
       return new Promise(resolve => {
         this.approvals.set(id, { resolve, event, scope, params, execution })
         if (session.key && this.options.hasConversationApproval?.(session.key, scope.key)) this.answerApproval(id, true)
@@ -158,7 +175,7 @@ class ClaudeHarnessRunner {
       }
     }
     let cliVersion
-    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, toolPolicy: TOOL_POLICY, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded) })
+    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, toolPolicy, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded) })
     const acceptTurn = () => {
       if (accepted) return
       accepted = true; this.steerReady = !session.textOnly
@@ -174,28 +191,36 @@ class ClaudeHarnessRunner {
       const env = claudeEnvironment(this.options.environment || process.env, home, bridge, memory.enabled, !session.textOnly)
       this.builtins = session.textOnly ? null : this.options.builtinTools?.({ workspace, writableRoots, conversationId: session.key })
       const onToolEvent = event => {
-        if (event.status === 'running') progress.start(event.id, event.args?.command || event.name, event.name === 'stable_exec')
+        if (event.status === 'running') progress.start(event.id, event.args?.command || event.name)
         if (event.output) progress.output(event.id)
-        if (event.status !== 'running') { const issue = progress.complete(event.id, { status: event.status, aggregatedOutput: event.detail }); if (issue) { stopReason = issue; this.cancel() } }
+        const bash = event.name === 'Bash'
+        const output = event.output
+        const detail = bash
+          ? event.detail || (output === undefined ? event.args?.command : typeof output === 'string' ? output : [
+            output.stdout, output.stderr, output.interrupted ? '命令已中断' : '',
+            output.persistedOutputPath ? '完整输出：' + output.persistedOutputPath : '',
+          ].filter(Boolean).join('\n') || '命令执行完成，无输出。')
+          : event.detail || JSON.stringify(event.args || {}).slice(0, 8000)
+        if (event.status !== 'running') { const issue = progress.complete(event.id, { status: event.status, aggregatedOutput: detail }); if (issue) { stopReason = issue; this.cancel() } }
         publish({ id: event.id, kind: 'tool', entity: 'tool', eventType: event.status === 'running' ? 'tool/start' : 'tool/end',
-          title: `使用工具 ${event.name}`, detail: event.detail || JSON.stringify(event.args || {}).slice(0, 8000), status: event.status })
+          title: `使用工具 ${event.name}`, toolName: event.name, detail: String(detail || '').slice(-32000), status: event.status })
       }
       const extensionRuntime = createExtensionRuntime({ userData: this.options.userData, config: extensions, disabled: extensionsDisabled,
         networkAccess, requestApproval: this.requestApproval, signal: this.abortController.signal, onToolEvent })
       // Approve discovery/connection before passing any remote URL to the SDK.
       await extensionRuntime.activate()
-      const nativeTools = session.textOnly ? null : createNativeToolGuard({ workspace, writableRoots: [...writableRoots, ...memory.roots], readableRoots: [...readableRoots, ...memory.roots], sandboxMode,
+      const nativeTools = session.textOnly ? null : createNativeToolGuard({ workspace, writableRoots: [...writableRoots, ...memory.roots], readableRoots: [...readableRoots, ...memory.roots], sandboxMode, networkAccess, browserAvailable: Boolean(this.builtins),
         requestApproval: this.requestApproval, signal: this.abortController.signal, onToolEvent })
       const server = session.textOnly ? null : require('./claude-tools.cjs').createClaudeTools({ sdk, workspace, writableRoots, readableRoots, sandboxMode,
-        session: { ...session, networkAccess }, executeCommand: this.options.executeCommand,
         builtinTools: this.builtins, trustedCli: this.options.trustedCli, signal: this.abortController.signal, requestApproval: this.requestApproval,
         search: (args, signal) => bridge.runSearch(args, signal), onToolEvent })
       const instructions = [
         '已启用原生 ToolSearch。需要的工具不在当前列表时，先用 ToolSearch 查询工具名称或用途；获得工具定义后再调用。搜索工具不会授予调用权限，命令和写入仍需审批。',
-        '你在 Stable 中执行用户任务。优先使用 Claude Agent SDK 原生工具：Read 读取文件，Write 新建或写入，Edit 精确编辑，Glob 查找文件，Grep 搜索内容，NotebookEdit 编辑笔记本，Agent 委派子任务。目录和审批边界同样适用于原生工具。仅用 Stable 工具补充原生工具缺少或当前环境无法提供的能力。模型服务由 Stable 用户选择，不要假设你连接的是 Anthropic 模型。',
+        '你在 Stable 中执行用户任务。优先使用 Claude Agent SDK 原生工具：Bash 执行终端命令，Read 读取文件，Write 新建或写入，Edit 精确编辑，Glob 查找文件，Grep 搜索内容，NotebookEdit 编辑笔记本，Agent 委派子任务。原生文件工具遵守目录边界；Bash 遵守审批，但本机命令不受目录隔离。仅用 Stable 工具补充原生工具缺少或当前环境无法提供的能力。模型服务由 Stable 用户选择，不要假设你连接的是 Anthropic 模型。',
         session.globalInstructions, CLARIFICATION_GUIDANCE, EXECUTION_GUIDANCE, MANUAL_SKILL_POLICY, skillOptions.instruction, memory.instruction, HTML_PREVIEW_GUIDANCE,
-        this.options.trustedCli ? require('./wending-cli.cjs').wendingCliAgentInstruction() + '\n本分支通过 stable_wending 的 args 数组调用上述 CLI，不在 WSL shell 中运行 Windows CLI。' : '',
-        '命令通过 stable_exec 的 WSL2 Bash 沙箱执行；使用 Linux 语法和 /mnt/盘符/路径，cwd 参数与原生文件工具仍使用 Windows 路径。不能运行 Windows exe、sudo、Docker socket 或修改沙箱。原生 Bash/PowerShell 未开放。当前模型服务的联网搜索使用 stable_search；共享浏览器交互使用 stable_browser；文档任务优先使用当前授权且适用的 Skill，stable_excel 等工具保留备用。只可读取当前手动选择或自动授权目录中的技能；禁止通过 shell 安装 Skill。',
+        this.options.trustedCli ? require('./wending-cli.cjs').wendingCliAgentInstruction() + '\n本分支通过 stable_wending 的 args 数组调用上述 CLI，优先使用该结构化工具调用业务 CLI。' : '',
+        '命令通过 SDK 原生 Bash 在本机执行；Windows 下使用 Git Bash 语法和 /c/...、/d/... 路径，原生文件工具使用 Windows 路径。Bash 不提供 WSL2 隔离，审批通过后可能访问工作区以外的文件和网络。使用 timeout 参数（毫秒），不使用 stable_exec、cwd 或 timeoutMs 参数。禁止后台运行；任务停止前等待命令完成。当前模型服务的联网搜索使用 stable_search；共享浏览器交互使用 stable_browser；文档任务优先使用当前授权且适用的 Skill，stable_excel 等工具保留备用。只可读取当前手动选择或自动授权目录中的技能；禁止通过 shell 安装 Skill。',
+        !networkAccess || sandboxMode === 'read-only' ? '本轮只读或禁网，不提供 Bash；请使用获准的原生文件工具，不可请求其他工具绕过此限制。' : '',
         session.textOnly ? '本轮只输出所要求的文字或 JSON，禁止调用任何工具。' : '',
         `本轮工作目录：${workspace}\n可读取目录：${readableRoots.join('\n')}\n可写入目录：${sandboxMode === 'read-only' ? '无（只读模式）' : writableRoots.join('\n')}`,
       ].filter(Boolean).join('\n\n')
@@ -203,7 +228,7 @@ class ClaudeHarnessRunner {
         message: { role: 'user', content: [{ type: 'text', text: !saved?.seeded && session.initialPrompt ? session.initialPrompt : prompt }, ...images] } }
       queue.push(first)
       const skillTools = skillOptions.names.length ? ['Skill'] : []
-      const workerTools = ['ToolSearch', ...(nativeTools?.tools || []), ...skillTools, ...extensionRuntime.names, ...['stable_exec', 'stable_search', ...(this.options.trustedCli ? ['stable_wending'] : []), ...(this.builtins ? ['stable_excel', 'stable_browser', 'stable_skill_install'] : [])].map(name => `mcp__stable__${name}`)]
+      const workerTools = ['ToolSearch', ...(nativeTools?.tools || []), ...skillTools, ...extensionRuntime.names, ...['stable_search', ...(this.options.trustedCli ? ['stable_wending'] : []), ...(this.builtins ? ['stable_excel', 'stable_browser', 'stable_skill_install'] : [])].map(name => `mcp__stable__${name}`)]
       const skillPermission = input => {
         try { return { behavior: 'allow', updatedInput: skillOptions.authorize(input) } }
         catch (error) { return { behavior: 'deny', message: '此 Skill 不在本轮授权白名单中。' } }
@@ -256,6 +281,7 @@ class ClaudeHarnessRunner {
         abortController: this.abortController, extraArgs: { 'replay-user-messages': null },
         spawnClaudeCodeProcess: options => {
           nativeProcess = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, signal: options.signal })
+          this.nativeProcess = nativeProcess
           nativeExit = new Promise(resolve => nativeProcess.once('close', resolve))
           return nativeProcess
         },
@@ -265,7 +291,7 @@ class ClaudeHarnessRunner {
         const initialization = await this.query.initializationResult()
         cliVersion = initialization.claude_code_version
         if (typeof cliVersion !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(cliVersion)) cliVersion = undefined
-        publish({ id: 'runtime-info', kind: 'status', title: '执行环境', detail: `Claude Agent SDK ${SDK_VERSION} · Claude Code ${cliVersion || '版本未返回'} · WSL2 命令沙箱`, status: 'completed' })
+        publish({ id: 'runtime-info', kind: 'status', title: '执行环境', detail: `Claude Agent SDK ${SDK_VERSION} · Claude Code ${cliVersion || '版本未返回'} · SDK 原生 Bash（${nativeTools?.tools.includes('Bash') ? '本机执行，无 WSL2 隔离' : '本轮已禁用'}）`, status: 'completed' })
         if (accepted && session.key && !session.textOnly) { writePointer(pointer, metadata()); this.options.saveRuntimeSession?.(session.key, { ...metadata(), state: 'ready', engine: 'claude' }) }
       }
       progressTimer = setInterval(() => {
@@ -331,13 +357,14 @@ class ClaudeHarnessRunner {
       for (const pending of this.pendingInputs.values()) { clearTimeout(pending.timer); pending.reject(Object.assign(new Error('补充消息接收状态尚未确认，不会自动重发。'), { code: 'STEER_UNCERTAIN' })) }
       this.pendingInputs.clear()
       const query = this.query
+      terminateWindowsRuntime(nativeProcess)
       try { query?.close(); await query?.return?.() } catch { /* Preserve the run's result or primary error while reaping its process. */ }
       if (nativeProcess?.exitCode === null && nativeProcess?.signalCode === null) { try { nativeProcess.kill('SIGKILL') } catch {} }
       try {
         await nativeExit
         try { this.builtins?.dispose() } finally { await bridge?.close() }
       } finally {
-        this.query = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
+        this.query = null; this.nativeProcess = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
       }
       publish({ id: 'run-progress', kind: 'status', title: this.cancelled ? '任务已取消' : '执行已结束', status: this.cancelled ? 'cancelled' : 'completed', detail: progress.detail() })
     }
@@ -361,6 +388,7 @@ class ClaudeHarnessRunner {
     if (!this.busy) return false
     this.cancelled = true; this.steerReady = false
     for (const entry of this.approvals.values()) entry.resolve(false)
+    terminateWindowsRuntime(this.nativeProcess)
     this.abortController?.abort(); this.builtins?.dispose(); this.query?.close(); this.input?.close()
     return true
   }

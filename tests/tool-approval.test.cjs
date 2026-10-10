@@ -37,3 +37,15 @@ test('WSL absolute script arguments retain byte-sensitive approval fingerprints'
     assert.notEqual(first, approvalScope('claude/tool', params, {}, { workspace: root }).key)
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
+
+test('Git Bash absolute script paths invalidate approval when the script changes', { skip: process.platform !== 'win32' }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-bash-approval-')), file = path.join(root, 'job.py')
+  try {
+    fs.writeFileSync(file, 'print(1)')
+    const bashPath = '/' + file[0].toLowerCase() + file.slice(2).replace(/\\/g, '/')
+    const params = { command: `python '${bashPath}'`, cwd: root }
+    const first = approvalScope('claude/tool', params, {}, { workspace: root }).key
+    fs.writeFileSync(file, 'print(2)')
+    assert.notEqual(first, approvalScope('claude/tool', params, {}, { workspace: root }).key)
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})

@@ -1,3 +1,5 @@
+> 本文记录原 `2cluade-agent` 分支的实现与历史验收。当前 `cluade-sdk-bash` 的命令执行和权限差异见 [SDK 原生 Bash](CLAUDE_NATIVE_BASH.md)。
+
 # WSL2 迁移验证记录
 
 分支：`2cluade-agent`；来源：`codex/cluade-agent`。保留原有未提交工作，未提交或推送本轮代码。

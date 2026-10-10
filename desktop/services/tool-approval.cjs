@@ -36,6 +36,7 @@ function approvalScope(method, params, assessment, execution = {}) {
   for (const match of fingerprintInput.matchAll(/(?:"([^"\r\n]+\.(?:py|ps1|js|cjs|sh|exe))"|'([^'\r\n]+\.(?:py|ps1|js|cjs|sh|exe))'|([^\s"']+\.(?:py|ps1|js|cjs|sh|exe)))/gi)) {
     let candidate=match[1]||match[2]||match[3]
     if(process.platform==='win32' && /^\/mnt\/[a-z]\//i.test(candidate)) candidate=candidate[5]+':\\'+candidate.slice(7).replace(/\//g,'\\')
+    if(process.platform==='win32' && /^\/[a-z]\//i.test(candidate)) candidate=candidate[1]+':\\'+candidate.slice(3).replace(/\//g,'\\')
     const target=path.resolve(params.cwd || execution.workspace || '.',candidate)
     if (seen.has(target)) continue
     seen.add(target)

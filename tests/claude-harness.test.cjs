@@ -59,7 +59,8 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert(first.parameters.options.agents['stable-worker'].tools.includes('Read'))
   assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, undefined, 'never send a sub-100k window that makes the CLI discard the agent')
   assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.296')
-  assert(first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
+  assert(!first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
+  assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_exec'))
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_file'))
   const delegated = await first.parameters.options.canUseTool('Agent', { subagent_type: 'Explore', model: 'outside-model', isolation: 'worktree', mode: 'bypassPermissions', run_in_background: true, prompt: 'inspect' })
   assert.equal(delegated.updatedInput.subagent_type, 'stable-worker')
@@ -167,6 +168,21 @@ test('text-only requests use an ephemeral session with no tools or persistent co
   assert.equal((await options.canUseTool('Bash', {})).behavior, 'deny')
   assert.equal(fs.existsSync(path.join(sessionDirectory(root, 'text'), 'stable-thread.json')), false)
   assert.equal(toolFactories, 0)
+})
+
+test('network policy changes rebuild the SDK tool catalog for parent and child sessions', async t => {
+  const { workspace, runner, sdk } = fixture(t)
+  let previous
+  for (const networkAccess of [true, false, true]) {
+    await runner.run('inspect tools', model, secret, 1000, undefined, 'workspace-write', [], { key: 'bash-policy', cwd: workspace, networkAccess })
+    const options = sdk.captures.at(-1).parameters.options
+    assert.equal(options.tools.includes('Bash'), networkAccess)
+    assert.equal(options.agents['stable-worker'].tools.includes('Bash'), networkAccess)
+    assert(!options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
+    assert.equal(options.resume, undefined)
+    assert.notEqual(options.sessionId, previous)
+    previous = options.sessionId
+  }
 })
 
 test('skill allowlists combine selected and automatic grants, discard metadata permissions, and revoke on resume', async t => {

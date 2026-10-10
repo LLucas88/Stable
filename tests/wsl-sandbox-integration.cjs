@@ -4,7 +4,6 @@ const fs = require('node:fs'), path = require('node:path'), os = require('node:o
 const { spawn } = require('node:child_process')
 const { createInterface } = require('node:readline')
 const { runWslCommand, linuxPath, commandEnvironment, DISTRO, NODE } = require('../desktop/services/wsl-sandbox.cjs')
-const { ClaudeHarnessRunner } = require('../desktop/services/claude-harness.cjs')
 // Explicit acceptance command, never silently skipped when WSL is unavailable.
 test('real WSL2 sandbox enforces file, network, interop, timeout and cancellation boundaries', { timeout: 300000 }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-wsl-test-'))
@@ -109,41 +108,4 @@ test('real WSL2 sandbox enforces file, network, interop, timeout and cancellatio
       await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('close', resolve) }); clearTimeout(killTimer)
     }
   })
-})
-
-test('real Claude SDK calls the real WSL sandbox after approval and returns output to the model bridge', { timeout: 60000 }, async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-sdk-wsl-'))
-  const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace)
-  const output = path.join(workspace, 'sdk-wsl.txt')
-  let calls = 0, approvals = 0
-  const runner = new ClaudeHarnessRunner({
-    userData: root, workspace,
-    fetchImpl: async (url, request) => {
-      assert.equal(url, 'https://provider.invalid/v1/chat/completions')
-      const body = JSON.parse(request.body)
-      calls++
-      let delta
-      if (calls === 1) {
-        assert(body.tools.some(tool => tool.function.name === 'mcp__stable__stable_exec'))
-        delta = { tool_calls: [{ index: 0, id: 'sdk-wsl-command', type: 'function', function: { name: 'mcp__stable__stable_exec', arguments: JSON.stringify({ command: 'printf SDK_WSL_OK > sdk-wsl.txt; cat sdk-wsl.txt', cwd: workspace, timeoutMs: 10000 }) } }] }
-      } else {
-        assert.equal(calls, 2)
-        assert.match(body.messages.find(message => message.role === 'tool' && message.tool_call_id === 'sdk-wsl-command')?.content || '', /SDK_WSL_OK/)
-        delta = { content: 'SDK_WSL_ROUNDTRIP_OK' }
-      }
-      const chunk = { id: 'sdk-wsl-fixture', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: calls === 1 ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 10 } }
-      return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
-    },
-  })
-  t.after(() => { runner.cancel(); assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) })
-  const result = await runner.run('write the sandbox fixture', { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }, 'fixture-key', 45000, event => {
-    if (event.eventType === 'approval/request' && event.status === 'running') {
-      assert.equal(fs.existsSync(output), false)
-      assert.match(event.detail, /sdk-wsl\.txt/)
-      assert.equal(runner.answerApproval(event.requestId, true), true); approvals++
-    }
-  }, 'workspace-write', [], { key: 'sdk-wsl-fixture', cwd: workspace })
-  assert.equal(result, 'SDK_WSL_ROUNDTRIP_OK')
-  assert.equal(approvals, 1); assert.equal(calls, 2)
-  assert.equal(fs.readFileSync(output, 'utf8'), 'SDK_WSL_OK')
 })

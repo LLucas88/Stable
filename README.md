@@ -1,6 +1,6 @@
 # Stable
 
-> `2cluade-agent` 分支：本机执行入口统一为 Claude Agent SDK，命令改为 WSL2 沙箱。旧引擎运行程序和启动/打包依赖已移除。以下历史版本记录不代表本分支当前架构；当前配置见 [WSL2 文档](docs/CLAUDE_AGENT_SDK.md)。
+> `cluade-sdk-bash` 分支：基于 `2cluade-agent` 当前源码，命令执行改用 Claude Agent SDK 原生 Bash（Windows Git Bash），保留 Stable 审批，只读或禁网任务禁用 Bash。当前配置见 [原生 Bash 文档](docs/CLAUDE_NATIVE_BASH.md)。以下版本记录为历史记录。
 
 > 当前工作区源码（2026-09-30）：聊天、工作流、定时和协作的本机模型执行默认使用官方 Claude Agent SDK，沿用已有模型服务与加密 Key，不需要 Stable Cloud 登录。本次未生成正式安装器或发布。接入与验证记录见 [Claude Agent SDK 文档](docs/CLAUDE_AGENT_SDK.md)。以下版本章节保留历史记录。
 
@@ -160,7 +160,7 @@ npm start
 
 ## Harness 运行时
 
-`npm ci` 安装固定的 Claude Agent SDK。命令使用专用 StableAgent WSL2 环境中的 Anthropic sandbox-runtime，运行 `npm run sandbox:setup` 安装，运行 `npm run test:wsl-integration` 验证。本分支只有 Claude 执行入口；模型服务仍取 Stable 当前配置。详见 [接入文档](docs/CLAUDE_AGENT_SDK.md)。
+`npm ci` 安装固定的 Claude Agent SDK。命令使用 SDK 原生 Bash，Windows 需要 Git for Windows。运行 `npm run test:claude-integration` 验证本地 SDK/命令链路。本分支只有 Claude 执行入口；模型服务仍取 Stable 当前配置。详见 [接入文档](docs/CLAUDE_NATIVE_BASH.md)。
 
 ## 构建安装包
 

@@ -22,8 +22,8 @@ function prepareClaudeSkills({ directory, workspace, readableRoots, selectedSkil
     if (!content.trim()) throw Error(`Skill 缺少可读取的说明：${skill.name}`)
     const front = content.replace(/^\uFEFF/, '').match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
     const meta = front ? YAML.parse(front[1]) || {} : {}
-    // SDK !`command` preprocessing would run a host shell outside stable_exec.
-    // Keep snippets as ordinary inline code for explicit WSL tool execution.
+    // SDK !`command` preprocessing would run a host shell outside Stable approval hooks.
+    // Keep snippets as ordinary inline code for explicit approved Bash execution.
     const body = (front ? content.replace(/^\uFEFF/, '').slice(front[0].length) : content).replace(/(^|\s)!`/g, '$1`')
     const identity = source || skill.id || skill.name
     const hash = createHash('sha256').update(String(identity)).digest('hex').slice(0, 10)

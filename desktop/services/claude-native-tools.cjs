@@ -4,12 +4,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { resolveBoundPath } = require('./claude-tools.cjs')
+const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
 
 const TOOLS = Object.freeze(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit'])
 const WRITES = new Set(['Write', 'Edit', 'NotebookEdit'])
 const SEARCH_LIMIT = 30_000
 const MAX_MUTATION_BYTES = 2_000_000
 const FIELDS = {
+  Bash: ['command', 'timeout', 'description', 'run_in_background', 'dangerouslyDisableSandbox'],
   Read: ['file_path', 'offset', 'limit', 'pages'],
   Write: ['file_path', 'content'],
   Edit: ['file_path', 'old_string', 'new_string', 'replace_all'],
@@ -75,13 +77,15 @@ async function approval(requestApproval, request, signal) {
   } finally { signal?.removeEventListener('abort', listener) }
 }
 
-function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = [], sandboxMode = 'workspace-write', requestApproval, signal, onToolEvent = () => {} }) {
+function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = [], sandboxMode = 'workspace-write', networkAccess = false, browserAvailable = false, requestApproval, signal, onToolEvent = () => {} }) {
   const cwd = fs.realpathSync(path.resolve(workspace))
   if (!fs.statSync(cwd).isDirectory()) throw Error('工作区路径不是文件夹。')
   const canonicalRoots = values => [...new Set(values.map(value => fs.realpathSync(path.resolve(value))))]
   const writes = canonicalRoots([cwd, ...writableRoots])
   const reads = canonicalRoots([...writes, ...readableRoots])
   if (sandboxMode !== 'read-only' && writes.some(root => samePath(root, path.parse(root).root))) throw Error('不能将整个盘符根目录作为可写工作区。')
+  const bashEnabled = sandboxMode !== 'read-only' && networkAccess === true
+  const tools = [...TOOLS, ...(bashEnabled ? ['Bash'] : [])]
   const calls = new Map()
   let serial = 0
   function protectedWrite(target) {
@@ -110,11 +114,25 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
       for (const entry of children) pending.push(path.join(canonical, entry.name))
     }
   }
-  async function validate(name, input, activeSignal) {
+  async function validate(name, input, activeSignal, executionCwd = cwd) {
     aborted(activeSignal)
-    if (!TOOLS.includes(name)) throw Error('此原生工具未获准；命令请使用 Stable 的 stable_exec 沙箱工具。')
+    if (name === 'Bash' && !bashEnabled) throw Error('只读或禁网模式不开放原生 Bash：本机命令无法保证文件只读或禁止网络。')
+    if (!tools.includes(name)) throw Error('此原生工具未获准。')
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !FIELDS[name].includes(key))) throw Error('原生工具参数包含不支持的字段。')
     const args = { ...input }, writing = WRITES.has(name)
+    if (name === 'Bash') {
+      text(args.command, '命令')
+      if (!args.command.trim() || args.command.length > 100_000) throw Error('命令不能为空或超过 100000 字符。')
+      if (args.timeout !== undefined && (!Number.isInteger(args.timeout) || args.timeout < 1 || args.timeout > 600_000)) throw Error('Bash timeout 必须为 1 到 600000 毫秒。')
+      if (args.description !== undefined && typeof args.description !== 'string') throw Error('Bash description 必须为文字。')
+      for (const key of ['run_in_background', 'dangerouslyDisableSandbox']) if (args[key] !== undefined && args[key] !== false) throw Error('Bash 不允许后台运行或覆盖沙箱设置。')
+      if (browserAvailable && isBrowserScreenshotCommand(args.command)) throw Error('截图命令未执行。' + HTML_PREVIEW_GUIDANCE)
+      args.timeout ??= 60_000
+      args.run_in_background = false
+      const target = resolveBoundPath(executionCwd, cwd, writes)
+      if (!fs.statSync(target).isDirectory()) throw Error('命令工作目录不是文件夹。')
+      return { args, target, snapshot: JSON.stringify(directoryChain(target)) }
+    }
     if (writing && sandboxMode === 'read-only') throw Error('当前为只读模式，不能写入文件。')
     const field = name === 'NotebookEdit' ? 'notebook_path' : ['Glob', 'Grep'].includes(name) ? 'path' : 'file_path'
     const requested = path.resolve(cwd, text(args[field] === undefined && field === 'path' ? cwd : args[field], '文件路径'))
@@ -138,24 +156,25 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   }
   async function authorize(name, input, id, options = {}) {
     const activeSignal = signal && options.signal ? AbortSignal.any([signal, options.signal]) : signal || options.signal
-    const checked = await validate(name, input, activeSignal)
+    const executionCwd = options.cwd || calls.get(id)?.cwd || cwd
+    const checked = await validate(name, input, activeSignal, executionCwd)
     const signature = JSON.stringify(Object.fromEntries(Object.entries(checked.args).sort(([a], [b]) => a.localeCompare(b))))
     let entry = calls.get(id)
     if (entry) {
-      if (entry.name !== name || entry.signature !== signature) throw Error('工具调用参数已变化，未执行。')
+      if (entry.name !== name || entry.signature !== signature || entry.cwd !== executionCwd) throw Error('工具调用参数已变化，未执行。')
       await entry.promise
-      const current = await validate(name, entry.input, activeSignal)
+      const current = await validate(name, entry.input, activeSignal, executionCwd)
       if (entry.snapshot !== current.snapshot) throw Error('审批期间文件或路径已变化，请重新读取再操作。')
       aborted(activeSignal)
       return checked.args
     }
-    entry = { name, signature, args: checked.args, input: { ...input }, snapshot: checked.snapshot }
+    entry = { name, signature, cwd: executionCwd, args: checked.args, input: { ...input }, snapshot: checked.snapshot }
     calls.set(id, entry)
     onToolEvent({ id, name, args: checked.args, status: 'running' })
     entry.promise = (async () => {
-      if (WRITES.has(name)) {
-        await approval(requestApproval, { name, args: checked.args, cwd }, activeSignal)
-        const current = await validate(name, input, activeSignal)
+      if (WRITES.has(name) || name === 'Bash') {
+        await approval(requestApproval, { name, args: checked.args, cwd: name === 'Bash' ? checked.target : cwd, ...(name === 'Bash' ? { command: checked.args.command } : {}) }, activeSignal)
+        const current = await validate(name, input, activeSignal, executionCwd)
         if (current.target !== checked.target || current.snapshot !== checked.snapshot) throw Error('审批期间文件或路径已变化，请重新读取再操作。')
       }
       aborted(activeSignal)
@@ -170,7 +189,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   async function preToolUse(input, toolUseID, options = {}) {
     const id = input.tool_use_id || toolUseID || `native-tool-${++serial}`
     try {
-      const updatedInput = await authorize(input.tool_name, input.tool_input, id, options)
+      const updatedInput = await authorize(input.tool_name, input.tool_input, id, { ...options, cwd: input.cwd })
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput } }
     } catch (error) {
       failed(id, input.tool_name, input.tool_input, error)
@@ -185,15 +204,18 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   async function postToolUse(input) {
     const id = input.tool_use_id
     const entry = calls.get(id)
-    if (entry) { calls.delete(id); onToolEvent({ id, name: entry.name, args: entry.args, status: 'completed', output: input.tool_response }) }
+    if (entry) { calls.delete(id); onToolEvent({ id, name: entry.name, args: entry.args, status: entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response }) }
     return {}
   }
   async function postToolUseFailure(input) {
     const entry = calls.get(input.tool_use_id)
-    if (entry) failed(input.tool_use_id, entry.name, entry.args, Error(input.error || '原生工具执行失败。'))
+    if (entry) {
+      calls.delete(input.tool_use_id)
+      onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, status: input.is_interrupt ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
+    }
     return {}
   }
-  return { tools: [...TOOLS], preToolUse, postToolUse, postToolUseFailure, canUseTool }
+  return { tools, preToolUse, postToolUse, postToolUseFailure, canUseTool }
 }
 
 module.exports = { createNativeToolGuard, NATIVE_FILE_TOOLS: TOOLS }

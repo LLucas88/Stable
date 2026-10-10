@@ -95,9 +95,11 @@ function fixture(t) {
             assert.equal(capture.write.hookSpecificOutput.permissionDecision, 'deny')
             assert.match(capture.write.hookSpecificOutput.permissionDecisionReason, /只读/)
             if (process.platform === 'win32') {
-              capture.command = await tools.find(tool => tool.name === 'stable_exec').handler({ command: 'Write-Output SHOULD_NOT_RUN' })
-              assert.equal(capture.command.isError, true)
-              assert.match(capture.command.content[0].text, /拒绝|批准|审批/)
+              assert(!tools.some(tool => tool.name === 'stable_exec'))
+              assert(!options.tools.includes('Bash'))
+              capture.command = await options.canUseTool('Bash', { command: 'printf SHOULD_NOT_RUN' })
+              assert.equal(capture.command.behavior, 'deny')
+              assert.match(capture.command.message, /只读|禁网/)
             }
           }
           // Exercise the real loopback Messages bridge and parent provider
@@ -131,7 +133,7 @@ function fixture(t) {
     ...require('../desktop/services/inventory.cjs'), ...require('../desktop/services/prompts.cjs'),
     ...require('../desktop/services/delivery.cjs'), ...require('../desktop/services/stream-transcript.cjs'),
     ...require('../desktop/services/attachments.cjs'), ...require('../desktop/services/model-reasoning.cjs'),
-    ...require('../desktop/services/tool-approval.cjs'), ...require('../desktop/services/approval-ledger.cjs'),
+    ...require('../desktop/services/tool-approval.cjs'), ...require('../desktop/services/approval-ledger.cjs'), redactApproval: require('../desktop/services/approval-ledger.cjs').redact,
     ...require('../desktop/services/workflow-graph.cjs'), ...require('../desktop/services/automation.cjs'),
     isWendingCliPrompt: () => false, writeWorkflowOutput, activeWorkflowRun: undefined,
   })
@@ -233,9 +235,8 @@ test('real workflow AI retains read-only tools, rejects unattended command appro
   assert.equal(capture.write.hookSpecificOutput.permissionDecision, 'deny')
   assert.equal(fs.existsSync(path.join(env.workspace, 'forbidden.txt')), false)
   if (process.platform === 'win32') {
-    assert.equal(capture.command.isError, true)
-    assert.equal(env.approvals.length, 1)
-    assert.equal(env.approvals[0][1], false)
+    assert.equal(capture.command.behavior, 'deny')
+    assert.equal(env.approvals.length, 0)
   }
   assert.equal(env.upstream.length, 1)
   assert.equal(env.upstream[0].tools, undefined)

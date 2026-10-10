@@ -5,7 +5,7 @@ const { buildTraceTimeline, groupTraceTimeline, traceItemStatus, savedTraceStatu
 const item = (id, time, props = {}) => ({ id, runId: 'r1', kind: 'status', title: id, status: 'completed', time, ...props })
 
 test('verified runtime version is retained in the expandable execution details', () => {
-  const entry = item('runtime-info', 1, { title: '执行环境', detail: 'Claude Agent SDK 0.3.296 · Claude Code 2.1.296 · WSL2 命令沙箱' })
+  const entry = item('runtime-info', 1, { title: '执行环境', detail: 'Claude Agent SDK 0.3.296 · Claude Code 2.1.296 · SDK 原生 Bash（本机执行，无 WSL2 隔离）' })
   assert.deepEqual(buildTraceTimeline([entry]), [entry])
 })
 
@@ -97,6 +97,7 @@ test('pending approvals remain outside folded groups, and completed histories ha
 })
 
 test('Stable command and spreadsheet calls receive concise activity labels', () => {
+  assert.equal(traceActionLabel(item('bash',0,{kind:'tool',toolName:'Bash'})), '运行了命令')
   assert.equal(traceActionLabel(item('exec',0,{kind:'tool',title:'使用工具 stable_exec'})), '运行了命令')
   assert.equal(traceActionLabel(item('excel',0,{kind:'tool',toolName:'stable_excel'})), '处理了表格')
   assert.equal(traceActionLabel(item('edit',0,{kind:'tool',toolName:'Edit'})), '编辑了文件')

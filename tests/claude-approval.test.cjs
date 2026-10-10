@@ -10,8 +10,8 @@ const sdk = {
       const message = (await prompt[Symbol.asyncIterator]().next()).value
       yield { type: 'system', subtype: 'init', mcp_servers: [{ name: 'stable', status: 'connected' }] }
       const command = message.message.content[0].text
-      const result = await options.mcpServers.stable.tools.find(tool => tool.name === 'stable_exec').handler({ command })
-      yield { type: 'result', subtype: 'success', result: result.isError ? 'decline' : 'accept' }
+      const result = await options.canUseTool('Bash', { command })
+      yield { type: 'result', subtype: 'success', result: result.behavior === 'deny' ? 'decline' : 'accept' }
     } }
   },
 }
@@ -20,8 +20,8 @@ test('Claude conversation grants persist, bind exact command and permission scop
   fs.mkdirSync(workspace); let store = new StableStore(root)
   t.after(() => { store.close(); assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true }) })
   const a = store.activeConversationId(), b = store.createConversation('other')
-  async function run(id, command, decision, expectedPrompts, networkAccess = false) {
-    const runner = new ClaudeHarnessRunner({ userData: root, workspace, sdk, executable: process.execPath, executeCommand: async () => ({ code: 0 }),
+  async function run(id, command, decision, expectedPrompts, networkAccess = true) {
+    const runner = new ClaudeHarnessRunner({ userData: root, workspace, sdk, executable: process.execPath,
       hasConversationApproval: (id, key) => store.hasConversationApproval(id, key), grantConversationApproval: (id, key, label) => store.grantConversationApproval(id, key, label) })
     let prompts = 0
     const result = await runner.run(command, { model: 'fixture', baseURL: 'https://fixture.invalid' }, 'fixture', 3000, event => {
@@ -36,7 +36,7 @@ test('Claude conversation grants persist, bind exact command and permission scop
   store.close(); store = new StableStore(root)
   await run(a, 'pwd', 'once', 0)
   await run(a, 'ls', 'deny', 1)
-  await run(a, 'pwd', 'deny', 1, true)
+  await run(a, 'pwd; pwd', 'deny', 1)
   await run(b, 'pwd', 'deny', 1)
   store.clearMessages(a)
   await run(a, 'pwd', 'once', 1)
