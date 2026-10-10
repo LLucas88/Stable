@@ -45,7 +45,10 @@ async function main() {
     expect(getComputedStyle(label).backgroundPosition!==pos,'Running animation is not advancing');
     expect(!document.querySelector('.trace-action-state.trace-running-label, .trace-issue.trace-running-label'),'State colors must not animate');
     const first=document.querySelector('.trace-group');
-    expect(first.querySelector('summary').textContent.includes('30 项操作'),'Group count incorrect');
+    expect(!Array.from(document.querySelectorAll('.trace-group > summary')).some(node=>/项操作/.test(node.textContent)),'Operation totals must be hidden');
+    const timer=document.querySelector('.trace-elapsed');
+    expect(!timer.textContent.includes('思考中'),'Thinking label must be hidden');
+    expect(timer.textContent.trim().length>0 && timer.getAttribute('aria-label').startsWith('执行时长 '),'Elapsed time must remain visible and accessible');
     expect(first.querySelector('summary .trace-issue').getBoundingClientRect().height>0,'Failure hidden when group folded');
     expect(first.querySelector('.trace-action').getBoundingClientRect().height===0,'Folded tools are visible');
     expect(document.querySelector('.trace-timeline > .trace-action').getBoundingClientRect().height>0,'Pending approval hidden');

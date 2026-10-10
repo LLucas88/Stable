@@ -1963,7 +1963,6 @@ function TraceActionGroup({ items, status, agentNames }: { items: AgentTraceItem
     <summary>
       <Wrench size={15} aria-hidden="true" />
       <span className={`trace-group-label${runningCount > 0 ? ' trace-running-label' : ''}`}>{title}</span>
-      <span className="trace-group-count">{items.length} 项操作</span>
       {runningCount > 0 && <span className="trace-action-state">{runningCount} 项运行中</span>}
       {failedCount > 0 && <span className="trace-issue">{failedCount} 项失败</span>}
       {cancelledCount > 0 && <span className="trace-group-count">{cancelledCount} 项已取消</span>}
@@ -2006,7 +2005,7 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
   const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
     <div className="trace-header"><button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
-      <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status === 'running' ? '思考中 · ' : '用时 '}{elapsed}</span>
+      <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status !== 'running' && '用时 '}{elapsed}</span>
       {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
       {failedCount > 0 && <span className="trace-issue">{failedCount} 项操作失败</span>}
       {pendingCount > 0 && <span className="trace-pending">{pendingCount} 项待审批</span>}
