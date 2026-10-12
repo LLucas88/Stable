@@ -24,17 +24,22 @@ function normalizeContextUsage(raw, model) {
   }
 }
 
+function refreshContextCapacity(usage, model) {
+  if (!usage || usage.model !== model.model || count(usage.usedTokens) === null) return null
+  const maxTokens = modelLimits(model).contextWindow
+  return { ...usage, maxTokens, percentage: usage.usedTokens / maxTokens * 100 }
+}
+
 function readContextUsage(userData, key, model) {
   try {
     const saved = JSON.parse(fs.readFileSync(assertSessionPath(userData, key, 'stable-thread.json'), 'utf8'))
     if (saved.model !== model.model || saved.baseURL !== model.baseURL) return null
     const usage = saved.contextUsage
-    if (!usage || usage.maxTokens !== modelLimits(model).contextWindow || count(usage.usedTokens) === null) return null
-    return usage
+    return refreshContextCapacity(usage, model)
   } catch (error) {
     if (error.code === 'ENOENT' || error instanceof SyntaxError) return null
     throw error
   }
 }
 
-module.exports = { normalizeContextUsage, readContextUsage }
+module.exports = { normalizeContextUsage, readContextUsage, refreshContextCapacity }

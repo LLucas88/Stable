@@ -306,9 +306,9 @@ function pendingUpstream(request, release) {
   })
   return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
 }
-function upstream({ text, calls, reasoning = 'fixture thinking' }) {
+function upstream({ text, calls, reasoning = 'fixture thinking', inputTokens = 50 }) {
   const delta = { reasoning_content: reasoning, ...(text ? { content: text } : {}), ...(calls ? { tool_calls: calls.map((call, index) => ({ index, id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.input) } })) } : {}) }
-  const chunk = { id: 'chat-native-fixture', object: 'chat.completion.chunk', model: model.model, choices: [{ index: 0, delta, finish_reason: calls ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 10 } }
+  const chunk = { id: 'chat-native-fixture', object: 'chat.completion.chunk', model: model.model, choices: [{ index: 0, delta, finish_reason: calls ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: inputTokens, completion_tokens: 10 } }
   return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
 }
 function fixture(t, responder, options = {}) {
@@ -718,4 +718,43 @@ test('real SDK exposes context usage while a model response is streaming', { tim
   const result = await settled
   if (result.error) throw result.error
   assert.equal(result.value, 'FIRST_REPLY')
+})
+
+
+test('real SDK automatically compacts and resumes at the configured context window', { timeout: 120000 }, async t => {
+  for (const contextWindow of [128000, 200000, 1000000]) await t.test(String(contextWindow), async t => {
+    let seedTurns = 0, summaries = 0
+    // Give the runtime real compressible history, not just inflated usage metadata
+    // (the latter is correctly treated as an oversized, uncompressible fixed prefix).
+    const filler = 'fixture detail '.repeat(Math.ceil(contextWindow * 1.15 / 15))
+    const events = []
+    const { root, workspace, runner, requests } = fixture(t, body => {
+      const text = JSON.stringify(body.messages)
+      if (/summariz|summary of (?:the |this )?conversation|summary.*conversation so far/i.test(text)) {
+        summaries++
+        return upstream({ text: 'COMPACTED_CONTEXT: Preserve KEEP_AFTER_COMPACT. Continue the user task.', inputTokens: 2000 })
+      }
+      if (seedTurns < 3) {
+        seedTurns++
+        return upstream({ text: `TURN_${seedTurns}: ${filler}`, inputTokens: Math.floor(contextWindow * (seedTurns === 3 ? .86 : seedTurns * .15)) })
+      }
+      assert.match(text, /KEEP_AFTER_COMPACT/)
+      assert.match(text, /COMPACTED_CONTEXT/)
+      return upstream({ text: 'AFTER_COMPACTION_OK', inputTokens: 2500 })
+    })
+    const profile = { ...model, contextWindow }
+    const session = { key: 'compact-fixture', cwd: workspace }
+    for (let turn = 1; turn <= 3; turn++) {
+      assert.match(await runner.run('KEEP_AFTER_COMPACT: perform fixture step ' + turn, profile, credential, 45000, event => events.push(event), 'read-only', [], session), new RegExp('^TURN_' + turn))
+    }
+    assert.equal(await runner.run('Continue the fixture task.', profile, credential, 45000, event => events.push(event), 'read-only', [], session), 'AFTER_COMPACTION_OK')
+    assert.equal(summaries, 1, 'The native SDK must issue one actual compaction request')
+    assert(events.some(event => event.title === '上下文已自动压缩'), 'The native runtime must emit compact_boundary')
+    assert.equal(requests.length, 5)
+    const sizes = requests.map(body => JSON.stringify(body.messages).length)
+    assert(sizes.at(-1) < Math.max(...sizes.slice(0, -1)), 'the resumed request uses the compacted history')
+    const usage = require('../desktop/services/context-usage.cjs').readContextUsage(root, session.key, profile)
+    assert(usage.usedTokens < contextWindow * .8, 'the saved usage snapshot reflects compaction')
+    console.log('NATIVE_COMPACTION_VERIFIED', JSON.stringify({ contextWindow, summaries, requests: requests.length, afterTokens: usage.usedTokens }))
+  })
 })

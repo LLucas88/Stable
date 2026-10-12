@@ -57,7 +57,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert(first.closed)
   for (const name of ['Agent', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit']) assert(first.parameters.options.tools.includes(name))
   assert(first.parameters.options.agents['stable-worker'].tools.includes('Read'))
-  assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, undefined, 'never send a sub-100k window that makes the CLI discard the agent')
+  assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, 100000, 'only send a valid child compaction window')
   assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.296')
   assert(!first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_exec'))
@@ -75,6 +75,8 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert.equal(first.parameters.options.env.ENABLE_TOOL_SEARCH, 'true')
   assert.equal(first.parameters.options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '0')
   assert.equal(first.parameters.options.settings.autoMemoryEnabled, true)
+  assert.equal(first.parameters.options.settings.autoCompactEnabled, true)
+  assert.equal(first.parameters.options.settings.autoCompactWindow, 102400)
   assert(first.parameters.options.settings.autoMemoryDirectory.startsWith(path.join(root, 'claude', 'project-memory')))
   assert.equal(await runner.run('follow-up', model, secret, 1000, undefined, 'workspace-write', [], session), 'done')
   assert.equal(sdk.captures[1].parameters.options.resume, first.parameters.options.sessionId)
@@ -124,7 +126,7 @@ test('external config requires opt-in and activation approval; revoked config re
 
 test('child compaction is independently lowered within the runtime supported window', async t => {
   const { workspace, runner, sdk } = fixture(t)
-  for (const [contextWindow, expected] of [[1_000_000, 640_000], [150_000, 100_000], [10_000_000, 1_000_000]]) {
+  for (const [contextWindow, expected] of [[1_000_000, 640_000], [150_000, 100_000], [10_000_000, 800_000]]) {
     await runner.run('inspect compaction settings', { ...model, contextWindow }, secret, 1000, undefined, 'workspace-write', [], { cwd: workspace })
     const options = sdk.captures.at(-1).parameters.options
     assert.equal(options.agents['stable-worker'].autoCompactWindow, expected)
@@ -385,4 +387,13 @@ test('native tool trace records returned output separately from arguments', asyn
   const finished = events.find(event => event.id === 'write-result' && event.status === 'completed')
   assert.match(finished.inputDetail, /file contents/)
   assert.deepEqual(JSON.parse(finished.detail), { success: true, bytes: 13 })
+})
+
+
+test('unsupported small compaction windows fail before touching session data or starting the SDK', async t => {
+  const { root, workspace, runner, sdk } = fixture(t)
+  await assert.rejects(runner.run('fixture', { ...model, contextWindow: 64000 }, secret, 1000, undefined, 'read-only', [], { key: 'small', cwd: workspace }), /100k/)
+  assert.equal(sdk.captures.length, 0)
+  assert.equal(runner.busy, false)
+  assert.equal(fs.existsSync(sessionDirectory(root, 'small')), false)
 })

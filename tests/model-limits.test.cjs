@@ -34,3 +34,23 @@ test('catalog limits reserve room for output and invalid metadata uses conservat
   }
   assert.equal(modelLimits({ contextWindow: -1, maxOutputTokens: Infinity }).contextWindow, 128000)
 })
+
+
+test('all discovered official models have verified capacities and SDK-valid compaction windows', () => {
+  const groups = [
+    ['https://open.bigmodel.cn/api/paas/v4', 128000, ['glm-4.5','glm-4.5-air']],
+    ['https://open.bigmodel.cn/api/paas/v4', 200000, ['glm-4.6','glm-4.7','glm-5','glm-5-turbo','glm-5.1']],
+    ['https://open.bigmodel.cn/api/paas/v4', 1000000, ['glm-5.2','glm-5.3','glm-5.3-flash','glm-5.3-flashx']],
+    ['https://api.deepseek.com', 1000000, ['deepseek-flash','deepseek-v4-pro']],
+  ]
+  for (const [baseURL, contextWindow, models] of groups) for (const model of models) {
+    const limits = modelLimits({baseURL,model})
+    assert.equal(limits.contextWindow,contextWindow,model)
+    assert(limits.autoCompactTokenLimit>=100000 && limits.autoCompactTokenLimit<=1000000,model)
+    assert(limits.autoCompactTokenLimit+limits.outputTokens<contextWindow,model)
+    assert.equal(limits.sdkModel.endsWith('[1m]'),contextWindow>200000)
+  }
+  assert.equal(modelLimits({baseURL:'https://proxy.invalid',model:'glm-5.3-flashx'}).contextWindow,128000)
+  assert.equal(modelLimits({baseURL:'https://open.bigmodel.cn',model:'glm-unknown'}).contextWindow,128000)
+  assert.equal(modelLimits({baseURL:'https://open.bigmodel.cn',model:'glm-5.3-flashx',contextWindow:200000}).contextWindow,200000)
+})

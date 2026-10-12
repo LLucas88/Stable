@@ -91,6 +91,8 @@ class ClaudeHarnessRunner {
     if (this.busy) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先配置模型服务。')
     if (!this.ready()) throw new Error('Claude Agent SDK 运行时不完整，请重新安装依赖或更新 Stable。')
+    const limits = require('./model-limits.cjs').modelLimits(model)
+    if (limits.autoCompactTokenLimit < 100_000) throw new Error('此模型的安全上下文预算低于当前 SDK 支持的自动压缩窗口下限（100k），请改用更大上下文的模型。')
     const workspace = path.resolve(session.cwd || this.options.workspace)
     const writableRoots = [...new Set([workspace, ...(session.writableRoots || []).map(root => path.resolve(root))])]
     if (process.platform === 'win32' && sandboxMode !== 'read-only' && writableRoots.some(root => path.parse(root).root === root)) throw new Error('不能将整个盘符根目录作为执行工作区，请选择具体子文件夹。')
@@ -137,7 +139,7 @@ class ClaudeHarnessRunner {
       if (saved.model !== model.model || saved.baseURL !== model.baseURL || saved.cwd !== workspace || saved.contextPolicy !== session.contextPolicy || saved.toolPolicy !== toolPolicy || saved.skillPolicy !== skillOptions.fingerprint || saved.memoryEnabled !== memory.enabled || saved.extensionPolicy !== extensions.fingerprint) saved = null
     }
     activeHomes.add(directory); this.busy = true; this.cancelled = false; this.steerReady = false
-    this.contextModel = model; this.contextSnapshot = saved?.contextUsage || null; this.contextPending = null
+    this.contextModel = model; this.contextSnapshot = require('./context-usage.cjs').refreshContextCapacity(saved?.contextUsage, model); this.contextPending = null
     this.threadId = saved?.threadId || randomUUID(); this.turnId = randomUUID(); this.expectedResultUuid = this.turnId
     this.approvalConversation = session.key; this.abortController = new AbortController()
     const queue = inputQueue(); this.input = queue
@@ -241,7 +243,7 @@ class ClaudeHarnessRunner {
         return value
       }
       // The CLI rejects the entire agent definition for windows below 100k.
-      const compactBudget = require('./model-limits.cjs').modelLimits(model).autoCompactTokenLimit
+      const compactBudget = limits.autoCompactTokenLimit
       const workerCompactWindow = compactBudget >= 100_000 ? Math.min(1_000_000, Math.max(100_000, Math.floor(compactBudget * 0.8))) : undefined
       this.query = sdk.query({ prompt: queue, options: {
         cwd: workspace, pathToClaudeCodeExecutable: this.runtimePaths().cli, env,
@@ -251,8 +253,8 @@ class ClaudeHarnessRunner {
         ...(saved?.threadId ? { resume: saved.threadId } : { sessionId: this.threadId }),
         // The SDK's model name describes the Messages wire contract; the bridge
         // always routes to the user's actual model and never the alias above.
-        model: 'claude-sonnet-4-6', tools: server ? ['Agent', 'ToolSearch', ...nativeTools.tools, ...skillTools] : [], skills: skillOptions.names, plugins: skillOptions.plugins, settingSources: [], strictMcpConfig: true,
-        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactWindow: require('./model-limits.cjs').modelLimits(model).autoCompactTokenLimit, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
+        model: limits.sdkModel, tools: server ? ['Agent', 'ToolSearch', ...nativeTools.tools, ...skillTools] : [], skills: skillOptions.names, plugins: skillOptions.plugins, settingSources: [], strictMcpConfig: true,
+        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: true, autoCompactWindow: compactBudget, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
         includePartialMessages: true, persistSession: Boolean(session.key && !session.textOnly),
         ...(server ? { mcpServers: { stable: server, ...extensions.servers }, allowedTools: ['mcp__stable__*'] } : { mcpServers: {} }),
         ...(server ? {
@@ -310,6 +312,9 @@ class ClaudeHarnessRunner {
           if (server && !(message.mcp_servers || []).some(item => item.name === 'stable' && item.status === 'connected')) throw new Error('Claude SDK 未连接 Stable 工具服务。')
           const unavailable = Object.keys(extensions.servers).filter(name => !(message.mcp_servers || []).some(item => item.name === name && item.status === 'connected'))
           if (unavailable.length) throw new Error(`外部 MCP 未连接：${unavailable.join('、')}。请检查扩展配置后重试。`)
+        }
+        if (message.type === 'system' && message.subtype === 'compact_boundary') {
+          publish({ id: `compact:${randomUUID()}`, kind: 'status', title: '上下文已自动压缩', detail: `压缩前 ${message.compact_metadata?.pre_tokens ?? '未知'} tokens`, status: 'completed' })
         }
         if (message.type === 'user' && message.uuid === first.uuid) acceptTurn()
         if (message.type === 'system' && ['task_started', 'task_notification'].includes(message.subtype)) {
