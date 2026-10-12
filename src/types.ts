@@ -242,6 +242,7 @@ export interface ConversationSearchResult {
 export interface AnswerChapter { messageId: string; seq: number; title: string }
 
 export interface AgentState {
+  models?: ModelCatalog
   draftPrompt?: string
   recoveryText?: string
   recoveryDiagnostic?: string
@@ -694,6 +695,7 @@ export interface StableBridge {
     onEvent(handler: (state: TeamState) => void): () => void
   }
   model: {
+    discover(): Promise<{ catalog: ModelCatalog; added: number; errors: string[] }>
     save(profile: ModelProfile & { apiKey?: string }): Promise<ModelCatalog>
     remove(id: string): Promise<ModelCatalog>
     setDefault(id: string): Promise<ModelCatalog>

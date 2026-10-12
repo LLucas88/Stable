@@ -27,10 +27,12 @@ async function main() {
     const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
-    window.stable={clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
+    const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'API 模型 '+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
+    window.stable={model:{discover:async()=>({catalog:discovered,added:12,errors:[]})},clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
       chapters:async id=>window.chapterRows?.[id]||[],
       setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
       forkAnswer:async(id,messageId)=>{window.forked={id,messageId};return {...state('b'),messages:messages.map(item=>({...item,id:'fork-'+item.id})),catchAttachments:[]}},
+      configureModel:async(id,modelId)=>{window.selectedModel=modelId;return {...state(id),models:discovered,conversations:conversations.map(c=>c.id===id?{...c,modelId}:c)}},
       contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[],skills:[]}),
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
       catchReply:async(id,message)=>{window.caught.push({id,message});return state('b')},
@@ -57,6 +59,25 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 300))
+  await win.webContents.executeJavaScript(`(async()=>{
+    const tick=()=>new Promise(r=>setTimeout(r,100));
+    document.querySelector('.model-menu > summary').click();await tick();
+    document.querySelector('.effort-model-expand').click();await tick();
+    const list=document.querySelector('.model-options');
+    if(list.querySelectorAll('.model-option').length!==13)throw Error('Discovered models missing from selector');
+    if(list.scrollHeight<=list.clientHeight)throw Error('Long model list does not scroll');
+    if(getComputedStyle(document.querySelector('.model-popover')).overflowY!=='hidden')throw Error('Model selector has nested scrollbars');
+    const panel=document.querySelector('.model-popover').getBoundingClientRect();
+    if(panel.top<0||panel.bottom>innerHeight)throw Error('Model selector outside viewport');
+  })()`)
+  fs.writeFileSync(path.join(output,'all-api-models.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`(async()=>{
+    const tick=()=>new Promise(r=>setTimeout(r,100));
+    document.querySelector('input[value="api-11"]').click();await tick();
+    if(window.selectedModel!=='api-11')throw Error('Discovered model selection failed');
+    document.querySelector('.model-menu > summary').click();await tick();document.querySelector('.effort-model-expand').click();await tick();
+    document.querySelector('input[value="mock"]').click();await tick();
+  })()`)
   const bubble = await win.webContents.executeJavaScript(`(()=>{
     document.querySelector('.message-scroll').scrollTop=0;
     const rect=document.querySelector('.user-bubble').getBoundingClientRect();

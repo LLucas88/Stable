@@ -28,7 +28,7 @@ import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import { buildTraceTimeline, groupTraceTimeline, savedTraceStatus, traceActionLabel, traceItemStatus } from './trace-timeline'
+import { buildTraceTimeline, savedTraceStatus, traceCommand, traceItemStatus } from './trace-timeline'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { taskErrorMessage } from './task-feedback'
 import { ConversationWending } from './ConversationWending'
@@ -855,6 +855,19 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [modelStatus, setModelStatus] = useState('')
+  const [discoveringModels, setDiscoveringModels] = useState(false)
+  const [modelDiscoveryStatus, setModelDiscoveryStatus] = useState('')
+  async function discoverModels() {
+    if (!window.stable.model?.discover || discoveringModels) return
+    setDiscoveringModels(true)
+    try {
+      const result = await window.stable.model.discover()
+      updateAgent({ ...stateRef.current, models: result.catalog })
+      setModelDiscoveryStatus(result.errors.length ? result.errors.join('；') : `已同步 ${result.catalog.items.length} 个模型`)
+    } catch { setModelDiscoveryStatus('模型列表更新失败，已保留现有模型。') }
+    finally { setDiscoveringModels(false) }
+  }
+  useEffect(() => { void discoverModels() }, [])
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, string>>({})
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { id: string; runId: string; turn: number; step: number; time: number; content: string } | undefined>>({})
@@ -1587,8 +1600,10 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               <div className="model-effort-control">
               <details className="composer-menu model-menu capability-menu" ref={modelMenuRef} onToggle={event=>{if(!event.currentTarget.open)setShowModelList(false)}}>
                 <summary aria-label={`模型与思考强度：${activeModel?.displayName || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}><span>{activeModel?.displayName || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
-                <div className="composer-popover model-popover effort-popover" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();if(showModelList)setShowModelList(false);else if(modelMenuRef.current)modelMenuRef.current.open=false;modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()}}}>
+                <div className="composer-popover model-popover effort-popover" data-models={showModelList || undefined} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();if(showModelList)setShowModelList(false);else if(modelMenuRef.current)modelMenuRef.current.open=false;modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()}}}>
                   {showModelList ? <><button type="button" className="effort-back" onClick={()=>setShowModelList(false)}><ArrowLeft size={14}/>思考强度</button>
+                  <button type="button" className="model-refresh" disabled={discoveringModels} onClick={() => void discoverModels()}><RotateCw size={14} />{discoveringModels ? '正在同步模型…' : '同步 API 模型'}</button>
+                  {modelDiscoveryStatus && <p className="model-discovery-status" role="status">{modelDiscoveryStatus}</p>}
                   {state.models.items.length ? <fieldset className="model-options"><legend className="sr-only">当前对话使用的模型</legend>{state.models.items.map((item) => {
                     const selected = item.id === activeModel?.id
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
@@ -1917,7 +1932,7 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   return <details className="trace-action" data-status={itemStatus}>
     <summary>
       <Icon size={15} aria-hidden="true" />
-      <span className={itemStatus === 'running' && item.kind === 'tool' ? 'trace-running-label' : undefined}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceActionLabel(item)}</span>
+      <span className={`trace-command${itemStatus === 'running' && item.kind === 'tool' ? ' trace-running-label' : ''}`}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceCommand(item)}</span>
       <span className="trace-action-state">{statusLabel}</span>
       <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
     </summary>
@@ -1931,27 +1946,6 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
 
 function CatchButton({ onCatch, catching }: { onCatch?: () => void; catching?: boolean }) {
   return onCatch ? <button className="catch-button" type="button" disabled={catching} onClick={onCatch} title="将本轮提问和完整回复作为附件带入新任务"><Copy size={14} aria-hidden="true" />Catch</button> : null
-}
-
-function TraceActionGroup({ items, status, agentNames }: { items: AgentTraceItem[]; status: AgentTraceStatus; agentNames: Map<string, string> }) {
-  const runningCount = items.filter(item => traceItemStatus(item, status) === 'running').length
-  const failedCount = items.filter(item => item.status === 'failed').length
-  const cancelledCount = items.filter(item => traceItemStatus(item, status) === 'cancelled').length
-  const labels = [...new Set(items.filter(item => item.kind === 'tool').map(traceActionLabel))]
-  const title = labels.length ? labels.slice(0, 3).join('、') + (labels.length > 3 ? '等' : '') : '执行操作'
-  return <details className="trace-group">
-    <summary>
-      <Wrench size={15} aria-hidden="true" />
-      <span className={`trace-group-label${runningCount > 0 ? ' trace-running-label' : ''}`}>{title}</span>
-      {runningCount > 0 && <span className="trace-action-state">{runningCount} 项运行中</span>}
-      {failedCount > 0 && <span className="trace-issue">{failedCount} 项失败</span>}
-      {cancelledCount > 0 && <span className="trace-group-count">{cancelledCount} 项已取消</span>}
-      <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
-    </summary>
-    <div className="trace-group-items">
-      {items.map(item => <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />)}
-    </div>
-  </details>
 }
 
 function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent, onCatch, catching }: { onCatch?: () => void; catching?: boolean; items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
@@ -1968,7 +1962,6 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
       : items
     return buildTraceTimeline(entries, finalContent)
   }, [items, streaming, finalContent])
-  const groups = groupTraceTimeline(timeline, status)
   const failedCount = timeline.filter(item => item.status === 'failed').length
   const pendingCount = timeline.filter(item => item.kind === 'approval' && traceItemStatus(item, status) === 'running').length
   const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId!, item.title]))
@@ -1993,12 +1986,10 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
     </button>
     <CatchButton onCatch={onCatch} catching={catching} /></div>
     {expanded && <div className="trace-timeline" id={timelineId}>
-      {groups.map(group => group.kind === 'actions'
-        ? <TraceActionGroup key={group.id} items={group.items} status={status} agentNames={agentNames} />
-        : group.kind === 'text'
-          ? <TraceText key={group.id} content={group.item.content!} live={group.item.id === streaming?.id} />
-          : <TraceAction key={group.id} item={group.item} status={status} />)}
-      {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在准备任务…' : '本次任务没有额外执行记录。'}</p>}
+      {timeline.map(item => item.eventType === 'agent/answer'
+        ? <TraceText key={item.id} content={item.content!} live={item.id === streaming?.id} />
+        : <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />)}
+      {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在处理任务…' : '本次任务没有额外执行记录。'}</p>}
     </div>}
   </section>
 }

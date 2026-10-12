@@ -14,11 +14,16 @@ async function main() {
   const bundle = (await build({stdin:{contents:`
     import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {RunTrace} from './src/App';
     const item=(id,time,props={})=>({id,runId:'r',kind:'tool',title:'使用工具 stable_excel',status:'completed',time,...props});
-    const entries=[item('intro',1,{kind:'reasoning',eventType:'agent/answer',content:'先探查数据源，确认可以使用的经营指标。'}),
-      ...Array.from({length:30},(_,i)=>item('excel-'+i,i+2,{status:i===12?'failed':'completed',detail:'操作明细 '+i})),
-      item('next',40,{kind:'reasoning',eventType:'agent/answer',content:'开始生成报告并检查文件。'}),
-      item('exec',41,{title:'使用工具 stable_exec',status:'running'}),
-      item('approval',42,{kind:'approval',title:'需要审批',reason:'确认命令权限',status:'running',requestId:'req'})];
+    const entries=[item('intro',1,{kind:'reasoning',eventType:'agent/answer',content:'先检查资料，然后修改报告。'}),
+      item('read',2,{toolName:'Read',inputDetail:'{"file_path":"source.xlsx"}'}),
+      item('browser',3,{toolName:'stable_browser',inputDetail:'{"action":"open"}'}),
+      item('env',4,{kind:'status',id:'runtime-info',title:'执行环境'}),
+      item('automatic',5,{kind:'approval',automaticApproval:true,title:'完全访问权限'}),
+      item('write',6,{toolName:'Write',inputDetail:JSON.stringify({file_path:'report.html',content:'完整文件内容'})}),
+      item('next',7,{kind:'reasoning',eventType:'agent/answer',content:'现在更新页面样式。'}),
+      item('exec',8,{toolName:'Bash',inputDetail:'python -c "from pathlib import Path; Path(\\\'report.html\\\').write_text(\\\''+'长命令'.repeat(160)+'\\\') )"',status:'running'}),
+      item('failed',9,{toolName:'Read',status:'failed',detail:'文件不存在'}),
+      item('approval',10,{kind:'approval',title:'需要审批',reason:'确认命令权限',status:'running',requestId:'req'})];
     function Test(){const [state,setState]=useState({items:entries,status:'running',active:true});window.updateTrace=setState;window.entries=entries;
       return <RunTrace {...state} startedAt={Date.now()-10000}/>}
     createRoot(document.getElementById('root')).render(<Test/>);
@@ -31,53 +36,34 @@ async function main() {
     window.expect=(ok,message)=>{if(!ok)throw Error(message)};undefined;
   `)
   await win.webContents.executeJavaScript(`(async()=>{
-    await wait(()=>document.querySelectorAll('.trace-group').length===2);
-    expect(document.querySelectorAll('.trace-text').length===2,'Progress summaries disappeared');
-    expect(getComputedStyle(document.querySelector('.trace-text-content')).color==='rgb(0, 0, 0)','Light progress prose must be black');
-    expect(getComputedStyle(document.querySelector('.trace-summary')).color!=='rgb(0, 0, 0)','Time and status colors changed');
-    expect(getComputedStyle(document.querySelector('.trace-group')).color!=='rgb(0, 0, 0)','Tool summary color changed');
-    expect(!document.querySelector('.trace-group[open]'),'Groups must start folded');
-    expect(!document.querySelector('.run-trace .spin'),'Trace spinners must be removed');
-    expect(document.querySelectorAll('.trace-running-label').length===2,'Only the running tool and its group should animate');
-    const label=document.querySelector('.trace-group-label.trace-running-label');
-    expect(getComputedStyle(label).animationName==='trace-text-shimmer','Running label animation missing');
-    const pos=getComputedStyle(label).backgroundPosition;await new Promise(r=>setTimeout(r,150));
-    expect(getComputedStyle(label).backgroundPosition!==pos,'Running animation is not advancing');
-    expect(!document.querySelector('.trace-action-state.trace-running-label, .trace-issue.trace-running-label'),'State colors must not animate');
-    const first=document.querySelector('.trace-group');
-    expect(!Array.from(document.querySelectorAll('.trace-group > summary')).some(node=>/项操作/.test(node.textContent)),'Operation totals must be hidden');
-    const timer=document.querySelector('.trace-elapsed');
-    expect(!timer.textContent.includes('思考中'),'Thinking label must be hidden');
-    expect(timer.textContent.trim().length>0 && timer.getAttribute('aria-label').startsWith('执行时长 '),'Elapsed time must remain visible and accessible');
-    expect(first.querySelector('summary .trace-issue').getBoundingClientRect().height>0,'Failure hidden when group folded');
-    expect(first.querySelector('.trace-action').getBoundingClientRect().height===0,'Folded tools are visible');
-    expect(document.querySelector('.trace-timeline > .trace-action').getBoundingClientRect().height>0,'Pending approval hidden');
-    first.querySelector('summary').click();await tick();
-    const list=first.querySelector('.trace-group-items');expect(list.scrollHeight>list.clientHeight,'Expanded list must scroll');
-    expect(list.clientHeight<=320,'Expanded group exceeds height cap');
-    first.querySelector('.trace-action summary').click();await tick();
-    expect(first.querySelector('.trace-action-detail').getBoundingClientRect().height>0,'Individual tool detail inaccessible');
-    window.updateTrace(s=>({...s,items:[...s.items,{id:'more',runId:'r',kind:'tool',title:'使用工具 Read',status:'completed',time:32.5}]}));await tick();
-    expect(document.querySelector('.trace-group').open,'Streaming closed user-expanded group');
+    await wait(()=>document.querySelectorAll('.trace-action').length===4);
+    expect(document.querySelectorAll('.trace-text').length===2,'Public progress text missing');
+    expect(!document.querySelector('.trace-group'),'Obsolete outer operation groups remain');
+    expect(!document.querySelector('.trace-action[open]'),'Commands should start folded');
+    expect(!document.body.textContent.includes('执行环境')&&!document.body.textContent.includes('完全访问权限'),'Environment and auto approvals remain visible');
+    expect(!document.body.textContent.includes('source.xlsx')&&!document.body.textContent.includes('stable_browser'),'Read-only tools remain visible');
+    expect(document.querySelector('.trace-command').textContent==='Write report.html','File operation path not shown');
+    const running=document.querySelector('.trace-running-label');
+    expect(running.textContent.startsWith('python -c'),'Bash command not shown first');
+    expect(getComputedStyle(running).whiteSpace==='nowrap'&&getComputedStyle(running).textOverflow==='ellipsis','Command is not one-line truncated');
+    expect(running.scrollWidth>running.clientWidth,'Fixture command must exceed one line');
+    expect(document.querySelector('.trace-issue'),'Failure count disappeared');
+    running.closest('summary').click();await tick();
+    const expanded=document.querySelector('.trace-action[open]');
+    expect(expanded.querySelector('pre').textContent===window.entries.find(x=>x.id==='exec').inputDetail,'Expanded command lost content');
+    expect(document.querySelector('.trace-elapsed').textContent.length>0,'Elapsed time lost');
+    window.updateTrace(s=>({...s,items:[...s.items,{id:'hidden-read',kind:'tool',toolName:'Grep',status:'completed',time:9.5}]}));await tick();
+    expect(document.querySelector('.trace-action[open]'),'Incoming events closed expanded command');
   })()`)
-  fs.writeFileSync(path.join(output,'expanded.png'),(await win.webContents.capturePage()).toPNG())
-  win.webContents.debugger.attach('1.3')
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]})
-  await win.webContents.executeJavaScript(`expect(getComputedStyle(document.querySelector('.trace-running-label')).animationName==='none','Reduced motion must disable shimmer')`)
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[]})
-  win.webContents.debugger.detach()
+  fs.writeFileSync(path.join(output,'file-commands.png'),(await win.webContents.capturePage()).toPNG())
   await win.webContents.executeJavaScript(`(async()=>{
     window.updateTrace(s=>({...s,status:'completed',active:false,items:s.items.map(x=>x.status==='running'?{...x,status:'completed'}:x)}));await tick();
-    expect(!document.querySelector('.trace-timeline'),'Completed history should initially fold whole trace');
-    expect(document.querySelector('.trace-summary .trace-issue').getBoundingClientRect().height>0,'Historical failure lost in outer summary');
+    expect(!document.querySelector('.trace-timeline'),'Historical run must start folded');
     document.querySelector('.trace-summary').click();await tick();
-    expect(!document.querySelector('.trace-group[open]'),'Historical groups must start folded');
-    expect(!document.querySelector('.trace-pending'),'Completed approval still pending');
-    expect(!document.querySelector('.trace-running-label'),'Completed trace must stop animating');
-    document.documentElement.dataset.theme='dark';await tick();
-    expect(getComputedStyle(document.querySelector('.trace-text-content')).color===getComputedStyle(document.querySelector('.trace-text')).color,'Dark theme progress color changed');
+    expect(!document.querySelector('.trace-running-label'),'Completed command still animates');
+    expect(!document.querySelector('.trace-pending'),'Completed approval remains pending');
+    expect(document.querySelectorAll('.trace-action').length===3,'Completed records show wrong operations');
   })()`)
-  fs.writeFileSync(path.join(output,'collapsed-dark.png'),(await win.webContents.capturePage()).toPNG())
   console.log('TRACE_GROUPS_UI_PASSED');win.destroy();app.exit(0)
 }
 main().catch(e=>{console.error(e);win?.destroy();app.exit(1)})

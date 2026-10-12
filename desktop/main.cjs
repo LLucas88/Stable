@@ -1589,7 +1589,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     if (event.kind === 'tool' || event.entity === 'agent' && event.parentSessionId) {
       const previous = trace[existing]
       event.startedAt = previous?.startedAt ?? previous?.time ?? event.time
-      if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.eventType === 'tool/start' ? event.detail : undefined)
+      if (event.kind === 'tool') event.inputDetail = previous?.inputDetail || (source.inputDetail ? redactApproval(String(source.inputDetail)).slice(0, 100000) : source.eventType === 'tool/start' ? event.detail : undefined)
     }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
     checkpoint(true)
@@ -2694,6 +2694,7 @@ function registerIpc() {
   const guardModelSettings = (event) => {
     if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('不允许修改模型连接。')
   }
+  ipcMain.handle('stable:model:discover', (event) => { guardModelSettings(event); return modelRegistry.discover() })
   ipcMain.handle('stable:model:save', (event, payload) => { guardModelSettings(event); return modelRegistry.save(payload) })
   ipcMain.handle('stable:model:remove', (_event, payload) => {
     guardModelSettings(_event)

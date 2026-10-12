@@ -344,3 +344,24 @@ test('steering during context statistics collection is not lost when the earlier
   assert.deepEqual(await receipt, { accepted: true })
   assert.equal(await running, 'steered result')
 })
+
+test('native Bash trace preserves long command input separately from completed output', async t => {
+  const command = 'printf result > result.txt # ' + 'long-command '.repeat(1500)
+  const sdk = mockSdk(async function* ({ parameters }) {
+    const hooks = parameters.options.hooks
+    const pre = hooks.PreToolUse.find(item => item.matcher.includes('Bash')).hooks[0]
+    const post = hooks.PostToolUse.find(item => item.matcher.includes('Bash')).hooks[0]
+    const result = await pre({ tool_name: 'Bash', tool_use_id: 'long-bash', tool_input: { command }, cwd: parameters.options.cwd })
+    assert.equal(result.hookSpecificOutput.permissionDecision, 'allow')
+    await post({ tool_name: 'Bash', tool_use_id: 'long-bash', tool_response: { stdout: 'success' } })
+    yield { type: 'result', subtype: 'success', result: 'done' }
+  })
+  const { workspace, runner } = fixture(t, sdk), events = []
+  await runner.run('write', model, secret, 5000, event => {
+    events.push(event)
+    if(event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  const finished = events.find(event => event.id === 'long-bash' && event.status === 'completed')
+  assert.equal(finished.inputDetail, command)
+  assert.equal(finished.detail, 'success')
+})

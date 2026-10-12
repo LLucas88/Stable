@@ -127,37 +127,66 @@ test('DeepSeek migration preserves profile IDs, conversations and credentials wi
   } finally {context.store.close();rmSync(context.root,{recursive:true,force:true})}
 })
 
-test('retired local Pro is hidden and old selections use Flash without deleting history or credentials', () => {
+test('configured Pro stays visible and keeps its own route and default', () => {
   const context = setup()
   try {
     const flash = context.store.modelProfile(LEGACY_MODEL_PROFILE_ID)
-    context.store.saveModelProfile({ ...flash, model: 'deepseek-flash' })
     const pro = { ...flash, id: 'old-pro', model: 'deepseek-v4-pro' }
-    context.store.saveModelProfile(pro)
-    context.store.setDefaultModel(pro.id)
-    const conversation = context.store.createConversation({ modelId: pro.id })
-    context.secrets.set(modelSecretKey(flash.id), 'flash-key')
+    context.store.saveModelProfile(pro); context.store.setDefaultModel(pro.id)
     context.secrets.set(modelSecretKey(pro.id), 'pro-key')
-    assert.equal(context.registry.publicCatalog().items.some(item => item.id === pro.id), false)
-    assert.equal(context.registry.publicCatalog().defaultModelId, flash.id)
-    assert.equal(context.registry.resolve(pro.id).model.model, 'deepseek-flash')
-    assert.equal(context.registry.resolve(pro.id).apiKey, 'flash-key')
-    assert.equal(context.store.conversation(conversation).modelId, pro.id)
-    assert.equal(context.secrets.get(modelSecretKey(pro.id)), 'pro-key')
-    assert.throws(() => context.registry.save(pro), /已下架/)
-    assert.throws(() => context.registry.setDefault(pro.id), /已下架/)
-    context.store.saveModelProfile({ ...flash, model: 'another-model' })
-    assert.throws(() => context.registry.resolve(pro.id), /已下架/)
+    assert.equal(context.registry.publicCatalog().items.some(item => item.id === pro.id), true)
+    assert.equal(context.registry.publicCatalog().defaultModelId, pro.id)
+    assert.equal(context.registry.resolve(pro.id).model.model, 'deepseek-v4-pro')
+    assert.equal(context.registry.resolve(pro.id).apiKey, 'pro-key')
+    assert.doesNotThrow(() => context.registry.save(pro))
   } finally { context.store.close(); rmSync(context.root, { recursive: true, force: true }) }
 })
 
-test('stale cloud Pro selections fall back to Flash and cannot appear in the catalog', () => {
+test('cloud catalog preserves every model returned by the authenticated API', () => {
   const registry = new ModelRegistry(null, null, {
     baseURL: 'http://localhost',
     account: { publicState: () => ({ status: 'authenticated', models: [{ id: 'deepseek-v4-pro' }, { id: 'glm-5.3-flash' }, { id: 'deepseek-flash' }] }) },
     modelRoute: id => ({ id }),
   })
-  assert.deepEqual(registry.publicCatalog().items.map(item => item.id), ['glm-5.3-flash', 'deepseek-flash'])
-  assert.equal(registry.resolve('deepseek-v4-pro').id, 'deepseek-flash')
-  assert.equal(registry.resolve('glm-5.3-flash').id, 'glm-5.3-flash')
+  assert.deepEqual(registry.publicCatalog().items.map(item => item.id), ['deepseek-v4-pro', 'glm-5.3-flash', 'deepseek-flash'])
+  assert.equal(registry.resolve('deepseek-v4-pro').id, 'deepseek-v4-pro')
+})
+
+test('discovery adds API models once using the matching credential and preserves existing defaults', async () => {
+  const context = setup()
+  try {
+    context.secrets.set('apiKey', 'primary-secret'); context.registry.migrateLegacySecret()
+    context.registry.save({id:'second',providerId:'glm',displayName:'GLM',baseURL:'https://open.bigmodel.cn/api/paas/v4',model:'glm-5.3-flash',apiKey:'second-secret'})
+    const requests=[]
+    const fetchImpl=async(url,options)=>{
+      requests.push({url,authorization:options.headers.authorization})
+      assert.equal(options.redirect,'error')
+      return {ok:true,json:async()=>({data:url.includes('deepseek')?[{id:'deepseek-flash'},{id:'deepseek-v4-pro'},{id:'deepseek-v4-pro'},{id:''},{id:null}]:[{id:'glm-5.3-flash'},{id:'glm-5.3'}]})}
+    }
+    const result=await context.registry.discover(fetchImpl)
+    assert.equal(result.added,2)
+    assert.equal(result.catalog.defaultModelId,LEGACY_MODEL_PROFILE_ID)
+    assert.equal(result.errors.length,0)
+    const pro=result.catalog.items.find(item=>item.model==='deepseek-v4-pro'),glm=result.catalog.items.find(item=>item.model==='glm-5.3')
+    assert.equal(context.registry.resolve(pro.id).apiKey,'primary-secret')
+    assert.equal(context.registry.resolve(glm.id).apiKey,'second-secret')
+    assert.equal(requests.length,2)
+    assert.equal(JSON.stringify(result).includes('secret'),false)
+    assert.equal((await context.registry.discover(fetchImpl)).added,0)
+    assert.equal(requests.length,4,'Newly discovered profiles share their source API lookup')
+  } finally { context.store.close(); rmSync(context.root, { recursive: true, force: true }) }
+})
+
+test('failed discovery preserves old profiles, handles partial API failure, and never returns raw errors', async () => {
+  const context = setup()
+  try {
+    context.secrets.set('apiKey','do-not-leak'); context.registry.migrateLegacySecret()
+    const before=context.registry.publicCatalog()
+    const result=await context.registry.discover(async()=>{throw Error('do-not-leak')})
+    assert.deepEqual(result.catalog,before)
+    assert.equal(result.errors.length,1)
+    assert.equal(JSON.stringify(result).includes('do-not-leak'),false)
+    const malformed=await context.registry.discover(async()=>({ok:true,json:async()=>({unexpected:[]})}))
+    assert.equal(malformed.added,0);assert.equal(malformed.errors.length,1)
+  } finally { context.store.close(); rmSync(context.root, { recursive: true, force: true }) }
 })

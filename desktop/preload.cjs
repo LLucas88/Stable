@@ -202,6 +202,7 @@ contextBridge.exposeInMainWorld('stable', {
     },
   },
   model: {
+    discover: () => invoke('stable:model:discover'),
     save: (profile) => invoke('stable:model:save', profile),
     remove: (id) => invoke('stable:model:remove', { id }),
     setDefault: (id) => invoke('stable:model:setDefault', { id }),

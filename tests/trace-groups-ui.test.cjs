@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),{spawn}=require('node:child_process')
-test('hidden Electron verifies goal groups, folding, scrolling, failures, approvals and historical traces',{skip:process.platform!=='win32',timeout:90000},async()=>{
+test('hidden Electron verifies file-change command summaries, expansion, failures and historical traces',{skip:process.platform!=='win32',timeout:90000},async()=>{
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
   const result=await new Promise(resolve=>{
     let output='';const child=spawn(require('electron'),[path.join(__dirname,'fixtures/trace-groups-ui.cjs')],{env,windowsHide:true,stdio:['ignore','pipe','pipe']})
