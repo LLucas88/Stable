@@ -1,0 +1,18 @@
+.tool-trace-button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 6px; padding: 6px; background: transparent; color: var(--color-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.tool-trace-button:hover { background: var(--color-paper-3); color: var(--color-ink); }
+.tool-trace-button:focus-visible { outline: 2px solid var(--color-focus); }
+.tool-trace-dialog { width: min(720px, calc(100vw - 40px)); max-height: min(640px, 80vh); padding: 0; border: 1px solid var(--color-rule); border-radius: 16px; background: var(--color-paper); color: var(--color-ink); box-shadow: 0 16px 60px #0003; }
+.tool-trace-dialog::backdrop { background: #0004; }
+.tool-trace-dialog > section { padding: 20px; }
+.tool-trace-dialog header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.tool-trace-dialog header > span { flex: 1; color: var(--color-muted); font-size: 13px; }
+.tool-trace-dialog header button { display: grid; place-items: center; padding: 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.tool-trace-list { max-height: min(520px, 60vh); overflow: auto; }
+.tool-trace-row { padding: 12px 0; border-top: 1px solid var(--color-rule-soft); font-size: 13px; }
+.tool-trace-row summary { display: flex; align-items: baseline; gap: 12px; cursor: pointer; }
+.tool-trace-row summary > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tool-trace-row summary > time { color: var(--color-muted); white-space: nowrap; }
+.tool-trace-row[data-status="failed"] summary > span:last-of-type { color: var(--color-error); }
+.tool-trace-row pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--color-paper-3); border-radius: 8px; }
+.tool-trace-chevron { flex-shrink: 0; color: var(--color-muted); }
+.tool-trace-row[open] .tool-trace-chevron { transform: rotate(90deg); }

@@ -365,3 +365,24 @@ test('native Bash trace preserves long command input separately from completed o
   assert.equal(finished.inputDetail, command)
   assert.equal(finished.detail, 'success')
 })
+
+
+test('native tool trace records returned output separately from arguments', async t => {
+  const sdk = mockSdk(async function* ({ parameters }) {
+    const hooks = parameters.options.hooks
+    const pre = hooks.PreToolUse.find(item => item.matcher.includes('Write')).hooks[0]
+    const post = hooks.PostToolUse.find(item => item.matcher.includes('Write')).hooks[0]
+    const result = await pre({ tool_name: 'Write', tool_use_id: 'write-result', tool_input: { file_path: path.join(parameters.options.cwd, 'result.txt'), content: 'file contents' }, cwd: parameters.options.cwd })
+    assert.equal(result.hookSpecificOutput.permissionDecision, 'allow')
+    await post({ tool_name: 'Write', tool_use_id: 'write-result', tool_response: { success: true, bytes: 13 } })
+    yield { type: 'result', subtype: 'success', result: 'done' }
+  })
+  const { workspace, runner } = fixture(t, sdk), events = []
+  await runner.run('write', model, secret, 5000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  const finished = events.find(event => event.id === 'write-result' && event.status === 'completed')
+  assert.match(finished.inputDetail, /file contents/)
+  assert.deepEqual(JSON.parse(finished.detail), { success: true, bytes: 13 })
+})

@@ -12,6 +12,7 @@ import { BrowserPanel } from './BrowserPanel'
 import { SkillMarket } from './SkillMarket'
 import { RenameConversationDialog } from './RenameConversationDialog'
 import { AnswerToolbar, ChapterDirectory } from './AnswerTools'
+import { ToolTrace } from './ToolTrace'
 import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
@@ -1897,7 +1898,27 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
   </article>
 }
 
+// Reveal only text already received; keep the pace responsive for large chunks.
+function useStreamingText(content: string, live: boolean) {
+  const animate = live && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const [visible, setVisible] = useState(live ? '' : content)
+  const received = useRef(content)
+  received.current = content
+  useEffect(() => {
+    if (!animate) { setVisible(received.current); return }
+    const timer = window.setInterval(() => setVisible(current => {
+      const target = received.current
+      const prefix = target.startsWith(current) ? current : ''
+      const remaining = Array.from(target.slice(prefix.length))
+      return prefix + remaining.slice(0, Math.max(1, Math.ceil(remaining.length / 4))).join('')
+    }), 24)
+    return () => window.clearInterval(timer)
+  }, [animate])
+  return animate ? visible : content
+}
+
 function TraceText({ content, live = false }: { content: string; live?: boolean }) {
+  const visible = useStreamingText(content, live)
   const [expanded, setExpanded] = useState(false)
   const [overflow, setOverflow] = useState(false)
   const textRef = useRef<HTMLDivElement>(null)
@@ -1912,13 +1933,14 @@ function TraceText({ content, live = false }: { content: string; live?: boolean 
     return () => observer.disconnect()
   }, [content])
   return <div className="trace-text" data-live={live || undefined}>
-    <div ref={textRef} id={textId} className="trace-text-content" data-expanded={expanded}>{renderInline(content, textId)}</div>
-    {(overflow || expanded) && <button type="button" className="trace-text-toggle" aria-expanded={expanded} aria-controls={textId} onClick={() => setExpanded((value) => !value)}>{expanded ? '收起摘要' : '展开摘要'}</button>}
+    <div ref={textRef} id={textId} className="trace-text-content" data-expanded={expanded}>{renderInline(visible, textId)}{live && <span className="trace-stream-cursor" aria-hidden="true" />}</div>
+    {!live && (overflow || expanded) && <button type="button" className="trace-text-toggle" aria-expanded={expanded} aria-controls={textId} onClick={() => setExpanded((value) => !value)}>{expanded ? '收起摘要' : '展开摘要'}</button>}
   </div>
 }
 
 function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status: AgentTraceStatus; agentName?: string }) {
   const itemStatus = traceItemStatus(item, status)
+  const command = useStreamingText(traceCommand(item), itemStatus === 'running' && item.kind === 'tool')
   const statusLabel = item.status === 'running' && status !== 'running'
     ? (status === 'cancelled' ? '已取消' : '已结束')
     : itemStatus === 'running' ? '运行中' : itemStatus === 'completed' ? '已完成' : itemStatus === 'cancelled' ? '已取消' : '执行失败'
@@ -1926,14 +1948,15 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   return <details className="trace-action" data-status={itemStatus}>
     <summary>
       <Icon size={15} aria-hidden="true" />
-      <span className={`trace-command${itemStatus === 'running' && item.kind === 'tool' ? ' trace-running-label' : ''}`}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : traceCommand(item)}</span>
-      <span className="trace-action-state">{statusLabel}</span>
+      <span className={`trace-command${itemStatus === 'running' && item.kind === 'tool' ? ' trace-running-label' : ''}`}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : command}</span>
+      {item.kind === 'approval' && <span className="trace-action-state">{statusLabel}</span>}
       <ChevronRight className="trace-chevron" size={15} aria-hidden="true" />
     </summary>
     <div className="trace-action-detail">
       {item.inputDetail && <pre>{item.inputDetail}</pre>}
-      {item.detail && item.detail !== item.inputDetail && <pre>{item.detail}</pre>}
-      {!item.detail && !item.inputDetail && <p>{statusLabel}，没有更多详情。</p>}
+      {item.kind !== 'tool' && item.detail && item.detail !== item.inputDetail && <pre>{item.detail}</pre>}
+      {item.kind === 'tool' && !item.inputDetail && <pre>{traceCommand(item)}</pre>}
+      {item.kind !== 'tool' && !item.detail && !item.inputDetail && <p>{statusLabel}，没有更多详情。</p>}
     </div>
   </details>
 }
@@ -1956,7 +1979,6 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
       : items
     return buildTraceTimeline(entries, finalContent)
   }, [items, streaming, finalContent])
-  const failedCount = timeline.filter(item => item.status === 'failed').length
   const pendingCount = timeline.filter(item => item.kind === 'approval' && traceItemStatus(item, status) === 'running').length
   const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId!, item.title]))
   useEffect(() => {
@@ -1974,7 +1996,6 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
     <div className="trace-header"><button className="trace-summary" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={timelineId} aria-label={`执行记录，${expanded ? '已展开' : '已折叠'}`}>
       <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status !== 'running' && '用时 '}{elapsed}</span>
       {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
-      {failedCount > 0 && <span className="trace-issue">{failedCount} 项操作失败</span>}
       {pendingCount > 0 && <span className="trace-pending">{pendingCount} 项待审批</span>}
       <ChevronRight className="trace-chevron" data-open={expanded} size={15} aria-hidden="true" />
     </button>
@@ -1985,6 +2006,7 @@ function RunTrace({ items, status, active = false, startedAt, endedAt, streaming
         : <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />)}
       {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在处理任务…' : '本次任务没有额外执行记录。'}</p>}
     </div>}
+    {active && <div className="live-trace-footer"><span className="trace-activity" role="status" aria-label="正在处理"><i /><i /><i /></span><ToolTrace items={items} status={status} /></div>}
   </section>
 }
 

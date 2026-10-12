@@ -54,7 +54,7 @@ export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): 
   const finalText = finalContent.trim()
   return items.filter(item => {
     if (item.eventType === 'agent/answer') return Boolean(item.content?.trim()) && item.content!.trim() !== finalText
-    if (item.status === 'failed') return true
+    if (item.status === 'failed' && item.kind !== 'tool') return true
     if (item.kind === 'approval') return item.status === 'running' && !item.automaticApproval
     if (item.kind === 'tool') return changesFiles(item)
     return item.id === 'runtime' && item.status === 'cancelled'

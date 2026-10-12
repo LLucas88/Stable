@@ -2,13 +2,13 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { buildTraceTimeline, traceItemStatus, savedTraceStatus, traceCommand, changesFiles, commandChangesFiles } = require('../src/trace-timeline.ts')
 const item = (id, time, props = {}) => ({ id, runId: 'r', kind: 'tool', toolName: 'Write', title: id, status: 'completed', time, ...props })
-test('timeline only shows mutations, public text, errors and pending approvals without changing stored trace', () => {
+test('timeline only shows mutations, public text and pending approvals without changing stored trace', () => {
   const entries = [item('env',0,{id:'runtime-info',kind:'status'}),item('read',1,{toolName:'Read'}),item('browser',2,{toolName:'stable_browser'}),
     item('intro',3,{kind:'reasoning',eventType:'agent/answer',content:'生成报告'}),item('write',8,{startedAt:4,inputDetail:'{"file_path":"report.html"}'}),
     item('auto',5,{kind:'approval',automaticApproval:true}),item('failed-read',6,{toolName:'Read',status:'failed'}),item('approval',7,{kind:'approval',status:'running'}),
     item('final',9,{kind:'reasoning',eventType:'agent/answer',content:'完成'}),item('runtime',10,{kind:'status',status:'failed'})]
   const snapshot=JSON.stringify(entries)
-  assert.deepEqual(buildTraceTimeline(entries,'完成').map(x=>x.id),['intro','write','failed-read','approval','runtime'])
+  assert.deepEqual(buildTraceTimeline(entries,'完成').map(x=>x.id),['intro','write','approval','runtime'])
   assert.equal(JSON.stringify(entries),snapshot)
 })
 test('full command input survives output replacement and old truncated paths remain readable',()=>{

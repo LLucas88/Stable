@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, GitFork, ListTree, Pencil, Pin, PinOff, X } from 'lucide-react'
 import type { AnswerChapter, MessageItem } from './types'
 import './styles/answer-tools.css'
+import { ToolTrace } from './ToolTrace'
 
 function Hint({ label, detail, children }: { label: string; detail?: string; children: ReactNode }) {
   const id = useId()
@@ -35,6 +36,7 @@ export function AnswerToolbar({ message, chapter, onFork, onPin }: { message: Me
       <Hint label={copied ? '已复制' : '复制'}><button type="button" disabled={busy || !message.content} aria-label="复制回答" onClick={() => void run(async () => { await window.stable.clipboard.writeText(message.content); setCopied(true) })}>{copied ? <Check size={16} /> : <Copy size={16} />}</button></Hint>
       <Hint label="从此处分支" detail="复制截至此处的历史到新对话，保留原对话。"><button type="button" disabled={busy} aria-label="从此处分支" onClick={() => void run(onFork)}><GitFork size={16} /></button></Hint>
       <Hint label={chapter ? '取消固定章节' : '固定为章节'}><button type="button" disabled={busy} aria-pressed={Boolean(chapter)} aria-label={chapter ? '取消固定章节' : '固定为章节'} onClick={() => void run(onPin)}>{chapter ? <PinOff size={16} /> : <Pin size={16} />}</button></Hint>
+      <ToolTrace items={message.trace || []} />
       <Hint label={fullTime}><time tabIndex={0} dateTime={Number.isFinite(time.getTime()) ? message.createdAt : undefined} aria-label={fullTime}>{relativeAnswerTime(message.createdAt, now)}</time></Hint>
     </div>
     {error && <p className="answer-action-error" role="alert">{error}</p>}

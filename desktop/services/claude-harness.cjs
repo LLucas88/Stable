@@ -202,7 +202,7 @@ class ClaudeHarnessRunner {
             output.stdout, output.stderr, output.interrupted ? '命令已中断' : '',
             output.persistedOutputPath ? '完整输出：' + output.persistedOutputPath : '',
           ].filter(Boolean).join('\n') || '命令执行完成，无输出。')
-          : event.detail || JSON.stringify(event.args || {}).slice(0, 8000)
+          : event.detail || (output === undefined ? '' : typeof output === 'string' ? output : JSON.stringify(output))
         if (event.status !== 'running') { const issue = progress.complete(event.id, { status: event.status, aggregatedOutput: detail }); if (issue) { stopReason = issue; this.cancel() } }
         publish({ id: event.id, kind: 'tool', entity: 'tool', eventType: event.status === 'running' ? 'tool/start' : 'tool/end',
           title: `使用工具 ${event.name}`, toolName: event.name, inputDetail: bash ? event.args?.command : JSON.stringify(event.args || {}, null, 2).slice(0, 32000), detail: String(detail || '').slice(-32000), status: event.status })

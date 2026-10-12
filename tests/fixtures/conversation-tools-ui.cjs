@@ -55,7 +55,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'context-usage.css', 'answer-tools.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -144,6 +144,8 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
   const timePoint = await win.webContents.executeJavaScript(`(()=>{
     const toolbar=document.querySelector('.answer-toolbar');
     if(getComputedStyle(toolbar).opacity!=='1') throw Error('Answer tools hidden on answer hover');
+    const trace=toolbar.querySelector('.tool-trace-button');
+    if(!trace||trace.previousElementSibling.querySelector('[aria-label*="章节"]')===null||!trace.nextElementSibling.querySelector('time'))throw Error('Trace button position incorrect');
     const time=toolbar.querySelector('time'),rect=time.getBoundingClientRect();
     if(!time.textContent.includes('刚刚')||!time.getAttribute('aria-label').includes('年')) throw Error('Answer timestamp incorrect');
     return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
