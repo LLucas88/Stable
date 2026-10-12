@@ -2264,6 +2264,9 @@ function registerIpc() {
     store.bindProject(id, payload?.projectId || null, paths.workspace); return agentState(id)
   })
   ipcMain.handle('stable:agent:viewState', (_event, payload) => store.viewState(requireText(payload?.id, '对话 ID', 100), payload?.value))
+  ipcMain.handle('stable:agent:forkAnswer', (_event, payload) => agentState(store.forkAnswer(requireText(payload?.id, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100))))
+  ipcMain.handle('stable:agent:chapters', (_event, payload) => store.chapters(requireText(payload?.id, '对话 ID', 100)))
+  ipcMain.handle('stable:agent:setChapter', (_event, payload) => store.setChapter(requireText(payload?.id, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100), payload?.title))
   ipcMain.handle('stable:agent:create', () => {
     const id = store.createConversation()
     return agentState(id)

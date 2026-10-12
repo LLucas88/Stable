@@ -28,6 +28,9 @@ async function main() {
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
     window.stable={clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
+      chapters:async id=>window.chapterRows?.[id]||[],
+      setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
+      forkAnswer:async(id,messageId)=>{window.forked={id,messageId};return {...state('b'),messages:messages.map(item=>({...item,id:'fork-'+item.id})),catchAttachments:[]}},
       contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[],skills:[]}),
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
       catchReply:async(id,message)=>{window.caught.push({id,message});return state('b')},
@@ -50,7 +53,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'context-usage.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'context-usage.css', 'answer-tools.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -79,6 +82,31 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     if(getComputedStyle(document.querySelector('.user-turn-actions')).opacity!=='0') throw Error('Copy button remains visible after leaving');
     const scroller=document.querySelector('.message-scroll');scroller.scrollTop=scroller.scrollHeight;
   })()`)
+  await new Promise(resolve => setTimeout(resolve, 100))
+  const answerPoint = await win.webContents.executeJavaScript(`(()=>{
+    const toolbar=document.querySelector('.answer-toolbar');
+    if(getComputedStyle(toolbar).opacity!=='0') throw Error('Answer tools visible without hover');
+    const rect=toolbar.getBoundingClientRect();return {x:Math.round(rect.left+20),y:Math.round(rect.top-8)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...answerPoint})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  const timePoint = await win.webContents.executeJavaScript(`(()=>{
+    const toolbar=document.querySelector('.answer-toolbar');
+    if(getComputedStyle(toolbar).opacity!=='1') throw Error('Answer tools hidden on answer hover');
+    const time=toolbar.querySelector('time'),rect=time.getBoundingClientRect();
+    if(!time.textContent.includes('刚刚')||!time.getAttribute('aria-label').includes('年')) throw Error('Answer timestamp incorrect');
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...timePoint})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{
+    const tip=document.querySelector('.answer-toolbar time').nextElementSibling;
+    if(getComputedStyle(tip).opacity!=='1') throw Error('Timestamp tooltip hidden');
+  })()`)
+  fs.writeFileSync(path.join(output,'answer-time-tooltip.png'),(await win.webContents.capturePage()).toPNG())
+  win.webContents.sendInputEvent({type:'mouseMove',x:1,y:1})
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await win.webContents.executeJavaScript(`(()=>{if(getComputedStyle(document.querySelector('.answer-toolbar')).opacity!=='0') throw Error('Answer tools remain visible after leaving')})()`)
   const indicator = await win.webContents.executeJavaScript(`(()=>{
     const rect=document.querySelector('.context-usage-button').getBoundingClientRect();
     return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
@@ -155,6 +183,29 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     document.querySelector('.user-turn-actions button').click();await tick();
     expect(window.copiedText==='本轮提问','Copy did not send this message text to clipboard');
     expect(input.value==='草插入','Copy changed the existing composer draft');
+    document.querySelector('.answer-toolbar [aria-label="复制回答"]').click();await tick();
+    expect(window.copiedText===window.fixtureState('a').messages[1].content,'Answer copy lost text');
+    expect(input.value==='草插入','Answer copy changed draft');
+    document.querySelector('.answer-toolbar [aria-label="固定为章节"]').click();await tick();
+    expect(document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Pin state missing');
+    document.querySelector('[aria-label="章节目录"]').click();await tick();
+    expect(document.querySelector('.chapter-jump'),'Pinned chapter missing from directory');
+    document.querySelector('[aria-label^="重命名章节"]').click();await tick();
+    const chapterInput=document.querySelector('[aria-label="章节名称"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(chapterInput,'关键结论');chapterInput.dispatchEvent(new Event('input',{bubbles:true}));await tick();
+    document.querySelector('.chapter-panel form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();
+    expect(document.querySelector('.chapter-jump').textContent==='关键结论','Chapter rename failed');
+    document.querySelector('.chapter-jump').click();await tick();await tick();
+    expect(!document.querySelector('.chapter-panel'),'Chapter directory did not close on jump');
+    expect(document.activeElement.dataset.messageId==='m','Chapter did not focus target');
+    document.querySelector('.answer-toolbar [aria-label="从此处分支"]').click();await tick();
+    expect(window.forked.id==='a'&&window.forked.messageId==='m','Fork target wrong');
+    expect(document.querySelector('[data-message-id="fork-m"]'),'Fork did not switch to cloned history');
+    expect(window.sent.length===0,'Fork auto sent a request');
+    window.changeState(window.fixtureState('a'));await tick();await tick();
+    expect(document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Pin lost on conversation switch');
+    document.querySelector('.answer-toolbar [aria-label="取消固定章节"]').click();await tick();
+    expect(!document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Unpin failed');
     document.querySelector('.catch-button').click();await tick();
     expect(window.caught.length===1&&window.caught[0].message==='m','Catch did not capture selected answer');
     expect(window.sent.length===0,'Catch auto-sent task');
@@ -183,6 +234,22 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     window.changeState(recovered);await tick();
     expect(!document.querySelector('.recovery-notice'),'Recovery panel still shown above the conversation');
     expect([...document.querySelectorAll('[data-message-id]')].map(node=>node.dataset.messageId).join(',')==='old-user,old-failure,later-user','Recovered failure is outside its original turn');
+    window.chapterRows.c=[{messageId:'early-answer',seq:2,title:'早期章节'}];
+    window.stable.agent.messages=async(id,cursor)=>{window.pageRequest={id,cursor};return {messages:[{id:'early-user',seq:1,role:'user',content:'早期提问',createdAt:'2020-01-01T00:00:00Z'},{id:'early-answer',seq:2,role:'assistant',content:'早期回答',createdAt:'2020-01-01T00:01:00Z'}],beforeCursor:null}};
+    window.changeState({...window.fixtureState('a'),activeConversationId:'c',conversations:[...window.fixtureState('a').conversations,{...window.fixtureState('a').conversations[0],id:'c',title:'长对话'}],beforeCursor:201,messages:[{...window.fixtureState('a').messages[1],id:'recent-answer',seq:201}]});await tick();await tick();
+    expect(!document.querySelector('[data-message-id="early-answer"]'),'Early page must start unloaded');
+    expect(document.querySelectorAll('.chapter-directory').length===1,'Duplicate chapter directory after switching');
+    document.querySelector('.chapter-trigger').click();await tick();
+    const panelRect=document.querySelector('.chapter-panel').getBoundingClientRect();
+    expect(panelRect.left>=0&&panelRect.right<=innerWidth&&panelRect.bottom<=innerHeight,'Chapter panel clipped');
+    document.querySelector('.chapter-jump').click();await tick();await tick();await tick();
+    expect(window.pageRequest.id==='c'&&window.pageRequest.cursor===201,'Chapter did not load older history');
+    const early=document.querySelector('[data-message-id="early-answer"]'),scroll=document.querySelector('.message-scroll');
+    expect(early&&document.activeElement===early,'Early chapter not focused');
+    expect(Math.abs(early.getBoundingClientRect().top-scroll.getBoundingClientRect().top-16)<4,'Early chapter not scrolled into view');
+    document.querySelector('.chapter-trigger').click();await tick();
+    document.querySelector('.chapter-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
+    expect(!document.querySelector('.chapter-panel'),'Escape failed to close chapter directory');
     window.splash();await tick();
     expect(getComputedStyle(document.querySelector('.launch-splash')).backgroundColor==='rgb(255, 255, 255)','Splash is not white');
     const logo=document.querySelector('.launch-logo');await logo.decode();

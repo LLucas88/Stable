@@ -78,5 +78,19 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     return () => { clearTimeout(timer); save(); element.removeEventListener('scroll', measure); observer.disconnect() }
   }, [conversationId, scrollToBottom])
   useLayoutEffect(() => { if (active && following.current && !restoring.current) scrollToBottom() }, [revision, active, scrollToBottom])
-  return { scrollRef, awayFromBottom, scrollToBottom }
+  async function scrollToMessage(messageId: string, seq: number) {
+    following.current = false
+    await loader.current?.(seq)
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const element = scrollRef.current
+    const target = element && [...element.querySelectorAll<HTMLElement>('[data-message-id]')].find(item => item.dataset.messageId === messageId)
+    if (!element || !target) throw new Error('找不到该章节对应的回答。')
+    element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - 16
+    element.dispatchEvent(new Event('scroll'))
+    target.tabIndex = -1
+    target.focus({ preventScroll: true })
+    target.dataset.chapterTarget = 'true'
+    setTimeout(() => { delete target.dataset.chapterTarget }, 1800)
+  }
+  return { scrollRef, awayFromBottom, scrollToBottom, scrollToMessage }
 }

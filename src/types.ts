@@ -239,6 +239,8 @@ export interface ConversationSearchResult {
   updatedAt: string
 }
 
+export interface AnswerChapter { messageId: string; seq: number; title: string }
+
 export interface AgentState {
   draftPrompt?: string
   recoveryText?: string
@@ -636,6 +638,9 @@ export interface StableBridge {
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(): Promise<AgentState>
+    forkAnswer(id: string, messageId: string): Promise<AgentState>
+    chapters(id: string): Promise<AnswerChapter[]>
+    setChapter(id: string, messageId: string, title: string | null): Promise<AnswerChapter[]>
     catchReply(conversationId: string, messageId: string): Promise<AgentState>
     discardCatch(conversationId: string): Promise<AgentState>
     state(id: string): Promise<AgentState>

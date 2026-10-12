@@ -11,6 +11,8 @@ import { ProjectSelector } from './ProjectSelector'
 import { BrowserPanel } from './BrowserPanel'
 import { SkillMarket } from './SkillMarket'
 import { RenameConversationDialog } from './RenameConversationDialog'
+import { AnswerToolbar, ChapterDirectory } from './AnswerTools'
+import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
@@ -825,6 +827,26 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const browserPanel = browserPanels[state.activeConversationId]
   const [imageViewer, setImageViewer] = useState<ImageViewerTarget>()
   const [olderPages, setOlderPages] = useState<Record<string, { messages: MessageItem[]; beforeCursor: number | null }>>({})
+  const [chapterState, setChapterState] = useState<{ id: string; items: AnswerChapter[] }>({ id: '', items: [] })
+  const [chapterError, setChapterError] = useState('')
+  const chapters = chapterState.id === state.activeConversationId ? chapterState.items : []
+  useEffect(() => {
+    let disposed = false
+    const id = state.activeConversationId
+    setChapterError('')
+    void window.stable.agent.chapters?.(id).then(items => { if (!disposed) setChapterState({ id, items }) }).catch(error => { if (!disposed) setChapterError(String(error)) })
+    return () => { disposed = true }
+  }, [state.activeConversationId])
+  async function changeChapter(messageId: string, title: string | null) {
+    const id = state.activeConversationId
+    const items = await window.stable.agent.setChapter(id, messageId, title)
+    if (activeConversationIdRef.current === id) { setChapterState({ id, items }); setChapterError('') }
+  }
+  async function forkAnswer(message: MessageItem) {
+    const next = await window.stable.agent.forkAnswer(state.activeConversationId, message.id)
+    updateAgent(next); openConversation()
+    window.requestAnimationFrame(() => promptRef.current?.focus())
+  }
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [cancelledMessages, setCancelledMessages] = useState<Record<string, MessageItem[]>>({})
   const olderPage = olderPages[state.activeConversationId]
@@ -887,7 +909,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     }
     if (messages.length && stateRef.current.activeConversationId === id) setOlderPages(current => ({ ...current, [id]: { messages, beforeCursor: cursor ?? null } }))
   }
-  const { scrollRef, awayFromBottom, scrollToBottom } = useConversationScroll(state.activeConversationId, `${state.messages.length}:${pendingPrompt?.content}:${liveTrace?.items.length}:${streamingAnswer?.content}:${running}`, active, loadScrollAnchor)
+  const { scrollRef, awayFromBottom, scrollToBottom, scrollToMessage } = useConversationScroll(state.activeConversationId, `${state.messages.length}:${pendingPrompt?.content}:${liveTrace?.items.length}:${streamingAnswer?.content}:${running}`, active, loadScrollAnchor)
   const imageAttachments = attachments.filter(attachmentIsImage)
   const annotationAttachments = attachments.filter(item => item.annotation)
   const documentAttachments = attachments.filter((item) => !attachmentIsImage(item) && !item.annotation)
@@ -1418,6 +1440,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         <button className="conversation-sidebar-toggle" type="button" onClick={() => setSidebarOpen((value) => !value)} aria-label="打开对话列表"><PanelLeftOpen size={18} /></button>
         <div><span>当前任务</span><strong>{activeConversation.title}</strong></div>
         <button className="button browser-launch" type="button" aria-label="打开浏览器" title="打开浏览器" onClick={() => setBrowserPanels(current => ({ ...current, [state.activeConversationId]: { ...current[state.activeConversationId], open: true } }))}><Globe2 size={14} aria-hidden="true"/></button>
+        <ChapterDirectory key={`chapters:${state.activeConversationId}`} chapters={chapters} error={chapterError} onChange={changeChapter} onJump={chapter => scrollToMessage(chapter.messageId, chapter.seq)} />
         <ConversationWending key={state.activeConversationId} conversationId={state.activeConversationId} running={running} active={active} autoOpen={prefill === WENDING_CLI_PREFILL} />
       </header>
       <div className="message-scroll" ref={scrollRef}>
@@ -1429,7 +1452,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
             try { const page = await window.stable.agent.messages(id, beforeCursor); setOlderPages(current => ({ ...current, [id]: { messages: [...page.messages, ...(current[id]?.messages || [])], beforeCursor: page.beforeCursor } })); window.requestAnimationFrame(() => { if (element && activeConversationIdRef.current === id) element.scrollTop = top + element.scrollHeight - height }) }
             finally { setLoadingOlder(false) }
           })}>{loadingOlder ? '读取中…' : '加载更早的消息'}</button>}
-          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} onCatch={message.role === 'assistant' ? () => void catchReply(message) : undefined} catching={Boolean(catchingId)} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} answerActions={message.role === 'assistant' ? <AnswerToolbar message={message} chapter={chapters.find(item => item.messageId === message.id)} onFork={() => forkAnswer(message)} onPin={() => changeChapter(message.id, chapters.some(item => item.messageId === message.id) ? null : message.content.replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名章节')} /> : undefined} onCatch={message.role === 'assistant' ? () => void catchReply(message) : undefined} catching={Boolean(catchingId)} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
           {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
           {liveTrace && <RunTrace items={liveTrace.items} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
 
@@ -1617,13 +1640,14 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ conversationId, artifactRefreshKey, message, workspace, onCatch, catching, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { conversationId: string; artifactRefreshKey: string; message: MessageItem; workspace: string; onCatch?: () => void; catching?: boolean; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function MessageTurn({ conversationId, artifactRefreshKey, message, answerActions, workspace, onCatch, catching, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCatch?: () => void; catching?: boolean; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
   return <article className="assistant-turn" data-message-id={message.id} data-message-seq={message.seq}>
     {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} onCatch={onCatch} catching={catching} /> : <div className="trace-header"><span /><CatchButton onCatch={onCatch} catching={catching} /></div>}
     <div className="assistant-answer">
       <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
     </div>
+    {answerActions}
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
       <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
       <div><small>定时任务</small><h3>{message.automationProposal.title}</h3><p>{message.automationProposal.prompt}</p><strong>{formatAutomationSchedule(message.automationProposal.schedule)}</strong></div>

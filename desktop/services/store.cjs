@@ -173,6 +173,7 @@ class StableStore {
     require('./conversation-state.cjs').initializeConversationState(this, root)
     require('./conversation-state.cjs').initializeMessageSearch(this)
     require('./conversation-state.cjs').initializeProjectFolders(this)
+    require('./answer-tools.cjs').initializeAnswerTools(this)
     } catch (error) { try { this.db.close() } catch {} throw error }
   }
 
@@ -819,6 +820,6 @@ class StableStore {
   close() { this.db.close() }
 }
 
-Object.assign(StableStore.prototype, require('./conversation-state.cjs').methods, require('./approval-ledger.cjs').methods)
+Object.assign(StableStore.prototype, require('./conversation-state.cjs').methods, require('./approval-ledger.cjs').methods, require('./answer-tools.cjs').methods)
 
 module.exports = { StableStore, DEFAULT_IDENTITY, LEGACY_MODEL_PROFILE_ID }
