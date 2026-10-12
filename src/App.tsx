@@ -855,19 +855,15 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
   const [editingId, setEditingId] = useState('')
   const [editingTitle, setEditingTitle] = useState('')
   const [modelStatus, setModelStatus] = useState('')
-  const [discoveringModels, setDiscoveringModels] = useState(false)
-  const [modelDiscoveryStatus, setModelDiscoveryStatus] = useState('')
-  async function discoverModels() {
-    if (!window.stable.model?.discover || discoveringModels) return
-    setDiscoveringModels(true)
-    try {
-      const result = await window.stable.model.discover()
-      updateAgent({ ...stateRef.current, models: result.catalog })
-      setModelDiscoveryStatus(result.errors.length ? result.errors.join('；') : `已同步 ${result.catalog.items.length} 个模型`)
-    } catch { setModelDiscoveryStatus('模型列表更新失败，已保留现有模型。') }
-    finally { setDiscoveringModels(false) }
-  }
-  useEffect(() => { void discoverModels() }, [])
+  useEffect(() => {
+    let disposed = false
+    if (window.stable.model?.discover) {
+      void window.stable.model.discover().then(result => {
+        if (!disposed) updateAgent({ ...stateRef.current, models: result.catalog })
+      }).catch(() => { /* Keep the existing catalog if background discovery fails. */ })
+    }
+    return () => { disposed = true }
+  }, [])
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, string>>({})
   const [traceMap, setTraceMap] = useState<Record<string, AgentTraceRun | undefined>>({})
   const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { id: string; runId: string; turn: number; step: number; time: number; content: string } | undefined>>({})
@@ -1599,22 +1595,20 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
               </details>
               <div className="model-effort-control">
               <details className="composer-menu model-menu capability-menu" ref={modelMenuRef} onToggle={event=>{if(!event.currentTarget.open)setShowModelList(false)}}>
-                <summary aria-label={`模型与思考强度：${activeModel?.displayName || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}><span>{activeModel?.displayName || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
+                <summary aria-label={`模型与思考强度：${activeModel?.displayName.toUpperCase() || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}><span>{activeModel?.displayName.toUpperCase() || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
                 <div className="composer-popover model-popover effort-popover" data-models={showModelList || undefined} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();if(showModelList)setShowModelList(false);else if(modelMenuRef.current)modelMenuRef.current.open=false;modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()}}}>
                   {showModelList ? <><button type="button" className="effort-back" onClick={()=>setShowModelList(false)}><ArrowLeft size={14}/>思考强度</button>
-                  <button type="button" className="model-refresh" disabled={discoveringModels} onClick={() => void discoverModels()}><RotateCw size={14} />{discoveringModels ? '正在同步模型…' : '同步 API 模型'}</button>
-                  {modelDiscoveryStatus && <p className="model-discovery-status" role="status">{modelDiscoveryStatus}</p>}
-                  {state.models.items.length ? <fieldset className="model-options"><legend className="sr-only">当前对话使用的模型</legend>{state.models.items.map((item) => {
+                  {state.models.items.length ? <div className="model-options-scroll"><fieldset className="model-options"><legend className="sr-only">当前对话使用的模型</legend>{state.models.items.map((item) => {
                     const selected = item.id === activeModel?.id
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} onChange={() => configureModel(item.id)} />
                       <ModelProviderIcon model={item} />
-                      <span className="model-option-copy"><strong>{item.displayName}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}</span>
+                      <span className="model-option-copy"><strong>{item.displayName.toUpperCase()}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}</span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
-                  })}</fieldset> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
+                  })}</fieldset></div> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
 
-                  </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModel?.displayName || ''} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
+                  </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModel?.displayName.toUpperCase() || ''} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
                 </div>
               </details>
               </div>

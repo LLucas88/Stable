@@ -27,7 +27,7 @@ async function main() {
     const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
-    const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'API 模型 '+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
+    const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'glm-Flash-'+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
     window.stable={model:{discover:async()=>({catalog:discovered,added:12,errors:[]})},clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
       chapters:async id=>window.chapterRows?.[id]||[],
       setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
@@ -55,7 +55,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'context-usage.css', 'answer-tools.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'context-usage.css', 'answer-tools.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -63,18 +63,48 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     const tick=()=>new Promise(r=>setTimeout(r,100));
     document.querySelector('.model-menu > summary').click();await tick();
     document.querySelector('.effort-model-expand').click();await tick();
-    const list=document.querySelector('.model-options');
+    const list=document.querySelector('.model-options-scroll');
+    if(document.querySelector('.model-refresh, .model-discovery-status'))throw Error('Sync controls still visible');
+    for(const name of list.querySelectorAll('strong'))if(name.textContent!==name.textContent.toUpperCase())throw Error('Model name is not uppercase');
+    if(list.offsetWidth-list.clientWidth<10)throw Error('Permanent scrollbar gutter missing');
     if(list.querySelectorAll('.model-option').length!==13)throw Error('Discovered models missing from selector');
     if(list.scrollHeight<=list.clientHeight)throw Error('Long model list does not scroll');
     if(getComputedStyle(document.querySelector('.model-popover')).overflowY!=='hidden')throw Error('Model selector has nested scrollbars');
     const panel=document.querySelector('.model-popover').getBoundingClientRect();
     if(panel.top<0||panel.bottom>innerHeight)throw Error('Model selector outside viewport');
   })()`)
+  const modelWheelPoint = await win.webContents.executeJavaScript(`(()=>{
+    const rect=document.querySelector('.model-options-scroll').getBoundingClientRect();
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',...modelWheelPoint})
+  win.webContents.sendInputEvent({type:'mouseWheel',...modelWheelPoint,deltaY:-240,deltaX:0})
+  await new Promise(resolve => setTimeout(resolve, 250))
+  await win.webContents.executeJavaScript(`(()=>{
+    const list=document.querySelector('.model-options-scroll');
+    if(list.scrollTop<=0)throw Error('Mouse wheel does not scroll model list');
+    list.scrollTop=0;
+  })()`)
+  await new Promise(resolve => setTimeout(resolve, 100))
+  const modelThumb = await win.webContents.executeJavaScript(`(()=>{
+    const list=document.querySelector('.model-options-scroll'),rect=list.getBoundingClientRect();
+    return {x:Math.round(rect.right-6),y:Math.round(rect.top+list.clientHeight*list.clientHeight/list.scrollHeight/2),bottom:Math.round(rect.bottom-6)};
+  })()`)
+  win.webContents.sendInputEvent({type:'mouseMove',x:modelThumb.x,y:modelThumb.y})
+  win.webContents.sendInputEvent({type:'mouseDown',x:modelThumb.x,y:modelThumb.y,button:'left',clickCount:1})
+  win.webContents.sendInputEvent({type:'mouseMove',x:modelThumb.x,y:modelThumb.bottom,button:'left'})
+  win.webContents.sendInputEvent({type:'mouseUp',x:modelThumb.x,y:modelThumb.bottom,button:'left',clickCount:1})
+  await new Promise(resolve => setTimeout(resolve, 150))
+  await win.webContents.executeJavaScript(`(()=>{
+    const list=document.querySelector('.model-options-scroll'),last=list.querySelector('.model-option:last-child').getBoundingClientRect();
+    if(list.scrollTop<=0||last.bottom>list.getBoundingClientRect().bottom+1)throw Error('Dragging scrollbar cannot reach last model');
+  })()`)
   fs.writeFileSync(path.join(output,'all-api-models.png'),(await win.webContents.capturePage()).toPNG())
   await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));
     document.querySelector('input[value="api-11"]').click();await tick();
     if(window.selectedModel!=='api-11')throw Error('Discovered model selection failed');
+    if(!document.querySelector('.model-menu > summary').textContent.includes('GLM-FLASH-11'))throw Error('Selected model label is not uppercase');
     document.querySelector('.model-menu > summary').click();await tick();document.querySelector('.effort-model-expand').click();await tick();
     document.querySelector('input[value="mock"]').click();await tick();
   })()`)
@@ -197,7 +227,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(Math.abs(catchButton.getBoundingClientRect().right-header.getBoundingClientRect().right)<2,'Catch is not at far right');
     document.querySelector('.conversation-bottom').click();await tick();
     expect(scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-3,'Return to bottom failed');
-    scroller.scrollTop=150;scroller.dispatchEvent(new Event('scroll'));await tick();await tick();await tick();const savedAnchor=window.views.a;expect(savedAnchor.anchor==='m'&&!savedAnchor.following,'Message anchor not persisted');window.changeState(window.fixtureState('b'));await tick();window.changeState(window.fixtureState('a'));await tick();await tick();await tick();await tick();await tick();scroller=document.querySelector('.message-scroll');const anchor=document.querySelector('[data-message-id="m"]');expect(Math.abs(anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-savedAnchor.offset)<3,'Message anchor did not restore '+JSON.stringify({savedAnchor,top:scroller.scrollTop,actualOffset:anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top,stored:window.views.a}));
+    scroller.scrollTop+=document.querySelector('[data-message-id="m"]').getBoundingClientRect().top-scroller.getBoundingClientRect().top+20;scroller.dispatchEvent(new Event('scroll'));await tick();await tick();await tick();const savedAnchor=window.views.a;expect(savedAnchor.anchor==='m'&&!savedAnchor.following,'Message anchor not persisted');window.changeState(window.fixtureState('b'));await tick();window.changeState(window.fixtureState('a'));await tick();await tick();await tick();await tick();await tick();scroller=document.querySelector('.message-scroll');const anchor=document.querySelector('[data-message-id="m"]');expect(Math.abs(anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-savedAnchor.offset)<3,'Message anchor did not restore '+JSON.stringify({savedAnchor,top:scroller.scrollTop,actualOffset:anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top,stored:window.views.a}));
     window.selectAll();expect(window.getSelection().toString().includes('完整回复'),'History select all failed');
     window.paste('草稿');await tick();const input=document.querySelector('#agent-prompt');
     input.setSelectionRange(1,2);window.paste('插入');await tick();expect(input.value==='草插入','History paste failed replacement into composer');
