@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "name": "Stable Report Tasks",
+  "createdAt": "2026-10-12",
+  "seed": "stable-reports-20261012-v1",
+  "cases": [
+    {"id":"report-a","flow":"journey","dataset":"a","origin":"observed","title":"虾姐蟹妹首版经营报告","prompt":"按任务说明生成首版报告。"},
+    {"id":"polish-a","flow":"journey","dataset":"a","origin":"observed","title":"图表精致度迭代","prompt":"感觉图表的效果不够精致和细腻，你再调整一下。保留指标、数值、章节和整卡放大功能。","after":"report-a"},
+    {"id":"revise-a","flow":"journey","dataset":"a","origin":"derived","title":"连续定向修改","prompt":"继续修改：把 CRM 优先级清单移到报告开头，建议动作写得更口语化；图表并列时保持对齐，手机宽度下不横向溢出。保留原始数据、亮点和问题分析，保留整卡放大和动画。","after":"polish-a"},
+    {"id":"switch-b","flow":"journey","dataset":"b","origin":"derived","title":"同一会话更换品牌与表头布局","prompt":"改用新上传的齐品达数据，按照同样的框架生成齐品达报告。重新解析新工作簿，不沿用上一品牌的数字、结论或品牌名称。","after":"revise-a"},
+    {"id":"report-b","flow":"fresh-b","dataset":"b","origin":"observed","title":"齐品达独立首版报告","prompt":"按任务说明生成齐品达首版报告。"},
+    {"id":"resume-b","flow":"resume-b","dataset":"b","origin":"derived-fault-injection","title":"中断后从检查点继续","prompt":"按任务说明生成齐品达报告。先完成数据读取，使用 Write 工具写入 checkpoint.md，记录数据源、已确认的关键数值及待办，然后继续制作报告。","interruptAfterCheckpoint":true}
+  ],
+  "contextRegression": {"command":"context-check","type":"real-sdk-local-fixture","windows":[128000,200000,1000000],"below":0.79,"above":0.81,"countsTowardBusinessScore":false}
+}

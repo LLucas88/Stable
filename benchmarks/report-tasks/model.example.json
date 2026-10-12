@@ -1,0 +1,6 @@
+{
+  "model":{"providerId":"benchmark","model":"glm-5.3-flashx","baseURL":"https://open.bigmodel.cn/api/paas/v4","reasoningSelection":"high"},
+  "timeoutMs":1200000,
+  "maxRequestsPerCase":60,
+  "skills":[]
+}
