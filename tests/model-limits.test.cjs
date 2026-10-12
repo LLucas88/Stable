@@ -54,3 +54,15 @@ test('all discovered official models have verified capacities and SDK-valid comp
   assert.equal(modelLimits({baseURL:'https://open.bigmodel.cn',model:'glm-unknown'}).contextWindow,128000)
   assert.equal(modelLimits({baseURL:'https://open.bigmodel.cn',model:'glm-5.3-flashx',contextWindow:200000}).contextWindow,200000)
 })
+
+
+test('SDK window compensates its reserves so compaction begins at 80 percent total usage', () => {
+  for (const [contextWindow, maxOutputTokens] of [[128000, 8192], [200000, 8192], [1000000, 4096], [1000000, 32768]]) {
+    const limits = modelLimits({ model: 'deepseek-flash', baseURL: 'https://api.deepseek.com', contextWindow, maxOutputTokens })
+    const sdkTrigger = limits.autoCompactWindow - Math.min(limits.outputTokens, 20000) - 13000
+    assert.equal(sdkTrigger, contextWindow * .8)
+    assert.equal(limits.autoCompactTokenLimit, sdkTrigger)
+    assert(limits.autoCompactWindow >= 100000 && limits.autoCompactWindow <= 1000000)
+    assert(sdkTrigger + limits.outputTokens < contextWindow)
+  }
+})

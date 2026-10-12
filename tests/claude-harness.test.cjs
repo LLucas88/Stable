@@ -57,7 +57,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert(first.closed)
   for (const name of ['Agent', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit']) assert(first.parameters.options.tools.includes(name))
   assert(first.parameters.options.agents['stable-worker'].tools.includes('Read'))
-  assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, 100000, 'only send a valid child compaction window')
+  assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, 123592, 'the child uses the same 80 percent trigger as the parent')
   assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.296')
   assert(!first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_exec'))
@@ -76,7 +76,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert.equal(first.parameters.options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '0')
   assert.equal(first.parameters.options.settings.autoMemoryEnabled, true)
   assert.equal(first.parameters.options.settings.autoCompactEnabled, true)
-  assert.equal(first.parameters.options.settings.autoCompactWindow, 102400)
+  assert.equal(first.parameters.options.settings.autoCompactWindow, 123592)
   assert(first.parameters.options.settings.autoMemoryDirectory.startsWith(path.join(root, 'claude', 'project-memory')))
   assert.equal(await runner.run('follow-up', model, secret, 1000, undefined, 'workspace-write', [], session), 'done')
   assert.equal(sdk.captures[1].parameters.options.resume, first.parameters.options.sessionId)
@@ -124,12 +124,13 @@ test('external config requires opt-in and activation approval; revoked config re
   assert.equal(sdk.captures[3].parameters.options.mcpServers.reports, undefined)
 })
 
-test('child compaction is independently lowered within the runtime supported window', async t => {
+test('parent and child compaction use the same model-relative threshold', async t => {
   const { workspace, runner, sdk } = fixture(t)
-  for (const [contextWindow, expected] of [[1_000_000, 640_000], [150_000, 100_000], [10_000_000, 800_000]]) {
+  for (const [contextWindow, expected] of [[128_000, 123_592], [200_000, 181_192], [1_000_000, 821_192], [10_000_000, 1_000_000]]) {
     await runner.run('inspect compaction settings', { ...model, contextWindow }, secret, 1000, undefined, 'workspace-write', [], { cwd: workspace })
     const options = sdk.captures.at(-1).parameters.options
     assert.equal(options.agents['stable-worker'].autoCompactWindow, expected)
+    assert.equal(options.settings.autoCompactWindow, expected)
     assert(options.agents['stable-worker'].autoCompactWindow <= options.settings.autoCompactWindow)
   }
 })

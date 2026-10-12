@@ -723,7 +723,7 @@ test('real SDK exposes context usage while a model response is streaming', { tim
 
 test('real SDK automatically compacts and resumes at the configured context window', { timeout: 120000 }, async t => {
   for (const contextWindow of [128000, 200000, 1000000]) await t.test(String(contextWindow), async t => {
-    let seedTurns = 0, summaries = 0
+    let seedTurns = 0, summaries = 0, boundaryTurns = 0
     // Give the runtime real compressible history, not just inflated usage metadata
     // (the latter is correctly treated as an oversized, uncompressible fixed prefix).
     const filler = 'fixture detail '.repeat(Math.ceil(contextWindow * 1.15 / 15))
@@ -736,7 +736,12 @@ test('real SDK automatically compacts and resumes at the configured context wind
       }
       if (seedTurns < 3) {
         seedTurns++
-        return upstream({ text: `TURN_${seedTurns}: ${filler}`, inputTokens: Math.floor(contextWindow * (seedTurns === 3 ? .86 : seedTurns * .15)) })
+        return upstream({ text: `TURN_${seedTurns}: ${seedTurns === 3 ? 'READY' : filler}`, inputTokens: Math.floor(contextWindow * (seedTurns === 3 ? .77 : seedTurns * .15)) })
+      }
+      if (boundaryTurns < 2) {
+        assert.equal(summaries, 0, 'do not compact below 80 percent')
+        boundaryTurns++
+        return upstream({ text: 'BOUNDARY_' + boundaryTurns, inputTokens: Math.floor(contextWindow * (boundaryTurns === 1 ? .79 : .81)) })
       }
       assert.match(text, /KEEP_AFTER_COMPACT/)
       assert.match(text, /COMPACTED_CONTEXT/)
@@ -747,10 +752,14 @@ test('real SDK automatically compacts and resumes at the configured context wind
     for (let turn = 1; turn <= 3; turn++) {
       assert.match(await runner.run('KEEP_AFTER_COMPACT: perform fixture step ' + turn, profile, credential, 45000, event => events.push(event), 'read-only', [], session), new RegExp('^TURN_' + turn))
     }
+    for (let step = 1; step <= 2; step++) {
+      assert.equal(await runner.run('Check below threshold ' + step, profile, credential, 45000, event => events.push(event), 'read-only', [], session), 'BOUNDARY_' + step)
+      assert.equal(summaries, 0)
+    }
     assert.equal(await runner.run('Continue the fixture task.', profile, credential, 45000, event => events.push(event), 'read-only', [], session), 'AFTER_COMPACTION_OK')
     assert.equal(summaries, 1, 'The native SDK must issue one actual compaction request')
     assert(events.some(event => event.title === '上下文已自动压缩'), 'The native runtime must emit compact_boundary')
-    assert.equal(requests.length, 5)
+    assert.equal(requests.length, 7)
     const sizes = requests.map(body => JSON.stringify(body.messages).length)
     assert(sizes.at(-1) < Math.max(...sizes.slice(0, -1)), 'the resumed request uses the compacted history')
     const usage = require('../desktop/services/context-usage.cjs').readContextUsage(root, session.key, profile)

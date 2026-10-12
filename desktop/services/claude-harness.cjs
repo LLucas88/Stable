@@ -242,9 +242,6 @@ class ClaudeHarnessRunner {
         delete value.model; delete value.isolation; delete value.mode
         return value
       }
-      // The CLI rejects the entire agent definition for windows below 100k.
-      const compactBudget = limits.autoCompactTokenLimit
-      const workerCompactWindow = compactBudget >= 100_000 ? Math.min(1_000_000, Math.max(100_000, Math.floor(compactBudget * 0.8))) : undefined
       this.query = sdk.query({ prompt: queue, options: {
         cwd: workspace, pathToClaudeCodeExecutable: this.runtimePaths().cli, env,
         // Recent SDKs may default to auto/classifier mode. Stable owns approval
@@ -254,12 +251,12 @@ class ClaudeHarnessRunner {
         // The SDK's model name describes the Messages wire contract; the bridge
         // always routes to the user's actual model and never the alias above.
         model: limits.sdkModel, tools: server ? ['Agent', 'ToolSearch', ...nativeTools.tools, ...skillTools] : [], skills: skillOptions.names, plugins: skillOptions.plugins, settingSources: [], strictMcpConfig: true,
-        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: true, autoCompactWindow: compactBudget, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
+        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: true, autoCompactWindow: limits.autoCompactWindow, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
         includePartialMessages: true, persistSession: Boolean(session.key && !session.textOnly),
         ...(server ? { mcpServers: { stable: server, ...extensions.servers }, allowedTools: ['mcp__stable__*'] } : { mcpServers: {} }),
         ...(server ? {
           agents: { 'stable-worker': { description: '在当前任务目录与审批边界内执行可独立委派的子任务。', prompt: instructions, model: 'inherit', tools: workerTools,
-            ...(workerCompactWindow ? { autoCompactWindow: workerCompactWindow } : {}) } },
+            autoCompactWindow: limits.autoCompactWindow } },
           hooks: {
             PreToolUse: [
               { matcher: '^mcp__', hooks: [input => extensionRuntime.preToolUse(input)] },

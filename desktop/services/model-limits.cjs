@@ -26,10 +26,11 @@ function modelLimits(model = {}) {
   const outputLimit = valid(model.maxOutputTokens) ? model.maxOutputTokens : officialDeepSeek ? 384_000 : glmWindow ? (glmWindow === 128_000 ? 96_000 : 128_000) : 8192
   // Keep existing per-request output budgets; capacity metadata is not a request to spend more.
   const outputTokens = Math.min(outputLimit, officialDeepSeek && model.model !== 'deepseek-v4-pro' ? 32_768 : 8192, Math.floor(contextWindow / 4))
-  // SDK 2.1.296 silently ignores autoCompactWindow outside 100k..1M.
-  // Leave genuinely smaller budgets below 100k so the runner can reject them, never round above the model's safe limit.
-  const autoCompactTokenLimit = Math.min(1_000_000, Math.floor(contextWindow * 0.8), contextWindow - outputTokens - Math.min(8192, Math.floor(contextWindow * 0.1)))
+  // Pinned CLI 2.1.296 triggers at window - min(output, 20k) - 13k, not at window.
+  const sdkReserve = Math.min(outputTokens, 20_000) + 13_000
+  const autoCompactTokenLimit = Math.min(Math.floor(contextWindow * 0.8), 1_000_000 - sdkReserve, contextWindow - outputTokens - Math.min(8192, Math.floor(contextWindow * 0.1)))
+  const autoCompactWindow = autoCompactTokenLimit + sdkReserve
   const sdkModel = contextWindow > 200_000 ? 'claude-sonnet-4-6[1m]' : 'claude-sonnet-4-6'
-  return { contextWindow, outputLimit, outputTokens, autoCompactTokenLimit, sdkModel }
+  return { contextWindow, outputLimit, outputTokens, autoCompactTokenLimit, autoCompactWindow, sdkModel }
 }
 module.exports = { modelLimits }
