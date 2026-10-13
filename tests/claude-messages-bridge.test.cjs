@@ -27,6 +27,40 @@ async function events(bridge, input) {
   return values
 }
 
+test('local request guard fails once with redacted reason before contacting upstream', async () => {
+  let calls = 0, fatal
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'secret-test', onRequest: () => { throw Error('budget exhausted secret-test') }, onFatalError: value => { fatal = value }, fetchImpl: async () => { calls++; throw Error('must not fetch') } })
+  await bridge.start()
+  try {
+    const response = await send(bridge, request())
+    assert.equal(response.status, 400)
+    assert.equal((await response.json()).error.type, 'invalid_request_error')
+    assert.equal(fatal, 'budget exhausted [redacted]')
+    assert.equal(calls, 0)
+  } finally { await bridge.close() }
+})
+
+test('request budget guidance is refreshed for corrective generation without accumulating stale reminders', async () => {
+  let calls = 0
+  const bodies = []
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onRequest: () => `BUDGET_${++calls}`, fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    return calls === 1
+      ? upstream([completion({ tool_calls: [{ index: 0, id: 'bad', function: { name: 'Read', arguments: '{' } }] }, 'tool_calls')])
+      : upstream([completion({ content: 'Cannot finish' }, 'stop')])
+  } })
+  await bridge.start()
+  try {
+    await events(bridge, request({ system: 'BASE_RULES', tools: [tool] }))
+    assert.equal(bodies.length, 2)
+    assert.match(bodies[0].messages[0].content, /BASE_RULES.*\n\nBUDGET_1/s)
+    assert.match(bodies[1].messages[0].content, /BASE_RULES.*\n\nBUDGET_2/s)
+    assert.doesNotMatch(bodies[1].messages[0].content, /BUDGET_1/)
+    assert.equal(bodies[1].messages.at(-1).role, 'user')
+    assert.match(bodies[1].messages.at(-1).content, /整组工具调用均未执行/)
+  } finally { await bridge.close() }
+})
+
 test('deferred schemas require successful ToolSearch references and disappear after compaction', async () => {
   const bodies = []
   const bridge = new ClaudeMessagesBridge({ model, apiKey: 'fixture', fetchImpl: async (_url, init) => { bodies.push(JSON.parse(init.body)); return upstream([completion({ content: 'ok' }, 'stop')]) } })
@@ -221,6 +255,78 @@ test('plain text output limits map to Anthropic max_tokens', async () => {
   try {
     const values = await events(bridge, request())
     assert.equal(values.at(-2).delta.stop_reason, 'max_tokens'); assert.equal(values.at(-1).type, 'message_stop')
+  } finally { await bridge.close() }
+})
+
+test('invalid tool JSON gets one corrective generation; no partial or sibling tool is exposed', async () => {
+  for (const stream of [true, false]) {
+    const bodies = [], diagnostics = []
+    const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onDiagnostic: value => diagnostics.push(value), fetchImpl: async (_url, init) => {
+      bodies.push(JSON.parse(init.body))
+      if (bodies.length === 1) return upstream([
+        completion({ content: '检查文件。' }),
+        completion({ tool_calls: [
+          { index: 0, id: 'valid-but-not-executed', function: { name: 'Read', arguments: '{"file_path":"a"}' } },
+          { index: 1, id: 'invalid', function: { name: 'Read', arguments: '{"file_path":"sensitive-incomplete' } },
+        ] }, 'length'),
+        { usage: { completion_tokens: 4000 } },
+      ])
+      return upstream([completion({ tool_calls: [{ id: 'corrected', function: { name: 'Read', arguments: '{"file_path":"b"}' } }] }, 'tool_calls')])
+    } })
+    await bridge.start()
+    try {
+      const response = await send(bridge, request({ stream, tools: [tool] }))
+      assert.equal(response.status, 200)
+      const value = await response.text()
+      assert.match(value, /corrected/)
+      assert.doesNotMatch(value, /valid-but-not-executed|sensitive-incomplete|"type":"error"/)
+      assert.equal(bodies.length, 2)
+      assert.match(bodies[1].messages.at(-1).content, /未执行|分成小段/)
+      assert.equal(diagnostics[0].finishReason, 'length')
+      assert.equal(diagnostics[0].completionTokens, 4000)
+      assert.equal(diagnostics[0].outputBudget, 4000)
+      assert(diagnostics[0].calls[1].argumentBytes > 0)
+      assert.doesNotMatch(JSON.stringify(diagnostics), /sensitive-incomplete/)
+      if (stream) assert.equal((value.match(/event: message_start/g) || []).length, 1)
+    } finally { await bridge.close() }
+  }
+})
+
+test('second invalid tool response stops with a diagnostic instead of unlimited transport retries', async () => {
+  let requests = 0, fatal
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onFatalError: value => { fatal = value }, fetchImpl: async () => {
+    requests++
+    return upstream([completion({ tool_calls: [{ id: 'invalid', function: { name: 'Read', arguments: '{bad' } }] }, 'tool_calls')])
+  } })
+  await bridge.start()
+  try {
+    const values = await events(bridge, request({ tools: [tool] }))
+    assert.equal(requests, 2)
+    assert.equal(values.at(-1).error.type, 'invalid_request_error')
+    assert.match(fatal, /finish_reason=tool_calls.*arguments_bytes=4/)
+    assert(!values.some(value => value.content_block?.type === 'tool_use'))
+  } finally { await bridge.close() }
+})
+
+test('cancellation aborts corrective generation before any tool can be released', async () => {
+  let requests = 0, correctionSignal, ready
+  const correcting = new Promise(resolve => { ready = resolve })
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', fetchImpl: async (_url, init) => {
+    requests++
+    if (requests === 1) return upstream([completion({ tool_calls: [{ id: 'invalid', function: { name: 'Read', arguments: '{bad' } }] }, 'tool_calls')])
+    correctionSignal = init.signal
+    ready()
+    return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+  } })
+  await bridge.start()
+  try {
+    const response = await send(bridge, request({ tools: [tool] }))
+    const settled = response.text().catch(() => '')
+    await correcting
+    await bridge.close()
+    assert.equal(correctionSignal.aborted, true)
+    assert.equal(requests, 2)
+    assert.doesNotMatch(await settled, /"type":"tool_use"/)
   } finally { await bridge.close() }
 })
 

@@ -95,7 +95,7 @@ class BrowserSessionService {
   async evaluate(tab,args,operation){
     const frameId=args.frameId||'main',prefix=`${tab.id}.${tab.epoch}.${frameId}`
     if(args.ref&&!args.ref.startsWith(prefix+':'))throw Error('ref 所属页面或导航版本已失效，请重新读取。')
-    const source=['read','click','fill','select'].includes(operation)?pageAction:extraAction
+    const source=['read','audit','click','fill','select'].includes(operation)?pageAction:extraAction
     const call=`(${source.toString()})(${JSON.stringify(operation)},${JSON.stringify(args.ref||'')},${JSON.stringify(args.value||'')},${JSON.stringify(prefix+':'+randomUUID())})`
     const code=`(()=>{try{return {ok:true,value:${call}}}catch(error){return {ok:false,error:String(error.message||error)}}})()`
     const unwrap=result=>{if(!result?.ok)throw Error(result?.error||'页面没有返回有效结果');return result.value}
@@ -129,7 +129,7 @@ class BrowserSessionService {
     try{
       if(args.action==='open'){this.permit(tab.conversationId,args.url);await tab.view.webContents.loadURL(normalizeWebUrl(args.url));assert()}
       else if(args.action==='close'){this.close(tab.conversationId,tab.id);return {closed:true}}
-      else if(args.action==='screenshot'){
+      else if(args.action==='screenshot'||args.action==='audit'){
         assert()
         const view=tab.view, wc=view.webContents, bounds=view.getBounds()
         let captureWindow
@@ -144,6 +144,10 @@ class BrowserSessionService {
             wc.setBackgroundThrottling(false)
             view.setBounds({...bounds,width:bounds.width+1});view.setBounds(bounds)
             await new Promise(resolve=>setTimeout(resolve,250));assert()
+          }
+          if(args.action==='audit'){
+            const value=await this.evaluate(tab,{...args,ref:undefined},'audit');assert()
+            return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
           }
           const image=await wc.capturePage(undefined,{stayHidden:true,stayAwake:true});assert()
           if(image.isEmpty())throw Error('浏览器尚未产生可用截图，请等待页面渲染后重试。')

@@ -66,3 +66,15 @@ test('SDK window compensates its reserves so compaction begins at 80 percent tot
     assert(sdkTrigger + limits.outputTokens < contextWindow)
   }
 })
+
+test('official GLM has room for reasoning plus file output without moving compaction below 80 percent', () => {
+  for (const model of ['glm-4.5', 'glm-4.7', 'glm-5.3-flashx']) {
+    const limits = modelLimits({ model, baseURL: 'https://open.bigmodel.cn/api/paas/v4' })
+    assert(limits.outputTokens > 8192)
+    assert(limits.outputTokens <= 32768)
+    assert.equal(limits.autoCompactTokenLimit, limits.contextWindow * .8)
+    assert.equal(limits.autoCompactWindow - Math.min(limits.outputTokens, 20000) - 13000, limits.autoCompactTokenLimit)
+  }
+  assert.equal(modelLimits({ model: 'glm-5.3-flashx', baseURL: 'https://open.bigmodel.cn', maxOutputTokens: 4096 }).outputTokens, 4096)
+  assert.equal(modelLimits({ model: 'glm-5.3-flashx', baseURL: 'https://proxy.invalid' }).outputTokens, 8192)
+})

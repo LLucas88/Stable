@@ -6,6 +6,45 @@ const { normalizeWebUrl } = require('./preview.cjs')
 // exposes cookies, localStorage, password values, Node, the app bridge or files.
 function pageAction(action, ref, value, snapshotId) {
   const visible = element => !!element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden'
+  if (action === 'audit') {
+    const width = innerWidth, height = innerHeight
+    const all = document.querySelectorAll('body *'), nodes = Array.from(all).slice(0, 3000)
+    const hiddenHeadings = [], hiddenText = [], overlays = [], horizontalOverflow = [], charts = []
+    const describe = (element, style, rect) => ({
+      tag: element.tagName.toLowerCase(), id: element.id.slice(0, 100), classes: String(element.getAttribute('class') || '').slice(0, 160),
+      label: (element.getAttribute('aria-label') || element.textContent || '').trim().slice(0, 120),
+      rect: Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom'].map(key => [key, Math.round(rect[key] * 10) / 10])),
+      position: style.position, display: style.display, visibility: style.visibility, opacity: style.opacity, transform: style.transform,
+    })
+    for (const element of nodes) {
+      const style = getComputedStyle(element), rect = element.getBoundingClientRect()
+      const rendered = visible(element) && Number(style.opacity) > 0
+      const heading = element.matches('h1,h2,h3,h4,h5,h6,[role=heading]')
+      const text = !element.matches('script,style,template,textarea,option') && [...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())
+      if (heading && hiddenHeadings.length < 40 || text && hiddenText.length < 40) {
+        let hiddenBy = null
+        for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+          const css = getComputedStyle(ancestor)
+          if (css.display === 'none' || css.visibility === 'hidden' || Number(css.opacity) === 0) { hiddenBy = describe(ancestor, css, ancestor.getBoundingClientRect()); break }
+        }
+        if (hiddenBy) {
+          const observation = { ...describe(element, style, rect), hiddenBy }
+          if (heading && hiddenHeadings.length < 40) hiddenHeadings.push(observation)
+          if (text && hiddenText.length < 40) hiddenText.push(observation)
+        }
+      }
+      if (rendered && rect.width > 0 && rect.height > 0) {
+        if ((style.position === 'fixed' || element.matches('dialog[open],[role=dialog]')) && overlays.length < 40) {
+          overlays.push({ ...describe(element, style, rect), outsideViewport: rect.left < -1 || rect.top < -1 || rect.right > width + 1 || rect.bottom > height + 1 })
+        }
+        if ((rect.left < -1 || rect.right > width + 1) && rect.bottom > 0 && rect.top < height && horizontalOverflow.length < 40) horizontalOverflow.push(describe(element, style, rect))
+      }
+      if (element.matches('canvas,svg') && charts.length < 40) charts.push({ ...describe(element, style, rect), zeroSize: rect.width < 1 || rect.height < 1 })
+    }
+    return { title: document.title, url: location.href, viewport: { width, height }, documentWidth: document.documentElement.scrollWidth,
+      horizontalOverflow, hiddenHeadings, hiddenText, overlays, charts, scannedElements: nodes.length, scanTruncated: all.length > nodes.length,
+      limits: '当前文档前3000个元素；每类最多40项。只读 DOM 观察，隐藏标题也可能是有意折叠；不等于视觉、数据或交互验收通过。iframe 需单独 audit。', untrustedContent: true }
+  }
   if (['click', 'fill', 'select'].includes(action)) {
     const element = globalThis.__stableElements?.get(ref)
     if (!element?.isConnected || !visible(element) || element.disabled) throw new Error('元素已失效或不可用，请重新 read 获取 ref。')
@@ -70,7 +109,7 @@ class BrowserTool {
 
   async run(args, signal) {
     signal?.throwIfAborted()
-    if (!['open', 'read', 'click', 'fill', 'select', 'close'].includes(args.action)) throw new Error('未知浏览器操作。')
+    if (!['open', 'read', 'audit', 'click', 'fill', 'select', 'close'].includes(args.action)) throw new Error('未知浏览器操作。')
     if (args.action === 'close') { this.dispose(); return { closed: true } }
     if (args.action !== 'open' && (!this.window || this.window.isDestroyed())) throw new Error('请先 open 打开网页。')
     const url = args.action === 'open' ? normalizeWebUrl(args.url) : null
@@ -99,7 +138,7 @@ class BrowserTool {
           if (window.webContents.isLoading()) await new Promise(resolve => window.webContents.once('did-stop-loading', resolve))
         }
         signal?.throwIfAborted()
-        const result = await evaluate('read')
+        const result = await evaluate(args.action === 'audit' ? 'audit' : 'read')
         if (JSON.stringify(result).length > 200000) { result.tables = []; result.tablesOmitted = '表格过大，已保留正文和元素快照。' }
         return result
       }

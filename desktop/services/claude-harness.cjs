@@ -143,7 +143,7 @@ class ClaudeHarnessRunner {
     this.threadId = saved?.threadId || randomUUID(); this.turnId = randomUUID(); this.expectedResultUuid = this.turnId
     this.approvalConversation = session.key; this.abortController = new AbortController()
     const queue = inputQueue(); this.input = queue
-    const publish = event => { if (!this.cancelled || event.status === 'cancelled' || event.kind === 'approval') onEvent({ time: Date.now(), sessionId: this.threadId, depth: 0, ...event }) }
+    const publish = event => { if (!this.cancelled || event.status === 'cancelled' || event.kind === 'approval' || event.id === 'run-progress' && event.status === 'failed') onEvent({ time: Date.now(), sessionId: this.threadId, depth: 0, ...event }) }
     this.publish = publish
 
     const execution = { commandRuntime: 'sdk-native-bash', sandboxMode, networkAccess, workspace, writableRoots, readableRoots, cliProfile: this.options.environment?.WENDING_CONFIG_DIR || null }
@@ -186,10 +186,12 @@ class ClaudeHarnessRunner {
       if (session.key && !session.textOnly) { writePointer(pointer, metadata()); this.options.saveRuntimeSession?.(session.key, { ...metadata(), state: 'ready', engine: 'claude' }) }
     }
     this.saveContextSnapshot = () => { if (accepted && session.key && !session.textOnly) writePointer(pointer, metadata()) }
-    let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit
+    let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit; let providerFailure = false
     try {
       const sdk = this.options.sdk || await import('@anthropic-ai/claude-agent-sdk')
-      bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: (...args) => { acceptTurn(); progress.touch(); this.options.onModelRequest?.(...args) }, search: this.options.search,
+      bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: (...args) => { acceptTurn(); progress.touch(); return this.options.onModelRequest?.(...args) }, search: this.options.search,
+        onDiagnostic: diagnostic => publish({ id: `provider-diagnostic:${randomUUID()}`, kind: 'status', title: diagnostic.attempt === 1 ? '工具参数校验失败，正在纠正' : '工具参数纠正失败', status: diagnostic.attempt === 1 ? 'running' : 'failed', detail: JSON.stringify(diagnostic) }),
+        onFatalError: message => { providerFailure = true; stopReason = message; this.cancel() },
         textOnly: session.textOnly === true, expectedImages: images.length, reasoningFile: path.join(directory, 'stable-reasoning.jsonl') })
       await bridge.start()
       const env = claudeEnvironment(this.options.environment || process.env, home, bridge, memory.enabled, !session.textOnly)
@@ -301,6 +303,7 @@ class ClaudeHarnessRunner {
         else publish({ id: 'run-progress', kind: 'status', title: this.approvals.size ? '等待权限审批' : '正在执行任务', detail: progress.detail(), status: 'running' })
       }, 5000)
       publish({ id: `${this.threadId}:agent`, kind: 'status', entity: 'agent', eventType: 'agent/start', title: 'Stable 总控', detail: saved ? '继续 Claude Agent SDK 会话' : '启动 Claude Agent SDK 会话', status: 'running' })
+      const nativeCalls = new Map()
       for await (const message of this.query) {
         if (this.cancelled) throw new Error(stopReason || '任务已停止。')
         progress.touch(); acknowledge(message)
@@ -328,8 +331,17 @@ class ClaudeHarnessRunner {
             const id = currentMessage || message.uuid
             publish({ id, kind: 'answer', eventType: 'agent/answer-delta', delta: visibleDelta(id, event.delta.text), step, status: 'running' })
           }
+        } else if (message.type === 'user') {
+          // SDK validation failures can bypass PostToolUseFailure entirely.
+          for (const block of Array.isArray(message.message?.content) ? message.message.content : []) {
+            const call = nativeCalls.get(block.tool_use_id)
+            if (block.type !== 'tool_result' || !call) continue
+            nativeCalls.delete(block.tool_use_id)
+            if (block.is_error) onToolEvent({ id: block.tool_use_id, name: call.name, args: call.input, status: 'failed', output: block.content })
+          }
         } else if (message.type === 'assistant') {
           acceptTurn()
+          for (const block of message.message.content) if (block.type === 'tool_use' && nativeTools?.tools.includes(block.name)) nativeCalls.set(block.id, block)
           const text = message.message.content.filter(item => item.type === 'text').map(item => item.text).join('\n')
           if (text) { answer = text; this.options.onRuntimeItem?.(session.key, this.threadId, this.turnId, { id: message.uuid, type: 'agentMessage', text, status: 'completed' }) }
         } else if (message.type === 'result') {
@@ -354,7 +366,7 @@ class ClaudeHarnessRunner {
       }
       throw new Error(this.cancelled ? stopReason || '任务已停止。' : 'Claude 连接提前结束，未取得任务完成结果。')
     } catch (error) {
-      if (accepted) record(answer, this.cancelled ? 'interrupted' : 'failed')
+      if (accepted) record(answer, this.cancelled && !providerFailure ? 'interrupted' : 'failed')
       if (this.cancelled) throw new Error(stopReason || '任务已停止。')
       error.message = String(error.message || error).split(apiKey).join('[redacted]')
       throw error
@@ -374,7 +386,7 @@ class ClaudeHarnessRunner {
       } finally {
         this.saveContextSnapshot = null; this.query = null; this.nativeProcess = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
       }
-      publish({ id: 'run-progress', kind: 'status', title: this.cancelled ? '任务已取消' : '执行已结束', status: this.cancelled ? 'cancelled' : 'completed', detail: progress.detail() })
+      publish({ id: 'run-progress', kind: 'status', title: providerFailure ? '执行失败' : this.cancelled ? '任务已取消' : '执行已结束', status: providerFailure ? 'failed' : this.cancelled ? 'cancelled' : 'completed', detail: providerFailure ? stopReason : progress.detail() })
     }
   }
   async getContextUsage() {

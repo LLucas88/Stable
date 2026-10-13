@@ -24,8 +24,11 @@ function modelLimits(model = {}) {
   const valid = value => Number.isSafeInteger(value) && value >= 1024 && value <= 10_000_000
   const contextWindow = valid(model.contextWindow) ? model.contextWindow : glmWindow || (officialDeepSeek ? 1_000_000 : 128_000)
   const outputLimit = valid(model.maxOutputTokens) ? model.maxOutputTokens : officialDeepSeek ? 384_000 : glmWindow ? (glmWindow === 128_000 ? 96_000 : 128_000) : 8192
-  // Keep existing per-request output budgets; capacity metadata is not a request to spend more.
-  const outputTokens = Math.min(outputLimit, officialDeepSeek && model.model !== 'deepseek-v4-pro' ? 32_768 : 8192, Math.floor(contextWindow / 4))
+  // GLM reasoning and tool arguments share the output budget. Leave room for
+  // a complete file write, while preserving the 80% compaction target.
+  const requestBudget = glmWindow || officialDeepSeek && model.model !== 'deepseek-v4-pro' ? 32_768 : 8192
+  const outputTokens = Math.min(outputLimit, requestBudget, Math.floor(contextWindow / 4),
+    glmWindow ? Math.floor(contextWindow * 0.2) - Math.min(8192, Math.floor(contextWindow * 0.1)) : Infinity)
   // Pinned CLI 2.1.296 triggers at window - min(output, 20k) - 13k, not at window.
   const sdkReserve = Math.min(outputTokens, 20_000) + 13_000
   const autoCompactTokenLimit = Math.min(Math.floor(contextWindow * 0.8), 1_000_000 - sdkReserve, contextWindow - outputTokens - Math.min(8192, Math.floor(contextWindow * 0.1)))

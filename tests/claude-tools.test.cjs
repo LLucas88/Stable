@@ -27,6 +27,9 @@ test('MCP supplements native tools without duplicate files and retains read-only
   assert.equal((await readOnly.invoke('stable_skill_install', { path: readOnly.workspace })).isError, true)
   assert.equal(calls, 0)
   assert.equal(readOnly.requests.length, 0)
+  assert.equal((await readOnly.invoke('stable_browser', { action: 'audit', tabId: 'existing-tab' })).isError, undefined)
+  assert.equal(calls, 1)
+  assert.equal(readOnly.requests.length, 0, 'read-only layout inspection needs no mutation approval')
 })
 
 test('builtin approval and image content are routed through the parent implementation', async t => {

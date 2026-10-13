@@ -212,9 +212,10 @@ function usageFromChat(usage, fallback = 0) {
 }
 
 class ClaudeMessagesBridge {
-  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, search, textOnly = false, expectedImages = 0, reasoningFile }) {
+  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile }) {
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl; this.onRequest = onRequest
     this.search = search; this.textOnly = textOnly; this.expectedImages = expectedImages
+    this.onDiagnostic = onDiagnostic; this.onFatalError = onFatalError
     this.token = randomUUID(); this.controllers = new Set(); this.reasoning = new ClaudeReasoningStore(reasoningFile)
   }
   async start() {
@@ -274,27 +275,42 @@ class ClaudeMessagesBridge {
       for (const key of ['temperature', 'top_p']) if (Number.isFinite(input[key])) body[key] = input[key]
       if (Array.isArray(input.stop_sequences) && input.stop_sequences.length) body.stop = input.stop_sequences
       if (input.output_config?.format?.type === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'result', schema: input.output_config.format.schema, strict: true } }
-      this.onRequest?.(body, input)
-      const response = await this.fetch(chatURL(this.model.baseURL), { method: 'POST', redirect: 'error', signal: controller.signal, headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', accept: 'text/event-stream' }, body: JSON.stringify(body) })
-      if (!response.ok) {
-        let detail = await response.text()
-        try { const data = JSON.parse(detail); detail = data.error?.message || data.message || detail } catch {}
-        // Redact before truncation: a credential crossing the 1000-character
-        // boundary would otherwise leave a prefix that no full-key match sees.
-        detail = String(detail)
-        for (const secret of [this.apiKey, this.token]) if (secret) detail = detail.split(secret).join('[redacted]')
-        throw Object.assign(new Error(`模型服务请求失败（HTTP ${response.status}）：${detail.slice(0, 1000)}`), { status: response.status })
+      const fetchResponse = async feedback => {
+        const requestBody = { ...body, messages: feedback ? [...body.messages, { role: 'user', content: feedback }] : [...body.messages] }
+        // A local request guard is definitive; never retry it as a provider 502.
+        let guidance
+        try { guidance = this.onRequest?.(requestBody, input) }
+        catch (error) { throw Object.assign(new Error(String(error.message || error)), { status: 400, requestRejected: true }) }
+        if (typeof guidance === 'string' && guidance.trim()) {
+          const system = requestBody.messages.find(message => message.role === 'system')
+          requestBody.messages = system
+            ? requestBody.messages.map(message => message === system ? { ...message, content: `${message.content}\n\n${guidance}` } : message)
+            : [{ role: 'system', content: guidance }, ...requestBody.messages]
+        }
+        const response = await this.fetch(chatURL(this.model.baseURL), { method: 'POST', redirect: 'error', signal: controller.signal, headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', accept: 'text/event-stream' }, body: JSON.stringify(requestBody) })
+        if (!response.ok) {
+          let detail = await response.text()
+          try { const data = JSON.parse(detail); detail = data.error?.message || data.message || detail } catch {}
+          // Redact before truncation: a credential crossing the 1000-character
+          // boundary would otherwise leave a prefix that no full-key match sees.
+          detail = String(detail)
+          for (const secret of [this.apiKey, this.token]) if (secret) detail = detail.split(secret).join('[redacted]')
+          throw Object.assign(new Error(`模型服务请求失败（HTTP ${response.status}）：${detail.slice(0, 1000)}`), { status: response.status })
+        }
+        return response
       }
-      await this.respond(response, res, translated.catalog, input)
+      await this.respond(await fetchResponse(), res, translated.catalog, input, fetchResponse, body.max_tokens)
     } catch (error) {
       let message = String(error.message || error)
       for (const secret of [this.apiKey, this.token]) if (secret) message = message.split(secret).join('[redacted]')
-      const payload = { type: 'error', error: { type: error.name === 'AbortError' ? 'api_error' : 'stable_provider_error', message } }
+      const fatal = error.outputFailure || error.requestRejected
+      const payload = { type: 'error', error: { type: fatal ? 'invalid_request_error' : error.name === 'AbortError' ? 'api_error' : 'stable_provider_error', message } }
       if (res.headersSent) { if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify(payload)}\n\n`); res.end() } }
       else if (!res.destroyed) { res.writeHead(error.status || 502, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)) }
+      if (fatal) this.onFatalError?.(message)
     } finally { this.controllers.delete(controller) }
   }
-  async respond(upstream, res, catalog, input) {
+  async respond(upstream, res, catalog, input, regenerate, outputBudget) {
     const stream = input.stream === true
     const id = `msg_${randomUUID()}`; const content = []; const calls = new Map()
     let text = ''; let thought = ''; let usage; let finish; let textIndex
@@ -331,31 +347,47 @@ class ClaudeMessagesBridge {
         calls.set(index, call)
       }
     }
-    if (upstream.headers?.get('content-type')?.includes('application/json')) append(await upstream.json())
-    else for await (const chunk of readSSE(upstream.body)) append(chunk)
-    if (!finish) throw new Error('模型连接提前结束，未返回完成标记。')
-    if (!['stop', 'tool_calls', 'length'].includes(finish)) throw new Error(`模型未正常完成生成：${finish}`)
-    // Stable's existing clarification contract ends the turn immediately. A
-    // provider may emit a waiting card alongside tools; those calls must not
-    // escape to the SDK while the user is being asked for missing information.
-    if (text.trimStart().startsWith(WAIT_MARKER)) {
-      calls.clear()
-      if (finish === 'tool_calls') finish = 'stop'
+    let completed
+    for (let attempt = 0; ; attempt++) {
+      if (upstream.headers?.get('content-type')?.includes('application/json')) append(await upstream.json())
+      else for await (const chunk of readSSE(upstream.body)) append(chunk)
+      if (!finish) throw new Error('模型连接提前结束，未返回完成标记。')
+      if (!['stop', 'tool_calls', 'length'].includes(finish)) throw new Error(`模型未正常完成生成：${finish}`)
+      // Stable's clarification contract ends the turn immediately, without tools.
+      if (text.trimStart().startsWith(WAIT_MARKER)) {
+        calls.clear()
+        if (finish === 'tool_calls') finish = 'stop'
+      }
+      if (this.textOnly && calls.size) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
+      completed = []; const ids = new Set()
+      try {
+        for (const [, call] of [...calls].sort(([a], [b]) => a - b)) {
+          if (!call.id || ids.has(call.id) || !catalog.has(call.name)) throw new Error(`模型返回了未知或不完整的工具调用：${call.name}`)
+          ids.add(call.id)
+          let args
+          try { args = JSON.parse(call.arguments || '{}') } catch { throw new Error(`模型工具参数不是有效的 JSON：${call.name}`) }
+          if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error(`模型工具参数必须是对象：${call.name}`)
+          completed.push({ ...call, input: args })
+        }
+        // No partial tools at a token limit, even if their JSON happens to parse.
+        if (completed.length && finish !== 'tool_calls') throw new Error('模型工具调用没有完整的完成标记。')
+        if (finish === 'tool_calls' && !completed.length) throw new Error('模型工具完成标记缺少工具调用。')
+      } catch {
+        // No tool block has left the bridge: never execute or repair partial JSON.
+        // Give the provider one corrective attempt, then stop SDK transport retries.
+        const diagnostic = { kind: 'tool_arguments', attempt: attempt + 1, finishReason: finish, outputBudget,
+          completionTokens: usage?.completion_tokens ?? null,
+          calls: [...calls.values()].map(call => ({ name: catalog.has(call.name) ? call.name : 'unknown', argumentBytes: Buffer.byteLength(call.arguments) })) }
+        this.onDiagnostic?.(diagnostic)
+        const reason = finish === 'length' ? '工具参数生成达到输出上限' : '模型工具参数无效或完成标记不完整'
+        if (attempt || !regenerate) throw Object.assign(new Error(`${reason}；纠正后仍失败，已停止重试。finish_reason=${finish}，max_tokens=${outputBudget}，arguments_bytes=${diagnostic.calls.map(call => call.argumentBytes).join(',')}。本次未执行任何工具。`), { status: 400, outputFailure: true })
+        const feedback = `Stable 模型适配校验：上一响应${reason}（finish_reason=${finish}）。整组工具调用均未执行，不能假定已写入文件。请继续当前任务，重新生成完整、正确转义的 JSON 对象；文件内容分成小段，每次只写一个完整片段，再用 Edit 逐步补全。不要一次输出整个长报告，不要重复已输出的过程说明。`
+        calls.clear(); thought = ''; finish = undefined; usage = undefined
+        upstream = await regenerate(feedback)
+        continue
+      }
+      break
     }
-    if (this.textOnly && calls.size) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
-    const completed = []; const ids = new Set()
-    for (const [, call] of [...calls].sort(([a], [b]) => a - b)) {
-      if (!call.id || ids.has(call.id) || !catalog.has(call.name)) throw new Error(`模型返回了未知或不完整的工具调用：${call.name}`)
-      ids.add(call.id)
-      let args
-      try { args = JSON.parse(call.arguments || '{}') } catch { throw new Error(`模型工具参数不是有效的 JSON：${call.name}`) }
-      if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error(`模型工具参数必须是对象：${call.name}`)
-      completed.push({ ...call, input: args })
-    }
-    // A partial tool at a token limit must never be executable. Plain text
-    // token exhaustion is a normal Anthropic max_tokens result.
-    if (completed.length && finish !== 'tool_calls') throw new Error('模型工具调用没有完整的完成标记。')
-    if (finish === 'tool_calls' && !completed.length) throw new Error('模型工具完成标记缺少工具调用。')
     if (!text && !completed.length && finish !== 'length') throw new Error('模型返回了空结果。')
     if (textIndex !== undefined) emit('content_block_stop', { index: textIndex })
     if (thought || completed.length) this.reasoning.remember(thought, completed.map(call => call.id))

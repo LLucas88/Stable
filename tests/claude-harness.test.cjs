@@ -52,6 +52,8 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   const session = { key: 'same', cwd: workspace, contextPolicy: 'uploaded-only-v1', initialPrompt: 'full initial context' }
   assert.equal(await runner.run('first', model, secret, 1000, undefined, 'workspace-write', [], session), 'done')
   const first = sdk.captures[0]
+  assert(first.parameters.options.systemPrompt.prompt.includes(require('../desktop/services/report-guidance.cjs').REPORT_GUIDANCE))
+  assert(first.parameters.options.agents['stable-worker'].prompt.includes(require('../desktop/services/report-guidance.cjs').REPORT_GUIDANCE))
   assert.equal(first.first.message.content[0].text, 'full initial context')
   assert.equal(first.parameters.options.resume, undefined)
   assert(first.closed)

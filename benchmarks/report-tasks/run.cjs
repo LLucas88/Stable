@@ -5,6 +5,7 @@
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os')
 const { spawnSync } = require('node:child_process')
 const bench = require('./benchmark.cjs')
+const { requestBudget } = require('./request-budget.cjs')
 const args = bench.options(['run', ...process.argv.slice(2)])
 bench.requireLive(args)
 const run = path.resolve(args.run), data = path.resolve(args.data)
@@ -61,13 +62,14 @@ async function execute() {
     const target = path.join(flow.workspace, 'input', item.dataset + '.xlsx')
     if (!flow.inputs.has(item.dataset)) { fs.copyFileSync(path.join(data, item.dataset + '.xlsx'), target); flow.inputs.add(item.dataset) }
     const toolInstances = [], events = [], tools = new Map()
-    let requests = 0, firstOutputMs = null, checkpointInterrupted = false, error, status = 'completed'
+    const budget = requestBudget(maxRequests)
+    let firstOutputMs = null, checkpointInterrupted = false, error, status = 'completed'
     const started = Date.now(), responses = []
     const runner = new ClaudeHarnessRunner({
       userData: flow.userData, workspace: flow.workspace,
       environment: { ...process.env, STABLE_BENCH_API_KEY: '' },
       builtinTools: context => { const tools = new BuiltinTools({ ...context, electron, browserEnabled: true, browserSession }); toolInstances.push(tools); return tools },
-      onModelRequest: () => { if (requests >= maxRequests) { runner.cancel(); throw Error('benchmark 请求次数达到上限') } requests++ },
+      onModelRequest: () => budget.onRequest(),
     })
     active = runner
     const capture = event => {
@@ -100,6 +102,7 @@ async function execute() {
     if (!inputsUnchanged) { status = 'failed'; error = '输入数据被修改' }
     try { bench.snapshot(flow.workspace, path.join(caseDir, 'artifacts')) }
     catch (failure) { status = 'failed'; error = failure.message }
+    const requests = budget.used
     const durations = [...tools.values()].map(tool => ({ ...tool, durationMs: tool.end === null ? null : Math.max(0, tool.end - tool.start) }))
     bench.writeJSON(path.join(caseDir, 'record.json'), { status, error: error || null, inputsUnchanged, checkpointInterrupted,
       performance: { durationMs: Date.now() - started, firstOutputMs, requests, toolCalls: durations.length, toolFailures: durations.filter(tool => ['failed', 'denied', 'cancelled'].includes(tool.status)).length, compactions: events.filter(event => event.title === '上下文已自动压缩').length, billingTokens: null, billingCost: null }, tools: durations })
