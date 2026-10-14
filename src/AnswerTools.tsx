@@ -43,7 +43,7 @@ export function AnswerToolbar({ message, chapter, onFork, onPin }: { message: Me
   </>
 }
 
-export function ChapterDirectory({ chapters, error, onJump, onChange }: { chapters: AnswerChapter[]; error: string; onJump: (chapter: AnswerChapter) => Promise<void>; onChange: (messageId: string, title: string | null) => Promise<void> }) {
+export function ChapterDirectory({ chapters, error, onJump, onChange, embedded = false, onDismiss }: { chapters: AnswerChapter[]; error: string; onJump: (chapter: AnswerChapter) => Promise<void>; onChange: (messageId: string, title: string | null) => Promise<void>; embedded?: boolean; onDismiss?: () => void }) {
   const [open, setOpen] = useState(false), [editing, setEditing] = useState(''), [title, setTitle] = useState(''), [busy, setBusy] = useState(false), [actionError, setActionError] = useState('')
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null)
   const id = useId()
@@ -60,15 +60,15 @@ export function ChapterDirectory({ chapters, error, onJump, onChange }: { chapte
     try { await work() } catch (err) { setActionError(err instanceof Error ? err.message : String(err)) } finally { setBusy(false) }
   }
   return <div className="chapter-directory" ref={root}>
-    <button ref={trigger} type="button" className="chapter-trigger" aria-label="章节目录" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}><ListTree size={17} /><span>章节{chapters.length ? ` ${chapters.length}` : ''}</span></button>
-    {open && <section className="chapter-panel" id={id} aria-label="章节目录">
+    {!embedded && <button ref={trigger} type="button" className="chapter-trigger" aria-label="章节目录" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}><ListTree size={17} /><span>章节{chapters.length ? ` ${chapters.length}` : ''}</span></button>}
+    {(open || embedded) && <section className="chapter-panel" id={id} aria-label="章节目录">
       <strong>章节目录</strong>
       {!chapters.length && <p>在回答下方点击图钉，将回答固定为章节。</p>}
       <ol>{chapters.map(chapter => <li key={chapter.messageId}>
         {editing === chapter.messageId ? <form onSubmit={event => { event.preventDefault(); void run(async () => { await onChange(chapter.messageId, title); setEditing('') }) }}>
           <input aria-label="章节名称" autoFocus maxLength={80} required value={title} onChange={event => setTitle(event.target.value)} />
           <button type="submit" aria-label="保存章节名称" disabled={busy || !title.trim()}><Check size={15} /></button><button type="button" aria-label="取消重命名" onClick={() => setEditing('')}><X size={15} /></button>
-        </form> : <><button type="button" className="chapter-jump" disabled={busy} onClick={() => void run(async () => { await onJump(chapter); setOpen(false) })}>{chapter.title}</button><button type="button" aria-label={`重命名章节 ${chapter.title}`} disabled={busy} onClick={() => { setEditing(chapter.messageId); setTitle(chapter.title) }}><Pencil size={14} /></button><button type="button" aria-label={`取消固定章节 ${chapter.title}`} disabled={busy} onClick={() => void run(() => onChange(chapter.messageId, null))}><PinOff size={14} /></button></>}
+        </form> : <><button type="button" className="chapter-jump" disabled={busy} onClick={() => void run(async () => { await onJump(chapter); setOpen(false); onDismiss?.() })}>{chapter.title}</button><button type="button" aria-label={`重命名章节 ${chapter.title}`} disabled={busy} onClick={() => { setEditing(chapter.messageId); setTitle(chapter.title) }}><Pencil size={14} /></button><button type="button" aria-label={`取消固定章节 ${chapter.title}`} disabled={busy} onClick={() => void run(() => onChange(chapter.messageId, null))}><PinOff size={14} /></button></>}
       </li>)}</ol>
       {(error || actionError) && <p role="alert">{actionError || error}</p>}
     </section>}

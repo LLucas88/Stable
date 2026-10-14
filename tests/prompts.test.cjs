@@ -30,6 +30,7 @@ test('agent prompt clearly separates identity, resources and current request', (
   assert.match(prompt, /只可使用本次上下文列出的“当前对话手动选择的 Skills”/)
   assert.match(prompt, /默认使用简体中文回答/)
   assert.match(prompt, /不要在一次工具调用中生成超过 3000 字符/)
+  assert(prompt.includes(require('../desktop/services/report-guidance.cjs').REPORT_GUIDANCE))
 })
 
 test('skill frontmatter is parsed without executing content', () => {

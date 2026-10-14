@@ -88,6 +88,8 @@ class ClaudeHarnessRunner {
   }
   ready() { return fs.existsSync(this.runtimePaths().cli) }
   async run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = [], session = {}) {
+    const prediction = session.purpose === 'message-prediction'
+    if (prediction) { session = { cwd: session.cwd, textOnly: true, purpose: session.purpose }; sandboxMode = 'read-only'; imageAttachments = [] }
     if (this.busy) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先配置模型服务。')
     if (!this.ready()) throw new Error('Claude Agent SDK 运行时不完整，请重新安装依赖或更新 Stable。')
@@ -143,7 +145,7 @@ class ClaudeHarnessRunner {
     this.threadId = saved?.threadId || randomUUID(); this.turnId = randomUUID(); this.expectedResultUuid = this.turnId
     this.approvalConversation = session.key; this.abortController = new AbortController()
     const queue = inputQueue(); this.input = queue
-    const publish = event => { if (!this.cancelled || event.status === 'cancelled' || event.kind === 'approval') onEvent({ time: Date.now(), sessionId: this.threadId, depth: 0, ...event }) }
+    const publish = event => { if (!this.cancelled || event.status === 'cancelled' || event.kind === 'approval' || event.id === 'run-progress' && event.status === 'failed') onEvent({ time: Date.now(), sessionId: this.threadId, depth: 0, ...event }) }
     this.publish = publish
 
     const execution = { commandRuntime: 'sdk-native-bash', sandboxMode, networkAccess, workspace, writableRoots, readableRoots, cliProfile: this.options.environment?.WENDING_CONFIG_DIR || null }
@@ -186,13 +188,22 @@ class ClaudeHarnessRunner {
       if (session.key && !session.textOnly) { writePointer(pointer, metadata()); this.options.saveRuntimeSession?.(session.key, { ...metadata(), state: 'ready', engine: 'claude' }) }
     }
     this.saveContextSnapshot = () => { if (accepted && session.key && !session.textOnly) writePointer(pointer, metadata()) }
-    let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit
+    let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit; let providerFailure = false; let predictionRequests = 0
     try {
       const sdk = this.options.sdk || await import('@anthropic-ai/claude-agent-sdk')
-      bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: (...args) => { acceptTurn(); progress.touch(); this.options.onModelRequest?.(...args) }, search: this.options.search,
+      bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, onRequest: (...args) => {
+        if (prediction) {
+          if (++predictionRequests > 1) throw new Error('消息预测请求预算已耗尽。')
+          args[0].max_tokens = Math.min(args[0].max_tokens, 2048)
+        }
+        acceptTurn(); progress.touch(); return this.options.onModelRequest?.(...args)
+      }, search: this.options.search,
+        onDiagnostic: diagnostic => publish({ id: `provider-diagnostic:${randomUUID()}`, kind: 'status', title: diagnostic.attempt === 1 ? '工具参数校验失败，正在纠正' : '工具参数纠正失败', status: diagnostic.attempt === 1 ? 'running' : 'failed', detail: JSON.stringify(diagnostic) }),
+        onFatalError: message => { providerFailure = true; stopReason = message; this.cancel() },
         textOnly: session.textOnly === true, expectedImages: images.length, reasoningFile: path.join(directory, 'stable-reasoning.jsonl') })
       await bridge.start()
       const env = claudeEnvironment(this.options.environment || process.env, home, bridge, memory.enabled, !session.textOnly)
+      if (prediction) env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '2048'
       this.builtins = session.textOnly ? null : this.options.builtinTools?.({ workspace, writableRoots, conversationId: session.key })
       const onToolEvent = event => {
         if (event.status === 'running') progress.start(event.id, event.args?.command || event.name)
@@ -218,7 +229,7 @@ class ClaudeHarnessRunner {
       const server = session.textOnly ? null : require('./claude-tools.cjs').createClaudeTools({ sdk, workspace, writableRoots, readableRoots, sandboxMode,
         builtinTools: this.builtins, trustedCli: this.options.trustedCli, signal: this.abortController.signal, requestApproval: this.requestApproval,
         search: (args, signal) => bridge.runSearch(args, signal), onToolEvent })
-      const instructions = [
+      const instructions = prediction ? require('./message-predictions.cjs').PREDICTION_INSTRUCTIONS : [
         '已启用原生 ToolSearch。需要的工具不在当前列表时，先用 ToolSearch 查询工具名称或用途；获得工具定义后再调用。搜索工具不会授予调用权限，命令和写入仍需审批。',
         '你在 Stable 中执行用户任务。优先使用 Claude Agent SDK 原生工具：Bash 执行终端命令，Read 读取文件，Write 新建或写入，Edit 精确编辑，Glob 查找文件，Grep 搜索内容，NotebookEdit 编辑笔记本，Agent 委派子任务。原生文件工具遵守目录边界；Bash 遵守审批，但本机命令不受目录隔离。仅用 Stable 工具补充原生工具缺少或当前环境无法提供的能力。模型服务由 Stable 用户选择，不要假设你连接的是 Anthropic 模型。',
         session.globalInstructions, CLARIFICATION_GUIDANCE, EXECUTION_GUIDANCE, MANUAL_SKILL_POLICY, skillOptions.instruction, memory.instruction, HTML_PREVIEW_GUIDANCE,
@@ -251,7 +262,8 @@ class ClaudeHarnessRunner {
         // The SDK's model name describes the Messages wire contract; the bridge
         // always routes to the user's actual model and never the alias above.
         model: limits.sdkModel, tools: server ? ['Agent', 'ToolSearch', ...nativeTools.tools, ...skillTools] : [], skills: skillOptions.names, plugins: skillOptions.plugins, settingSources: [], strictMcpConfig: true,
-        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: true, autoCompactWindow: limits.autoCompactWindow, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
+        systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: !prediction, autoCompactWindow: limits.autoCompactWindow, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
+        ...(prediction ? { maxTurns: 1 } : {}),
         includePartialMessages: true, persistSession: Boolean(session.key && !session.textOnly),
         ...(server ? { mcpServers: { stable: server, ...extensions.servers }, allowedTools: ['mcp__stable__*'] } : { mcpServers: {} }),
         ...(server ? {
@@ -301,6 +313,7 @@ class ClaudeHarnessRunner {
         else publish({ id: 'run-progress', kind: 'status', title: this.approvals.size ? '等待权限审批' : '正在执行任务', detail: progress.detail(), status: 'running' })
       }, 5000)
       publish({ id: `${this.threadId}:agent`, kind: 'status', entity: 'agent', eventType: 'agent/start', title: 'Stable 总控', detail: saved ? '继续 Claude Agent SDK 会话' : '启动 Claude Agent SDK 会话', status: 'running' })
+      const nativeCalls = new Map()
       for await (const message of this.query) {
         if (this.cancelled) throw new Error(stopReason || '任务已停止。')
         progress.touch(); acknowledge(message)
@@ -328,8 +341,17 @@ class ClaudeHarnessRunner {
             const id = currentMessage || message.uuid
             publish({ id, kind: 'answer', eventType: 'agent/answer-delta', delta: visibleDelta(id, event.delta.text), step, status: 'running' })
           }
+        } else if (message.type === 'user') {
+          // SDK validation failures can bypass PostToolUseFailure entirely.
+          for (const block of Array.isArray(message.message?.content) ? message.message.content : []) {
+            const call = nativeCalls.get(block.tool_use_id)
+            if (block.type !== 'tool_result' || !call) continue
+            nativeCalls.delete(block.tool_use_id)
+            if (block.is_error) onToolEvent({ id: block.tool_use_id, name: call.name, args: call.input, status: 'failed', output: block.content })
+          }
         } else if (message.type === 'assistant') {
           acceptTurn()
+          for (const block of message.message.content) if (block.type === 'tool_use' && nativeTools?.tools.includes(block.name)) nativeCalls.set(block.id, block)
           const text = message.message.content.filter(item => item.type === 'text').map(item => item.text).join('\n')
           if (text) { answer = text; this.options.onRuntimeItem?.(session.key, this.threadId, this.turnId, { id: message.uuid, type: 'agentMessage', text, status: 'completed' }) }
         } else if (message.type === 'result') {
@@ -354,7 +376,7 @@ class ClaudeHarnessRunner {
       }
       throw new Error(this.cancelled ? stopReason || '任务已停止。' : 'Claude 连接提前结束，未取得任务完成结果。')
     } catch (error) {
-      if (accepted) record(answer, this.cancelled ? 'interrupted' : 'failed')
+      if (accepted) record(answer, this.cancelled && !providerFailure ? 'interrupted' : 'failed')
       if (this.cancelled) throw new Error(stopReason || '任务已停止。')
       error.message = String(error.message || error).split(apiKey).join('[redacted]')
       throw error
@@ -373,8 +395,11 @@ class ClaudeHarnessRunner {
         try { this.builtins?.dispose() } finally { await bridge?.close() }
       } finally {
         this.saveContextSnapshot = null; this.query = null; this.nativeProcess = null; this.builtins = null; activeHomes.delete(directory); this.busy = false
+        if (prediction && path.dirname(directory) === runsRoot && path.basename(directory).startsWith('run-')) {
+          try { fs.rmSync(directory, { recursive: true, force: true }) } catch { /* A locked temporary file must not affect the finished request. */ }
+        }
       }
-      publish({ id: 'run-progress', kind: 'status', title: this.cancelled ? '任务已取消' : '执行已结束', status: this.cancelled ? 'cancelled' : 'completed', detail: progress.detail() })
+      publish({ id: 'run-progress', kind: 'status', title: providerFailure ? '执行失败' : this.cancelled ? '任务已取消' : '执行已结束', status: providerFailure ? 'failed' : this.cancelled ? 'cancelled' : 'completed', detail: providerFailure ? stopReason : progress.detail() })
     }
   }
   async getContextUsage() {

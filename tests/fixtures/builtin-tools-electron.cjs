@@ -19,7 +19,7 @@ let server, runner, direct
 
 async function run() {
   await app.whenReady()
-  let step = 0, approvals = 0, origin
+  let step = 0, approvals = 0, origin, discovered = false
   const responses = [], events = []
   const finish = (response, delta, reason = 'stop') => {
     response.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -37,9 +37,13 @@ async function run() {
       const body = JSON.parse(Buffer.concat(chunks))
       if (!body.tools?.length) { finish(response, { content: '工具验证' }); return }
       const names = body.tools.map(tool => tool.function?.name?.replace(/^mcp__stable__/, ''))
+      if (!discovered && names.includes('ToolSearch')) {
+        discovered = true
+        return finish(response, { tool_calls: [{ index: 0, id: 'discover-builtins', type: 'function', function: { name: 'ToolSearch', arguments: JSON.stringify({ query: 'select:mcp__stable__stable_browser,mcp__stable__stable_excel', max_results: 2 }) } }] }, 'tool_calls')
+      }
       assert.ok(names.includes('stable_browser'), `browser not advertised: ${names.join(',')}`)
       assert.ok(names.includes('stable_excel'), 'Excel not advertised')
-      const last = body.messages.filter(m => m.role === 'tool').at(-1)
+      const last = body.messages.filter(m => m.role === 'tool' && m.tool_call_id !== 'discover-builtins').at(-1)
       let result
       if (last) {
         const content = typeof last.content === 'string' ? last.content : last.content.map(c => c.text || '').join('')
@@ -59,7 +63,9 @@ async function run() {
       }
       if (step === 5) { assert.equal(result.verified, true); return call(response, 'stable_excel', { action: 'inspect', path: '网页采集.xlsx' }) }
       if (step === 6) { assert.equal(result.sheets[0].rows, 2); return call(response, 'stable_excel', { action: 'read', path: '网页采集.xlsx', sheet: '网页' }) }
-      assert.deepEqual(result.rows[1].values, ['A店', '120'])
+      if (step === 7) { assert.deepEqual(result.rows[1].values, ['A店', '120']); return call(response, 'stable_browser', { action: 'audit' }) }
+      assert(result.viewport.width > 0)
+      assert.equal(result.untrustedContent, true)
       finish(response, { content: 'BUILTIN_AGENT_OK' })
     } catch (error) { console.error('FIXTURE_FAILURE', error.message); finish(response, { content: `FIXTURE_FAILURE ${error.message}` }) }
   })
@@ -72,7 +78,7 @@ async function run() {
     if (event.kind === 'approval' && event.status === 'running') { approvals++; runner.answerApproval(event.requestId, true) } // fixture only
   }, 'workspace-write')
   assert.equal(answer, 'BUILTIN_AGENT_OK')
-  assert.equal(step, 7); assert.equal(approvals, 3)
+  assert.equal(step, 8); assert.equal(approvals, 3)
   assert.ok(events.some(e => e.title === '使用工具 stable_excel'))
   assert.ok(events.some(e => e.title === '使用工具 stable_browser'))
   assert.equal(electron.BrowserWindow.getAllWindows().length, 0, 'run completion must close its hidden browser')

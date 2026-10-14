@@ -56,8 +56,7 @@ export function ContextUsageButton({ conversationId, modelId, running }: { conve
   const rank = (name: string) => { const index = order.indexOf(name.toLowerCase()); return index < 0 ? order.length : index }
   const rows = [...(usage?.categories || [])].sort((a, b) => rank(a.name) - rank(b.name)).map(row => ({ ...row, color: colors[rank(row.name) % colors.length] }))
   const details = usage ? [
-    { title: 'MCP 工具', rows: usage.mcpTools }, { title: '记忆文件', rows: usage.memoryFiles },
-    { title: '系统工具', rows: usage.systemTools }, { title: '技能', rows: usage.skills },
+    { title: '系统工具', rows: usage.systemTools },
   ].filter(group => group.rows.length) : []
 
   return <div className="context-usage" ref={root} data-open={level > 0 || undefined} onKeyDown={event => {
@@ -68,6 +67,7 @@ export function ContextUsageButton({ conversationId, modelId, running }: { conve
         <circle className="context-ring-track" cx="12" cy="12" r="8" />
         <circle className="context-ring-value" cx="12" cy="12" r="8" pathLength="100" strokeDasharray={`${Math.min(100, Math.max(0, percentage))} 100`} transform="rotate(-90 12 12)" />
       </svg>
+      <span className="context-usage-inline">{summary}</span>
     </button>
     {!level && <span className="context-usage-tooltip" id={tooltipId} role="tooltip">上下文 {summary}{known && ' · 估算'}</span>}
     {level > 0 && <div className="context-usage-panel" id={panelId} role="dialog" aria-label="上下文用量">

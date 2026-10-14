@@ -12,6 +12,7 @@ test('desktop adapter keeps OS notifications without sending in-app task overlay
  assert(actions.some(x=>Array.isArray(x)&&x[0]==='select'&&x[1]==='a'))
  assert.equal(delivered.at(-1)[0],'stable:task:open');assert.equal(delivered.at(-1)[1].activeConversationId,'a')
  alerts.finish('a');assert(actions.includes('close-toast'));assert(!delivered.some(item=>item[0]==='stable:task:notice'))
+ alerts.start('a');alerts.wait('a','input','input');assert.equal(notices[1].options.title,'Stable · 需要用户回答');assert.equal(notices[1].options.timeoutType,'never');notices[1].emit('click');assert.equal(delivered.at(-1)[1].activeConversationId,'a');alerts.finish('a')
  Notification.isSupported=()=>false
- alerts.start('a');alerts.wait('a','input','input');assert.equal(notices.length,1);assert(!delivered.some(item=>item[0]==='stable:task:notice'))
+ alerts.start('a');alerts.wait('a','input','input');assert.equal(notices.length,2);assert(!delivered.some(item=>item[0]==='stable:task:notice'))
 })

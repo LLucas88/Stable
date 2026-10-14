@@ -211,6 +211,7 @@ export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'in
 export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
 
 export interface ConversationItem {
+  waitingForInput?: boolean
   networkAccess?: boolean
   projectId?: string | null
   cwd?: string
@@ -297,11 +298,11 @@ export interface ClarificationQuestion {
 }
 export interface ClarificationResponse {
   id: string
-  source: 'choice' | 'custom' | 'timeout' | 'skip' | 'close'
+  source: 'choice' | 'custom'
   option?: number
   text?: string
 }
-export interface ClarificationTimer { id: string; deadline: number; interacted: boolean }
+export interface ClarificationTimer { id: string; deadline: number | null; interacted: boolean }
 export interface AgentTraceItem {
   clarification?: ClarificationQuestion
   id: string
@@ -518,6 +519,7 @@ export interface BootstrapData {
   projects?: ProjectItem[]
   catchAttachments?: AgentAttachment[]
   appVersion: string
+  messagePredictionsEnabled?: boolean
   identity: string
   theme: ThemeMode
   data: DataItem[]
@@ -622,6 +624,8 @@ export interface StableBridge {
   }
   projects: { pickFolders():Promise<string[]>; create(name:string,folders:string[]):Promise<ProjectItem>; open(projectId:string|null,conversationId?:string):Promise<AgentState>; manage(id:string,action:'remove'|'relocate'|'pin'|'unpin'|'open'):Promise<AgentState>; register(): Promise<ProjectItem[]>; bind(id: string, projectId: string | null): Promise<AgentState> }
   agent: {
+    prediction(conversationId: string, messageId: string, requestId: string): Promise<{ conversationId: string; sourceMessageId: string; suggestion: string } | null>
+    cancelPrediction(requestId: string): Promise<boolean>
     onTaskOpen?(handler: (state: AgentState) => void): () => void
     setSkillReferences(id: string, ids: string[]): Promise<AgentReference[]>
     lifecycle(id:string,action:'archive'|'unarchive'|'delete'|'reconcile'|'rebuild'):Promise<AgentState>
@@ -707,6 +711,7 @@ export interface StableBridge {
     import(issuerFingerprint: string): Promise<{ canceled: boolean; modelName?: string }>
   }
   settings: {
+    messagePredictions(enabled: boolean): Promise<boolean>
     globalInstructions(): Promise<GlobalInstructionsFile>
     saveGlobalInstructions(content: string): Promise<GlobalInstructionsFile>
   }

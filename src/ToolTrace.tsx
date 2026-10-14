@@ -19,7 +19,7 @@ export function ToolTrace({ items, status = savedTraceStatus(items) }: { items: 
   }, [open, status])
   function close() { setOpen(false); trigger.current?.focus() }
   return <>
-    <button ref={trigger} className="tool-trace-button" type="button" aria-label="Trace：工具调用记录" aria-haspopup="dialog" onClick={() => { setNow(Date.now()); setOpen(true) }}><ListChecks size={16} /><span>Trace</span></button>
+    <button ref={trigger} className="tool-trace-button" type="button" aria-label="Trace：工具调用记录" title="Trace：工具调用记录" aria-haspopup="dialog" onClick={() => { setNow(Date.now()); setOpen(true) }}><ListChecks size={16} aria-hidden="true" /></button>
     {open && createPortal(<dialog ref={dialog} className="tool-trace-dialog" aria-label="工具调用 Trace" onCancel={event => { event.preventDefault(); close() }} onClick={event => { if (event.target === event.currentTarget) close() }}>
       <section><header><strong>Trace</strong><span>{tools.length} 次调用 · {tools.filter(item => item.status === 'failed').length} 次失败</span><button type="button" aria-label="关闭 Trace" onClick={close}><X size={18} /></button></header>
         <div className="tool-trace-list">

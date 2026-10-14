@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { WendingLoginPanel } from './WendingLoginPanel'
 import type { WendingLoginState } from './types'
 
-export function ConversationWending({ conversationId, running, active, autoOpen = false }: { conversationId: string; running: boolean; active: boolean; autoOpen?: boolean }) {
+export function ConversationWending({ conversationId, running, active, autoOpen = false, hideTrigger = false, openRequest = 0, onClose }: { conversationId: string; running: boolean; active: boolean; autoOpen?: boolean; hideTrigger?: boolean; openRequest?: number; onClose?: () => void }) {
   const [state, setState] = useState<WendingLoginState>({ phase: 'unknown', channel: '0', detail: '此任务尚未检查问鼎登录。' })
   const [binding, setBinding] = useState<Pick<WendingLoginState, 'channel' | 'brandLabel'>>({ channel: '0' })
   const [open, setOpen] = useState(false)
@@ -21,6 +21,7 @@ export function ConversationWending({ conversationId, running, active, autoOpen 
   useEffect(() => { if (open && active) dialog.current?.showModal(); else dialog.current?.close() }, [open, active])
   useEffect(() => { if (!active && open) close() }, [active])
   useEffect(() => { if (autoOpen && !usedAutoOpen.current && active && !running) { usedAutoOpen.current = true; void prepare() } }, [autoOpen, active, running])
+  useEffect(() => { if (openRequest > 0 && active) void prepare() }, [openRequest])
 
   function close() {
     generation.current++
@@ -28,6 +29,7 @@ export function ConversationWending({ conversationId, running, active, autoOpen 
     setOpen(false); setBusy(false)
     void window.stable.extensions.cancelWendingLogin(conversationId).catch(() => {})
     button.current?.focus()
+    onClose?.()
   }
   function acceptState(value: WendingLoginState) {
     setState(value)
@@ -51,7 +53,7 @@ export function ConversationWending({ conversationId, running, active, autoOpen 
     } finally { if (current === generation.current) setBusy(false) }
   }
   return <>
-    <button ref={button} className="conversation-wending-button" aria-label={`问鼎${binding.brandLabel ? ` · ${binding.brandLabel}` : ''}`} type="button" disabled={running} title={running ? '停止此任务后可修改登录绑定' : '登录状态全局共用，品牌按对话保存'} onClick={() => void prepare()}>问鼎</button>
+    {!hideTrigger && <button ref={button} className="conversation-wending-button" aria-label={`问鼎${binding.brandLabel ? ` · ${binding.brandLabel}` : ''}`} type="button" disabled={running} title={running ? '停止此任务后可修改登录绑定' : '登录状态全局共用，品牌按对话保存'} onClick={() => void prepare()}>问鼎</button>}
     <dialog ref={dialog} className="conversation-wending-dialog" aria-label="此任务的问鼎 CLI 登录" onCancel={event => { event.preventDefault(); close() }}>
       <p className="conversation-wending-scope">登录状态全局共用，重启后保留；品牌选择仅用于当前对话。{binding.brandLabel && ` 已绑定：${binding.brandLabel}`}</p>
       {busy ? <div className="conversation-wending-loading"><p role="status">正在核验此任务的登录状态…</p><button type="button" className="button" onClick={close}>取消</button></div> : open && <WendingLoginPanel conversationId={conversationId} state={state} onState={acceptState} onReady={async () => close()} onClose={close} />}

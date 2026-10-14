@@ -6,7 +6,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { transformSync } = require('esbuild')
 const source = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
-const code = transformSync(source.slice(source.indexOf('  async function addPastedAttachments('), source.indexOf('  async function catchReply(')), { loader: 'tsx' }).code
+const code = transformSync(source.slice(source.indexOf('  async function addPastedAttachments('), source.indexOf('  function removeAttachment(')), { loader: 'tsx' }).code
 
 function setup(existing = []) {
   const calls = { inspected: [], saved: [], discarded: [], attachments: existing, prompt: '原文字', error: '' }

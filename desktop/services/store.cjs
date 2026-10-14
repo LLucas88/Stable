@@ -257,7 +257,8 @@ class StableStore {
   listConversations() {
     const defaultModelId = this.modelCatalog().defaultModelId
     const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
-    return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count
+    return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count,
+      (SELECT CASE WHEN role='assistant' THEN trace_json END FROM messages WHERE conversation_id=c.id ORDER BY seq DESC LIMIT 1) AS latest_trace
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
       GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all().map((row) => ({
       ...this.conversationContext(row.id),
@@ -265,6 +266,7 @@ class StableStore {
       id: row.id, title: row.title, capability: ['none','enabled','low','high','max'].includes(row.capability) ? row.capability : 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
       modelId: row.model_id || defaultModelId,
+      waitingForInput: JSON.parse(row.latest_trace || '[]').some(item => item.clarification?.status === 'waiting'),
       dataIds: JSON.parse(row.data_ids_json || '[]'), messageCount: Number(row.message_count || 0),
       sourceType: row.source_type === 'team' ? 'team' : 'local',
       pinned: pinnedIds.has(row.id),

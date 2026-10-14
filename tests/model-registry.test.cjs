@@ -148,7 +148,7 @@ test('cloud catalog preserves every model returned by the authenticated API', ()
     account: { publicState: () => ({ status: 'authenticated', models: [{ id: 'deepseek-v4-pro' }, { id: 'glm-5.3-flash' }, { id: 'deepseek-flash' }] }) },
     modelRoute: id => ({ id }),
   })
-  assert.deepEqual(registry.publicCatalog().items.map(item => item.id), ['deepseek-v4-pro', 'glm-5.3-flash', 'deepseek-flash'])
+  assert.deepEqual(registry.publicCatalog().items.map(item => item.id), ['deepseek-flash', 'glm-5.3-flash', 'deepseek-v4-pro'])
   assert.equal(registry.resolve('deepseek-v4-pro').id, 'deepseek-v4-pro')
 })
 

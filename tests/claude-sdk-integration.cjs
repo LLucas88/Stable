@@ -334,6 +334,77 @@ function fixture(t, responder, options = {}) {
   })
   return { root, workspace, runner, requests }
 }
+
+test('real SDK corrects malformed Write once and never executes incomplete contents', { timeout: 60000 }, async t => {
+  const events = []
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    if (number === 1) return new Response('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'bad-write', function: { name: 'Write', arguments: '{"content":"partial' } }] }, finish_reason: 'length' }], usage: { completion_tokens: 8192 } }) + '\n\ndata: [DONE]\n\n')
+    if (number === 2) {
+      assert.match(body.messages.at(-1).content, /整组工具调用均未执行/)
+      assert.equal(fs.existsSync(path.join(workspace, 'result.txt')), false)
+      return upstream({ calls: [{ id: 'fixed-write', name: 'Write', input: { file_path: path.join(workspace, 'result.txt'), content: 'COMPLETE_CONTENT' } }] })
+    }
+    assert(toolResult(body, 'fixed-write'))
+    return upstream({ text: 'DELIVERED' })
+  })
+  const answer = await runner.run('Write result.txt', model, credential, 30000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace })
+  assert.equal(answer, 'DELIVERED')
+  assert.equal(requests.length, 3)
+  assert.equal(fs.readFileSync(path.join(workspace, 'result.txt'), 'utf8'), 'COMPLETE_CONTENT')
+  assert(!events.some(event => event.id === 'bad-write' && event.kind === 'tool'))
+  assert(events.some(event => event.title === '工具参数校验失败，正在纠正'))
+})
+
+test('real SDK stops after failed correction without retrying the invalid Write nine times', { timeout: 60000 }, async t => {
+  const events = []
+  const { workspace, runner, requests } = fixture(t, () => new Response('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'bad-write', function: { name: 'Write', arguments: '{broken' } }] }, finish_reason: 'tool_calls' }] }) + '\n\ndata: [DONE]\n\n'))
+  await assert.rejects(runner.run('Write report', model, credential, 30000, event => events.push(event), 'workspace-write', [], { cwd: workspace }), /纠正后仍失败.*finish_reason=tool_calls/)
+  assert.equal(requests.length, 2)
+  assert.equal(events.findLast(event => event.id === 'run-progress').status, 'failed')
+  assert.equal(fs.existsSync(path.join(workspace, 'report.html')), false)
+})
+
+test('real SDK Edit validation failure is recorded as failed even when hooks are bypassed', { timeout: 60000 }, async t => {
+  const events = []
+  const { workspace, runner } = fixture(t, (body, number) => {
+    if (number === 1) return upstream({ calls: [{ id: 'read-before-edit', name: 'Read', input: { file_path: path.join(workspace, 'edit.txt') } }] })
+    if (number === 2) return upstream({ calls: [{ id: 'missing-old-string', name: 'Edit', input: { file_path: path.join(workspace, 'edit.txt'), old_string: 'not in file', new_string: 'wrong' } }] })
+    assert.match(toolResult(body, 'missing-old-string'), /not found/i)
+    return upstream({ text: 'EDIT_FAILED' })
+  })
+  fs.writeFileSync(path.join(workspace, 'edit.txt'), 'original')
+  await runner.run('Try edit', model, credential, 30000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace })
+  assert.equal(fs.readFileSync(path.join(workspace, 'edit.txt'), 'utf8'), 'original')
+  assert.equal(events.findLast(event => event.kind === 'tool' && event.id === 'missing-old-string')?.status, 'failed')
+})
+
+test('real SDK request budget preserves failure reason, files and shared resume limit', { timeout: 60000 }, async t => {
+  const { requestBudget } = require('../benchmarks/report-tasks/request-budget.cjs')
+  const budget = requestBudget(2), events = []
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    if (number === 1) return upstream({ text: 'CHECKPOINT_SAVED' })
+    assert.match(body.messages.find(message => message.role === 'system').content, /2\/2.*还可请求 0 次/)
+    return upstream({ calls: [{ id: 'budget-write', name: 'Write', input: { file_path: path.join(workspace, 'partial.txt'), content: 'PRESERVED' } }] })
+  }, { onModelRequest: () => budget.onRequest() })
+  const capture = event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }
+  const session = { key: 'budget-resume', cwd: workspace }
+  assert.equal(await runner.run('Save checkpoint', model, credential, 25000, capture, 'workspace-write', [], session), 'CHECKPOINT_SAVED')
+  await assert.rejects(runner.run('Continue writing', model, credential, 25000, capture, 'workspace-write', [], session), /benchmark 请求次数达到上限（2\/2）/)
+  assert.equal(requests.length, 2, 'no upstream retry beyond the same case budget')
+  assert.equal(fs.readFileSync(path.join(workspace, 'partial.txt'), 'utf8'), 'PRESERVED')
+  const final = events.findLast(event => event.id === 'run-progress')
+  assert.equal(final.status, 'failed')
+  assert.match(final.detail, /达到上限/)
+})
 const texts = body => body.messages.filter(message => message.role === 'user').map(message => typeof message.content === 'string' ? message.content : message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n')
 const toolResult = (body, id) => body.messages.findLast(message => message.role === 'tool' && message.tool_call_id === id)?.content
 function nativeTool(body, name) {
@@ -358,6 +429,21 @@ test('real native SDK returns text with no tools in a text-only run', { timeout:
   assert.equal(requests.length, 1)
   assert.equal(requests[0].tools, undefined)
   assert.equal(runner.busy, false)
+})
+
+test('real SDK message prediction uses one bounded tool-free request and removes temporary history', { timeout: 45_000 }, async t => {
+  const { root, workspace, runner, requests } = fixture(t, () => upstream({ text: '{"suggestion":"继续运行测试。"}' }))
+  const result = await runner.run('Predict next message', model, credential, 20000, undefined, 'read-only', [], { purpose: 'message-prediction', cwd: workspace })
+  assert.equal(JSON.parse(result).suggestion, '继续运行测试。')
+  assert.equal(requests.length, 1); assert.equal(requests[0].tools, undefined)
+  assert.equal(requests[0].max_tokens, 2048)
+  assert.deepEqual(fs.readdirSync(path.join(root, 'claude', 'runs')), [])
+})
+
+test('real SDK prediction cannot retry upstream after a provider failure', { timeout: 45_000 }, async t => {
+  const { workspace, runner, requests } = fixture(t, () => new Response('{"error":{"message":"fixture unavailable"}}', { status: 503 }))
+  await assert.rejects(runner.run('Predict', model, credential, 20000, undefined, 'read-only', [], { purpose: 'message-prediction', cwd: workspace }))
+  assert.equal(requests.length, 1)
 })
 
 test('real native SDK resumes local history without resending initial context', { timeout: 60_000 }, async t => {

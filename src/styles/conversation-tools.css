@@ -1,0 +1,13 @@
+.conversation-topbar > .conversation-tools { position: relative; flex: 0 0 auto; }
+.conversation-tools-trigger { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--color-muted); cursor: pointer; }
+.conversation-tools-trigger:hover, .conversation-tools-trigger[aria-expanded="true"] { background: var(--surface-hover); color: var(--color-ink); }
+#root .conversation-tools-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--z-sticky); width: min(220px, calc(100vw - 24px)); max-height: calc(100dvh - 100px); overflow-y: auto; padding: 5px; border: 1px solid var(--color-rule-soft) !important; border-radius: 12px; background: var(--color-paper); box-shadow: 0 4px 16px #00000014 !important; font-size: var(--text-sm); }
+.conversation-tools-panel > button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 7px 9px; border: 0; border-radius: 7px; color: var(--color-ink); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.conversation-topbar .conversation-tools-panel > button > span { color: inherit; font-size: inherit; }
+.conversation-tools-panel > button:not(:disabled):hover { background: var(--surface-hover); }
+.conversation-tools-panel > button:disabled { opacity: .45; cursor: default; }
+.conversation-tools :is(button, input):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+#root .conversation-tools-panel[data-view="chapters"] { width: min(340px, calc(100vw - 24px)); }
+#root .conversation-tools-panel .chapter-panel { position: static; width: auto; max-height: none; padding: 8px; border: 0 !important; box-shadow: none !important; }
+.conversation-tools-panel .conversation-tools-back { color: var(--color-muted); }
+@media (forced-colors: active) { #root .conversation-tools-panel { border-color: ButtonText !important; } }

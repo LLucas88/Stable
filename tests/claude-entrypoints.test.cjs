@@ -118,6 +118,7 @@ function fixture(t) {
   }
   const cli = { environment: () => ({ SystemRoot: process.env.SystemRoot, PATH: process.env.PATH }), root: () => workspace, login: { pending: false, snapshot: () => ({}) } }
   const context = vm.createContext({
+    messagePredictions: { interrupt() {} },
     process, Buffer, randomUUID, path, mkdirSync: fs.mkdirSync, require: mainRequire,
     app: { isPackaged: false }, paths: { userData: root, workspace }, store, modelRegistry, HarnessRunner,
     wendingCli: { forConversation: () => cli }, agentRunners: new Map(), mainWindow: undefined,

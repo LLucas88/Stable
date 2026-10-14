@@ -1,4 +1,5 @@
 'use strict'
+const { setChildViewVisible } = require('./services/window-close-choice.cjs')
 const { skillReferences, saveSkillReferences, selectedSkillContext, selectedSkillReadRoots, automaticSkillCatalog, automaticSkillPrompt } = require('./services/skill-selection.cjs')
 
 const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, safeStorage, session, nativeImage, Tray, Menu, nativeTheme, Notification, screen } = require('electron')
@@ -15,8 +16,9 @@ const { SkillMarket } = require('./services/skill-market.cjs')
 const { CatchService } = require('./services/catch.cjs')
 const { installEditContextMenu } = require('./services/edit-context-menu.cjs')
 const { extractText, importSkillFolder, inspectDataFile, inspectSkillFolder } = require('./services/importers.cjs')
-const { MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
+const { attachmentImages, selectPresentationImages, MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, inspectAttachmentPath, isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage } = require('./services/attachments.cjs')
 const { HarnessRunner } = require('./services/execution-harness.cjs')
+const { MessagePredictions } = require('./services/message-predictions.cjs')
 const { clearRuntimeSession } = require('./services/execution-harness.cjs')
 const { canAutoApprove } = require('./services/tool-approval.cjs')
 const { BuiltinTools } = require('./services/builtin-tools.cjs')
@@ -31,7 +33,7 @@ const { normalizeReasoning, reasoningOptions } = require('./services/model-reaso
 const { composeAgentPrompt } = require('./services/prompts.cjs')
 const { deliveryRequest, revisedDelivery, runWithDeliveryChecks } = require('./services/delivery.cjs')
 const { timerState, resolveResponse } = require('./services/clarification-interaction.cjs')
-const { clarifyBeforeExecution, clarificationTrace, formatClarification } = require('./services/clarification.cjs')
+const { clarifyBeforeExecution, clarificationTrace, formatClarification, pendingClarification } = require('./services/clarification.cjs')
 const { createStreamTranscript } = require('./services/stream-transcript.cjs')
 const { ScriptRunner } = require('./services/script-runner.cjs')
 const { TeamNetwork } = require('./services/team-network.cjs')
@@ -97,6 +99,33 @@ let cloudStartup = Promise.resolve()
 let cloudGateway
 let runner
 const agentRunners = new Map()
+const messagePredictions = new MessagePredictions({
+  enabled: () => Boolean(store) && store.getSetting('messagePredictionsEnabled') !== false,
+  snapshot: id => {
+    const conversation = store.conversation(id)
+    if (!conversation || store.activeConversationId() !== id) return null
+    const route = modelRegistry.resolve(conversation.modelId)
+    return {
+      conversation, messages: store.listMessages(id),
+      busy: agentRunners.size > 0 || automationRunners.size > 0 || teamTaskRunners.size > 0 || collaborationRunners.size > 0 || runner?.busy || Boolean(activeWorkflowRun) || conversationLifecycle.locks.has(id),
+      originalGoal: store.db.prepare("SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY rowid LIMIT 1").get(id)?.content,
+      modelKey: [conversation.modelId, route.model.model, route.model.baseURL], route,
+      cwd: conversationPaths(id).workspace,
+    }
+  },
+  generate: async (snapshot, prompt, signal) => {
+    if (signal.aborted) return null
+    const predictionRunner = new HarnessRunner({ userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
+    if (!predictionRunner.supportsTextOnly) return null
+    const stop = () => predictionRunner.cancel()
+    signal.addEventListener('abort', stop, { once: true })
+    try {
+      const { model, apiKey } = snapshot.route
+      const options = reasoningOptions(model).map(item => item.id)
+      return await predictionRunner.run(prompt, { ...model, reasoningSelection: options.includes('none') ? 'none' : options.includes('low') ? 'low' : 'auto' }, apiKey, 20_000, () => {}, 'read-only', [], { cwd: snapshot.cwd, purpose: 'message-prediction', textOnly: true })
+    } finally { signal.removeEventListener('abort', stop) }
+  },
+})
 const automationRunners = new Map()
 let automationTimer
 let updateController
@@ -138,7 +167,7 @@ function answerTaskApproval(payload, expected) {
 
 const { TaskAlerts } = require('./services/task-alerts.cjs')
 const taskAlerts = new TaskAlerts({ notify: (id, kind, requestId) => {
-  const title = kind === 'approval' ? '任务等待审批' : kind === 'input' ? '任务等待补充信息' : '任务可能停滞'
+  const title = kind === 'approval' ? '任务等待审批' : kind === 'input' ? '需要用户回答' : '任务可能停滞'
   const detail = kind === 'stalled' ? '连续 3 分钟没有收到新进展，可能仍在思考或执行工具。点击查看任务。' : '需要你处理后才能继续。点击返回对应任务。'
   const body = `${String(store.conversation(id)?.title || '任务').slice(0,80)}\n${detail}`
   const open = () => {
@@ -202,6 +231,7 @@ function resourcePath(...segments) {
 }
 
 function createHarnessRunner(conversationId) {
+  messagePredictions.interrupt()
   const cli = wendingCli?.forConversation(conversationId)
   return new HarnessRunner({
     userData: paths.userData,
@@ -350,6 +380,7 @@ function createPreviewView(kind, bounds) {
   previewView = view
   previewKind = kind
   mainWindow.contentView.addChildView(view)
+  setChildViewVisible(mainWindow, view, true)
   view.setBackgroundColor(normalizeTheme(store.getSetting('theme')) === 'light' ? '#ffffff' : '#181818')
   view.setBounds(normalizedPreviewBounds(bounds))
   configurePreviewSession(view.webContents, kind)
@@ -362,13 +393,13 @@ function createPreviewView(kind, bounds) {
   }
   view.webContents.on('will-navigate', guardNavigation)
   view.webContents.on('will-redirect', guardNavigation)
-  view.webContents.on('did-start-loading', () => { if (previewView === view) view.setVisible(true); sendPreviewEvent({ loading: true, error: '' }, view) })
+  view.webContents.on('did-start-loading', () => { if (previewView === view) setChildViewVisible(mainWindow, view, true); sendPreviewEvent({ loading: true, error: '' }, view) })
   view.webContents.on('did-stop-loading', () => sendPreviewEvent({ loading: false }, view))
   view.webContents.on('page-title-updated', () => sendPreviewEvent({}, view))
   view.webContents.on('did-navigate', () => sendPreviewEvent({}, view))
   view.webContents.on('did-navigate-in-page', () => sendPreviewEvent({}, view))
   view.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => {
-    if (previewView === view && isMainFrame && code !== -3) { view.setVisible(false); sendPreviewEvent({ loading: false, url: validatedURL, error: description || '页面加载失败。' }, view) }
+    if (previewView === view && isMainFrame && code !== -3) { setChildViewVisible(mainWindow, view, false); sendPreviewEvent({ loading: false, url: validatedURL, error: description || '页面加载失败。' }, view) }
   })
   return view
 }
@@ -403,7 +434,7 @@ async function loadGeneratedFilePreview(view, html, prefix) {
 const { renderSpreadsheetDocument } = require('./services/spreadsheet-preview.cjs')
 const DIRECT_HTML_EXTENSIONS = new Set(['.html', '.htm'])
 const IMAGE_PREVIEW_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
-const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.xlsx', '.xls'])
+const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.pptx', '.xlsx', '.xls'])
 
 async function openFilePreview(value, bounds) {
   const paths=conversationPaths(store.activeConversationId())
@@ -478,6 +509,7 @@ function bootstrap() {
   return {
     appVersion: app.getVersion(),
     identity: store.getSetting('identity'), theme: normalizeTheme(store.getSetting('theme')),
+    messagePredictionsEnabled: store.getSetting('messagePredictionsEnabled') !== false,
     data: store.listData(), library: store.listLibrary(), knowledge: store.listKnowledge(), reports: store.listReports(), skills: store.listSkills(), workflows: store.listWorkflows(),
     conversations: store.listConversations(), activeConversationId: store.activeConversationId(), messages,
     catchAttachments: new CatchService(store, paths.workspace).drafts(store.activeConversationId()),
@@ -1098,7 +1130,7 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
     for (const item of inspected) {
       const accessibleItem = item.type === 'skill' ? item : materializeAttachment(item.path, attachmentRoot, paths.workspace)
       if (item.type !== 'skill') materializedRoots.push(accessibleItem.materializedRoot)
-      const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractAttachmentText(accessibleItem.path)
+      const source = item.type === 'skill' ? inspectSkillFolder(item.path) : await extractAttachmentText(accessibleItem.path, { presentationAssets: true })
       if (item.type === 'skill') {
         const installed = importSkillFolder(item.path, path.join(paths.userData, 'skills'))
         store.upsertSkill(installed)
@@ -1107,6 +1139,7 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
       } else {
         attachments.push({
           name: accessibleItem.name, path: accessibleItem.path, size: accessibleItem.size, type: accessibleItem.type, text: source.text,
+          ...(source.images ? { images: source.images, textPath: source.textPath } : {}),
           ...(isImageAttachment(accessibleItem) ? { mediaType: accessibleItem.mediaType } : {}),
         })
         const relativeDraft = path.relative(path.resolve(draftImageRoot), path.resolve(item.path))
@@ -1119,7 +1152,7 @@ async function extractAgentAttachments(rawAttachments, conversationId) {
     }
     throw error
   }
-  return { items: attachments, installedSkills, consumedDraftImages }
+  return { items: selectPresentationImages(attachments), installedSkills, consumedDraftImages }
 }
 
 async function importLibraryFiles(category) {
@@ -1518,6 +1551,7 @@ function modelRouteForConversation(conversationId) {
 }
 
 async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride, modelRouteOverride) {
+  messagePredictions.interrupt()
   const paths = conversationId ? conversationPaths(conversationId, true) : conversationPaths(store.activeConversationId())
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
@@ -1714,7 +1748,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const persistentSession = executionRunner.supportsPersistentSessions && conversationId && !historyOverride
     ? { key: conversationId, initialPrompt, contextPolicy: 'uploaded-materials-v1' } : undefined
   const prompt = persistentSession ? composeAgentPrompt({ ...promptOptions, history: [] }) : initialPrompt
-  const imageAttachments = attachments.filter(isImageAttachment)
+  const imageAttachments = attachmentImages(attachments)
   const activeControl = agentRunners.get(conversationId)
   const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
@@ -2016,7 +2050,7 @@ function registerIpc() {
   ipcMain.handle('stable:update:install', () => updateController.install())
   ipcMain.handle('stable:data:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: '导入本地数据', properties: ['openFile', 'multiSelections'], filters: [
-      { name: '支持的文件', extensions: ['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'html', 'log', 'xml', 'pdf', 'docx', 'xlsx', 'xls'] }, { name: '所有文件', extensions: ['*'] },
+      { name: '支持的文件', extensions: ['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'html', 'log', 'xml', 'pdf', 'docx', 'pptx', 'xlsx', 'xls'] }, { name: '所有文件', extensions: ['*'] },
     ] })
     if (result.canceled) return { added: 0, items: store.listData() }
     return importDataPaths(result.filePaths)
@@ -2343,6 +2377,7 @@ function registerIpc() {
   })
   ipcMain.handle('stable:agent:remove', async (_event, payload) => {
     const id = requireText(payload?.id, '对话 ID', 100)
+    messagePredictions.invalidate(id)
     const conversation = store.conversation(id)
     if (!conversation) throw new Error('找不到这个对话。')
     await require('./services/stop-before-delete.cjs').stopBeforeDelete(id, agentRunners, conversationId => {
@@ -2387,6 +2422,7 @@ function registerIpc() {
   })
   ipcMain.handle('stable:agent:configureModel', (_event, payload) => {
     const id = requireText(payload?.conversationId || payload?.id, '对话 ID', 100)
+    messagePredictions.invalidate(id)
     const modelId = requireText(payload?.modelId, '模型 ID', 100)
     if(agentRunners.has(id))throw Error('请先停止任务再切换模型。')
     store.revokeConversationGrants(id)
@@ -2400,6 +2436,7 @@ function registerIpc() {
   })
   ipcMain.handle('stable:agent:run', async (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    messagePredictions.interrupt()
     const conversation = store.conversation(conversationId)
     if (!conversation) throw new Error('找不到这个对话。')
     if (conversationLifecycle.locks.has(conversationId)) throw new Error('正在核实此对话的运行记录，请稍后发送。')
@@ -2438,8 +2475,10 @@ function registerIpc() {
           conversationLifecycle.status(deliveryId, 'completed', { assistantMessageId: message })
           store.db.exec('COMMIT')
         } catch (error) { store.db.exec('ROLLBACK'); throw error }
-        control.waitingForInput = true
-        taskAlerts.wait(conversationId, 'input', 'input')
+        if (clarification.status === 'waiting') {
+          control.waitingForInput = true
+          taskAlerts.wait(conversationId, 'input', 'input')
+        }
         publishAgentState(conversationId)
         return { answer: clarification.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
       }
@@ -2475,11 +2514,11 @@ function registerIpc() {
         if (control.cancelled) throw new Error('任务已停止。')
         result.trace.push(clarificationTrace({ ...executionPayload, attachments: prepared.attachments }, result.answer, 'clarification', card))
       }
-      if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
       store.db.exec('BEGIN IMMEDIATE')
       try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, result.trace);conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
+      if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       publishAgentState(conversationId)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
@@ -2520,10 +2559,10 @@ function registerIpc() {
       const receipt=conversationLifecycle.beginSteer(requestId,conversationId,{query,attachments:payload.attachments||[],references:payload.references||[]})
       if(receipt==='accepted')return agentState(conversationId)
       steerSubmitted=true
-      await control.runner.steer(prompt, prepared.attachments.filter(isImageAttachment))
+      await control.runner.steer(prompt, attachmentImages(prepared.attachments))
       delivered = true
       control.directions.push(query)
-      control.steerInputs.push({ prompt, images: prepared.attachments.filter(isImageAttachment) })
+      control.steerInputs.push({ prompt, images: attachmentImages(prepared.attachments) })
       const messageId=commitAgentMessage(conversationId, query, prepared, true)
       conversationLifecycle.saveSteer(requestId,'accepted',messageId)
       return agentState(conversationId)
@@ -2539,7 +2578,13 @@ function registerIpc() {
   ipcMain.handle('stable:agent:cancel', (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     const control = agentRunners.get(conversationId)
-    if (!control) return false
+    if (!control) {
+      if (!pendingClarification(store.listMessages(conversationId))) return false
+      store.addMessage(conversationId, 'assistant', '本轮已停止。')
+      taskAlerts.finish(conversationId)
+      publishAgentState(conversationId)
+      return true
+    }
     taskAlerts.finish(conversationId)
     control.cancelled = true
     new ApprovalLedger(store)
@@ -2551,6 +2596,7 @@ function registerIpc() {
   ipcMain.handle('stable:agent:answerApproval', (_event, payload) => answerTaskApproval(payload))
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
+    messagePredictions.invalidate(id)
     if (!store.conversation(id)) throw new Error('找不到这个对话。')
     if (agentRunners.has(id)) throw new Error('请先停止当前任务，再清空对话。')
     taskAlerts.finish(id)
@@ -2704,6 +2750,15 @@ function registerIpc() {
   })
   ipcMain.handle('stable:model:setDefault', (event, payload) => { guardModelSettings(event); return modelRegistry.setDefault(requireText(payload?.id, '模型 ID', 160)) })
   ipcMain.handle('stable:settings:globalInstructions', () => readGlobalInstructions())
+  ipcMain.handle('stable:agent:prediction', (_event, payload) => messagePredictions.request(
+    requireText(payload?.conversationId, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100), requireText(payload?.requestId, '请求 ID', 100)))
+  ipcMain.handle('stable:agent:cancelPrediction', (_event, payload) => { messagePredictions.cancel(requireText(payload?.requestId, '请求 ID', 100)); return true })
+  ipcMain.handle('stable:settings:messagePredictions', (_event, payload) => {
+    if (typeof payload?.enabled !== 'boolean') throw new Error('消息预测设置无效。')
+    store.setSetting('messagePredictionsEnabled', payload.enabled)
+    messagePredictions.invalidate()
+    return payload.enabled
+  })
   ipcMain.handle('stable:settings:saveGlobalInstructions', (_event, payload) => saveGlobalInstructions(payload?.content))
   ipcMain.handle('stable:browser:command', async (_event, p = {}) => {
     if (!store.conversation(p.conversationId)) throw new Error('找不到对话。')
@@ -3329,4 +3384,5 @@ if (updateHealthcheck) {
 }
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => wendingCli?.dispose())
+app.on('before-quit', () => messagePredictions.invalidate())
 app.on('before-quit', () => { browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

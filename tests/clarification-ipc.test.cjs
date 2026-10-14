@@ -11,6 +11,7 @@ function setup(){
  const settings=new Map();const store={getSetting:key=>settings.get(key),setSetting:(key,value)=>settings.set(key,value),conversation:()=>({modelId:'mock'}),listMessages:()=>messages,db:{exec:()=>{},prepare:()=>({get:()=>({state:'preparing'})})},addMessage:(_id,role,content,trace,attachments)=>{const m={id:String(++id),role,content,trace,attachments};messages.push(m);return m},updateConversationContext:()=>{},listLibrary:()=>[],listSkills:()=>[],listWorkflows:()=>[]};
  let lastTask;
  vm.runInNewContext(source,{
+  messagePredictions:{interrupt(){}},
   taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{resolve:()=>({model:{model:'mock'},apiKey:'test-only'})},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),begin:()=>({duplicate:false}),status:()=>{}},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
   prepareAgentMessage:async(payload)=>{prepared++;lastTask=payload;return {attachments:payload.attachments,selectedReferences:payload.references,extractedAttachments:{installedSkills:[]},selectedData:[],selectedKnowledge:[],selectedSkills:[],selectedScripts:[]}},
   commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,undefined,prepared.attachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,
@@ -43,13 +44,26 @@ test('validated card choices resume original resources without re-asking and rej
  assert.equal(env.runs.length,calls);assert.match(env.stats().lastTask.query,/生成 Word 报告[\s\S]*用户选择[\s\S]*技术团队/);assert.doesNotMatch(env.stats().lastTask.query,/forged/);assert.equal(env.stats().lastTask.attachments[0].path,'source.csv')
  await assert.rejects(env.send({clarificationResponse:{id:card.id,source:'skip'}}),/已经结束/);assert.equal(env.stats().executed,1)
 })
-test('timeout is validated by main-process state and never presented as explicit user confirmation',async()=>{
+test('old timeout, skip and close requests never execute the waiting task',async()=>{
  const env=setup();env.queue.push(assessment('给谁看？'));await env.send('生成 Word 报告');const card=helpers.pendingClarification(env.messages)
- await assert.rejects(env.send({clarificationResponse:{id:card.id,source:'timeout'}}),/尚未结束/)
- helpers.timerState(env.store,'a',card.id,'start',Date.now()-20001)
- await env.send({clarificationResponse:{id:card.id,source:'timeout'}})
- assert.match(env.messages[2].content,/模型自主选择推荐路线/);assert.match(env.stats().lastTask.query,/不代表用户确认事实或授予操作权限/);assert.equal(env.stats().executed,1)
+ env.store.setSetting('clarification-timer:a',{id:card.id,deadline:0,interacted:false})
+ for(const source of ['timeout','skip','close']) await assert.rejects(env.send({clarificationResponse:{id:card.id,source}}),/提交回答/)
+ assert.equal(env.stats().executed,0);assert.equal(env.messages.length,2)
+ await env.send({clarificationResponse:{id:card.id,source:'custom',text:'给管理层'}})
+ assert.equal(env.stats().executed,1)
 })
 test('renderer cannot forge the internal assessment bypass flag',async()=>{
  const env=setup();env.queue.push(assessment('给谁看？'));await env.send({prompt:'生成报告',clarificationResolved:true});assert.equal(env.stats().executed,0)
+})
+
+test('stop ends a persisted question even with no active runner and clears the reminder',()=>{
+ const env=setup(),trace=helpers.clarificationTrace({prompt:'生成报告'},'给谁看？')
+ env.messages.push({role:'assistant',content:'给谁看？',trace:[trace]})
+ let cancel,finished=0,published=0
+ const block=main.slice(main.indexOf("ipcMain.handle('stable:agent:cancel'"),main.indexOf("ipcMain.handle('stable:agent:answerApproval'"))
+ vm.runInNewContext(block,{...helpers,ipcMain:{handle:(_name,cb)=>cancel=cb},requireText:v=>v,agentRunners:new Map(),store:env.store,taskAlerts:{finish:()=>finished++},publishAgentState:()=>published++})
+ assert.equal(cancel(null,{conversationId:'a'}),true)
+ assert.equal(helpers.pendingClarification(env.messages),null);assert.equal(env.messages.at(-1).content,'本轮已停止。')
+ assert.equal(finished,1);assert.equal(published,1)
+ assert.equal(cancel(null,{conversationId:'a'}),false);assert.equal(env.stats().executed,0)
 })

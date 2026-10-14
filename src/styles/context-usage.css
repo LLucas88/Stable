@@ -1,13 +1,13 @@
 .context-usage { position: relative; flex: 0 0 auto; }
-.context-usage-button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.context-usage-button { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 6px; color: var(--color-muted); font: inherit; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .context-usage-button:hover, .context-usage[data-open] .context-usage-button { background: var(--color-paper-3); }
 .context-usage button:focus-visible, .context-usage summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
 .context-ring-track, .context-ring-value { fill: none; stroke-width: 3; }
 .context-ring-track { stroke: var(--color-rule-soft); }
 .context-ring-value { stroke: #2e7be6; stroke-linecap: round; }
-.context-usage-tooltip { position: absolute; z-index: 45; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 6px 10px; border-radius: 7px; background: #202020; color: #fff; font-size: 13px; line-height: 1.4; pointer-events: none; opacity: 0; }
+.context-usage-tooltip { position: absolute; z-index: 45; left: 0; bottom: calc(100% + 8px); width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 6px 10px; border-radius: 7px; background: #202020; color: #fff; font-size: 13px; line-height: 1.4; pointer-events: none; opacity: 0; }
 .context-usage-button:hover + .context-usage-tooltip, .context-usage-button:focus-visible + .context-usage-tooltip { opacity: 1; }
-.context-usage-panel { position: absolute; z-index: 44; right: 0; bottom: calc(100% + 12px); width: min(390px, calc(100vw - 48px)); padding: 14px; border: 1px solid var(--color-rule-soft); border-radius: 14px; background: var(--color-paper); color: var(--color-ink); box-shadow: 0 5px 24px #0002; font-size: 13px; line-height: 1.5; }
+.context-usage-panel { position: absolute; z-index: 44; left: 0; bottom: calc(100% + 12px); width: min(390px, calc(100vw - 100px)); padding: 14px; border: 1px solid var(--color-rule-soft); border-radius: 14px; background: var(--color-paper); color: var(--color-ink); box-shadow: 0 5px 24px #0002; font-size: 13px; line-height: 1.5; }
 .context-usage-heading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--color-muted); font: inherit; cursor: pointer; text-align: left; }
 .context-usage-heading > span:first-child { margin-right: auto; }
 .context-usage-heading > span:nth-child(2) { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -36,3 +36,6 @@
 #root .context-usage-panel { border: 1px solid var(--color-rule) !important; box-shadow: 0 5px 24px #0002 !important; }
 #root .context-usage-footer { border-top: 1px solid var(--color-rule) !important; }
 #root .context-usage-footer > button { border: 1px solid var(--color-rule) !important; }
+
+.context-usage-inline { display: flex; align-items: center; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: left; }
+.context-usage-button > svg { flex-shrink: 0; }

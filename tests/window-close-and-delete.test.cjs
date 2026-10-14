@@ -4,6 +4,24 @@ const { EventEmitter } = require('node:events')
 const { installWindowCloseChoice } = require('../desktop/services/window-close-choice.cjs')
 const { stopBeforeDelete } = require('../desktop/services/stop-before-delete.cjs')
 const tick = () => new Promise(resolve => setImmediate(resolve))
+
+test('close prompt obscures native views including late loads and restores only current views', () => {
+  const { setChildViewVisible } = require('../desktop/services/window-close-choice.cjs')
+  const app = new EventEmitter(), window = new EventEmitter()
+  const view = visible => ({ visible, getVisible() { return this.visible }, setVisible(value) { this.visible = value } })
+  const page = view(true), hidden = view(false), late = view(true), host = view(true)
+  window.webContentsView = host; window.contentView = { children: [host, page, hidden] }
+  window.webContents = { mainFrame: {}, send() {} }; window.minimize = () => {}; app.quit = () => {}
+  let decide
+  installWindowCloseChoice(window, app, { handle: (_, fn) => { decide = fn }, removeHandler() {} }, { get() {}, set() {} })
+  window.emit('close', { preventDefault() {} })
+  assert.equal(host.visible, true); assert.equal(page.visible, false)
+  setChildViewVisible(window, page, true); assert.equal(page.visible, false)
+  window.contentView.children.push(late); setChildViewVisible(window, late, true); assert.equal(late.visible, false)
+  window.contentView.children = [host, hidden, late]
+  decide({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, { choice: 'cancel' })
+  assert.equal(page.visible, false); assert.equal(hidden.visible, false); assert.equal(late.visible, true)
+})
 test('close choice authenticates decisions, persists opt-in and allows quit', async () => {
   const app = new EventEmitter(), window = new EventEmitter()
   let prompts = 0, minimized = 0, quits = 0, handler, saved = null

@@ -63,7 +63,7 @@ test('a current explicit instruction can skip the initial question without rewri
 test('waiting task is restored after reopening the actual store and disappears when messages are cleared',t=>{
  const {StableStore}=require('../desktop/services/store.cjs');const root=sandbox(t);let store=new StableStore(root);const id=store.activeConversationId();
  store.addMessage(id,'user',payload.prompt);store.addMessage(id,'assistant','报告给谁看？',[clarificationTrace(payload,'报告给谁看？')]);store.close();
- store=new StableStore(root);try{assert.equal(pendingClarification(store.listMessages(id)).payload.references[0].id,'report');store.clearMessages(id);assert.equal(pendingClarification(store.listMessages(id)),null)}finally{store.close()}
+ store=new StableStore(root);try{assert.equal(store.conversation(id).waitingForInput,true);assert.equal(pendingClarification(store.listMessages(id)).payload.references[0].id,'report');store.clearMessages(id);assert.equal(store.conversation(id).waitingForInput,false);assert.equal(pendingClarification(store.listMessages(id)),null)}finally{store.close()}
 });
 
 test('structured mid-task cards retain model options through delivery verification and never leak JSON while streaming',async t=>{
@@ -75,5 +75,5 @@ test('structured mid-task cards retain model options through delivery verificati
 test('interaction cancellation survives an actual database close and reopen',t=>{
  const {StableStore}=require('../desktop/services/store.cjs'),{timerState,resolveResponse}=require('../desktop/services/clarification-interaction.cjs');const root=sandbox(t);let store=new StableStore(root);const id=store.activeConversationId();const trace=clarificationTrace(payload,'给谁看？');
  store.addMessage(id,'assistant','给谁看？',[trace]);timerState(store,id,trace.clarification.id,'start',0);timerState(store,id,trace.clarification.id,'interact',100);store.close();store=new StableStore(root)
- try{assert.equal(timerState(store,id,trace.clarification.id,'start',30000).interacted,true);assert.throws(()=>resolveResponse(store,id,{id:trace.clarification.id,source:'timeout'},30000),/取消/)}finally{store.close()}
+ try{assert.equal(timerState(store,id,trace.clarification.id,'start',30000).interacted,true);assert.throws(()=>resolveResponse(store,id,{id:trace.clarification.id,source:'timeout'},30000),/提交回答/)}finally{store.close()}
 })

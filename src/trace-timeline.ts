@@ -61,3 +61,40 @@ export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): 
   }).sort((a, b) => (a.startedAt ?? a.time) - (b.startedAt ?? b.time)
     || Number(a.id === 'runtime') - Number(b.id === 'runtime'))
 }
+
+export type TraceTimelineEntry =
+  | { kind: 'item'; id: string; item: AgentTraceItem }
+  | { kind: 'group'; id: string; label: string; items: AgentTraceItem[] }
+
+function toolCategory(item: AgentTraceItem): string {
+  const name = toolName(item).toLowerCase()
+  if (/^(edit|edit_file|apply_patch|notebookedit)$/.test(name)) return '编辑文件'
+  if (/^(write|write_file|create_file)$/.test(name)) return '写入文件'
+  if (/^(move_file|rename_file)$/.test(name)) return '移动文件'
+  if (name === 'delete_file') return '删除文件'
+  if (/^(bash|pwsh|powershell|shell|exec_command|stable_exec)$/.test(name)) return '运行命令'
+  if (name === 'stable_excel') return '修改表格'
+  return toolName(item)
+}
+
+// Public text and approvals/errors are boundaries; never hide them in tool groups.
+export function groupTraceTimeline(items: AgentTraceItem[]): TraceTimelineEntry[] {
+  const entries: TraceTimelineEntry[] = []
+  const groups = new Map<string, Extract<TraceTimelineEntry, { kind: 'group' }>>()
+  for (const item of items) {
+    if (item.kind !== 'tool' || item.eventType === 'agent/answer') {
+      groups.clear()
+      entries.push({ kind: 'item', id: item.id, item })
+      continue
+    }
+    const label = toolCategory(item)
+    let group = groups.get(label)
+    if (!group) {
+      group = { kind: 'group', id: `tools:${item.id}`, label, items: [] }
+      groups.set(label, group)
+      entries.push(group)
+    }
+    group.items.push(item)
+  }
+  return entries
+}

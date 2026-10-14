@@ -1,7 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import '@fontsource-variable/space-grotesk'
-import '@fontsource-variable/ibm-plex-sans'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/workbench-surfaces.css'

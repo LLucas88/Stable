@@ -224,6 +224,7 @@ function appendText(parts, heading, text, used) {
 
 async function extractBufferText(fileName, buffer) {
   const extension = path.extname(fileName).toLowerCase()
+  if (extension === '.pptx') return (await require('./presentation-reader.cjs').readPresentation(buffer)).text
   if (TEXT_FILE_EXTENSIONS.has(extension)) return buffer.toString('utf8')
   if (extension === '.docx') {
     const mammoth = require('mammoth')
@@ -302,15 +303,40 @@ async function extractZipText(sourcePath) {
   return { text: parts.join(''), size: inspected.size, type: 'zip' }
 }
 
-async function extractAttachmentText(sourcePath) {
+async function extractAttachmentText(sourcePath, { presentationAssets = false } = {}) {
   const inspected = inspectAttachmentPath(sourcePath)
+  if (inspected.type === 'pptx' && presentationAssets) {
+    return { ...await require('./presentation-reader.cjs').readPresentation(readFileSync(sourcePath), { assetsParent: path.dirname(sourcePath) }), size: inspected.size, type: inspected.type }
+  }
   if (isImageAttachment(inspected)) return { text: '', size: inspected.size, type: inspected.type, mediaType: inspected.mediaType }
   if (inspected.type === 'folder') return extractFolderText(sourcePath)
   if (inspected.type === 'zip') return extractZipText(sourcePath)
   return extractText(sourcePath)
 }
 
+function attachmentImages(items) {
+  return items.flatMap(item => isImageAttachment(item) ? [item] : item.images || [])
+}
+
+// Direct uploads retain priority. Deferred presentation images remain readable by path.
+function selectPresentationImages(items) {
+  let bytes = items.filter(isImageAttachment).reduce((sum, item) => sum + item.size, 0)
+  let count = items.filter(isImageAttachment).length
+  for (const item of items) {
+    if (!item.images) continue
+    const selected = []
+    for (const image of item.images) {
+      const send = image.mediaType && image.size <= MAX_IMAGE_BYTES && bytes + image.size <= MAX_MESSAGE_IMAGE_BYTES && count < 20
+      if (send) { selected.push(image); bytes += image.size; count++ }
+      item.text += `\n${image.name}：${send ? '像素已作为当前消息的视觉输入发送' : '未作为视觉输入发送（格式或大小/数量限制），请按路径读取或转换后查看'}。路径：${image.path}`
+    }
+    item.images = selected
+  }
+  return items
+}
+
 module.exports = {
+  attachmentImages, selectPresentationImages,
   ensureAttachmentDestination,
   MAX_IMAGE_BYTES, MAX_MESSAGE_IMAGE_BYTES, discardDraftImage, extractAttachmentText, imageMediaTypeForPath, inspectAttachmentPath,
   isImageAttachment, materializeAttachment, removeMaterializedAttachmentRoot, savePastedImage, scanAttachmentFolder, safeZipEntryName,

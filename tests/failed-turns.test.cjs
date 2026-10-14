@@ -89,6 +89,7 @@ test('the real run IPC failure path saves the terminal message and clears its ac
   const agentRunners = new Map()
   let handler, broadcasts = 0
   require('node:vm').runInNewContext(handlerSource, {
+    messagePredictions: { interrupt() {} },
     ipcMain: { handle: (_name, value) => { handler = value } },
     store, conversationLifecycle: life, agentRunners,
     requireText: value => value, randomUUID: () => 'request',

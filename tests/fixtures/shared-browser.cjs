@@ -7,6 +7,17 @@ async function main(){await app.whenReady();const downloads=path.join(root,'down
  win=new BrowserWindow({show:false,width:1000,height:800,webPreferences:{offscreen:true,sandbox:true}})
  service=new BrowserSessionService({electron:require('electron'),store,getWindow:()=>win});let snap=await service.execute('a',{action:'open',url});const tab=service.get('a',snap.tabId)
  service.show('a',tab.id,{x:0,y:0,width:900,height:700});assert(win.contentView.children.includes(tab.view));assert.match(snap.text,/共享页面/)
+ // A DOM close dialog must obscure real Electron views, including a late show.
+ const {installWindowCloseChoice,setChildViewVisible}=require('../../desktop/services/window-close-choice.cjs')
+ let closeDecision
+ installWindowCloseChoice(win,app,{handle:(_,fn)=>{closeDecision=fn},removeHandler(){}},{get(){},set(){}})
+ win.emit('close',{preventDefault(){}});assert.equal(tab.view.getVisible(),false)
+ service.show('a',tab.id,{x:0,y:0,width:900,height:700});assert.equal(tab.view.getVisible(),false)
+ const preview=new (require('electron').WebContentsView)({webPreferences:{sandbox:true}})
+ win.contentView.addChildView(preview);setChildViewVisible(win,preview,true);assert.equal(preview.getVisible(),false)
+ closeDecision({sender:win.webContents,senderFrame:win.webContents.mainFrame},{choice:'cancel'})
+ assert.equal(tab.view.getVisible(),true);assert.equal(preview.getVisible(),true)
+ win.contentView.removeChildView(preview);preview.webContents.close()
  const ref=snap.controls.find(c=>c.label==='姓名').ref;await service.execute('a',{action:'fill',tabId:tab.id,ref,value:'Alice'});assert.equal(await tab.view.webContents.executeJavaScript('document.querySelector("input").value'),'Alice')
  service.control('a',tab.id,true);for(const action of ['read','click','screenshot','history'])await assert.rejects(service.execute('a',{action,tabId:tab.id,ref}),/接管/)
  await service.profile.cookies.set({url,name:'login',value:'fixture',expirationDate:Date.now()/1000+3600});service.control('a',tab.id,false);await assert.rejects(service.execute('a',{action:'fill',ref,value:'stale'}),/失效/)

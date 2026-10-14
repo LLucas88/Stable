@@ -1,5 +1,6 @@
  'use strict'
 const {randomUUID}=require('node:crypto')
+const {setChildViewVisible}=require('./window-close-choice.cjs')
 const {normalizeWebUrl}=require('./preview.cjs')
 const {pageAction}=require('./browser-tool.cjs')
 const {BrowserDownloads}=require('./browser-downloads.cjs')
@@ -71,8 +72,8 @@ class BrowserSessionService {
   async restore(id){for(const saved of this.saved.filter(t=>t.conversationId===id&&!this.tabs.has(t.id))){const tab=await this.create(id,'about:blank',false,saved.id);tab.url=saved.url;tab.title=saved.title;tab.state='suspended';tab.error='恢复的标签页，点击重新加载后继续。'}return this.snapshot(id)}
   get(id,tabId){const tab=this.tabs.get(tabId||this.active.get(id));if(!tab||tab.conversationId!==id||tab.state==='closed')throw Error('标签页不属于此对话或已经关闭。');return tab}
   snapshot(id){return {tabs:[...this.tabs.values()].filter(t=>t.conversationId===id).map(t=>({id:t.id,conversationId:id,url:t.state==='suspended'?t.url:(t.view.webContents.getURL()||t.url),title:t.title,epoch:t.epoch,state:t.state,error:t.error,blockedURL:t.blockedURL,loading:t.view.webContents.isLoading(),canGoBack:t.view.webContents.navigationHistory.canGoBack(),canGoForward:t.view.webContents.navigationHistory.canGoForward(),diagnostics:t.diagnostics,blockedSites:[...t.blockedSites].filter(origin=>!this.sites(id).includes(origin))})),activeTabId:this.active.get(id),downloads:this.downloads.list(id)}}
-  hide(){if(this.shown){try{this.getWindow()?.contentView.removeChildView(this.shown.view)}catch{};this.shown.view.setVisible(false);this.shown=null}}
-  show(id,tabId,bounds){const tab=this.get(id,tabId);this.hide();const win=this.getWindow();if(!win)return;this.active.set(id,tab.id);win.contentView.addChildView(tab.view);tab.view.setBounds(bounds);tab.view.setVisible(true);this.shown=tab;this.emit()}
+  hide(){if(this.shown){try{this.getWindow()?.contentView.removeChildView(this.shown.view)}catch{};setChildViewVisible(this.getWindow(),this.shown.view,false);this.shown=null}}
+  show(id,tabId,bounds){const tab=this.get(id,tabId);this.hide();const win=this.getWindow();if(!win)return;this.active.set(id,tab.id);win.contentView.addChildView(tab.view);tab.view.setBounds(bounds);setChildViewVisible(win,tab.view,true);this.shown=tab;this.emit()}
   close(id,tabId){const tab=this.get(id,tabId);if(this.shown===tab)this.hide();tab.state='closed';tab.view.webContents.close();this.tabs.delete(tab.id);this.saved=this.saved.filter(t=>t.id!==tab.id);this.active.set(id,[...this.tabs.values()].find(t=>t.conversationId===id)?.id);this.persist();this.emit()}
   control(id,tabId,user){const tab=this.get(id,tabId);tab.state=user?'user_controlled':'idle';tab.epoch++;this.emit();return this.snapshot(id)}
   async navigate(id,tabId,action,url){const tab=this.get(id,tabId);if(tab.state==='agent_controlled')throw Error('请先接管页面再导航。');const wc=tab.view.webContents;tab.error='';
@@ -95,7 +96,7 @@ class BrowserSessionService {
   async evaluate(tab,args,operation){
     const frameId=args.frameId||'main',prefix=`${tab.id}.${tab.epoch}.${frameId}`
     if(args.ref&&!args.ref.startsWith(prefix+':'))throw Error('ref 所属页面或导航版本已失效，请重新读取。')
-    const source=['read','click','fill','select'].includes(operation)?pageAction:extraAction
+    const source=['read','audit','click','fill','select'].includes(operation)?pageAction:extraAction
     const call=`(${source.toString()})(${JSON.stringify(operation)},${JSON.stringify(args.ref||'')},${JSON.stringify(args.value||'')},${JSON.stringify(prefix+':'+randomUUID())})`
     const code=`(()=>{try{return {ok:true,value:${call}}}catch(error){return {ok:false,error:String(error.message||error)}}})()`
     const unwrap=result=>{if(!result?.ok)throw Error(result?.error||'页面没有返回有效结果');return result.value}
@@ -129,7 +130,7 @@ class BrowserSessionService {
     try{
       if(args.action==='open'){this.permit(tab.conversationId,args.url);await tab.view.webContents.loadURL(normalizeWebUrl(args.url));assert()}
       else if(args.action==='close'){this.close(tab.conversationId,tab.id);return {closed:true}}
-      else if(args.action==='screenshot'){
+      else if(args.action==='screenshot'||args.action==='audit'){
         assert()
         const view=tab.view, wc=view.webContents, bounds=view.getBounds()
         let captureWindow
@@ -144,6 +145,10 @@ class BrowserSessionService {
             wc.setBackgroundThrottling(false)
             view.setBounds({...bounds,width:bounds.width+1});view.setBounds(bounds)
             await new Promise(resolve=>setTimeout(resolve,250));assert()
+          }
+          if(args.action==='audit'){
+            const value=await this.evaluate(tab,{...args,ref:undefined},'audit');assert()
+            return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
           }
           const image=await wc.capturePage(undefined,{stayHidden:true,stayAwake:true});assert()
           if(image.isEmpty())throw Error('浏览器尚未产生可用截图，请等待页面渲染后重试。')

@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld('stable', {
   },
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
   agent: {
+    prediction: (conversationId, messageId, requestId) => invoke('stable:agent:prediction', { conversationId, messageId, requestId }),
+    cancelPrediction: requestId => invoke('stable:agent:cancelPrediction', { requestId }),
     onTaskOpen: handler => { const listener = (_e, value) => handler(value); ipcRenderer.on('stable:task:open', listener); return () => ipcRenderer.removeListener('stable:task:open', listener) },
     setSkillReferences: (id, ids) => invoke('stable:agent:skillReferences', { id, ids }),
     lifecycle: (id,action)=>invoke('stable:agent:lifecycle',{id,action}),
@@ -214,6 +216,7 @@ contextBridge.exposeInMainWorld('stable', {
     import: (issuerFingerprint) => invoke('stable:provisioning:import', { issuerFingerprint }),
   },
   settings: {
+    messagePredictions: enabled => invoke('stable:settings:messagePredictions', { enabled }),
     globalInstructions: () => invoke('stable:settings:globalInstructions'),
     saveGlobalInstructions: (content) => invoke('stable:settings:saveGlobalInstructions', { content }),
   },

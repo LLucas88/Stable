@@ -52,6 +52,8 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   const session = { key: 'same', cwd: workspace, contextPolicy: 'uploaded-only-v1', initialPrompt: 'full initial context' }
   assert.equal(await runner.run('first', model, secret, 1000, undefined, 'workspace-write', [], session), 'done')
   const first = sdk.captures[0]
+  assert(first.parameters.options.systemPrompt.prompt.includes(require('../desktop/services/report-guidance.cjs').REPORT_GUIDANCE))
+  assert(first.parameters.options.agents['stable-worker'].prompt.includes(require('../desktop/services/report-guidance.cjs').REPORT_GUIDANCE))
   assert.equal(first.first.message.content[0].text, 'full initial context')
   assert.equal(first.parameters.options.resume, undefined)
   assert(first.closed)
@@ -186,6 +188,20 @@ test('network policy changes rebuild the SDK tool catalog for parent and child s
     assert.notEqual(options.sessionId, previous)
     previous = options.sessionId
   }
+})
+
+test('message prediction purpose enforces isolation and replaces execution instructions', async t => {
+  const { root, workspace, runner, sdk } = fixture(t)
+  await runner.run('predict', model, secret, 1000, undefined, 'workspace-write', [], { key: 'main', cwd: workspace, purpose: 'message-prediction', globalInstructions: 'EXECUTE_ALL_TASKS', initialPrompt: 'WRONG_HISTORY' })
+  const options = sdk.captures[0].parameters.options
+  assert.deepEqual(options.tools, []); assert.deepEqual(options.mcpServers, {})
+  assert.equal(options.persistSession, false); assert.equal(options.resume, undefined)
+  assert.equal(options.maxTurns, 1); assert.equal(options.settings.autoCompactEnabled, false)
+  assert.equal(options.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS, '2048')
+  assert.equal(options.systemPrompt.prompt, require('../desktop/services/message-predictions.cjs').PREDICTION_INSTRUCTIONS)
+  assert.equal(sdk.captures[0].first.message.content[0].text, 'predict')
+  assert.equal(fs.existsSync(sessionDirectory(root, 'main')), false)
+  assert.deepEqual(fs.readdirSync(path.join(root, 'claude', 'runs')), [])
 })
 
 test('skill allowlists combine selected and automatic grants, discard metadata permissions, and revoke on resume', async t => {

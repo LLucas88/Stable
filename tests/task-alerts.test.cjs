@@ -6,7 +6,7 @@ test('approval and input are immediate, deduplicated, and suppress idle warnings
   let time = 0; const sent = [], closed = []
   const alerts = new TaskAlerts({ now: () => time, notify: (id, kind) => { sent.push([id,kind]); return () => closed.push(id) } })
   alerts.start('a'); alerts.wait('a','request-1'); alerts.wait('a','request-1')
-  time = 900000; alerts.tick()
+  time = 86400000 * 7; alerts.tick()
   assert.deepEqual(sent, [['a','approval']])
   alerts.resolve('a','request-1'); assert.deepEqual(closed, ['a'])
   alerts.wait('a','request-2'); alerts.wait('a','question','input')

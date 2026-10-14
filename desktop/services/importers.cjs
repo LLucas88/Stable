@@ -5,7 +5,7 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 
 const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.json', '.yaml', '.yml', '.html', '.log', '.xml'])
-const SUPPORTED_DATA_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.docx', '.pdf', '.xlsx', '.xls'])
+const SUPPORTED_DATA_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.docx', '.pdf', '.xlsx', '.xls', '.pptx'])
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_TEXT = 500_000
 const MAX_SKILL_BYTES = 100 * 1024 * 1024
@@ -18,7 +18,7 @@ function inspectDataFile(filePath) {
   if (stat.size > MAX_FILE_BYTES) throw new Error(`“${path.basename(filePath)}”超过 50 MB，未导入。`)
   const extension = path.extname(filePath).toLowerCase()
   if (!SUPPORTED_DATA_EXTENSIONS.has(extension)) {
-    throw new Error(`不支持“${path.basename(filePath)}”的文件格式。支持 TXT、Markdown、CSV、JSON、YAML、HTML、LOG、XML、PDF、DOCX 和 Excel。`)
+    throw new Error(`不支持“${path.basename(filePath)}”的文件格式。支持 TXT、Markdown、CSV、JSON、YAML、HTML、LOG、XML、PDF、DOCX、PPTX 和 Excel。`)
   }
   return { name: path.basename(filePath), path: filePath, size: stat.size, type: extension.slice(1) }
 }
@@ -34,6 +34,8 @@ async function extractText(filePath) {
   } else if (ext === '.pdf') {
     const pdf = require('pdf-parse')
     text = (await pdf(readFileSync(filePath))).text
+  } else if (ext === '.pptx') {
+    text = (await require('./presentation-reader.cjs').readPresentation(readFileSync(filePath))).text
   } else if (ext === '.xlsx' || ext === '.xls') {
     const XLSX = require('xlsx')
     const workbook = XLSX.readFile(filePath)

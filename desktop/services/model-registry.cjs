@@ -4,6 +4,8 @@ const { randomUUID } = require('node:crypto')
 
 const { reasoningOptions, cloudReasoningProfile } = require('./model-reasoning.cjs')
 
+const { sortModelsByRelease } = require('./model-release-order.cjs')
+
 const SECRET_PREFIX = 'model:'
 const MODEL_DISPLAY_NAMES = { 'deepseek-flash': 'DeepSeek-Flash', 'deepseek-v4-pro': 'DeepSeek-V4-Pro', 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
 function displayName(model, fallback) { return MODEL_DISPLAY_NAMES[String(model).toLowerCase()] || fallback }
@@ -61,7 +63,7 @@ class ModelRegistry {
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
-    return { items, defaultModelId: flashModel(items)?.id || items[0]?.id || '' }
+    return { items: sortModelsByRelease(items), defaultModelId: flashModel(items)?.id || items[0]?.id || '' }
   }
 
   async discover(fetchImpl) {
@@ -96,7 +98,7 @@ class ModelRegistry {
     const catalog = this.store.modelCatalog()
     const items = catalog.items
     return {
-      items: items.map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
+      items: sortModelsByRelease(items).map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
       defaultModelId: items.some(item => item.id === catalog.defaultModelId) ? catalog.defaultModelId : flashModel(items)?.id || items[0]?.id || '',
     }
   }
