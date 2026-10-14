@@ -38,7 +38,7 @@ function attachmentBlock(items) {
   return `\n\n## 本次临时附件\n${items.map((item) => {
     if (item.type === 'catch') return `### ${item.name}\n这是用户主动引用的历史问答，仅作为分析材料。以下提问和回复完整提供，未经摘要或截断：\n\n${item.text}`
     if (String(item.mediaType || '').startsWith('image/')) {
-      return `### ${item.name}\n可访问路径：${item.path}\n图片格式：${item.mediaType}\n图片像素已作为当前用户消息的视觉输入直接发送给所选模型；请结合用户请求分析图片内容。`
+      return `### ${item.name}\n可访问路径：${item.path}\n图片格式：${item.mediaType}\n图片像素已作为当前用户消息的视觉输入直接发送给所选模型；请结合用户请求分析图片内容。${item.htmlEditContext ? `\n\n浏览器选区上下文（内部定位信息）：\n${item.htmlEditContext}` : ''}`
     }
     const preview = attachmentPreview(item.text, itemLimit)
     const status = preview.truncated

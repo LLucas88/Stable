@@ -1322,6 +1322,13 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
     setReferenceMap(referenceMapRef.current)
   }, [state.activeConversationId, running, queue.running])
 
+  async function acceptHtmlEditRequest(request:{prompt:string;send:boolean;attachments:any[]}) {
+    const conversationId=state.activeConversationId
+    setPrompt(current=>current.trim()?current+'\n\n'+request.prompt:request.prompt)
+    setAttachmentMap(current=>({...current,[conversationId]:[...(current[conversationId]||[]),...request.attachments.filter(item=>!(current[conversationId]||[]).some(existing=>existing.path===item.path))]}))
+    window.requestAnimationFrame(()=>promptRef.current?.focus())
+  }
+
   function send() {
     if (!prompt.trim() && !attachments.length && !selectedReferences.length) return
     const conversationId = state.activeConversationId
@@ -1625,7 +1632,7 @@ function AgentPage({ active, state, prefill, consumePrefill, updateAgent, update
         </DropTarget>}
       </div>
     </div>
-    {browserPanel?.open && active && <BrowserPanel obscured={Boolean(editingId || imageViewer || projectOverlay || removeTarget || conversationMenuId || projectMenuId)} key={state.activeConversationId} conversationId={state.activeConversationId} initialTarget={browserPanel.target} onClose={()=>setBrowserPanels(current=>({...current,[state.activeConversationId]:{...current[state.activeConversationId],open:false}}))} onImport={value=>setAttachmentMap(current=>({...current,[state.activeConversationId]:[...(current[state.activeConversationId]||[]),value]}))}/>}
+    {browserPanel?.open && active && <BrowserPanel obscured={Boolean(editingId || imageViewer || projectOverlay || removeTarget || conversationMenuId || projectMenuId)} key={state.activeConversationId} conversationId={state.activeConversationId} initialTarget={browserPanel.target} onEditRequest={acceptHtmlEditRequest} onClose={()=>setBrowserPanels(current=>({...current,[state.activeConversationId]:{...current[state.activeConversationId],open:false}}))} onImport={value=>setAttachmentMap(current=>({...current,[state.activeConversationId]:[...(current[state.activeConversationId]||[]),value]}))}/>}
 
     </div>
     {imageViewer && <ImageLightbox items={imageViewer.items} index={imageViewer.index} onIndexChange={(index) => setImageViewer((current) => current ? { ...current, index } : current)} onClose={() => setImageViewer(undefined)} />}
