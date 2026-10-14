@@ -4,6 +4,9 @@ const { randomUUID } = require('node:crypto')
 const { fileURLToPath } = require('node:url')
 const { resolveWorkspaceEntry } = require('./preview.cjs')
 const types = { '.html':'text/html', '.htm':'text/html', '.css':'text/css', '.js':'text/javascript', '.mjs':'text/javascript', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.svg':'image/svg+xml', '.webp':'image/webp', '.gif':'image/gif', '.woff':'font/woff', '.woff2':'font/woff2' }
+// Keep trusted source provenance after the temporary server stops, so an open tab can still edit its file.
+const sources=new Map()
+function localHtmlSource(url){try{const u=new URL(url);u.hash='';u.search='';return sources.get(u.href)}catch{return undefined}}
 class LocalHtmlPreview {
   constructor(roots) { this.roots=roots; this.entries=new Map() }
   async open(value) {
@@ -43,8 +46,10 @@ class LocalHtmlPreview {
       this.server.unref()
     }
     const token=randomUUID();this.entries.set(token,path.dirname(filename))
-    return `http://127.0.0.1:${this.server.address().port}/${token}/${encodeURIComponent(path.basename(filename))}${search}${hash}`
+    const url=`http://127.0.0.1:${this.server.address().port}/${token}/${encodeURIComponent(path.basename(filename))}`
+    sources.set(url,filename)
+    return url+search+hash
   }
   dispose(){this.server?.close();this.server?.closeAllConnections();this.entries.clear();this.server=undefined}
 }
-module.exports={LocalHtmlPreview}
+module.exports={LocalHtmlPreview,localHtmlSource}

@@ -6,8 +6,11 @@ const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell, 
 const { autoUpdater } = require('electron-updater')
 const { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
-const { PageAnnotations, saveCurrentPage } = require('./services/browser-page-actions.cjs')
-const pageAnnotations = new PageAnnotations()
+const { saveCurrentPage } = require('./services/browser-page-actions.cjs')
+const { HtmlVisualEditors } = require('./services/html-visual-editor.cjs')
+const htmlEditors = new HtmlVisualEditors(require('electron'))
+const { localHtmlSource } = require('./services/local-html-preview.cjs')
+function browserSnapshotWithSources(value) { return {...value,tabs:value.tabs.map(tab=>({...tab,sourcePath:localHtmlSource(tab.url)}))} }
 const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { StableStore } = require('./services/store.cjs')
@@ -287,7 +290,7 @@ function isAllowedWorkspacePreviewFile(value) {
     if (previewTemporaryPath && sameFilesystemPath(requested, previewTemporaryPath)) {
       return existsSync(requested) && statSync(requested).isFile()
     }
-    resolveWorkspaceEntry(requested, conversationPaths(store.activeConversationId()).readableRoots, { fileOnly: true })
+    resolveWorkspaceEntry(requested, attachmentPreviews.roots(store.activeConversationId(),requested,conversationPaths(store.activeConversationId()).readableRoots), { fileOnly: true })
     return true
   } catch { return false }
 }
@@ -297,7 +300,13 @@ function isAllowedLocalPreviewRequest(value) {
     const protocol = new URL(value).protocol
     if (protocol === 'data:' || protocol === 'blob:') return true
   } catch { return false }
-  return isAllowedWorkspacePreviewFile(value)
+  if(isAllowedWorkspacePreviewFile(value))return true
+  try {
+    const url=new URL(value);if(url.protocol!=='file:'||url.hostname)return false
+    const requested=fileURLToPath(url)
+    if(!/\.(?:css|js|mjs|json|csv|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|mp4|webm|mp3|wav)$/i.test(requested))return false
+    resolveWorkspaceEntry(requested,attachmentPreviews.resourceRoots(store.activeConversationId(),previewSourcePath),{fileOnly:true});return true
+  } catch {return false}
 }
 
 function isAllowedLocalPreviewNavigation(value) {
@@ -339,6 +348,8 @@ function closePreviewView() {
   cleanupPreviewTemporaryFile()
   if (!view) return true
   try { mainWindow?.contentView.removeChildView(view) } catch {}
+  const editor=htmlEditors.forContents(view.webContents)
+  if (editor) { view.setVisible(false);void htmlEditors.flush(editor).catch(()=>{});return true }
   try { if (!view.webContents.isDestroyed()) view.webContents.close() } catch {}
   return true
 }
@@ -436,9 +447,17 @@ const DIRECT_HTML_EXTENSIONS = new Set(['.html', '.htm'])
 const IMAGE_PREVIEW_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
 const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.pptx', '.xlsx', '.xls'])
 
+const attachmentPreviews = new (require('./services/attachment-previews.cjs').AttachmentPreviews)()
+
 async function openFilePreview(value, bounds) {
   const paths=conversationPaths(store.activeConversationId())
-  const resolved = resolveWorkspaceEntry(value, paths.readableRoots || paths.writableRoots || paths.workspace)
+  const previewRoots=attachmentPreviews.roots(store.activeConversationId(),value,paths.readableRoots || paths.writableRoots || [paths.workspace])
+  const resolved = resolveWorkspaceEntry(value, previewRoots)
+  const editor = htmlEditors.find(store.activeConversationId(),resolved.path)
+  if(editor && !editor.contents.isDestroyed()){
+    closePreviewView(); previewView=editor.view;previewSourcePath=resolved.path;previewKind='html';mainWindow.contentView.addChildView(editor.view);editor.view.setBounds(normalizedPreviewBounds(bounds));editor.view.setVisible(true)
+    return {url:editor.contents.getURL(),title:path.basename(resolved.path),loading:false,canGoBack:false,canGoForward:false}
+  }
   const title = path.basename(resolved.path) || resolved.path
   const theme = normalizeTheme(store.getSetting('theme'))
   const interactiveHtml = !resolved.isDirectory && DIRECT_HTML_EXTENSIONS.has(resolved.extension) && resolved.size <= 20 * 1024 * 1024
@@ -449,7 +468,7 @@ async function openFilePreview(value, bounds) {
       await loadGeneratedFilePreview(view, renderFileInfoDocument(resolved, theme, '这是当前 Stable 工作区内的文件夹。文件夹内容不会自动展开或执行。'), 'folder-preview')
     } else if (['.md', '.markdown'].includes(resolved.extension)) {
       try {
-        const markdown = resolveMarkdownFile(resolved.path, paths.readableRoots || paths.writableRoots || paths.workspace)
+        const markdown = resolveMarkdownFile(resolved.path, previewRoots)
         const {markdownPages,markdownPageDocument}=require('./services/markdown-pages.cjs')
         const pages=markdownPages(markdown.content)
         let changingPage=false
@@ -1504,6 +1523,7 @@ async function prepareAgentMessage(payload, conversationId, modelRoute) {
   const requestedAttachments = ordinaryPaths.length ? inspectAgentAttachments(ordinaryPaths) : []
   const extractedAttachments = await extractAgentAttachments(requestedAttachments, conversationId)
   const attachments = [...extractedAttachments.items, ...catchAttachments]
+  for(let index=0;index<requestedAttachments.length;index++){const context=htmlEditors.contextForAttachment(conversationId,requestedAttachments[index].path,paths.workspace);if(context&&extractedAttachments.items[index])extractedAttachments.items[index].htmlEditContext=context}
   const requestedReferences = Array.isArray(payload?.references) ? payload.references.slice(0, 100) : skillReferences(store, conversationId)
   const idsByKind = (kind) => new Set(requestedReferences.filter((item) => item?.kind === kind).map((item) => String(item.id || '')))
   const scriptIds = idsByKind('script')
@@ -2214,7 +2234,10 @@ function registerIpc() {
   ipcMain.handle('stable:workflows:enhanceInstruction', (_event, payload) => enhanceWorkflowInstruction(payload?.node, payload?.prompt, payload?.effort))
   ipcMain.handle('stable:workflows:generate', (_event, payload) => generateWorkflow(requireText(payload?.goal, '工作流目标', 2_000)))
 
-  ipcMain.handle('stable:agent:inspectAttachments', (_event, payload) => inspectAgentAttachments(payload?.paths))
+  ipcMain.handle('stable:agent:inspectAttachments', (_event, payload) => {
+    if(!mainWindow||_event.sender!==mainWindow.webContents||_event.senderFrame!==mainWindow.webContents.mainFrame)throw Error('不允许添加附件。')
+    return attachmentPreviews.register(store.activeConversationId(),inspectAgentAttachments(payload?.paths))
+  })
   ipcMain.handle('stable:agent:savePastedImage', (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     if (!store.conversation(conversationId)) throw new Error('找不到这个对话。')
@@ -2764,25 +2787,49 @@ function registerIpc() {
     if (!store.conversation(p.conversationId)) throw new Error('找不到对话。')
     if(!featureFlags.sharedBrowser)throw Error('共享浏览器已通过功能开关关闭。')
     const id = p.conversationId, service = browserSession
-    if (p.action === 'annotationStop') return pageAnnotations.stop(id,p.sessionId)
-    if (p.action === 'annotationPoll') return pageAnnotations.poll(id,p.sessionId,conversationPaths(id,true).workspace)
-    if (p.action === 'saveCurrent' || p.action === 'annotationStart') {
+    if (String(p.action).startsWith('editor')) {
+      if (!mainWindow || _event.sender!==mainWindow.webContents || _event.senderFrame!==mainWindow.webContents.mainFrame) throw Error('不允许访问编辑会话。')
+      const paths=conversationPaths(id,true)
+      if(p.action==='editorState') {const editor=p.filePath&&htmlEditors.find(id,p.filePath);return editor?htmlEditors.state(editor):null}
+      if(p.action==='editorStart') {
+        const editorRoots=attachmentPreviews.roots(id,p.filePath,paths.writableRoots)
+        const entry=resolveWorkspaceEntry(p.filePath,editorRoots,{fileOnly:true})
+        if(store.activeConversationId()!==id||entry.path!==previewSourcePath||previewKind!=='html'||!previewView||previewView.webContents.isDestroyed())throw Error('请先打开此本地 HTML 文件。')
+        return htmlEditors.start({conversationId:id,file:entry.path,view:previewView,roots:editorRoots,workspace:paths.workspace,window:mainWindow})
+      }
+      const editor=htmlEditors.get(id,p.sessionId)
+      resolveWorkspaceEntry(editor.document.path,attachmentPreviews.roots(id,editor.document.path,paths.writableRoots),{fileOnly:true})
+      if(p.action==='editorPoll')return htmlEditors.poll(id,p.sessionId)
+      if(p.action==='editorAck')return htmlEditors.acknowledge(id,p.sessionId,p.deliveryId)
+      if(p.action==='editorSave')return htmlEditors.flush(editor)
+      if(p.action==='editorStop'){await htmlEditors.stop(id,p.sessionId);if(previewView===editor.view)await editor.contents.loadFile(editor.document.path);else editor.contents.close();return true}
+      if(p.action==='editorReload'){
+        const choice=await dialog.showMessageBox(mainWindow,{type:'question',message:'重新载入磁盘文件？',detail:'未保存的编辑将被放弃。保存失败时的草稿仍保留在工作区 .stable/html-editor 中。',buttons:['取消','重新载入'],defaultId:0,cancelId:0})
+        if(choice.response!==1)return false
+        await htmlEditors.stop(id,p.sessionId,{discard:true});await editor.contents.loadFile(editor.document.path);return true
+      }
+      if(p.action==='editorExport'){
+        const choice=await dialog.showSaveDialog(mainWindow,{title:'另存 HTML 与图片资源',defaultPath:editor.document.path.replace(/(\.html?)$/i,'-副本$1'),filters:[{name:'HTML',extensions:['html','htm']}],properties:['showOverwriteConfirmation']})
+        if(choice.canceled)return {cancelled:true}
+        return {path:await htmlEditors.export(editor,choice.filePath)}
+      }
+      throw Error('未知编辑命令。')
+    }
+    if (p.action === 'saveCurrent') {
       let sourcePath, contents
       if (p.filePath) {
         const paths=conversationPaths(id)
         const entry=resolveWorkspaceEntry(p.filePath,paths.readableRoots||paths.writableRoots||paths.workspace)
         if (entry.isDirectory) throw Error('请选择文件。')
         sourcePath=entry.path
-        if (p.action==='annotationStart' && (store.activeConversationId()!==id || sourcePath!==previewSourcePath || !previewView || previewView.webContents.isDestroyed())) throw Error('文件预览已切换，请重新打开后注释。')
         contents=previewView?.webContents
       } else {
         const tab=service.get(id,p.tabId);contents=tab.view.webContents
         service.control(id,tab.id,true)
       }
-      if(p.action==='saveCurrent')return saveCurrentPage({electron:require('electron'),window:mainWindow,downloads:service.downloads,conversationId:id,sourcePath,contents})
-      return pageAnnotations.start(id,contents,sourcePath||contents.getURL())
+      return saveCurrentPage({electron:require('electron'),window:mainWindow,downloads:service.downloads,conversationId:id,sourcePath,contents})
     }
-    if (p.action === 'state') return service.restore(id)
+    if (p.action === 'state') return browserSnapshotWithSources(await service.restore(id))
     if (p.action === 'create') { const tab = await service.create(id, p.url || 'about:blank', true); if (p.userControl) service.control(id, tab.id, true) }
     else if (p.action === 'show') { closePreviewView(); const b=p.bounds; if(!b || !['x','y','width','height'].every(k=>Number.isFinite(b[k])))throw Error('无效页面范围');const [w,h]=mainWindow.getContentSize();service.show(id,p.tabId,{x:Math.max(0,Math.round(b.x)),y:Math.max(0,Math.round(b.y)),width:Math.max(1,Math.min(w,Math.round(b.width))),height:Math.max(1,Math.min(h,Math.round(b.height)))}) }
     else if (p.action === 'hide') service.hide()
@@ -2790,8 +2837,7 @@ function registerIpc() {
     else if (p.action === 'control') return service.control(id,p.tabId,Boolean(p.user))
     else if (p.action === 'permitSite') service.permit(id,p.origin)
     else if (p.action === 'navigate') return service.navigate(id,p.tabId,p.navigation,p.url)
-    else if (p.action === 'annotate') service.annotate(id,p.tabId,p.text,p.ref)
-    else if (p.action === 'history') return { history: service.history(id), annotations: (store.getSetting('browser-annotations-v2')||[]).filter(a=>a.conversationId===id), allowHistory:Boolean(store.getSetting(`browser-history-allow:${id}`)) }
+    else if (p.action === 'history') return { history: service.history(id), allowHistory:Boolean(store.getSetting(`browser-history-allow:${id}`)) }
     else if (p.action === 'clearHistory') service.clearHistory(id,p.since)
     else if (p.action === 'allowHistory') store.setSetting(`browser-history-allow:${id}`,Boolean(p.enabled))
     else if (p.action === 'diagnostics') { const tab=service.get(id,p.tabId);tab.diagnostics=Boolean(p.enabled);if(!tab.diagnostics)tab.logs=[] }
@@ -2807,7 +2853,7 @@ function registerIpc() {
       if(p.action==='importDownload')return service.downloads.import(item.id,conversationPaths(id,true).workspace)
       if(p.action==='revealDownload'){if(!item.path||!existsSync(item.path))throw Error('下载文件不存在。');shell.showItemInFolder(item.path)}
     }
-    return service.snapshot(id)
+    return browserSnapshotWithSources(service.snapshot(id))
   })
   ipcMain.handle('stable:preview:existingFiles', (_event, payload) => {
     const id = requireText(payload?.conversationId, '对话 ID', 100)
@@ -2820,6 +2866,7 @@ function registerIpc() {
   ipcMain.handle('stable:preview:setBounds', (_event, payload) => updatePreviewBounds(payload?.bounds))
   ipcMain.handle('stable:preview:navigate', (_event, payload) => {
     if (!previewView || previewView.webContents.isDestroyed()) return false
+    if(htmlEditors.forContents(previewView.webContents))throw Error('请先退出编辑或使用编辑器的重新载入。')
     const history = previewView.webContents.navigationHistory
     if (payload?.action === 'back' && history.canGoBack()) history.goBack()
     else if (payload?.action === 'forward' && history.canGoForward()) history.goForward()
@@ -2944,6 +2991,7 @@ function createWindow() {
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('file:')) event.preventDefault() })
   window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) wendingCli?.dispose() })
+  window.on('close', event=>{if(!event.defaultPrevented&&htmlEditors.sessions.size&&!editorsFlushedForQuit){event.preventDefault();if(!editorQuitPending)app.quit()}})
   window.on('closed', () => { wendingCli?.dispose(); closePreviewView(); mainWindow = undefined })
   return window
 }
@@ -3385,4 +3433,5 @@ if (updateHealthcheck) {
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => wendingCli?.dispose())
 app.on('before-quit', () => messagePredictions.invalidate())
-app.on('before-quit', () => { browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })
+let editorsFlushedForQuit=false,editorQuitPending=false
+app.on('before-quit', (event) => { if(!editorsFlushedForQuit&&htmlEditors.sessions.size){event.preventDefault();if(editorQuitPending)return;editorQuitPending=true;void htmlEditors.flushAll().then(()=>{editorsFlushedForQuit=true;editorQuitPending=false;app.quit()}).catch(async error=>{editorQuitPending=false;await dialog.showMessageBox({type:'error',message:'编辑内容尚未保存，已取消退出。',detail:error.message});mainWindow?.show()});return} browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })
