@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 const { app, BrowserWindow, nativeImage } = require('electron')
 const { mkdtempSync, rmSync, readFileSync } = require('node:fs')
 const path = require('node:path'), os = require('node:os'), assert = require('node:assert/strict')
@@ -11,7 +12,7 @@ async function run() {
   await app.whenReady()
   window = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } })
   const presence = createWindowPresence({ app, nativeImage }); presence.attach(window)
-  const css = readFileSync(path.join(__dirname, '../../src/styles/app.css'), 'utf8')
+  const css = readSource(path.join(__dirname, '../../src/styles/app.css'), 'utf8')
   await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<style>${css}</style>
     <div id="root"><article class="conversation-list-item" style="position:absolute;top:100px;left:100px;width:350px;height:44px">
     <button class="conversation-select" style="height:44px">任务</button>

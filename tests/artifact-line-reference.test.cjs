@@ -1,6 +1,7 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm')
 const ts=require('typescript')
-const source=fs.readFileSync(require.resolve('../src/App.tsx'),'utf8')
+const source=readSource(require.resolve('../src/App.tsx'),'utf8')
 const code=source.slice(source.indexOf('function localArtifactPaths('),source.indexOf('function ArtifactLinks('))
 const extract=vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText+';localArtifactPaths')
 test('delivery paths accept line references without passing them to filesystem checks',()=>{

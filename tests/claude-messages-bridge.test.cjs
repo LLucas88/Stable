@@ -14,6 +14,61 @@ const model = { id: 'test', providerId: 'test', model: 'actual-provider-model', 
 const completion = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] })
 const tool = { name: 'Read', description: 'Read a file', input_schema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } }
 const request = (overrides = {}) => ({ model: 'claude-compatibility-name', max_tokens: 4000, stream: true, messages: [{ role: 'user', content: 'hello' }], ...overrides })
+
+test('provider gets deduplicated tool evidence while SDK history and compacted replay keep originals', async () => {
+  const bodies = []
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'fixture', fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(init.body)); return upstream([completion({ content: 'ok' }, 'stop')])
+  } })
+  const browser = { name: 'mcp__stable__stable_browser', input_schema: { type: 'object', properties: {} } }
+  const pair = id => [
+    { role: 'assistant', content: [{ type: 'tool_use', id, name: browser.name, input: { action: 'screenshot' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [
+      { type: 'text', text: JSON.stringify({ untrustedContent: true, tabId: 'tab', text: 'page '.repeat(300), controls: [{ ref: id }] }) },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'fixture-image' } },
+      { type: 'text', text: '<system-reminder>token budget remains</system-reminder>' },
+    ] }] },
+  ]
+  const input = request({ tools: [browser], messages: [...pair('first'), ...pair('second')] }), saved = JSON.stringify(input)
+  await bridge.start()
+  try {
+    await events(bridge, input)
+    assert.equal(JSON.stringify(input), saved)
+    const toolResults = bodies[0].messages.filter(m => m.role === 'tool')
+    assert.equal(toolResults.flatMap(m => m.content).filter(p => p.type === 'image_url').length, 1)
+    assert.equal(typeof toolResults[1].content, 'string')
+    assert.equal(JSON.parse(toolResults[1].content.split('\n\n')[0]).controls[0].ref, 'second')
+    assert.match(toolResults[1].content, /tool_call_id=first/)
+    assert.match(toolResults[1].content, /system-reminder/)
+    await events(bridge, request({ tools: [browser], messages: pair('second') }))
+    const restored = bodies[1].messages.at(-1).content
+    assert.equal(restored[1].type, 'image_url')
+    assert.equal(JSON.parse(restored[0].text).text, 'page '.repeat(300))
+  } finally { await bridge.close() }
+})
+
+test('SDK reminder blocks do not prevent browser JSON deduplication or disappear from text-only results', async () => {
+  const bodies = []
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'fixture', fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(init.body)); return upstream([completion({ content: 'ok' }, 'stop')])
+  } })
+  const messages = ['a', 'b'].flatMap(id => [
+    { role: 'assistant', content: [{ type: 'tool_use', id, name: 'mcp__stable__stable_browser', input: { action: 'read' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [
+      { type: 'text', text: JSON.stringify({ untrustedContent: true, text: 'same page '.repeat(100), controls: [{ ref: id }] }) },
+      { type: 'text', text: `<system-reminder>${id}: token budget</system-reminder>` },
+    ] }] },
+  ])
+  await bridge.start()
+  try {
+    await events(bridge, request({ messages }))
+    const result = bodies[0].messages.at(-1).content
+    assert.match(result, /contextReferences/)
+    assert.match(result, /tool_call_id=a.text/)
+    assert.match(result, /b: token budget/)
+    assert.equal(JSON.parse(result.split('\n\n')[0]).controls[0].ref, 'b')
+  } finally { await bridge.close() }
+})
 function upstream(chunks) {
   return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\r\n\r\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
 }
@@ -53,15 +108,17 @@ test('request budget guidance is refreshed for corrective generation without acc
   try {
     await events(bridge, request({ system: 'BASE_RULES', tools: [tool] }))
     assert.equal(bodies.length, 2)
-    assert.match(bodies[0].messages[0].content, /BASE_RULES.*\n\nBUDGET_1/s)
-    assert.match(bodies[1].messages[0].content, /BASE_RULES.*\n\nBUDGET_2/s)
-    assert.doesNotMatch(bodies[1].messages[0].content, /BUDGET_1/)
+    assert.equal(bodies[0].messages[0].content, 'BASE_RULES')
+    assert.equal(bodies[1].messages[0].content, 'BASE_RULES')
+    assert.match(bodies[0].messages.at(-1).content, /BUDGET_1/)
+    assert.match(bodies[1].messages.at(-1).content, /BUDGET_2/)
+    assert.doesNotMatch(JSON.stringify(bodies[1]), /BUDGET_1/)
     assert.equal(bodies[1].messages.at(-1).role, 'user')
-    assert.match(bodies[1].messages.at(-1).content, /整组工具调用均未执行/)
+    assert.match(JSON.stringify(bodies[1].messages), /整组工具调用均未执行/)
   } finally { await bridge.close() }
 })
 
-test('deferred schemas require successful ToolSearch references and disappear after compaction', async () => {
+test('deferred schemas require structured discovery and remain hidden in summary-only history', async () => {
   const bodies = []
   const bridge = new ClaudeMessagesBridge({ model, apiKey: 'fixture', fetchImpl: async (_url, init) => { bodies.push(JSON.parse(init.body)); return upstream([completion({ content: 'ok' }, 'stop')]) } })
   await bridge.start()
@@ -443,4 +500,80 @@ test('custom search retains provider behavior without starting a Responses servi
   const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', search: async (input, forwardedSignal) => { assert.equal(forwardedSignal, signal); return { sources: [{ title: input.query, url: 'https://source.example' }] } } })
   const result = await bridge.runSearch({ query: 'hello' }, signal)
   assert.equal(result.sources[0].title, 'hello'); assert.equal(bridge.server, undefined)
+})
+
+// The SDK preserves the last browser call/result across compaction while the
+// much older ToolSearch reference is removed. No report data is needed to replay it.
+test('compacted history retains a successfully used deferred browser schema', async () => {
+  const browser = {name:'mcp__stable__stable_browser',defer_loading:true,input_schema:{type:'object',properties:{action:{type:'string'},tabId:{type:'string'}}}}
+  const bodies=[],diagnostics=[]
+  const bridge=new ClaudeMessagesBridge({model,apiKey:'fixture',onDiagnostic:d=>diagnostics.push(d),fetchImpl:async(_url,init)=>{
+    bodies.push(JSON.parse(init.body))
+    return upstream([completion({tool_calls:[{id:'after-compact',function:{name:browser.name,arguments:JSON.stringify({action:'screenshot',tabId:'fixture-tab'})}}]},'tool_calls')])
+  }})
+  await bridge.start()
+  try {
+    const messages=[{role:'user',content:'Compacted task summary'},
+      {role:'assistant',content:[{type:'tool_use',id:'preserved-browser',name:browser.name,input:{action:'open',url:'fixture.html'}}]},
+      {role:'user',content:[{type:'tool_result',tool_use_id:'preserved-browser',content:[{type:'text',text:'{"tabId":"fixture-tab"}'}]}]}]
+    const values=await events(bridge,request({tools:[tool,{name:'ToolSearch',input_schema:{type:'object'}},browser],messages}))
+    assert.ok(bodies[0].tools.some(t=>t.function.name===browser.name),'Compaction dropped the successfully used browser schema')
+    assert.equal(bodies.length,1);assert.equal(diagnostics.length,0)
+    assert.equal(values.find(v=>v.content_block?.type==='tool_use').content_block.name,browser.name)
+    assert.equal(values.at(-2).delta.stop_reason,'tool_use')
+  }finally{await bridge.close()}
+})
+
+test('restored deferred tools remain scoped to current schemas and structured successful history', async () => {
+  const deferred={name:'mcp__stable__stable_browser',defer_loading:true,input_schema:{type:'object'}},other={name:'mcp__other__dangerous',defer_loading:true,input_schema:{type:'object'}},bodies=[]
+  const bridge=new ClaudeMessagesBridge({model,apiKey:'fixture',fetchImpl:async(_url,init)=>{bodies.push(JSON.parse(init.body));return upstream([completion({content:'ok'},'stop')])}})
+  await bridge.start()
+  const call={role:'assistant',content:[{type:'tool_use',id:'old',name:deferred.name,input:{action:'open'}}]},result={role:'user',content:[{type:'tool_result',tool_use_id:'old',content:'success'}]}
+  const names=()=>bodies.at(-1).tools.map(t=>t.function.name)
+  try {
+    await events(bridge,request({tools:[tool,deferred,other],messages:[call,result]}));assert(names().includes(deferred.name));assert(!names().includes(other.name))
+    await events(bridge,request({tools:[tool,deferred],messages:[{role:'user',content:'Previously used '+deferred.name}]}));assert(!names().includes(deferred.name))
+    await events(bridge,request({tools:[tool,deferred],messages:[call,{role:'user',content:[{...result.content[0],is_error:true}]}]}));assert(!names().includes(deferred.name))
+    await events(bridge,request({tools:[tool,deferred],messages:[call]}));assert(!names().includes(deferred.name))
+    await events(bridge,request({tools:[tool],messages:[call,result]}));assert(!names().includes(deferred.name))
+    const orphan={role:'user',content:[{type:'tool_result',tool_use_id:'unmatched',content:'ok'}]}
+    await events(bridge,request({tools:[tool,deferred],messages:[call,orphan]}));assert(!names().includes(deferred.name))
+  }finally{await bridge.close()}
+})
+
+test('unknown tool correction explains discovery and diagnostics identify the rejected name without arguments', async () => {
+  const bodies=[],diagnostics=[]
+  const deferred={name:'mcp__stable__stable_browser',defer_loading:true,input_schema:{type:'object'}}
+  const search={name:'ToolSearch',input_schema:{type:'object'}}
+  const bridge=new ClaudeMessagesBridge({model,apiKey:'credential-for-test',onDiagnostic:d=>diagnostics.push(d),fetchImpl:async(_url,init)=>{
+    bodies.push(JSON.parse(init.body))
+    return upstream([completion({tool_calls:[bodies.length===1
+      ? {id:'bad',function:{name:deferred.name,arguments:'{"action":"private-argument-never-log"}'}}
+      : {id:'search',function:{name:'ToolSearch',arguments:'{"query":"browser"}'}}]},'tool_calls')])
+  }})
+  await bridge.start()
+  try {
+    const values=await events(bridge,request({tools:[tool,search,deferred]}))
+    assert.equal(bodies.length,2);assert.equal(diagnostics[0].reasonCode,'unknown_tool')
+    assert.equal(diagnostics[0].calls[0].name,deferred.name);assert.equal(diagnostics[0].calls[0].availability,'deferred')
+    assert.doesNotMatch(JSON.stringify(diagnostics),/private-argument-never-log/)
+    assert.match(bodies[1].messages.at(-1).content,/先调用 ToolSearch/);assert.match(bodies[1].messages.at(-1).content,/此前成功的工具操作依然有效/)
+    assert.deepEqual(values.filter(v=>v.content_block?.type==='tool_use').map(v=>v.content_block.name),['ToolSearch'])
+  }finally{await bridge.close()}
+})
+
+test('unknown tool names never bypass validation and diagnostic names redact credentials before truncation', async () => {
+  const diagnostics=[];let fatal,calls=0
+  const secret='PRIVATE_NAME_CREDENTIAL',unknown='wrong_'+secret+'_tool'
+  const bridge=new ClaudeMessagesBridge({model,apiKey:secret,onDiagnostic:d=>diagnostics.push(d),onFatalError:e=>fatal=e,fetchImpl:async()=>{
+    calls++;return upstream([completion({tool_calls:[{id:'bad',function:{name:unknown,arguments:'{}'}}]},'tool_calls')])
+  }})
+  await bridge.start()
+  try {
+    const values=await events(bridge,request({tools:[tool]}))
+    assert.equal(calls,2);assert.equal(diagnostics[1].reasonCode,'unknown_tool');assert.equal(diagnostics[1].calls[0].availability,'absent')
+    assert.match(diagnostics[1].calls[0].name,/redacted/);assert.doesNotMatch(JSON.stringify(diagnostics)+fatal, /PRIVATE_NAME_CREDENTIAL/)
+    assert.match(fatal,/此前已完成的操作不会回滚/);assert.doesNotMatch(fatal,/本次未执行任何工具/)
+    assert.equal(values.some(v=>v.content_block?.type==='tool_use'),false)
+  }finally{await bridge.close()}
 })

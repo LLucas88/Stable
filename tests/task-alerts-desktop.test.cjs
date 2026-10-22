@@ -1,5 +1,6 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),{EventEmitter}=require('node:events')
-const source=fs.readFileSync(require('node:path').join(__dirname,'../desktop/main.cjs'),'utf8')
+const source=readSource(require('node:path').join(__dirname,'../desktop/main.cjs'),'utf8')
 const block=source.slice(source.indexOf("const { TaskAlerts }"),source.indexOf('app.setAppUserModelId(APP_ID)'))
 test('desktop adapter keeps OS notifications without sending in-app task overlays',()=>{
  const delivered=[],actions=[],notices=[]

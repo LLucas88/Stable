@@ -13,6 +13,37 @@ function fixture(t, options = {}) {
 }
 const decision = value => value.hookSpecificOutput.permissionDecision
 
+test('native timeout precedes the run watchdog and partial output can guide the next model step', async t => {
+  const { BASH_TIMEOUT_MS } = require('../desktop/services/claude-native-tools.cjs')
+  const { RunProgress, TOOL_WATCHDOG_MS } = require('../desktop/services/run-progress.cjs')
+  const x = fixture(t), pre = await x.pre({ command: 'long job', timeout: 600000 })
+  assert.equal(pre.hookSpecificOutput.updatedInput.timeout, BASH_TIMEOUT_MS)
+  assert.equal(x.approvals[0].args.timeout, BASH_TIMEOUT_MS)
+  assert.equal((await x.guard.canUseTool('Bash', pre.hookSpecificOutput.updatedInput, { toolUseID: 'bash-1' })).behavior, 'allow')
+  assert(TOOL_WATCHDOG_MS - BASH_TIMEOUT_MS >= 60000)
+  let now = 0; const progress = new RunProgress({ now: () => now })
+  progress.start('bash-1', 'long job'); now = BASH_TIMEOUT_MS + 1000
+  assert.equal(progress.check(), null)
+  const response = { stdout: 'step one completed', stderr: 'Command timed out', interrupted: true }
+  const hook = await x.guard.postToolUse({ tool_use_id: 'bash-1', tool_response: response })
+  assert.deepEqual(x.events.at(-1).output, response)
+  assert.equal(x.events.at(-1).status, 'failed')
+  assert.match(hook.hookSpecificOutput.additionalContext, /拆分/)
+  assert.equal(progress.complete('bash-1', { status: 'failed', aggregatedOutput: response.stderr }), null)
+  progress.start('bash-2', 'smaller step'); now += 1000; assert.equal(progress.check(), null)
+})
+
+test('timeout failure hooks guide recovery but user cancellation does not', async t => {
+  const controller = new AbortController(), x = fixture(t, { signal: controller.signal })
+  await x.pre({ command: 'slow step', timeout: 1000 })
+  const hook = await x.guard.postToolUseFailure({ tool_use_id: 'bash-1', error: 'Command timed out', is_interrupt: true })
+  assert.match(hook.hookSpecificOutput.additionalContext, /整轮任务仍可继续/)
+  assert.equal(x.events.at(-1).status, 'failed')
+  await x.pre({ command: 'next step' }, 'bash-2'); controller.abort()
+  assert.deepEqual(await x.guard.postToolUse({ tool_use_id: 'bash-2', tool_response: { interrupted: true } }), {})
+  assert.equal(x.events.at(-1).status, 'cancelled')
+})
+
 test('native Bash requires exact approval, preserves native arguments and does not execute in the guard', async t => {
   const x = fixture(t)
   const args = { command: "printf '中文' > result.txt", timeout: 1234, description: '写入测试结果' }

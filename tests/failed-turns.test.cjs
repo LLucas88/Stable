@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -84,7 +85,7 @@ test('cleared or unsent turns are not recreated by failure recovery', async t =>
 
 test('the real run IPC failure path saves the terminal message and clears its active runner', async t => {
   const { store, id, life } = fixture(t)
-  const source = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const source = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   const handlerSource = source.slice(source.indexOf("ipcMain.handle('stable:agent:run'"), source.indexOf("ipcMain.handle('stable:agent:steer'"))
   const agentRunners = new Map()
   let handler, broadcasts = 0
@@ -97,6 +98,7 @@ test('the real run IPC failure path saves the terminal message and clears its ac
     wendingCli: { forConversation: () => ({ login: { pending: false, snapshot: () => ({ phase: 'ready' }) } }) },
     createHarnessRunner: () => ({}), taskAlerts: { start() {}, finish() {} },
     readGlobalInstructions: () => ({ content: '' }),
+    clarificationTurn: require('../desktop/services/clarification.cjs').clarificationTurn,
     clarifyBeforeExecution: async ({ payload }) => ({ status: 'ready', payload }),
     prepareAgentMessage: async () => ({ attachments: [], selectedReferences: [], extractedAttachments: { installedSkills: [] }, selectedData: [], selectedKnowledge: [], selectedSkills: [], selectedScripts: [] }),
     commitAgentMessage: (_id, query) => { life.status('request', 'saved', { userMessageId: store.addMessage(id, 'user', query) }) },

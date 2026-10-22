@@ -19,11 +19,14 @@ async function run() {
     const source = toolFile(workspace, args.path)
     if (path.extname(source).toLowerCase() !== '.xlsx') throw new Error('此工具支持 .xlsx；旧 .xls 请先另存为 .xlsx。')
     if (fs.statSync(source).size > 20 * 1024 * 1024) throw new Error('工作簿超过 20 MB，请先拆分。')
-    const bytes = fs.readFileSync(source)
+    let bytes = fs.readFileSync(source)
     const zip = await JSZip.loadAsync(bytes)
     const entries = Object.values(zip.files)
     if (entries.length > 5000 || entries.reduce((sum, item) => sum + (item._data?.uncompressedSize || 0), 0) > 100 * 1024 * 1024) throw new Error('工作簿解压体积过大，请先拆分。')
     if (entries.some(item => /vbaProject|pivotTable|pivotCache|xl\/charts\//i.test(item.name)) && args.action === 'update') throw new Error('工作簿含宏、图表或透视表，不能保证保真另存；请先导出普通数据副本。')
+    const normalized = await require('./excel-xml-namespaces.cjs').normalizeWorkbookNamespaces(zip)
+    if (!zip.file('xl/workbook.xml')) throw new Error('工作簿缺少 xl/workbook.xml。')
+    if (normalized && args.action === 'update') bytes = await zip.generateAsync({ type: 'nodebuffer' })
     if (['inspect', 'read'].includes(args.action)) {
       const start = args.startRow ?? 1, count = args.rowCount ?? 100
       if (args.action === 'read' && (!Number.isInteger(start) || start < 1 || !Number.isInteger(count) || count < 1 || count > 200)) throw new Error('起始行必须 >=1，每次读取 1–200 行。')
@@ -42,6 +45,7 @@ async function run() {
       if (zip.file('xl/_rels/workbook.xml.rels')) await reader._parseRels(zip.file('xl/_rels/workbook.xml.rels').nodeStream())
       // ExcelJS 4.4.0 can encounter sheets before workbook metadata in ZIP order.
       await reader._parseWorkbook(zip.file('xl/workbook.xml').nodeStream())
+      if (!reader.model?.sheets?.length) throw new Error('未识别到工作表，请检查工作簿结构和 XML 命名空间。')
       if (args.action === 'read' && zip.file('xl/styles.xml')) await reader._parseStyles(zip.file('xl/styles.xml').nodeStream())
       if (args.action === 'read' && zip.file('xl/sharedStrings.xml')) {
         for await (const _entry of reader._parseSharedStrings(zip.file('xl/sharedStrings.xml').nodeStream())) { /* cache shared strings */ }

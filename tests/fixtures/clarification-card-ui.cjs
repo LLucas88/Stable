@@ -1,3 +1,4 @@
+const { readSource } = require('./../helpers/read-source.cjs')
 const { app, BrowserWindow, session } = require('electron')
 const { build } = require('esbuild')
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict')
@@ -16,7 +17,7 @@ async function main(){
  createRoot(document.getElementById('root')).render(<Test/>);
  `,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"'}})).outputFiles[0].text
  await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html data-theme="light"><head></head><body style="margin:0;background:var(--color-paper);color:var(--color-ink);font-family:Segoe UI,sans-serif"><div id="root"></div></body></html>'))
- await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles/tokens.css'),'utf8')+'\n'+fs.readFileSync(path.join(root,'src/styles/app.css'),'utf8'))
+ await win.webContents.insertCSS(readSource(path.join(root,'src/styles/tokens.css'),'utf8')+'\n'+readSource(path.join(root,'src/styles/app.css'),'utf8'))
  await win.webContents.executeJavaScript(bundle)
  const run=code=>win.webContents.executeJavaScript(code),settle=()=>new Promise(r=>setTimeout(r,260))
  await settle()

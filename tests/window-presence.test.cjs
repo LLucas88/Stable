@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
@@ -68,10 +69,10 @@ test('badge IPC only accepts bounded counts from the main window main frame', as
 })
 
 test('UI count excludes deleted/running tasks; main wiring preserves background execution and explicit exit', () => {
-  const app = readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
   assert.match(app, /state.conversations.filter\(\(item\) => unread.has\(item.id\) && !runningMap\[item.id\]\).length/)
   assert.match(app, /setCompletedCount\?\.\(completedUnreadCount\)/)
-  const main = readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   assert.match(main, /windowPresence.attach\(window\)/)
   assert.match(main, /isInstalling: \(\) => updateController\?\.state\(\).status === 'installing'/)
   assert.match(main, /label: '退出 Stable', click: \(\) => app.quit\(\)/)

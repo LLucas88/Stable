@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -56,14 +57,15 @@ test('Wending prompt routing adds safe command guidance only for explicit reques
 })
 
 test('renderer, preload and main process wire the MCP and CLI catalog to a fresh prefilled conversation', () => {
-  const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(root, 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
   const preload = readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8')
-  const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(root, 'desktop', 'main.cjs'), 'utf8')
   const types = readFileSync(path.join(root, 'src', 'types.ts'), 'utf8')
   assert.match(readFileSync(path.join(root, 'src', 'SkillMarket.tsx'), 'utf8'), /'connector','CLI与MCP'/)
   assert.match(app, /<McpCliPage onUseWending=\{openWendingConversation\}/)
-  assert.match(app, /<ConversationWending key=\{state.activeConversationId\}/)
+  assert.match(app, /<ConversationTools key=\{state.activeConversationId\}/)
+  assert.match(readFileSync(path.join(root, 'src/ConversationTools.tsx'), 'utf8'), /<ConversationWending conversationId=\{conversationId\}/)
   assert.match(app, /首次登录后全局记住账号，品牌按对话分别保存/)
   assert.match(app, /setAgentPrefill\(WENDING_CLI_PREFILL\)/)
   assert.match(app, /MCP 暂未接入/)

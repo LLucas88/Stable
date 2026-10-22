@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,14 +7,14 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
-const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
-const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
-const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
+const app = readSource(path.join(root, 'src', 'App.tsx'), 'utf8')
+const css = readSource(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+const main = readSource(path.join(root, 'desktop', 'main.cjs'), 'utf8')
 const store = readFileSync(path.join(root, 'desktop', 'services', 'store.cjs'), 'utf8')
 
 test('user messages copy text without restoring the draft or resources', () => {
   assert.match(app, /function copyUserMessage\(message: MessageItem\)/)
-  assert.match(app, /window\.stable\.clipboard\.writeText\(message\.content\)/)
+  assert.match(app, /window\.stable\.clipboard\.writeText\(reply \? \x60\$\{reply.question\}\\n\$\{reply.answer\}\x60 : message.content\)/)
   assert.doesNotMatch(app, /copyUndoRef|undoCopiedDraft|restoredAttachments|复制这条消息到主输入框/)
   assert.match(app, /aria-label="复制这条消息"/)
   assert.match(main, /\{ kind, id: String\(item\.id\), \.\.\.metadata \}/)
@@ -49,5 +50,5 @@ test('account menu exposes the global AGENTS.md editor and explains its future-t
   assert.match(main, /globalInstructions: readGlobalInstructions\(\)\.content/)
   assert.match(css, /\.global-instructions-settings/)
   assert.match(app, /Agent 对话记录/)
-  assert.match(app, /className="account-content-popover"/)
+  assert.match(app, /className="settings-page"/)
 })

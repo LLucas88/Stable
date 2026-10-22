@@ -1,11 +1,12 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 const {app,BrowserWindow}=require('electron'),path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict')
 app.setPath('userData',path.join(__dirname,'../../qa-artifacts/effort-alerts-profile'))
 app.disableHardwareAcceleration()
 app.whenReady().then(async()=>{
 const win=new BrowserWindow({show:false,width:900,height:600,webPreferences:{sandbox:true}})
 await win.loadURL('data:text/html,<div id="root"></div>')
-await win.webContents.insertCSS(fs.readFileSync(path.join(__dirname,'../../src/styles/app.css'),'utf8'))
+await win.webContents.insertCSS(readSource(path.join(__dirname,'../../src/styles/app.css'),'utf8'))
 const js=require('esbuild').buildSync({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{EffortSlider}from'./src/EffortSlider';window.changes=[];window.expand=0;createRoot(document.getElementById('root')).render(<div style={{width:360}}><EffortSlider options={[{id:'auto',label:'默认'},{id:'low',label:'低'},{id:'high',label:'高'},{id:'max',label:'最高'}]} value="high" model="GLM-5.3-Flash" onChange={v=>window.changes.push(v)} onModels={()=>window.expand++}/></div>)`,loader:'tsx',resolveDir:path.join(__dirname,'../..')},bundle:true,write:false,platform:'browser',format:'iife'}).outputFiles[0].text
 await win.webContents.executeJavaScript(js)
 await new Promise(r=>setTimeout(r,200))

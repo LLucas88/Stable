@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Hidden Electron window, isolated user data, mocked IPC, all network denied.
 const { app, BrowserWindow, session } = require('electron')
 const { buildSync } = require('esbuild')
@@ -32,7 +33,7 @@ async function run() {
       createRoot(document.getElementById('root')).render(<TestApp/>);`, resolveDir: root, loader: 'tsx' },
     bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' },
   }).outputFiles[0].text
-  const css = readFileSync(path.join(root, 'src/styles/tokens.css'), 'utf8') + readFileSync(path.join(root, 'src/styles/app.css'), 'utf8')
+  const css = readSource(path.join(root, 'src/styles/tokens.css'), 'utf8') + readSource(path.join(root, 'src/styles/app.css'), 'utf8')
   await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>body{padding:24px;margin:0}*{box-sizing:border-box}</style></head><body><div id="root"></div></body></html>'))
   await window.webContents.insertCSS(css)
   await window.webContents.executeJavaScript(bundle)

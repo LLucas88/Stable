@@ -36,7 +36,7 @@ const { normalizeReasoning, reasoningOptions } = require('./services/model-reaso
 const { composeAgentPrompt } = require('./services/prompts.cjs')
 const { deliveryRequest, revisedDelivery, runWithDeliveryChecks } = require('./services/delivery.cjs')
 const { timerState, resolveResponse } = require('./services/clarification-interaction.cjs')
-const { clarifyBeforeExecution, clarificationTrace, formatClarification, pendingClarification } = require('./services/clarification.cjs')
+const { clarificationTurn, clarifyBeforeExecution, clarificationTrace, formatClarification, pendingClarification } = require('./services/clarification.cjs')
 const { createStreamTranscript } = require('./services/stream-transcript.cjs')
 const { ScriptRunner } = require('./services/script-runner.cjs')
 const { TeamNetwork } = require('./services/team-network.cjs')
@@ -93,9 +93,15 @@ let previewKind
 let previewTemporaryPath
 const configuredPreviewSessions = new WeakSet()
 let store
+let dataImporter
+function dataImport() {
+  if (!dataImporter) dataImporter = new (require('./services/data-import/service.cjs').DataImportService)({ store, userData: paths.userData, workspace: paths.workspace })
+  return dataImporter
+}
 let browserSession
 let conversationLifecycle
 let secrets
+let chatgptAccount
 let modelRegistry
 let cloudAccount
 let cloudStartup = Promise.resolve()
@@ -118,7 +124,7 @@ const messagePredictions = new MessagePredictions({
   },
   generate: async (snapshot, prompt, signal) => {
     if (signal.aborted) return null
-    const predictionRunner = new HarnessRunner({ userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
+    const predictionRunner = new HarnessRunner({ chatgpt: chatgptAccount, userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
     if (!predictionRunner.supportsTextOnly) return null
     const stop = () => predictionRunner.cancel()
     signal.addEventListener('abort', stop, { once: true })
@@ -237,6 +243,7 @@ function createHarnessRunner(conversationId) {
   messagePredictions.interrupt()
   const cli = wendingCli?.forConversation(conversationId)
   return new HarnessRunner({
+    chatgpt: chatgptAccount,
     userData: paths.userData,
     workspace: paths.workspace,
     packaged: app.isPackaged,
@@ -248,7 +255,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ resolveImageApiKey: () => modelRegistry.resolveImageApiKey(store.conversation(context.conversationId)?.modelId), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -262,7 +269,7 @@ function timestampedOutputName(value, now = new Date()) {
   return `${cleanFilename(value)}-${stamp}`
 }
 
-function normalizeTheme(value) { return value === 'light' ? 'light' : 'dark' }
+function normalizeTheme(value) { return value === 'dark' ? 'dark' : 'light' }
 
 function applyWindowTheme(window, theme) {
   windowAppearance.apply(window, normalizeTheme(theme))
@@ -1514,7 +1521,7 @@ function agentState(conversationId = store.activeConversationId()) {
   }
 }
 
-async function prepareAgentMessage(payload, conversationId, modelRoute) {
+async function prepareAgentMessage(payload, conversationId, modelRoute, displayPayload = payload) {
   const paths = conversationPaths(conversationId, true)
   const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
   const catchService = new CatchService(store, paths.workspace)
@@ -1543,9 +1550,16 @@ async function prepareAgentMessage(payload, conversationId, modelRoute) {
     const metadata = resourceMetadata.get(`${kind}:${String(item?.id || '')}`)
     return metadata ? [{ kind, id: String(item.id), ...metadata }] : []
   })
+  // Inherited clarification resources remain execution context, not a new upload.
+  const displayPaths = new Set((displayPayload.attachments || []).map(item => path.resolve(item.path)))
+  const displayReferences = new Set((displayPayload.references || []).map(item => `${item.kind}:${item.id}`))
+  const visibleAttachments = displayPayload === payload ? attachments : [
+    ...extractedAttachments.items.filter((_item, index) => displayPaths.has(path.resolve(requestedAttachments[index].path))),
+    ...catchAttachments.filter(item => displayPaths.has(path.resolve(item.path))),
+  ]
   const messageAttachments = [
-    ...selectedReferences,
-    ...attachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type, path: item.path })),
+    ...selectedReferences.filter(item => displayPayload === payload || displayReferences.has(`${item.kind}:${item.id}`)),
+    ...visibleAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' : 'attachment', name: item.name, size: item.size, type: item.type, path: item.path })),
   ]
   return { attachments, extractedAttachments, selectedReferences, messageAttachments, selectedData, selectedSkills, selectedScripts, selectedKnowledge }
 }
@@ -1571,6 +1585,7 @@ function modelRouteForConversation(conversationId) {
 }
 
 async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride, modelRouteOverride) {
+  if (store.conversation(conversationId)?.sourceType === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
   messagePredictions.interrupt()
   const paths = conversationId ? conversationPaths(conversationId, true) : conversationPaths(store.activeConversationId())
   const conversation = conversationId ? store.conversation(conversationId) : null
@@ -1579,7 +1594,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const { apiKey } = modelRoute
   const model = { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
   const runId = store.startRun('agent', conversationId || null, query)
-  const trace = []
+  const taskTurn = broadcast && agentRunners.get(conversationId)?.taskTurn
+  const trace = taskTurn ? [taskTurn] : []
   const transcript = createStreamTranscript()
   let lastCheckpoint = 0
   const checkpoint = (force = false) => {
@@ -1760,7 +1776,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     ? `\n\nStable 已完成 Skill 的全局安装与识别：${installedSkills.join('、')}。请用简体中文简要确认安装结果，并说明现在可以在对话中选择调用。不要再次扫描、移动或删除 Stable 内部目录。`
     : ''
   const wendingInstruction = isWendingCliPrompt(query, history) ? `\n\n${wendingCli.forConversation(conversationId).agentInstruction()}` : ''
-  const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}`
+  const importedContext = store.getSetting(`workbuddy-context:${conversationId}`) ? dataImport().context(conversationId, paths.workspace) : ''
+  const effectiveQuery = `${query}${installedSkillInstruction}${wendingInstruction}\n\n${permissionInstruction}${importedContext}`
   const [originalQuery, ...clarificationReplies] = query.split('\n\n用户补充（以最新要求为准）：\n')
   const delivery = clarificationReplies.reduce(revisedDelivery, deliveryRequest(originalQuery))
   const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, automaticSkills, scripts, attachments, delivery, workspace: paths.workspace }
@@ -2005,181 +2022,21 @@ async function generateWorkflow(goal) {
 }
 
 function registerIpc() {
+  require('./services/data-import/ipc.cjs').registerDataImportIpc({ ipcMain, service: dataImport, dialog, getWindow: () => mainWindow, agentState })
   ipcMain.handle('stable:bootstrap', () => bootstrap())
-  ipcMain.handle('stable:cloud:startup', async () => { await cloudStartup; return bootstrap() })
-  ipcMain.handle('stable:cloud:login', async (_event, payload) => {
-    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
-    await cloudAccount.login(requireText(payload?.username, '账号', 64), requireText(payload?.password, '密码', 128))
-    return bootstrap()
-  })
-  ipcMain.handle('stable:cloud:changePassword', async (_event, payload) => {
-    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
-    const currentPassword = requireText(payload?.currentPassword, '当前密码', 128)
-    const newPassword = requireText(payload?.newPassword, '新密码', 128)
-    if (newPassword.length < 12) throw new Error('新密码至少需要 12 个字符。')
-    if (newPassword !== String(payload?.confirmPassword || '')) throw new Error('两次输入的新密码不一致。')
-    await cloudAccount.changePassword(currentPassword, newPassword)
-    return bootstrap()
-  })
-  ipcMain.handle('stable:cloud:refresh', async () => {
-    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
-    // Reconnecting must also transition expired sessions back to sign-in.
-    await cloudAccount.restore()
-    return bootstrap()
-  })
-  ipcMain.handle('stable:cloud:logout', async () => {
-    if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
-    await cloudAccount.logout()
-    return bootstrap()
-  })
-  ipcMain.handle('stable:automations:state', () => automationState())
-  ipcMain.handle('stable:automations:save', (_event, payload) => {
-    if (payload?.id) store.updateAutomation(requireText(payload.id, '定时任务 ID', 100), payload)
-    else store.createAutomation(payload, 'manual')
-    return publishAutomationState()
-  })
-  ipcMain.handle('stable:automations:enabled', (_event, payload) => {
-    store.setAutomationEnabled(requireText(payload?.id, '定时任务 ID', 100), Boolean(payload?.enabled))
-    return publishAutomationState()
-  })
-  ipcMain.handle('stable:automations:remove', (_event, payload) => {
-    const id = requireText(payload?.id, '定时任务 ID', 100)
-    if (automationRunners.has(id)) throw new Error('这个定时任务正在运行，请完成后再删除。')
-    store.removeAutomation(id)
-    return publishAutomationState()
-  })
-  ipcMain.handle('stable:automations:run', (_event, payload) => executeAutomation(requireText(payload?.id, '定时任务 ID', 100), true))
-  ipcMain.handle('stable:automations:proposal', (_event, payload) => {
-    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
-    const messageId = requireText(payload?.messageId, '消息 ID', 100)
-    const message = store.listMessages(conversationId).find((item) => item.id === messageId)
-    if (!message?.automationProposal || message.automationProposal.status !== 'pending') throw new Error('这条自动化建议已经处理或不存在。')
-    if (!payload?.accepted) {
-      store.updateAutomationProposal(messageId, 'rejected')
-      publishAgentState(conversationId)
-      return { agent: agentState(conversationId), automations: publishAutomationState() }
-    }
-    const item = store.createAutomation(message.automationProposal, 'chat')
-    store.updateAutomationProposal(messageId, 'accepted', item.id)
-    publishAgentState(conversationId)
-    return { agent: agentState(conversationId), automations: publishAutomationState() }
-  })
+  require('./ipc/cloud.cjs').registerCloudIpc({ ipcMain, getCloudStartup: () => cloudStartup, cloudAccount, bootstrap, requireText })
+  require('./ipc/automations.cjs').registerAutomationIpc({ ipcMain, store, automationState, publishAutomationState, automationRunners, executeAutomation, requireText, publishAgentState, agentState })
   ipcMain.handle('stable:update:state', () => updateController.state())
   ipcMain.handle('stable:update:check', () => updateController.check(true))
   ipcMain.handle('stable:update:download', () => updateController.download())
   ipcMain.handle('stable:update:install', () => updateController.install())
-  ipcMain.handle('stable:data:import', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { title: '导入本地数据', properties: ['openFile', 'multiSelections'], filters: [
-      { name: '支持的文件', extensions: ['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'html', 'log', 'xml', 'pdf', 'docx', 'pptx', 'xlsx', 'xls'] }, { name: '所有文件', extensions: ['*'] },
-    ] })
-    if (result.canceled) return { added: 0, items: store.listData() }
-    return importDataPaths(result.filePaths)
+  require('./ipc/resources.cjs').registerResourceIpc({
+    ipcMain, store, dialog, getWindow: () => mainWindow, requireText,
+    importDataPaths, importKnowledge, importKnowledgePaths, removeStoredAsset, knowledgeRoot,
+    importReportPaths, saveReportDraft, reportRoot, cleanFilename,
+    importLibraryFiles, requireLibraryCategory, importProcessingPaths, importScriptPaths,
+    libraryRoot, runStoredScript, scriptRunner, isInside, markdownSummary,
   })
-  ipcMain.handle('stable:data:importPaths', (_event, payload) => importDataPaths(payload?.paths))
-  ipcMain.handle('stable:data:enabled', (_event, payload) => { store.setDataEnabled(requireText(payload?.id, '数据 ID', 100), Boolean(payload?.enabled)); return store.listData() })
-  ipcMain.handle('stable:data:remove', (_event, payload) => { store.removeData(requireText(payload?.id, '数据 ID', 100)); return store.listData() })
-
-  ipcMain.handle('stable:knowledge:import', () => importKnowledge())
-  ipcMain.handle('stable:knowledge:importPaths', (_event, payload) => importKnowledgePaths(payload?.paths))
-  ipcMain.handle('stable:knowledge:get', (_event, payload) => {
-    const item = store.knowledgeItem(requireText(payload?.id, '知识 ID', 100))
-    if (!item) throw new Error('找不到这个知识文档。')
-    return item
-  })
-  ipcMain.handle('stable:knowledge:enabled', (_event, payload) => {
-    store.setKnowledgeEnabled(requireText(payload?.id, '知识 ID', 100), Boolean(payload?.enabled))
-    return store.listKnowledge()
-  })
-  ipcMain.handle('stable:knowledge:remove', async (_event, payload) => {
-    const id = requireText(payload?.id, '知识 ID', 100)
-    const item = store.knowledgeItem(id)
-    if (!item) throw new Error('找不到这个知识文档。')
-    removeStoredAsset(knowledgeRoot(), item.path)
-    store.removeKnowledge(id)
-    return store.listKnowledge()
-  })
-
-  ipcMain.handle('stable:reports:import', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '导入 HTML 报告', properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'HTML 报告', extensions: ['html', 'htm'] }],
-    })
-    if (result.canceled) return { added: 0, items: store.listReports() }
-    return importReportPaths(result.filePaths)
-  })
-  ipcMain.handle('stable:reports:importPaths', (_event, payload) => importReportPaths(payload?.paths))
-  ipcMain.handle('stable:reports:render', (_event, payload) => {
-    const mode = payload?.mode === 'source' || payload?.mode === 'studio' ? payload.mode : 'builder'
-    const html = mode === 'source' || mode === 'studio' ? String(payload?.html || '') : renderReportHtml({ name: String(payload?.name || 'Stable 报告'), mode, components: Array.isArray(payload?.components) ? payload.components : [] })
-    if (html.length > 10_000_000) throw new Error('HTML 内容不能超过 10 MB。')
-    return html
-  })
-  ipcMain.handle('stable:reports:save', (_event, payload) => saveReportDraft(payload))
-  ipcMain.handle('stable:reports:remove', async (_event, payload) => {
-    const id = requireText(payload?.id, '报告 ID', 100)
-    const item = store.reportItem(id)
-    if (!item) throw new Error('找不到这份报告。')
-    removeStoredAsset(reportRoot(), item.path)
-    store.removeReport(id)
-    return store.listReports()
-  })
-  ipcMain.handle('stable:reports:export', async (_event, payload) => {
-    const item = store.reportItem(requireText(payload?.id, '报告 ID', 100))
-    if (!item) throw new Error('找不到这份报告。')
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出 HTML 报告', defaultPath: `${cleanFilename(item.name)}.html`,
-      filters: [{ name: 'HTML 报告', extensions: ['html'] }],
-    })
-    if (result.canceled || !result.filePath) return { canceled: true }
-    writeFileSync(result.filePath, item.html, 'utf8')
-    return { canceled: false, path: result.filePath }
-  })
-
-  ipcMain.handle('stable:library:import', (_event, payload) => importLibraryFiles(requireLibraryCategory(payload?.category)))
-  ipcMain.handle('stable:library:importPaths', (_event, payload) => {
-    const category = requireLibraryCategory(payload?.category)
-    return category === 'processing' ? importProcessingPaths(payload?.paths) : importScriptPaths(category, payload?.paths)
-  })
-  ipcMain.handle('stable:library:rename', (_event, payload) => {
-    const id = requireText(payload?.id, '脚本 ID', 100)
-    const name = requireText(payload?.name, '脚本名称', 100)
-    const item = store.libraryItem(id)
-    if (!item || item.kind !== 'script' || !['collection', 'cleaning'].includes(item.category)) throw new Error('找不到这个脚本。')
-    store.renameLibraryItem(id, name)
-    return store.listLibrary()
-  })
-  ipcMain.handle('stable:library:remove', async (_event, payload) => {
-    const id = requireText(payload?.id, '资产 ID', 100)
-    const item = store.libraryItem(id)
-    if (!item) throw new Error('找不到这个数据资产。')
-    removeStoredAsset(libraryRoot(item.category), item.path)
-    store.removeLibraryItem(id)
-    return store.listLibrary()
-  })
-  ipcMain.handle('stable:library:run', async (_event, payload) => {
-    const id = requireText(payload?.id, '资产 ID', 100)
-    const item = store.libraryItem(id)
-    const execution = await runStoredScript(item)
-    return { cancelled: execution.cancelled, item: execution.item, items: store.listLibrary() }
-  })
-  ipcMain.handle('stable:library:cancel', () => scriptRunner.cancel())
-  ipcMain.handle('stable:library:input', (_event, payload) => {
-    const id = requireText(payload?.id, '资产 ID', 100)
-    if (typeof payload?.value !== 'string') throw new Error('脚本输入无效。')
-    return scriptRunner.writeInput(id, payload.value)
-  })
-  ipcMain.handle('stable:library:saveMarkdown', (_event, payload) => {
-    const id = requireText(payload?.id, '资产 ID', 100)
-    const item = store.libraryItem(id)
-    if (!item || item.kind !== 'markdown') throw new Error('找不到这个 Markdown。')
-    if (typeof payload?.content !== 'string') throw new Error('Markdown 内容无效。')
-    if (payload.content.length > 2_000_000) throw new Error('Markdown 内容不能超过 2 MB。')
-    if (!isInside(libraryRoot(item.category), item.path)) throw new Error('Markdown 路径不在 Stable 私有目录内，已停止保存。')
-    writeFileSync(item.path, payload.content, 'utf8')
-    store.saveMarkdown(id, payload.content, markdownSummary(payload.content))
-    return store.listLibrary()
-  })
-
   const templates = () => new (require('./services/template-library.cjs').TemplateLibrary)(store, paths.userData)
   ipcMain.handle('stable:templates:list', () => templates().list())
   ipcMain.handle('stable:templates:detail', (_event, value) => templates().detail(requireText(value?.id,'模板 ID',100)))
@@ -2462,6 +2319,7 @@ function registerIpc() {
     messagePredictions.interrupt()
     const conversation = store.conversation(conversationId)
     if (!conversation) throw new Error('找不到这个对话。')
+    if (conversation.sourceType === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
     if (conversationLifecycle.locks.has(conversationId)) throw new Error('正在核实此对话的运行记录，请稍后发送。')
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
     const resolvedPrompt = payload?.clarificationResponse ? resolveResponse(store, conversationId, payload.clarificationResponse) : null
@@ -2475,7 +2333,8 @@ function registerIpc() {
     const deliveryId=String(payload.clientRequestId||randomUUID())
     const delivery=conversationLifecycle.begin(deliveryId,conversationId,{query,attachments:payload.attachments||[],references:payload.references||[]})
     if(delivery.duplicate){if(delivery.state==='completed')return {...agentState(conversationId),answer:''};throw Error('此条消息已有发送记录（'+delivery.state+'），请先核实历史，不会重复发送。')}
-    const control = { deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
+    const taskTurn = clarificationTurn(store.listMessages(conversationId), query, deliveryId)
+    const control = { taskTurn, deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
     taskAlerts.start(conversationId)
     try {
@@ -2483,18 +2342,27 @@ function registerIpc() {
       const globalInstructions = readGlobalInstructions().content
       const askClarification = async prompt => {
         if (!executionRunner.supportsTextOnly) throw new Error('当前运行时不支持执行前澄清，请切换到 Claude Agent SDK。')
-        return executionRunner.run(prompt, modelRoute.model, modelRoute.apiKey, 90_000, () => {}, 'read-only', [], {
-          cwd: conversationPaths(conversationId, true).workspace, textOnly: true, globalInstructions,
-        })
+        try {
+          return await executionRunner.run(prompt, modelRoute.model, modelRoute.apiKey, 90_000, () => {}, 'read-only', [], {
+            cwd: conversationPaths(conversationId, true).workspace, textOnly: true, globalInstructions,
+          })
+        } catch (error) {
+          if (error.code === 'CLAUDE_RUN_TIMEOUT') {
+            error.message = control.phase === 'clarifying'
+              ? '执行前需求判断超时（90 秒），尚未开始执行本次任务。请稍后重试。'
+              : '澄清问题整理超时（90 秒），此前已完成的操作不会回滚。请稍后重试。'
+          }
+          throw error
+        }
       }
       const clarification = await clarifyBeforeExecution({ payload, messages: store.listMessages(conversationId), instructions: globalInstructions, ask: askClarification })
       if (control.cancelled) throw new Error('任务已停止。')
       if (clarification.status !== 'ready') {
         store.db.exec('BEGIN IMMEDIATE')
         try {
-          const userMessage = store.addMessage(conversationId, 'user', query, undefined, clarification.payload.attachments)
+          const userMessage = store.addMessage(conversationId, 'user', query, undefined, payload.attachments)
           conversationLifecycle.status(deliveryId, 'saved', { userMessageId: userMessage })
-          const message = store.addMessage(conversationId, 'assistant', clarification.answer, clarification.trace)
+          const message = store.addMessage(conversationId, 'assistant', clarification.answer, [taskTurn, ...(clarification.trace || []), ...(clarification.status === 'cancelled' ? [{ id: 'runtime', runId: deliveryId, kind: 'status', title: '本轮已停止', status: 'cancelled', time: Date.now() }] : [])])
           conversationLifecycle.status(deliveryId, 'completed', { assistantMessageId: message })
           store.db.exec('COMMIT')
         } catch (error) { store.db.exec('ROLLBACK'); throw error }
@@ -2508,11 +2376,12 @@ function registerIpc() {
       const executionPayload = clarification.payload
       const taskQuery = executionPayload.prompt
       control.phase = 'preparing'
-      const prepared = await prepareAgentMessage(executionPayload, conversationId, modelRoute)
+      const prepared = await prepareAgentMessage(executionPayload, conversationId, modelRoute, payload)
       const { attachments, selectedReferences, extractedAttachments, selectedData, selectedKnowledge, selectedSkills, selectedScripts } = prepared
       if (control.cancelled) throw new Error('任务已停止。')
       store.updateConversationContext(conversationId, conversation.capability, [])
       commitAgentMessage(conversationId, query, prepared)
+      conversationLifecycle.checkpoint(deliveryId, [taskTurn])
       if (automationIntent(taskQuery) && !attachments.length && !selectedReferences.length) {
         control.phase = 'proposal'
         try {
@@ -2522,7 +2391,7 @@ function registerIpc() {
           if (proposal) {
             const automationProposal = { ...proposal, status: 'pending' }
             const answer = `我已整理好定时任务“${proposal.title}”。执行时间：${scheduleLabel(proposal.schedule)}。确认后才会保存并开始生效。`
-            const message=store.addMessage(conversationId, 'assistant', answer, undefined, undefined, automationProposal)
+            const message=store.addMessage(conversationId, 'assistant', answer, [taskTurn, { id: 'complete', runId: deliveryId, kind: 'status', title: '完成', status: 'completed', time: Date.now() }], undefined, automationProposal)
             conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:message})
             publishAgentState(conversationId)
             return { answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
@@ -2535,12 +2404,17 @@ function registerIpc() {
       if (result.status === 'waiting') {
         const card = result.clarification || await formatClarification(result.answer, askClarification, taskQuery)
         if (control.cancelled) throw new Error('任务已停止。')
+        if (card) result.answer = card.question
+        const explanation = card?.explanation || card?.hint
+        if (explanation && explanation !== result.answer && !result.trace.some(item => item.eventType === 'agent/answer' && item.content?.trim() === explanation.trim())) {
+          result.trace.push({ id: 'clarification-explanation', runId: 'clarification', kind: 'reasoning', eventType: 'agent/answer', title: '提问前说明', content: explanation, status: 'completed', time: Date.now() })
+        }
         result.trace.push(clarificationTrace({ ...executionPayload, attachments: prepared.attachments }, result.answer, 'clarification', card))
       }
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
       store.db.exec('BEGIN IMMEDIATE')
-      try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, result.trace);conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
+      try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, [taskTurn, ...result.trace.filter(item => item.id !== 'task-continuity')]);conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
       if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       publishAgentState(conversationId)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
@@ -2603,7 +2477,9 @@ function registerIpc() {
     const control = agentRunners.get(conversationId)
     if (!control) {
       if (!pendingClarification(store.listMessages(conversationId))) return false
-      store.addMessage(conversationId, 'assistant', '本轮已停止。')
+      const time = Date.now()
+      const taskTurn = clarificationTurn(store.listMessages(conversationId), '取消', randomUUID(), time)
+      store.addMessage(conversationId, 'assistant', '本轮已停止。', [taskTurn, { id: 'runtime', runId: taskTurn.runId, kind: 'status', title: '本轮已停止', status: 'cancelled', time }])
       taskAlerts.finish(conversationId)
       publishAgentState(conversationId)
       return true
@@ -2763,6 +2639,7 @@ function registerIpc() {
   const guardModelSettings = (event) => {
     if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('不允许修改模型连接。')
   }
+  require('./services/chatgpt-ipc.cjs').registerChatGPT({ ipcMain, account: chatgptAccount, guard: guardModelSettings, openExternal: url => shell.openExternal(url) })
   ipcMain.handle('stable:model:discover', (event) => { guardModelSettings(event); return modelRegistry.discover() })
   ipcMain.handle('stable:model:save', (event, payload) => { guardModelSettings(event); return modelRegistry.save(payload) })
   ipcMain.handle('stable:model:remove', (_event, payload) => {
@@ -2801,6 +2678,7 @@ function registerIpc() {
       resolveWorkspaceEntry(editor.document.path,attachmentPreviews.roots(id,editor.document.path,paths.writableRoots),{fileOnly:true})
       if(p.action==='editorPoll')return htmlEditors.poll(id,p.sessionId)
       if(p.action==='editorAck')return htmlEditors.acknowledge(id,p.sessionId,p.deliveryId)
+      if(p.action==='editorRegion')return htmlEditors.queue(editor,()=>htmlEditors.call(editor,'run','region'))
       if(p.action==='editorSave')return htmlEditors.flush(editor)
       if(p.action==='editorStop'){await htmlEditors.stop(id,p.sessionId);if(previewView===editor.view)await editor.contents.loadFile(editor.document.path);else editor.contents.close();return true}
       if(p.action==='editorReload'){
@@ -3014,6 +2892,7 @@ async function boot() {
     store = new StableStore(paths.userData)
     historyStage = 'verify-recovery'
     finishLocalHistoryRecovery(historyRecovery, store)
+    dataImport()
   } catch (error) {
     try { store?.close() } catch {}
     store = undefined
@@ -3098,10 +2977,17 @@ async function boot() {
     cloudGateway = new CloudGatewayProxy({ account: cloudAccount, fetchImpl: cloudFetch })
     await cloudGateway.start()
   }
-  modelRegistry = new ModelRegistry(store, secrets, cloudGateway)
+  chatgptAccount = new (require('./services/chatgpt-account.cjs').ChatGPTAccount)({
+    userData: paths.userData, protection: safeStorage,
+    openExternal: url => shell.openExternal(url),
+    onChange: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:chatgpt:state', state) },
+  })
+  await chatgptAccount.init()
+  modelRegistry = new ModelRegistry(store, secrets, cloudGateway, chatgptAccount)
   modelRegistry.migrateLegacySecret()
   applyLocalModelConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, cloudEnabled, registry: modelRegistry, safeStorage })
   modelRegistry.migrateDeepSeekModels()
+  modelRegistry.migrateFlash1017Default()
   runner = createHarnessRunner()
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
@@ -3431,6 +3317,7 @@ if (updateHealthcheck) {
   app.on('activate', () => { if (!mainWindow) void boot() })
 }
 app.on('window-all-closed', () => app.quit())
+app.on('before-quit', () => chatgptAccount?.dispose())
 app.on('before-quit', () => wendingCli?.dispose())
 app.on('before-quit', () => messagePredictions.invalidate())
 let editorsFlushedForQuit=false,editorQuitPending=false

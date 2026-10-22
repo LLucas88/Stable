@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -64,7 +65,7 @@ test('text preview escapes file content and cannot load active resources', () =>
 })
 
 test('Electron side preview isolates web, interactive HTML, and static workspace sessions while ignoring superseded views', () => {
-  const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(root, 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   assert.match(main, /new WebContentsView/)

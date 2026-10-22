@@ -29,7 +29,7 @@ function modelLimits(model = {}) {
   const requestBudget = glmWindow || officialDeepSeek && model.model !== 'deepseek-v4-pro' ? 32_768 : 8192
   const outputTokens = Math.min(outputLimit, requestBudget, Math.floor(contextWindow / 4),
     glmWindow ? Math.floor(contextWindow * 0.2) - Math.min(8192, Math.floor(contextWindow * 0.1)) : Infinity)
-  // Pinned CLI 2.1.296 triggers at window - min(output, 20k) - 13k, not at window.
+  // Pinned CLI 2.1.300 triggers at window - min(output, 20k) - 13k, not at window.
   const sdkReserve = Math.min(outputTokens, 20_000) + 13_000
   const autoCompactTokenLimit = Math.min(Math.floor(contextWindow * 0.8), 1_000_000 - sdkReserve, contextWindow - outputTokens - Math.min(8192, Math.floor(contextWindow * 0.1)))
   const autoCompactWindow = autoCompactTokenLimit + sdkReserve

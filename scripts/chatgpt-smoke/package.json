@@ -1,0 +1,8 @@
+{
+  "name": "stable-chatgpt-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node run.mjs", "test": "node --test smoke.test.mjs" },
+  "engines": { "node": ">=22.12" },
+  "dependencies": { "jose": "6.2.12" }
+}

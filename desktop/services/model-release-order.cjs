@@ -1,13 +1,13 @@
 'use strict'
 
-// API release dates, checked 2026-10-13. Keep model IDs and saved defaults intact.
+// API release dates, checked 2026-10-19. Keep model IDs and saved defaults intact.
 // https://docs.bigmodel.cn/cn/update/new-releases
 // https://api-docs.deepseek.com/updates/
 // FlashX: provider docs confirm the SKU; the public API catalog records its
 // availability on 2026-09-18 (https://openrouter.ai/api/v1/models, created=1789744020).
 const RELEASE_DATES = Object.freeze({
   'glm-5.3-flashx': '2026-09-18',
-  'deepseek-flash': '2026-09-10',
+  'deepseek-flash': '2026-10-17',
   'glm-5.3-flash': '2026-08-26',
   'deepseek-v4-flash-vision-exp': '2026-08-21',
   'glm-5.3': '2026-08-19',

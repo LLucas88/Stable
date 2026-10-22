@@ -2,7 +2,7 @@
 const { randomUUID } = require('node:crypto')
 
 const WAIT_MARKER = '[[STABLE_WAITING_FOR_INPUT]]'
-const CLARIFICATION_GUIDANCE = `Stable 当前澄清策略（覆盖旧全局规则中“每次先问”及 95% 的提问频率要求，其他规则仍适用）：简单问候、自我介绍、能力介绍、明确的知识问答和需求完整的任务直接处理。仅在自评完成任务的信心低于 90%，且存在会影响结果、无法从已有上下文或可读取资源获得的关键信息时提问。90% 是自评阈值，不是成功率保证。不要为确认而确认，先利用可读取的证据。每次聚焦一个关键决策，梳理目标及缺口，给出两条具体、互斥且可行的路线：第一条为推荐路线，各带一句影响说明，另给用户自由补充的提示。需要提问时结束本轮，在最终回答第一行写 ${WAIT_MARKER}，后面只写 JSON：{"question":"具体问题","hint":"说明缺口以及可补充哪些信息","options":[{"label":"推荐路线","description":"效果与取舍"},{"label":"另一条路线","description":"效果与取舍"}]}。不要调用 request_user_input。用户选择后按原任务与补充继续，不重复询问已回答的问题。问题和选项名称须简短具体，补充处理说明仅放在 description 中。必须等待用户提交回答后才能继续；等待没有时限，关闭卡片、切换任务或未操作均不代表回答或授权，不得自动采用推荐路线。`
+const CLARIFICATION_GUIDANCE = `Stable 当前澄清策略（覆盖旧全局规则中“每次先问”及 95% 的提问频率要求，其他规则仍适用）：简单问候、自我介绍、能力介绍、明确的知识问答和需求完整的任务直接处理。仅在自评完成任务的信心低于 90%，且存在会影响结果、无法从已有上下文或可读取资源获得的关键信息时提问。90% 是自评阈值，不是成功率保证。不要为确认而确认，先利用可读取的证据。每次聚焦一个关键决策，梳理目标及缺口，给出两条具体、互斥且可行的路线：第一条为推荐路线，各带一句影响说明，另给用户自由补充的提示。需要提问时结束本轮，在最终回答第一行写 ${WAIT_MARKER}，后面只写 JSON：{"question":"具体问题","hint":"说明缺口以及可补充哪些信息","options":[{"label":"推荐路线","description":"效果与取舍"},{"label":"另一条路线","description":"效果与取舍"}]}。已有的公开说明、已知结论或进展可放入 explanation 字符串，保留在过程记录中；不要编造操作或输出内部推理。不要调用 request_user_input。用户选择后按原任务与补充继续，不重复询问已回答的问题。问题和选项名称须简短具体，补充处理说明仅放在 description 中。必须等待用户提交回答后才能继续；等待没有时限，关闭卡片、切换任务或未操作均不代表回答或授权，不得自动采用推荐路线。`
 
 function parseObject(value) {
   try { return JSON.parse(String(value).trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```$/, '')) } catch { return null }
@@ -12,7 +12,8 @@ function normalizeCard(value) {
   if (value.options.some(option => typeof option?.label !== 'string' || typeof option?.description !== 'string')) return null
   const options = value.options.map(option => ({ label: String(option?.label || '').trim().slice(0, 160), description: String(option?.description || '').trim().slice(0, 400) }))
   if (options.some(option => !option.label || !option.description) || options[0].label === options[1].label) return null
-  return { question: value.question.trim().slice(0, 1200), hint: String(value.hint || '').trim().slice(0, 600), options }
+  return { question: value.question.trim().slice(0, 1200), hint: String(value.hint || '').trim().slice(0, 600), options,
+    ...(typeof value.explanation === 'string' && value.explanation.trim() ? { explanation: value.explanation.trim().slice(0, 8000) } : {}) }
 }
 function waitingCard(value) {
   const text = String(value || '').trim()
@@ -47,6 +48,17 @@ function pendingClarification(messages) {
   const latest = (messages || []).at(-1)
   if (latest?.role !== 'assistant') return null
   return latest.trace?.findLast(item => item.clarification?.status === 'waiting')?.clarification || null
+}
+
+// Keep delivery records separate, but persist their logical task boundary in the
+// trace so refresh/recovery can reconstruct one continuous clarification turn.
+function clarificationTurn(messages, prompt, deliveryId, time = Date.now()) {
+  const previous = (messages || []).at(-1)
+  const resumes = pendingClarification(messages) && !/^(?:新任务|换个任务|换一个任务)[：:]/.test(String(prompt).trim())
+  const times = resumes ? (previous.trace || []).map(item => item.startedAt ?? item.time).filter(Number.isFinite) : []
+  const startedAt = times.length ? Math.min(...times) : time
+  return { id: 'task-continuity', runId: deliveryId, kind: 'status', title: '', status: 'completed', time: startedAt, startedAt,
+    ...(resumes ? { continuationOf: previous.id } : {}) }
 }
 
 function cleanPayload(payload) {
@@ -86,6 +98,15 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
   // A validated card response already settles this decision. The execution model
   // still checks evidence and handles any genuinely new gaps in context.
   if (payload.clarificationResolved) return { status: 'ready', payload: effective }
+  const latest = (messages || []).at(-1)
+  const continuation = /^(?:请)?(?:继续(?:执行|处理|完成)?|接着做|接着执行|接着处理)(?:吧)?[。！!\s]*$/.test(reply.prompt.trim())
+  // Resume the existing task; the execution runner still enforces approvals.
+  if (continuation && !pending && !effective.attachments.length && !effective.references.length
+    && latest?.role === 'assistant' && !waitingAnswer(latest.content)
+    && (messages || []).some(message => message.role === 'user' && String(message.content || '').trim())
+    && !latest.trace?.some(item => item.kind === 'approval' && ['running', 'pending'].includes(item.status))) {
+    return { status: 'ready', payload: effective }
+  }
   const simple = !resuming && !effective.attachments.length && !effective.references.length && /^(?:(?:你好|您好|嗨)[，,！!。\s]*)?(?:(?:你叫什么(?:名字)?|你是谁|介绍(?:一下)?你自己)[，,。？?\s]*)?(?:(?:你能(?:帮我)?(?:做哪些事|做什么|做些什么)|你有什么功能)[。？?！!\s]*)?$/.test(reply.prompt.trim())
   if (simple || /(?:^|[。！!，,；;\n])\s*(?:本次)?(?:不用|不要|无需)(?:先)?(?:提问|问我|确认)/.test(reply.prompt.trim())) return { status: 'ready', payload: effective }
   const prompt = [
@@ -93,6 +114,7 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
     '若信心至少 0.9，或没有影响结果的关键信息缺口，直接返回 {"status":"ready"}。简单问答直接 ready。资源尚未读取不等于信息缺失；可从已有文件或仓库核实的问题，交给执行阶段读取，不问用户。',
     '仅在自评信心低于 0.9 且存在具体缺口时返回 {"status":"waiting","confidence":0.7,"missing":"影响结果的缺口","question":"一个清晰具体的问题","hint":"解释为什么要问，以及自由回答可提供哪些信息","options":[{"label":"推荐的具体路线","description":"效果与取舍"},{"label":"另一条互斥路线","description":"效果与取舍"}]}。必须两条有实际意义的路线，不使用笼统的同意/不同意。第一条应是无需虚构事实也可推进的推荐路线。',
     '只返回 JSON。当前用户要求优先于历史。已回答的内容不要重复提问。不要将澄清当作权限审批。',
+    '若需要提问，已有可向用户说明的事实、已知结论或进展请放入 explanation 字符串，将展示在过程记录中；没有则省略。不要编造已完成的操作，也不要输出内部推理。',
     '最近对话：\n' + (messages || []).slice(-6).map(message => message.role + '：' + String(message.content || '').slice(-2000)).join('\n'),
     resuming ? '上一轮问题：' + pending.question : '',
     '当前任务与补充：\n' + effective.prompt,
@@ -102,7 +124,9 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
   const card = normalizeCard(parsed)
   // Invalid assessment output must not manufacture an extra confirmation step.
   if (parsed?.status !== 'waiting' || typeof parsed.confidence !== 'number' || parsed.confidence < 0 || parsed.confidence >= 0.9 || (typeof parsed.missing !== 'string' || !parsed.missing.trim()) || !card) return { status: 'ready', payload: effective }
-  return { status: 'waiting', answer: card.question, payload: effective, trace: [clarificationTrace(effective, card.question, 'clarification', card)] }
+  const explanation = card.explanation || card.hint
+  const trace = explanation && explanation !== card.question ? [{ id: 'clarification-explanation', runId: 'clarification', kind: 'reasoning', eventType: 'agent/answer', title: '提问前说明', content: explanation, status: 'completed', time: Date.now() }] : []
+  return { status: 'waiting', answer: card.question, payload: effective, trace: [...trace, clarificationTrace(effective, card.question, 'clarification', card)] }
 }
 
 async function formatClarification(answer, ask, task = '') {
@@ -110,4 +134,4 @@ async function formatClarification(answer, ask, task = '') {
   if (card) return card
   return normalizeCard(parseObject(await ask('将执行中发现的信息缺口整理为提问卡片。只返回 JSON：{"question":"具体问题","hint":"缺口说明与自由回答提示","options":[{"label":"推荐路线","description":"效果与取舍"},{"label":"另一条路线","description":"效果与取舍"}]}。两条路线须互斥，问题和选项名称须简短具体，第一条是推荐答案，只有用户提交回答后才可继续，不假设缺失文件/事实存在，不绕过权限审批。原任务：\n' + task + '\n原问题：\n' + answer)))
 }
-module.exports = { clarificationStream, WAIT_MARKER, CLARIFICATION_GUIDANCE, waitingAnswer, waitingCard, normalizeCard, pendingClarification, cleanPayload, clarificationTrace, clarifyBeforeExecution, formatClarification }
+module.exports = { clarificationTurn, clarificationStream, WAIT_MARKER, CLARIFICATION_GUIDANCE, waitingAnswer, waitingCard, normalizeCard, pendingClarification, cleanPayload, clarificationTrace, clarifyBeforeExecution, formatClarification }

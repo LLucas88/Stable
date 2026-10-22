@@ -1,0 +1,195 @@
+/* Kept outside the conversation's clipping and fading layers via a portal. */
+body .project-picker {
+  position: fixed;
+  z-index: 1100;
+  bottom: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 5px;
+  overflow: hidden;
+  border: 1px solid var(--color-rule-soft);
+  outline: 0;
+  border-radius: 16px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: 0 6px 20px #00000014 !important;
+  font-family: var(--font-body);
+  font-size: 13px;
+  letter-spacing: normal;
+}
+body .project-picker .project-search {
+  flex-shrink: 0;
+  min-height: 32px;
+  margin: 0 7px 4px;
+  padding: 4px 0 8px;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+body .project-picker input {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  box-shadow: none;
+}
+body .project-picker svg { flex-shrink: 0; }
+body .project-picker .project-options {
+  min-height: 0;
+  max-height: 174px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-paper-4) transparent;
+}
+body .project-picker .project-options > button,
+body .project-picker .project-picker-footer > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 29px;
+  padding: 4px 8px;
+  gap: 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  line-height: 21px;
+  cursor: pointer;
+}
+body .project-picker button > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+body .project-picker button:not(:disabled):hover,
+body .project-picker button:focus-visible { background: var(--color-paper-2); }
+body .project-picker button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+body .project-picker button:disabled { opacity: .5; cursor: default; }
+body .project-picker .project-picker-footer {
+  flex-shrink: 0;
+  margin: 4px 7px 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-rule-soft);
+  color: var(--color-ink-2);
+}
+body .project-picker .project-picker-footer > button { width: calc(100% + 14px); margin-inline: -7px; }
+body .project-picker .project-empty { margin: 0; padding: 12px 8px; font-size: 13px; }
+body .project-picker .project-error { flex-shrink: 0; max-height: 56px; overflow: auto; margin: 4px 8px; }
+
+/* Override the workbench's translucent surfaces and global border reset. */
+#root .project-dialog {
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--color-paper) !important;
+  color: var(--color-ink);
+  box-shadow: 0 3px 10px #0000001a !important;
+  font-family: var(--font-body);
+  letter-spacing: normal;
+}
+#root .project-dialog::backdrop { background: rgb(0 0 0 / 15%); }
+#root .project-dialog h2 { margin: 0 28px 14px 0; font-size: 20px; line-height: 26px; font-weight: 600; }
+#root .project-dialog h3 { margin: 12px 0 8px; font-size: 13px; line-height: 18px; font-weight: 500; }
+#root .project-dialog-close {
+  top: 16px;
+  right: 16px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-ink);
+}
+#root .project-dialog-close:hover { background: var(--color-paper-2); }
+#root .project-dialog .project-name {
+  display: flex;
+  height: 40px;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--color-rule-soft) !important;
+  border-radius: 12px;
+  outline: none;
+  background: var(--color-paper);
+}
+#root .project-dialog .project-name:focus-within { border-color: var(--color-accent) !important; }
+#root .project-dialog .project-name-icon {
+  display: grid;
+  flex: 0 0 40px;
+  place-items: center;
+  height: 22px;
+  border-right: 1px solid var(--color-rule-soft) !important;
+}
+#root .project-dialog .project-name input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  outline: none !important;
+  background: transparent;
+  color: var(--color-ink);
+  font: 400 14px/20px var(--font-body);
+}
+#root .project-dialog .project-name input::placeholder { color: var(--color-muted); }
+#root .project-dialog .project-folders {
+  border: 1px solid var(--color-rule-soft) !important;
+  border-radius: 10px;
+  outline: none;
+  background: var(--color-paper);
+}
+#root .project-dialog .project-folders[data-empty] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 104px;
+  gap: 12px;
+}
+#root .project-dialog .project-folder-prompt { margin: 0; font-size: 13px; line-height: 18px; color: var(--color-ink-2); }
+#root .project-dialog .project-folder-add {
+  justify-content: center;
+  width: auto;
+  min-height: 24px;
+  margin: 10px auto;
+  padding: 2px 10px;
+  gap: 5px;
+  border-radius: 999px;
+  background: var(--color-paper-2);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+#root .project-dialog .project-folders[data-empty] .project-folder-add { margin: 0; }
+#root .project-dialog .project-folder-add:hover { background: var(--color-paper-3); }
+#root .project-dialog .project-folder { padding: 10px 12px; gap: 8px; }
+#root .project-dialog .project-folder > span { font-size: 13px; }
+#root .project-dialog .project-folder-hint { font-size: 12px; }
+#root .project-dialog footer { margin-top: 32px; gap: 16px; }
+#root .project-dialog footer .button {
+  height: 32px;
+  min-height: 32px;
+  padding: 5px 16px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 22px;
+}
+#root .project-dialog footer .button:not(.primary):hover { background: var(--color-paper-2); }
+#root .project-dialog footer .primary { background: #000; color: #fff; }
+html[data-theme="dark"] #root .project-dialog footer .primary { background: #fff; color: #000; }
+#root .project-dialog footer .button:disabled { opacity: .4; }
+#root .project-dialog button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }

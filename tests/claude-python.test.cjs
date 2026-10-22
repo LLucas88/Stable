@@ -1,0 +1,38 @@
+'use strict'
+const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path')
+const { bundledPython, pythonGuidance } = require('../desktop/services/claude-python.cjs')
+
+test('isolated bundled Python can import an explicitly selected sibling without importing cwd or PYTHONPATH', { skip: process.platform !== 'win32' }, t => {
+  const python = bundledPython()
+  assert(python, 'offline runtime must be present')
+  const { spawnSync } = require('node:child_process')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-python-import-')), scripts = path.join(root, 'scripts')
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  fs.mkdirSync(scripts)
+  fs.writeFileSync(path.join(scripts, 'sibling_fixture.py'), 'VALUE = 42\n')
+  fs.writeFileSync(path.join(root, 'untrusted_cwd_fixture.py'), 'raise RuntimeError("cwd leaked")\n')
+  const script = path.join(scripts, 'main.py')
+  const run = () => spawnSync(python, ['-I', '-X', 'utf8', script], { cwd: root, windowsHide: true, encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONPATH: root } })
+  fs.writeFileSync(script, 'import sibling_fixture\n')
+  const before = run()
+  assert.notEqual(before.status, 0)
+  assert.match(before.stderr, /No module named 'sibling_fixture'/)
+  const bootstrap = pythonGuidance(python).match(/```python\n([\s\S]*?)\n```/)?.[1]
+  assert(bootstrap, 'runtime guidance must provide executable local-import bootstrap')
+  fs.writeFileSync(script, bootstrap + '\nimport sibling_fixture\nimport importlib.util\nassert importlib.util.find_spec("untrusted_cwd_fixture") is None\nassert sibling_fixture.VALUE == 42\nprint("LOCAL_IMPORT_OK")\n')
+  const after = run()
+  assert.equal(after.status, 0, after.stderr)
+  assert.match(after.stdout, /LOCAL_IMPORT_OK/)
+})
+test('packaged Python resolves only the bundled executable; missing runtime has an explicit fallback', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-python-path-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const options = { packaged: true, resourcesPath: root }
+  assert.equal(bundledPython(options, 'win32'), null)
+  const file = path.join(root, 'wending-cli/python/python.exe'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '')
+  assert.equal(bundledPython(options, 'win32'), file)
+  assert.equal(bundledPython(options, 'linux'), null)
+  assert.equal(bundledPython({ packaged: true }, 'win32'), null)
+  assert.match(pythonGuidance(null), /没有可核实/)
+  assert.match(pythonGuidance(file), /-I -X utf8/)
+})

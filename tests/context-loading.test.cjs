@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,11 +7,11 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 test('agent context has no enabled-resource fallback and inventories workspace only on request', () => {
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const runAgent = main.slice(main.indexOf('async function runAgent'), main.indexOf('async function runWorkflow'))
   assert.doesNotMatch(runAgent, /enabledData\(|enabledKnowledge\(|enabledSkillContent\(/)
-  assert.match(runAgent, /store\.retrieveData\(query, 5\)/)
-  assert.match(runAgent, /store\.retrieveKnowledge\(query, 4\)/)
+  assert.doesNotMatch(runAgent, /store\.retrieveData\(/)
+  assert.doesNotMatch(runAgent, /store\.retrieveKnowledge\(/)
   assert.doesNotMatch(runAgent, /store\.retrieveSkills/); assert.match(runAgent, /manualSkillContext/)
   assert.ok(runAgent.indexOf('if (asksForWorkbenchInventory(query))') < runAgent.indexOf('const workbench = buildWorkbenchInventory'))
   assert.match(runAgent, /runWithDeliveryChecks/)

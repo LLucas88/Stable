@@ -4,9 +4,10 @@
 
 ## 命令执行
 
-- 使用固定版本 `@anthropic-ai/claude-agent-sdk@0.3.296` 的原生 `Bash`，由 Claude Code 运行时执行；Stable 不再注册 `mcp__stable__stable_exec` 或调用自定义 WSL 命令执行器。
+- 使用固定版本 `@anthropic-ai/claude-agent-sdk@0.3.308` 的原生 `Bash`，由配套 Claude Code 2.1.308 运行时执行；Stable 不再注册 `mcp__stable__stable_exec` 或调用自定义 WSL 命令执行器。
 - Windows 使用 Git for Windows 的 Bash。支持 `CLAUDE_CODE_GIT_BASH_PATH`，也会检测常见安装目录；其他位置可由 SDK 自行发现。命令使用 Bash 语法，Windows 路径例如 `/d/project`。原生文件工具仍使用 Windows 路径。
-- 参数为 `command`、可选 `timeout`（毫秒，默认 60000，最大 600000）、`description`。不接受旧工具的 `cwd`、`timeoutMs`；不开放后台执行或 `dangerouslyDisableSandbox`。
+- 参数为 `command`、可选 `timeout`（毫秒，默认 60000；兼容接收最高 600000，实际执行上限 540000）、`description`。为进程清理和结果回传留出至少 60 秒，避免与 10 分钟整轮看门狗竞争。不接受旧工具的 `cwd`、`timeoutMs`；不开放后台执行或 `dangerouslyDisableSandbox`。
+- 普通命令超时由 SDK 终止当前命令并返回已有输出，超时 hook 提示模型检查副作用、拆分步骤或换策略，在同一轮继续；不自动重放原命令。用户主动停止、审批拒绝、费用/整轮时限、重复失败保护不变；工具无法返回或进程清理卡住时仍保留看门狗兜底。
 - 运行详情保留命令原文；完成后展示标准输出、标准错误、中断及完整输出文件位置。错误由 SDK 失败 hook 报告，不把失败显示成成功。
 - Windows 取消任务时先终止当前 SDK 进程树，再关闭 SDK，防止 Git Bash 子进程在取消后继续写入；不会按进程名称批量终止其他会话。失败与取消不会回滚已发生的写入。
 

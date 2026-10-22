@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { ChatGPTConnectionSettings } from './ChatGPTConnectionSettings'
 import type { BootstrapData } from './types'
 import { modelConnectionChoices } from './model-presets'
 import './styles/model-connection.css'
 
 const empty = { id: '', providerId: '', displayName: '', baseURL: '', model: '', hasApiKey: false, apiKey: '' }
 export function ModelConnectionSettings({ state, replaceState }: { state: BootstrapData; replaceState: (state: BootstrapData) => void }) {
-  const choices = modelConnectionChoices(state.models.items)
+  const choices = modelConnectionChoices(state.models.items.filter(item => item.providerId !== 'chatgpt'))
   const initial = choices.find(item => item.id === state.models.defaultModelId) || choices[0]
   const [draft, setDraft] = useState(initial ? { ...initial, apiKey: '' } : empty)
   const [advanced, setAdvanced] = useState(!initial)
@@ -32,8 +33,8 @@ export function ModelConnectionSettings({ state, replaceState }: { state: Bootst
     } catch (err) { setError(err instanceof Error ? err.message : '保存失败，请重试。') }
     finally { setBusy(false) }
   }
-  if (state.cloud.status !== 'disabled') return <p>当前启用了 Stable Cloud。退出并取消 STABLE_CLOUD_ENABLED 后可配置本机 API Key。</p>
-  return <form className="model-connection-settings" aria-busy={busy} onSubmit={event => { event.preventDefault(); void save() }}>
+  if (state.cloud.status !== 'disabled') return <><ChatGPTConnectionSettings onChanged={replaceState} /><p>当前启用了 Stable Cloud。退出并取消 STABLE_CLOUD_ENABLED 后可配置本机 API Key。</p></>
+  return <><ChatGPTConnectionSettings onChanged={replaceState} /><form className="model-connection-settings" aria-busy={busy} onSubmit={event => { event.preventDefault(); void save() }}>
     <p>输入一次 API Key，保存在当前 Windows 用户的加密存储中。下次打开 Stable 无需重新填写。</p>
     <fieldset disabled={busy}><legend>模型连接</legend>
       <label>供应商与模型<select value={draft.id} onChange={event => {
@@ -49,5 +50,5 @@ export function ModelConnectionSettings({ state, replaceState }: { state: Bootst
       <button className="button primary" type="submit" disabled={!complete}>{busy ? '正在加密保存…' : draft.hasApiKey ? '保存并设为默认' : '加密保存并使用'}</button>
     </fieldset>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
-  </form>
+  </form></>
 }

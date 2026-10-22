@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,8 +7,8 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 test('scheduled tasks replace overview and support manual, template and chat-confirmed creation', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(app, /\{ id: 'agent', label: '对话'/)
   assert.match(app, /\{ id: 'automations', label: '定时'/)
@@ -24,7 +25,7 @@ test('scheduled tasks replace overview and support manual, template and chat-con
 })
 
 test('GitHub Releases updater is configured for the Stable repository', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const updater = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'updater.cjs'), 'utf8')
   const installer = readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8')
   const installSection = readFileSync(path.join(__dirname, '..', 'build', 'stable-install-section.nsh'), 'utf8')
@@ -39,7 +40,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.equal(pkg.build.nsis.allowToChangeInstallationDirectory, true)
   assert.equal(pkg.build.nsis.useZip, false)
   assert.equal(pkg.build.nsis.differentialPackage, true)
-  assert.match(app, /state\.update\.status === 'downloaded'[\s\S]*window\.stable\.updater\.install\(\)[\s\S]*安装更新/)
+  assert.match(app, /if \(update.status === 'downloaded'\) return action\('正在安装软件更新', async \(\) => \{ await window\.stable\.updater\.install\(\)/)
   assert.match(updater, /quitAndInstall\(false, false\)/)
   assert.doesNotMatch(updater, /scheduleInstall|autoInstallDelayMs/)
   assert.match(installer, /GetOptions[^\n]+--updated/)
@@ -53,7 +54,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(installSection, /Call stableCheckAppRunning[\s\S]*stableHealthNewMoveFailed[\s\S]*stableHealthOldRestoreFailed/)
   assert.match(installSection, /QuietUninstallString[^\n]+_\?=\$INSTDIR/)
   assert.match(readFileSync(path.join(__dirname, '..', 'build', 'installer.nsi'), 'utf8'), /customUnInstall[\s\S]*STABLE_UNINSTALL_DIR[\s\S]*WindowStyle Hidden/)
-  assert.match(readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8'), /STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE/)
+  assert.match(readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8'), /STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE/)
   const workflow = readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8')
   const installerQa = readFileSync(path.join(__dirname, 'verify-update-installer.ps1'), 'utf8')
   assert.match(workflow, /gh release download runtime-v1/)

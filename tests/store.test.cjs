@@ -13,7 +13,7 @@ test('store persists resources, retrieval, workflow and messages', () => {
   const store = new StableStore(root)
   try {
     assert.equal(store.getSetting('identity'), DEFAULT_IDENTITY)
-    assert.equal(store.getSetting('theme'), 'dark')
+    assert.equal(store.getSetting('theme'), 'light')
     assert.equal(store.modelCatalog().defaultModelId, LEGACY_MODEL_PROFILE_ID)
     assert.equal(store.conversation(store.activeConversationId()).modelId, LEGACY_MODEL_PROFILE_ID)
     store.setSetting('theme', 'light')

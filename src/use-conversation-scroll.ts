@@ -1,5 +1,10 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
+function updateScrollFades(element: HTMLDivElement) {
+  element.dataset.fadeTop = String(element.scrollTop > 1)
+  element.dataset.fadeBottom = String(element.scrollHeight - element.scrollTop - element.clientHeight > 1)
+}
+
 type Position = { top: number; following: boolean; anchor?: string; seq?: number; offset?: number }
 export function useConversationScroll(conversationId: string, revision: unknown, active: boolean, loadAnchor?: (seq: number) => Promise<void>) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -12,6 +17,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     if (!element) return
     following.current = true
     element.scrollTo({ top: element.scrollHeight, behavior: 'auto' })
+    updateScrollFades(element)
     setAwayFromBottom(false)
   }, [])
   useLayoutEffect(() => {
@@ -44,7 +50,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
           setAwayFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > 64)
         }
       } else scrollToBottom()
-    })().catch(() => { if (!cancelled) scrollToBottom() }).finally(() => { if (!cancelled) restoring.current = false })
+    })().catch(() => { if (!cancelled) scrollToBottom() }).finally(() => { if (!cancelled) { restoring.current = false; if (scrollRef.current) updateScrollFades(scrollRef.current) } })
     return () => { cancelled = true }
   }, [conversationId, active, scrollToBottom])
   useLayoutEffect(() => {
@@ -53,6 +59,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     let timer: ReturnType<typeof setTimeout> | undefined
     const save = () => { const value = positions.current.get(conversationId); if (value) void window.stable.agent.viewState?.(conversationId, value).catch(() => {}) }
     const measure = () => {
+      updateScrollFades(element)
       if (restoring.current) return
       const away = element.scrollHeight - element.scrollTop - element.clientHeight > 64
       following.current = !away; setAwayFromBottom(away)
@@ -62,6 +69,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
       clearTimeout(timer); timer = setTimeout(save, 250)
     }
     const resize = () => {
+      updateScrollFades(element)
       if (restoring.current) return
       if (following.current) scrollToBottom()
       else {

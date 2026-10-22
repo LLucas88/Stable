@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 const {app,BrowserWindow,ipcMain,session}=require('electron'),{build}=require('esbuild'),fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('node:url')
 const root=path.resolve(__dirname,'../..'),output=path.join(root,'qa-artifacts/agent-team');fs.mkdirSync(output,{recursive:true});app.setPath('userData',fs.mkdtempSync(path.join(output,'profile-')));app.disableHardwareAcceleration()
 let win,store
@@ -9,7 +10,7 @@ async function main(){
  win=new BrowserWindow({show:false,width:1500,height:1100,webPreferences:{offscreen:true,sandbox:true,preload:path.join(__dirname,'expert-market-preload.cjs')}})
  const bundle=(await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {SkillMarket} from './src/SkillMarket';createRoot(document.getElementById('root')).render(<SkillMarket onUse={state=>window.usedState=state} renderContent={content=><pre style={{whiteSpace:'pre-wrap',fontFamily:'inherit',fontSize:14}}>{content}</pre>}/>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"','import.meta.env.BASE_URL':JSON.stringify(pathToFileURL(path.join(root,'public')).href+'/')}})).outputFiles[0].text
  const html=path.join(output,'index.html');fs.writeFileSync(html,'<html data-theme="light"><meta charset="utf-8"><body style="margin:0"><div id="root" style="height:100vh"></div></body></html>')
- await win.loadFile(html);for(const file of ['tokens.css','app.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'));await win.webContents.executeJavaScript(bundle)
+ await win.loadFile(html);for(const file of ['tokens.css','app.css'])await win.webContents.insertCSS(readSource(path.join(root,'src/styles',file),'utf8'));await win.webContents.executeJavaScript(bundle)
  const run=script=>win.webContents.executeJavaScript(`(async()=>{const tick=()=>new Promise(r=>setTimeout(r,120)),expect=(value,message)=>{if(!value)throw Error(message)},click=text=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent===text);expect(b,'Missing '+text);b.click()};${script}})()`)
  await run(`await tick();click('Agent专家');await tick();expect(document.querySelectorAll('.market-row').length===444,'Catalogue count');expect(getComputedStyle(document.querySelector('.market-grid')).gridTemplateColumns.split(' ').length===3,'Three columns');`)
  await new Promise(r=>setTimeout(r,800));await run(`expect([...document.querySelectorAll('.market-avatar img')].slice(0,12).every(img=>img.complete&&img.naturalWidth>0),'Offline avatars');expect(document.documentElement.scrollWidth<=innerWidth,'Horizontal overflow');`)

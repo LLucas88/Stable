@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
@@ -25,8 +26,8 @@ test('advanced report studio is bridged to the Stable report library', () => {
 })
 
 test('version is visible in the account menu and the direct launcher accepts isolated user data', () => {
-  const app = readFileSync(join(root, 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(join(root, 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(join(root, 'src', 'App.tsx'), 'utf8')
+  const main = readSource(join(root, 'desktop', 'main.cjs'), 'utf8')
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)

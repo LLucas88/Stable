@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Real React composer, hidden Electron window and fake IPC; no user profile or network.
 const { app, BrowserWindow, session } = require('electron')
 const { build } = require('esbuild')
@@ -17,7 +18,7 @@ async function main() {
   win.webContents.on('console-message', event => { if (event.level !== 'info') console.log('renderer:', event.message) })
   const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function ThemeSettingsModule(', 'export function ThemeSettingsModule(')
   const bundle = (await build({ stdin: { contents: `
-    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,ThemeSettingsModule} from './src/App';
+    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage} from './src/App'; import {ThemeSettingsModule} from './src/settings/SettingsWorkspace';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const messages=id=>[{id:id+'-user',role:'user',content:'修复问题并验证',createdAt:'2026-10-13T10:00:00Z'},{id:id+'-answer',role:'assistant',content:'已完成修复，可以继续运行测试。',createdAt:'2026-10-13T10:00:01Z',trace:[{id:'complete',kind:'status',status:'completed',title:'任务完成',time:1}]}];
     const initial={activeConversationId:'a',conversations:['a','b'].map(id=>({id,title:id,capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],messageCount:2})),messages:messages('a'),data:[],skills:[{id:'s',name:'测试 Skill',enabled:true}],skillReferences:[{id:'s',kind:'skill',name:'测试 Skill'}],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock'},models:{items:[{id:'mock',model:'mock',displayName:'测试模型',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
@@ -33,7 +34,7 @@ async function main() {
     createRoot(document.getElementById('root')).render(<Test/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await win.webContents.executeJavaScript(`

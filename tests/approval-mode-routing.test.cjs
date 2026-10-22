@@ -1,8 +1,9 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path')
 const {canAutoApprove}=require('../desktop/services/tool-approval.cjs')
 const {parseDecision}=require('../desktop/services/approval-ledger.cjs')
-const source=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8').replace(/\r\n/g,'\n')
+const source=readSource(path.join(__dirname,'../desktop/main.cjs'),'utf8').replace(/\r\n/g,'\n')
 const start=source.indexOf("    if (source.kind === 'approval' && source.requestId && source.status === 'running') {")
 const end=source.indexOf('\n  }\n  if (installedSkills.length)',start)
 assert.ok(start>=0&&end>start)

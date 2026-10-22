@@ -1,0 +1,140 @@
+/* Keep the icon rail separate from the scrollable project list. */
+#root .account-menu-popover { border: 1px solid var(--color-rule-2) !important; box-shadow: var(--shadow-float) !important; }
+#root .rail-account-trigger,
+#root .composer-add-menu > summary { width: 2.75rem; height: 2.75rem; min-height: 2.75rem; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+#root .rail-account-trigger:hover,
+#root .rail-account-trigger[aria-expanded="true"],
+#root .composer-add-menu > summary:hover,
+#root .composer-add-menu[open] > summary { background: var(--surface-hover, var(--color-paper-3)); }
+.rail-task-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; }
+.rail-task-search { display: grid; width: 32px; height: 32px; padding: 0; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); }
+.rail-task-search:hover { background: var(--surface-hover); color: var(--color-ink); }
+.rail-new-chat { display: flex; align-items: center; gap: 9px; width: auto; height: 32px; min-height: 32px; margin: 0; padding: 2px 5px; border: 0; border-radius: 6px; background: transparent; color: var(--color-ink); font-size: 13px; line-height: 20px; white-space: nowrap; text-align: start; }
+.rail-new-chat:hover { background: var(--surface-hover); }
+.rail-icon-dock [data-tooltip] { position: relative; }
+.rail-icon-dock [data-tooltip]::after { content: attr(data-tooltip); position: absolute; z-index: 100; inset-inline-start: calc(100% + 10px); top: 50%; transform: translateY(-50%); padding: 6px 10px; border-radius: 8px; background: var(--color-paper-3); color: var(--color-ink); font-size: 12px; font-weight: 400; line-height: 20px; white-space: nowrap; pointer-events: none; opacity: 0; }
+.rail-icon-dock [data-tooltip]:is(:hover, :focus-visible)::after { opacity: 1; }
+.rail-icon-dock [data-tooltip][aria-expanded="true"]::after { opacity: 0; }
+@media (min-width: 60.001rem) {
+  #root .app-shell:not([data-rail-collapsed]) .main-frame { border-start-start-radius: 0; }
+  #root .side-rail { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0; padding: 0; }
+  .rail-icon-dock { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; padding: 12px 4px 8px; }
+  #root .rail-icon-dock .rail-nav { width: 100%; gap: 6px; padding: 0; }
+  #root .rail-icon-dock .rail-button { display: flex; width: 44px; min-width: 0; height: 44px; min-height: 44px; padding: 0; align-items: center; justify-content: center; border-radius: 12px; }
+  .rail-icon-dock .rail-button span, .rail-icon-dock .rail-mode-switch span { display: none; }
+  .rail-icon-dock .rail-button::before { display: none; }
+  #root .rail-icon-dock .rail-mode-switch { display: grid; width: 44px; grid-template-columns: 1fr; gap: 6px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--color-rule-2); border-radius: 0; background: transparent; }
+  .rail-icon-dock .rail-mode-switch button { width: 44px; height: 44px; padding: 0; border-radius: 12px; }
+  .rail-icon-dock .rail-mode-switch button svg { width: 20px; height: 20px; }
+  .rail-icon-dock .rail-mode-switch button[data-active="true"] { background: var(--surface-selected); box-shadow: none; }
+  .rail-bottom-controls { display: grid; justify-items: center; gap: 8px; margin-top: auto; }
+  .rail-icon-dock .rail-account-dock { width: 44px; padding: 0; margin: 0; }
+  #root .rail-task-pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--color-paper); border: 1px solid var(--color-rule-2) !important; border-bottom: 0 !important; border-radius: 16px 0 0 0; }
+  #root .rail-task-pane .rail-conversation-tasks-slot { padding: 10px 8px 16px; border-top: 1px solid var(--color-rule-2) !important; }
+  .rail-task-pane .conversation-select { padding-inline: 32px 0; height: 32px; min-height: 32px; }
+  .rail-task-pane .conversation-title[data-overflow="true"] { mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent); }
+  .rail-task-pane .sidebar-project-title { padding-inline-start: 8px; }
+}
+@media (max-width: 60rem) {
+  .rail-icon-dock { display: contents; }
+  .rail-icon-dock [data-tooltip]::after { inset-inline-start: 50%; top: auto; bottom: calc(100% + 8px); transform: translateX(-50%); }
+  .rail-icon-dock .rail-nav > :first-child[data-tooltip]::after { inset-inline-start: 0; transform: none; }
+  .rail-icon-dock .rail-account-trigger[data-tooltip]::after { inset-inline-start: auto; inset-inline-end: 0; transform: none; }
+  .rail-task-pane { display: none; }
+}
+
+/* Settings use the same main pane; keep the mounted conversation and its draft. */
+#root .rail-task-pane[hidden], #root .main-frame[data-settings-open] > :not(.settings-page) { display: none; }
+#root .account-menu-popover nav button { grid-template-columns: 20px minmax(0, 1fr); }
+.settings-navigation { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--color-paper); padding: 16px 8px; }
+.settings-navigation header { display: flex; align-items: center; justify-content: space-between; margin: 0 8px 16px; }
+.settings-navigation header strong { font-size: 18px; font-weight: 600; }
+.settings-navigation header button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 8px; background: transparent; color: var(--color-muted); }
+.settings-search { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 8px 12px; border-radius: 24px; background: var(--color-paper-3); color: var(--color-muted); }
+.settings-search input { width: 100%; min-width: 0; padding: 0; background: transparent; color: var(--color-ink); font-size: 13px; }
+.settings-category-label { padding: 0 8px 8px; color: var(--color-muted); font-size: 13px; }
+.settings-navigation nav { display: grid; gap: 2px; }
+.settings-navigation nav button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 7px 8px; border-radius: 10px; background: transparent; color: var(--color-ink); font-size: 13px; text-align: start; }
+.settings-navigation nav button[aria-current="page"], .settings-navigation button:hover { background: var(--color-paper-3); }
+.settings-search-empty { margin: 8px; font-size: 13px; color: var(--color-muted); }
+.settings-page { height: 100%; overflow-y: auto; background: var(--color-paper); }
+.settings-page-inner { width: min(100%, 820px); margin-inline: auto; padding: 32px 48px 64px; }
+.settings-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 32px; }
+.settings-page-toolbar button { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; background: transparent; color: var(--color-muted); font-size: 12px; }
+.settings-page-toolbar select { max-width: 50%; font-size: 13px; }
+.settings-page header { margin-bottom: 32px; }
+.settings-page h1 { margin: 0 0 10px; font-size: 26px; font-weight: 600; line-height: 1.35; }
+.settings-page header p { margin: 0; font-size: 13px; color: var(--color-muted); }
+.settings-page-content { min-width: 0; }
+#root .settings-page :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { border: 1px solid var(--color-rule-2) !important; border-radius: 8px; background: var(--color-paper-2); color: var(--color-ink); }
+#root .settings-page :is(.cloud-account-identity, .cloud-quota-card, .cloud-usage-grid > div, .update-settings-row, .theme-option, .model-connection-settings fieldset) { border: 1px solid var(--color-rule-2) !important; border-radius: 12px; background: var(--color-paper); }
+.settings-page .account-module-empty { min-height: 160px; place-items: start; text-align: start; }
+.settings-page .account-module-empty span { max-width: none; }
+.settings-page .account-theme-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-page .account-module-actions { flex-wrap: wrap; }
+.settings-page .update-settings-row { gap: 16px; padding: 16px; }
+.settings-page .account-update-settings > p { margin-top: 20px; line-height: 1.7; }
+.settings-page :is(button, input, select, textarea):focus-visible, .settings-navigation :is(button, input):focus-visible, .task-group-expand:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.rail-update-button { position: relative; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 50%; background: transparent; color: #087fc6; }
+.rail-update-button:hover { background: var(--color-paper-3); }
+.rail-update-button .update-progress-ring { position: absolute; width: 26px; height: 26px; transform: rotate(-90deg); fill: none; stroke-width: 3; }
+.update-ring-track { stroke: currentColor; opacity: .2; }
+.update-ring-value { stroke: currentColor; stroke-linecap: round; }
+.rail-update-button[data-status="error"] { color: var(--color-error); }
+.rail-update-button[data-status="downloaded"] { background: #087fc6; color: white; }
+.rail-update-button[data-status="downloaded"]:hover { background: #066aa7; }
+
+#root .rail-task-pane .conversation-select .conversation-title { font-size: 13px; line-height: 20px; }
+#root .rail-task-pane .sidebar-project-title { height: 32px; padding-block: 5px; font-size: 13px; gap: 9px; }
+.rail-task-pane .sidebar-project { margin-bottom: 10px; }
+.rail-task-pane .sidebar-project-title svg { flex-shrink: 0; }
+.rail-task-pane .conversation-pin-action { width: 28px; height: 28px; }
+.rail-task-pane .conversation-item-actions > button { width: 28px; height: 28px; }
+.rail-task-pane .conversation-list-item { border-radius: 9px; }
+.task-group-expand { display: block; width: 100%; padding: 5px 0 5px 32px; min-height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--color-muted); font-size: 13px; line-height: 20px; text-align: start; }
+.task-group-expand:hover { color: var(--color-ink); background: var(--color-paper-3); }
+/* Move the toolbar down inside the existing composer without moving the text area. */
+#root .composer-box:not([data-compact-question]):not(.composer-approval) { padding-bottom: 6px; }
+#root .composer-box:not([data-compact-question]) > .composer-actions { margin-top: 12px; }
+@media (max-width: 60rem) {
+  .settings-navigation { display: none; }
+  .settings-page-inner { padding: 24px 20px 80px; }
+  .settings-page .account-theme-options { grid-template-columns: 1fr; }
+  .rail-bottom-controls { display: flex; align-items: center; margin-inline-start: auto; }
+}
+
+.rail-new-chat svg { width: 16px; height: 16px; }
+@media (min-width: 60.001rem) {
+  .app-shell:not([data-rail-collapsed]) .settings-page-toolbar { display: none; }
+}
+
+/* Activity and hover actions sit on the row surface; the title fades into them. */
+#root .conversation-list-item { --task-row-surface: var(--task-row-base, var(--color-paper)); }
+#root .rail-task-pane { --task-row-base: #fcfcfc; --task-row-hover: #e6e6e6; --task-row-selected: #f1f1f1; }
+html[data-theme="dark"] #root .rail-task-pane { --task-row-base: #24272d; --task-row-hover: #33363b; --task-row-selected: #2f3238; }
+#root .conversation-list-item:hover { --task-row-surface: var(--task-row-hover, var(--color-paper-3)); }
+#root .conversation-list-item[data-active="true"] { --task-row-surface: var(--task-row-selected, var(--color-paper-4)); }
+#root .conversation-list-item .conversation-activity,
+#root .conversation-list-item .conversation-item-actions {
+  z-index: 2; inset-inline-end: 4px; width: 28px; height: 28px;
+  border: 0; border-radius: 0 8px 8px 0; box-shadow: none;
+  background: var(--task-row-surface) !important;
+}
+#root .conversation-activity::before,
+#root .conversation-item-actions::before {
+  content: ''; position: absolute; inset-block: 0; inset-inline-end: 100%; width: 24px;
+  background: linear-gradient(to right, transparent, var(--task-row-surface)); pointer-events: none;
+}
+#root .conversation-item-actions > button {
+  position: relative; width: 28px; height: 28px; min-height: 0; padding: 0;
+  border: 0 !important; border-radius: 6px; background: transparent !important; box-shadow: none !important;
+}
+#root .conversation-item-actions > button:hover { color: var(--color-ink); }
+.conversation-spinner {
+  display: block; width: 14px; height: 14px; border-radius: 50%;
+  background: conic-gradient(from 30deg, transparent, currentColor 300deg, transparent);
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1.5px));
+}
+
+#root .rail-task-pane .conversation-list .conversation-list-item[data-conversation-id] { background: var(--task-row-surface) !important; }

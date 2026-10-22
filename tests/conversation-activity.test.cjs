@@ -1,10 +1,11 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
-const app = readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
-const css = readFileSync(path.join(__dirname, '../src/styles/app.css'), 'utf8')
+const app = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
+const css = readSource(path.join(__dirname, '../src/styles/app.css'), 'utf8')
 
 test('conversation tab creates tasks, preserving its icon/label and guarding pending duplicate creates', () => {
   assert.doesNotMatch(app, /ConversationNewButton|conversationNewTarget|rail-conversation-new-slot/)
@@ -28,7 +29,7 @@ test('only fresh successful assistant output marks completion, not stream/tool e
 
 test('pinned and normal rows share spinner/unread indicators with hover and keyboard menu replacement', () => {
   assert.match(app, /runningMap\[item.id\] \? 'running' : unread.has\(item.id\) \? 'unread'/)
-  assert.match(app, /<LoaderCircle className="spin" size=\{15\}/)
+  assert.match(app, /<span className="conversation-spinner spin"/)
   assert.match(app, /className=\{activity === 'approval' \? 'conversation-approval-dot' : 'conversation-unread-dot'\}/)
   assert.match(app, /approvalUnread.has\(item.id\) && !\(active && item.id === activeConversation.id\) \? 'approval'/)
   assert.match(css, /\.conversation-list-item:has\(:focus-visible\) \.conversation-activity/)

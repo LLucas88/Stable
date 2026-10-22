@@ -14,7 +14,7 @@ function createWindowAppearance({ app, nativeTheme, platform = process.platform,
   const themes = new WeakMap()
   function apply(window, theme) {
     if (!window || window.isDestroyed()) return 'opaque'
-    const mode = theme === 'light' ? 'light' : 'dark'
+    const mode = theme === 'dark' ? 'dark' : 'light'
     themes.set(window, mode)
     const chrome = WINDOW_CHROME[mode]
     if (nativeTheme.themeSource !== mode) nativeTheme.themeSource = mode

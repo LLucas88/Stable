@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -129,7 +130,7 @@ test('streaming responses are returned without consuming or buffering the stream
 })
 
 test('production wiring shares the Chromium transport across login and model requests', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   assert.match(main, /session\.fromPartition\('stable-cloud-network', \{ cache: false \}\)/)
   assert.match(main, /new CloudAccountService\(\{[^\n]+fetchImpl: cloudFetch/)
   assert.match(main, /new CloudGatewayProxy\(\{[^\n]+fetchImpl: cloudFetch/)

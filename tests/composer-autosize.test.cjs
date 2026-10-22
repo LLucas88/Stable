@@ -1,3 +1,4 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
@@ -5,8 +6,8 @@ const { spawn } = require('node:child_process')
 const path = require('node:path')
 
 test('autosizing is connected only to the main composer without replacing keyboard or queue handlers', () => {
-  const app = readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '../src/styles/app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '../src/styles/app.css'), 'utf8')
   assert.match(app, /useComposerAutosize\(promptRef, prompt, active\)/)
   assert.match(app, /<textarea ref=\{promptRef\} id="agent-prompt" value=\{prompt\}/)
   assert.match(app, /event\.key === 'Enter' && !event\.nativeEvent\.isComposing/)

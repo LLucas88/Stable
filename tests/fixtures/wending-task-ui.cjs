@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 const { app, BrowserWindow, session } = require('electron')
 const { buildSync } = require('esbuild')
 const fs = require('node:fs')
@@ -29,7 +30,7 @@ async function run() {
     createRoot(document.getElementById('root')).render(<Test/>);
   `, loader: 'tsx', resolveDir: root }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } }).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>'))
-  for (const name of ['tokens.css','app.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',name),'utf8'))
+  for (const name of ['tokens.css','app.css']) await win.webContents.insertCSS(readSource(path.join(root,'src/styles',name),'utf8'))
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await win.webContents.executeJavaScript(`(async()=>{
     window.tick=()=>new Promise(r=>setTimeout(r,40));window.expect=(ok,msg)=>{if(!ok)throw Error(msg)};

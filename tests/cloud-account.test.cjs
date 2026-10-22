@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -79,7 +80,7 @@ test('reconnect IPC returns the login screen when a previously offline session i
     return { status: 401, body: { error: { message: '登录已失效，请重新登录。', code: 'invalid_authentication' } } }
   } }, 'expired-session')
   assert.equal((await ctx.service.restore()).status, 'unavailable')
-  const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   const match = main.match(/ipcMain\.handle\('stable:cloud:refresh', (async \(\) => \{[\s\S]*?\n  \})\)/)
   assert.ok(match)
   const reconnect = vm.runInNewContext(`(${match[1]})`, { cloudAccount: ctx.service, bootstrap: () => ({ cloud: ctx.service.publicState() }) })

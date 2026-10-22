@@ -1,3 +1,4 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const { manualSkillContext, explicitlyNamedSkill } = require('../desktop/services/skill-invocation.cjs')
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict')
@@ -6,7 +7,7 @@ const { StableStore } = require('../desktop/services/store.cjs')
 const { skillReferences, saveSkillReferences, selectedSkillContext, selectedSkillReadRoots, automaticSkillCatalog } = require('../desktop/services/skill-selection.cjs')
 const { SkillMarket } = require('../desktop/services/skill-market.cjs')
 const { composeAgentPrompt } = require('../desktop/services/prompts.cjs')
-const main = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+const main = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
 function setup(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-manual-skills-'))
   let store = new StableStore(root)

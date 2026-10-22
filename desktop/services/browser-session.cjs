@@ -9,8 +9,8 @@ function durableURL(value){try{const u=new URL(value);if(/code|token|ticket|sess
 function extraAction(action,ref,value){
   const element=ref?globalThis.__stableElements?.get(ref):null
   if(ref&&(!element?.isConnected||!element.getClientRects().length))throw Error('元素已失效，请重新读取页面。')
-  if(action==='scroll'){(element||window).scrollBy({top:Math.max(-3000,Math.min(3000,Number(value)||600)),behavior:'instant'});return {scrolled:true}}
-  if(action==='locate'){return [...(globalThis.__stableElements||new Map()).entries()].filter(([,e])=>(e.innerText||e.getAttribute('aria-label')||'').includes(value)).map(([ref])=>ref).slice(0,30)}
+  if(action==='scroll'){const amount=value!==''&&Number.isFinite(Number(value))?Number(value):600;(element||window).scrollBy({top:Math.max(-3000,Math.min(3000,amount)),behavior:'instant'});return {scrolled:true}}
+  if(action==='locate'){return [...(globalThis.__stableElements||new Map()).entries()].filter(([,e])=>e.isConnected&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&(e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText||e.getAttribute('placeholder')||e.name||'').includes(value)).map(([ref])=>ref).slice(0,30)}
   if(action==='wait')return {matched:document.body?.innerText.includes(value)}
   if(action==='focus'||action==='hover'||action==='drag'){if(element&&/password|file|hidden|token|secret|one-time-code|验证码|密码/i.test([element.type,element.name,element.id,element.autocomplete].join(' ')))throw Error('敏感控件请交由用户。');if(!element)throw Error('请提供目标ref');element.scrollIntoView({block:'center'});element.focus();const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,viewportWidth:innerWidth,viewportHeight:innerHeight}}
   throw Error('不支持的页面动作。')
@@ -96,7 +96,7 @@ class BrowserSessionService {
   async evaluate(tab,args,operation){
     const frameId=args.frameId||'main',prefix=`${tab.id}.${tab.epoch}.${frameId}`
     if(args.ref&&!args.ref.startsWith(prefix+':'))throw Error('ref 所属页面或导航版本已失效，请重新读取。')
-    const source=['read','audit','click','fill','select'].includes(operation)?pageAction:extraAction
+    const source=['read','read-compact','audit','click','fill','select'].includes(operation)?pageAction:extraAction
     const call=`(${source.toString()})(${JSON.stringify(operation)},${JSON.stringify(args.ref||'')},${JSON.stringify(args.value||'')},${JSON.stringify(prefix+':'+randomUUID())})`
     const code=`(()=>{try{return {ok:true,value:${call}}}catch(error){return {ok:false,error:String(error.message||error)}}})()`
     const unwrap=result=>{if(!result?.ok)throw Error(result?.error||'页面没有返回有效结果');return result.value}
@@ -127,35 +127,52 @@ class BrowserSessionService {
   }
   async run(tab,args,signal,runId){signal?.throwIfAborted();if(['user_controlled','suspended','closed'].includes(tab.state))throw Error('页面已由用户接管或暂停；请等待用户交还后重新读取。');tab.state='agent_controlled';tab.runId=runId;this.emit();const epoch=tab.epoch
     const assert=()=>{signal?.throwIfAborted();if(tab.state!=='agent_controlled')throw Error('页面控制权已改变，操作终止。')}
+    let captureWindow,restoreBounds
     try{
+      const view=tab.view,wc=view.webContents,bounds=view.getBounds()
+      const sized=args.action==='resize'||(['open','audit','screenshot'].includes(args.action)&&(args.width!==undefined||args.height!==undefined))
+      const target=sized?{...bounds,width:args.width??bounds.width,height:args.height??bounds.height}:bounds
+      if(sized&&(!Number.isInteger(target.width)||!Number.isInteger(target.height)||target.width<320||target.width>2560||target.height<320||target.height>2560))throw Error('视口宽高必须是320–2560之间的整数。')
+      if(sized&&!['open','resize'].includes(args.action))restoreBounds=bounds
+      if(['open','read','audit','resize','screenshot','click','fill','select','scroll','locate','wait'].includes(args.action)){
+        // Detached views have a zero-sized viewport until a hidden compositor owns them.
+        if(this.shown!==tab){
+          captureWindow=new this.electron.BrowserWindow({show:false,skipTaskbar:true,width:target.width,height:target.height,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}})
+          captureWindow.contentView.addChildView(view);view.setVisible(true)
+        }
+        if(sized||captureWindow||!this.getWindow()?.isVisible()){
+          wc.setBackgroundThrottling(false)
+          view.setBounds({...target,width:target.width+1});view.setBounds(target)
+          await new Promise(resolve=>setTimeout(resolve,250));assert()
+        }
+      }
       if(args.action==='open'){this.permit(tab.conversationId,args.url);await tab.view.webContents.loadURL(normalizeWebUrl(args.url));assert()}
       else if(args.action==='close'){this.close(tab.conversationId,tab.id);return {closed:true}}
       else if(args.action==='screenshot'||args.action==='audit'){
         assert()
-        const view=tab.view, wc=view.webContents, bounds=view.getBounds()
-        let captureWindow
-        try {
-          // A collapsed tab has no compositor owner. Keep the same live page,
-          // but attach it to a hidden host while capturing its rendered pixels.
-          if(this.shown!==tab){
-            captureWindow=new this.electron.BrowserWindow({show:false,skipTaskbar:true,width:bounds.width,height:bounds.height,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}})
-            captureWindow.contentView.addChildView(view);view.setVisible(true)
-          }
-          if(captureWindow||!this.getWindow()?.isVisible()){
-            wc.setBackgroundThrottling(false)
-            view.setBounds({...bounds,width:bounds.width+1});view.setBounds(bounds)
-            await new Promise(resolve=>setTimeout(resolve,250));assert()
-          }
-          if(args.action==='audit'){
-            const value=await this.evaluate(tab,{...args,ref:undefined},'audit');assert()
-            return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
-          }
-          const image=await wc.capturePage(undefined,{stayHidden:true,stayAwake:true});assert()
-          if(image.isEmpty())throw Error('浏览器尚未产生可用截图，请等待页面渲染后重试。')
-          return {tabId:tab.id,epoch:tab.epoch,image:image.toDataURL()}
-        } finally {
-          if(captureWindow){if(captureWindow.contentView.children.includes(view))captureWindow.contentView.removeChildView(view);captureWindow.destroy()}
+        if(args.action==='audit'){
+          const value=await this.evaluate(tab,{...args,ref:undefined},'audit');assert()
+          return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
         }
+        const image=await wc.capturePage(undefined,{stayHidden:true,stayAwake:true});assert()
+        if(image.isEmpty())throw Error('浏览器尚未产生可用截图，请等待页面渲染后重试。')
+        // Pair the pixels with bounded measurements from the same temporary
+        // viewport; do not replace a visual inspection with an automatic verdict.
+        let context
+        try{
+          const layout=await this.evaluate(tab,{...args,ref:undefined},'audit');assert()
+          context={viewport:layout.viewport,captureLayout:{
+            typography:layout.typography,
+            imageSpacing:layout.imageSpacing,
+            images:layout.imageGeometry.filter(item=>item.rect.bottom>0&&item.rect.y<layout.viewport.height&&item.rect.right>0&&item.rect.x<layout.viewport.width).slice(0,12).map(item=>({
+              tag:item.tag,id:item.id,classes:item.classes,alt:item.alt,rect:item.rect,naturalWidth:item.naturalWidth,naturalHeight:item.naturalHeight,objectFit:item.objectFit,loaded:item.loaded,
+              containers:item.containers.map(({tag,id,classes,rect,overflowY,scrollHeight,spaceBelowImage})=>({tag,id,classes,rect,overflowY,scrollHeight,spaceBelowImage})),
+            })),
+            documentWidth:layout.documentWidth,scanTruncated:layout.scanTruncated,
+            limits:'截图之后紧邻的 DOM 测量；images 仅当前视口交叠图片，最多12项，完整祖先信息用 audit。文字/留白候选可包含当前显示区域中尚未滚到的元素。容器下方空间可能是有意内容，图片内部空白仍需看图；不是验收结论。动态页面可能在采样间变化。',
+          },untrustedContent:true}
+        }catch(error){assert();context={captureLayoutError:'截图已获取，布局测量不可用：'+error.message}}
+        return {tabId:tab.id,epoch:tab.epoch,image:image.toDataURL(),...context}
       }
       else if(args.action==='history'){if(!this.store.getSetting(`browser-history-allow:${tab.conversationId}`))throw Error('浏览历史需要单独授权。');return {history:this.history(tab.conversationId)}}
       else if(args.action==='diagnostics'){if(!tab.diagnostics)throw Error('请由用户启用此标签页的诊断权限。');return {logs:tab.logs.slice(-50)}}
@@ -164,9 +181,9 @@ class BrowserSessionService {
       else if(args.action==='key'){if(!['Enter','Tab','Escape','ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Backspace'].includes(args.value))throw Error('不支持的按键。');if(args.ref)await this.evaluate(tab,args,'focus');assert();await this.input(tab,{type:'keyDown',keyCode:args.value});await this.input(tab,{type:'keyUp',keyCode:args.value});await new Promise(r=>setTimeout(r,100))}
       else if(args.action==='hover'||args.action==='drag'){const point=await this.inputPoint(tab,args,args.action);assert();await this.input(tab,{type:'mouseMove',x:Math.round(point.x),y:Math.round(point.y)});if(args.action==='drag'){const target=await this.inputPoint(tab,{...args,ref:args.targetRef},'drag');assert();await this.input(tab,{type:'mouseDown',x:Math.round(point.x),y:Math.round(point.y),button:'left',clickCount:1});await this.input(tab,{type:'mouseMove',x:Math.round(target.x),y:Math.round(target.y)});await this.input(tab,{type:'mouseUp',x:Math.round(target.x),y:Math.round(target.y),button:'left',clickCount:1})}}
       else if(['click','fill','select','scroll','locate'].includes(args.action)){const result=await this.evaluate(tab,args,args.action);assert();if(args.action==='locate')return {refs:result};if(['click','select'].includes(args.action)){await new Promise(r=>setTimeout(r,150));while(tab.view.webContents.isLoading()){assert();await new Promise(r=>setTimeout(r,50))}}}
-      else if(args.action!=='read')throw Error('不支持的浏览器动作。')
-      assert();const value=await this.evaluate(tab,{...args,ref:undefined},'read');assert();return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
-    }finally{if(tab.state==='agent_controlled')tab.state='idle';this.persist();this.emit()}
+      else if(!['read','resize'].includes(args.action))throw Error('不支持的浏览器动作。')
+      assert();const compact=args.detail==='compact'||(args.detail!=='full'&&!['open','read'].includes(args.action));const value=await this.evaluate(tab,{...args,ref:undefined},compact?'read-compact':'read');assert();return {tabId:tab.id,epoch:tab.epoch,...value,diagnosticsEnabled:tab.diagnostics}
+    }finally{if(restoreBounds&&!tab.view.webContents.isDestroyed())tab.view.setBounds(restoreBounds);if(captureWindow){if(captureWindow.contentView.children.includes(tab.view))captureWindow.contentView.removeChildView(tab.view);captureWindow.destroy()}if(tab.state==='agent_controlled')tab.state='idle';this.persist();this.emit()}
   }
   recordHistory(tab){if(tab.state==='user_controlled')return;const url=durableURL(tab.url);if(url==='about:blank')return;const history=this.store.getSetting('browser-history-v2')||[];if(history[0]?.url===url&&history[0]?.tabId===tab.id)return;this.store.setSetting('browser-history-v2',[{id:randomUUID(),tabId:tab.id,conversationId:tab.conversationId,url,title:tab.title,time:new Date().toISOString()},...history].slice(0,2000))}
   history(id){return(this.store.getSetting('browser-history-v2')||[]).filter(item=>!id||item.conversationId===id)}

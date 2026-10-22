@@ -220,3 +220,5 @@ test('recursive search can be cancelled and PostToolUseFailure reports the origi
   await x.guard.postToolUseFailure({ tool_use_id: 'native-failure', error: 'native read failed' })
   assert.deepEqual(x.events.at(-1), { id: 'native-failure', name: 'Read', args: { file_path: path.join(x.workspace, '1.txt') }, status: 'failed', detail: 'native read failed' })
 })
+
+ test('Bash quote failures return safe recovery guidance without rewriting or reapproving commands',async t=>{const x=fixture(t,{networkAccess:true});const args={command:'node -e "console.log(1)"'};assert.equal(decision(await x.pre('Bash',args,'bad-quote')),'allow');const reply=await x.guard.postToolUseFailure({tool_use_id:'bad-quote',error:'Exit code 1: bad substitution'});assert.match(reply.hookSpecificOutput?.additionalContext||'',/Write.*Edit/);assert.match(reply.hookSpecificOutput.additionalContext,/审批/);assert.equal(x.approvals.length,1);assert.equal(x.events.at(-1).status,'failed');});

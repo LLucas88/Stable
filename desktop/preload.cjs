@@ -19,8 +19,20 @@ ipcRenderer.on('stable:appearance:surface', (_event, value) => {
 })
 window.addEventListener('DOMContentLoaded', syncWindowSurface, { once: true })
 
+const dataImport = {
+  activateConnector: (id, config) => invoke('stable:workbuddy:activateConnector', { id, config }),
+  state: () => invoke('stable:workbuddy:state'),
+  scan: (chooseDirectory = false, provider = 'workbuddy') => invoke('stable:workbuddy:scan', { chooseDirectory, provider }),
+  detail: (token, id) => invoke('stable:workbuddy:detail', { token, id }),
+  importSelected: (token, ids) => invoke('stable:workbuddy:import', { token, ids }),
+  continuationOptions: (id) => invoke('stable:workbuddy:continuationOptions', { id }),
+  continueConversation: (id, documentIds) => invoke('stable:workbuddy:continue', { id, documentIds }),
+}
+
 contextBridge.exposeInMainWorld('stable', {
   bootstrap: () => invoke('stable:bootstrap'),
+  dataImport,
+  workbuddy: dataImport, // Existing clients use the same validated channels.
   windowClose: {
     onRequest: handler => { const listener = () => handler(); ipcRenderer.on('stable:window:closeRequested', listener); return () => ipcRenderer.removeListener('stable:window:closeRequested', listener) },
     decide: (choice, remember) => invoke('stable:window:closeDecision', { choice, remember }),
@@ -201,6 +213,19 @@ contextBridge.exposeInMainWorld('stable', {
       const listener = (_event, payload) => handler(payload)
       ipcRenderer.on('stable:team:event', listener)
       return () => ipcRenderer.removeListener('stable:team:event', listener)
+    },
+  },
+  chatgpt: {
+    status: () => invoke('stable:chatgpt:status'),
+    signIn: () => invoke('stable:chatgpt:signIn'),
+    cancel: () => invoke('stable:chatgpt:cancel'),
+    signOut: () => invoke('stable:chatgpt:signOut'),
+    refreshModels: () => invoke('stable:chatgpt:refreshModels'),
+    openUsage: () => invoke('stable:chatgpt:openUsage'),
+    onState: handler => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('stable:chatgpt:state', listener)
+      return () => ipcRenderer.removeListener('stable:chatgpt:state', listener)
     },
   },
   model: {

@@ -7,7 +7,7 @@ const { reasoningOptions, cloudReasoningProfile } = require('./model-reasoning.c
 const { sortModelsByRelease } = require('./model-release-order.cjs')
 
 const SECRET_PREFIX = 'model:'
-const MODEL_DISPLAY_NAMES = { 'deepseek-flash': 'DeepSeek-Flash', 'deepseek-v4-pro': 'DeepSeek-V4-Pro', 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
+const MODEL_DISPLAY_NAMES = { 'deepseek-flash': 'DeepSeek-V4.1-Flash-1017', 'deepseek-v4-pro': 'DeepSeek-V4-Pro', 'deepseek-v4-flash': 'DeepSeek-V4-Flash', 'glm-5.3-flash': 'GLM-5.3-Flash' }
 function displayName(model, fallback) { return MODEL_DISPLAY_NAMES[String(model).toLowerCase()] || fallback }
 function flashModel(items) { return items.find(item => ['deepseek-flash', 'deepseek-v4-flash'].includes(String(item.model || item.id).toLowerCase())) }
 
@@ -49,21 +49,27 @@ function isZhipuModel(model = {}) {
 }
 
 class ModelRegistry {
-  constructor(store, secrets, cloudGateway) {
+  constructor(store, secrets, cloudGateway, chatgpt) {
     this.store = store
     this.secrets = secrets
     this.cloudGateway = cloudGateway
+    this.chatgpt = chatgpt
   }
 
   cloudCatalog() {
     const state = this.cloudGateway?.account?.publicState()
-    if (state?.status !== 'authenticated') return null
+    if (!this.cloudGateway) return null
+    if (state?.status !== 'authenticated') return { items: [], defaultModelId: '' }
     const items = state.models.map((item) => ({
       ...cloudReasoningProfile(item), id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
-    return { items: sortModelsByRelease(items), defaultModelId: flashModel(items)?.id || items[0]?.id || '' }
+    if ((this.store?.getSetting('flash1017DefaultV1') || this.store?.getSetting('flashHighDefaultV1')) && !items.some(item => item.id === 'deepseek-flash')) {
+      items.push({ id: 'deepseek-flash', providerId: 'stable-cloud', displayName: MODEL_DISPLAY_NAMES['deepseek-flash'], model: 'deepseek-flash', baseURL: this.cloudGateway.baseURL, hasApiKey: false, cloudReasoning: true,
+        reasoningOptions: reasoningOptions({ cloudReasoning: true, providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: 'deepseek-flash' }) })
+    }
+    return { items: sortModelsByRelease(items), defaultModelId: items.find(item => item.id === 'deepseek-flash')?.id || flashModel(items)?.id || items[0]?.id || '' }
   }
 
   async discover(fetchImpl) {
@@ -78,7 +84,7 @@ class ModelRegistry {
       try { host = new URL(item.baseURL).hostname } catch { continue }
       if (host !== 'api.deepseek.com') continue
       if (['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-flash'].includes(item.model)) {
-        const flash = { ...item, model: 'deepseek-flash', displayName: 'DeepSeek-Flash' }
+        const flash = { ...item, model: 'deepseek-flash', displayName: MODEL_DISPLAY_NAMES['deepseek-flash'] }
         this.store.saveModelProfile(flash)
       }
     }
@@ -92,35 +98,79 @@ class ModelRegistry {
     return true
   }
 
+  migrateFlash1017Default() {
+    if (this.store.getSetting('flash1017DefaultV1')) return false
+    const catalog = this.store.modelCatalog()
+    const candidates = catalog.items.filter(item => item.model === 'deepseek-flash' && /^https:\/\/api\.deepseek\.com(?:\/v1)?\/?$/.test(item.baseURL))
+    const hasKey = item => this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey'))
+    const profile = candidates.find(item => item.id === catalog.defaultModelId && hasKey(item)) || candidates.find(hasKey) || candidates[0]
+      || { id: randomUUID(), providerId: 'deepseek', displayName: MODEL_DISPLAY_NAMES['deepseek-flash'], model: 'deepseek-flash', baseURL: 'https://api.deepseek.com' }
+    if (!candidates.includes(profile) && catalog.items.some(item => item.providerId === profile.providerId && item.model === profile.model)) profile.providerId = 'deepseek-official-' + profile.id
+    this.store.db.exec('BEGIN IMMEDIATE')
+    try {
+      // Change future defaults once; existing conversations and credentials stay intact.
+      this.store.setSetting('flash1017DefaultBackupV1', { catalog, defaultReasoning: this.store.getSetting('defaultReasoning') ?? null })
+      this.store.setSetting('modelCatalog', { ...catalog, items: candidates.includes(profile) ? catalog.items : [...catalog.items, profile], defaultModelId: profile.id })
+      this.store.setSetting('defaultReasoning', 'high')
+      this.store.setSetting('flash1017DefaultV1', { modelId: profile.id })
+      this.store.db.exec('COMMIT')
+      return true
+    } catch (error) { this.store.db.exec('ROLLBACK'); throw error }
+  }
+
   publicCatalog() {
     const cloud = this.cloudCatalog()
-    if (cloud) return cloud
+    if (cloud) return { ...cloud, items: [...cloud.items, ...(this.chatgpt?.catalog() || [])] }
     const catalog = this.store.modelCatalog()
     const items = catalog.items
     return {
-      items: sortModelsByRelease(items).map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })),
+      items: sortModelsByRelease(items).map((item) => ({ ...item, displayName: displayName(item.model, item.displayName), reasoningOptions: reasoningOptions(item), hasApiKey: this.secrets.has(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId && this.secrets.has('apiKey')) })).concat(this.chatgpt?.catalog() || []),
       defaultModelId: items.some(item => item.id === catalog.defaultModelId) ? catalog.defaultModelId : flashModel(items)?.id || items[0]?.id || '',
     }
   }
 
   resolve(modelId) {
+    if (String(modelId).startsWith('chatgpt:')) {
+      const model = this.chatgpt?.catalog().find(item => item.id === modelId)
+      if (!model || !model.hasApiKey) throw new Error('ChatGPT 未登录或授权已失效，请在设置 → 模型连接中重新登录。')
+      return { model: { ...model }, apiKey: 'chatgpt-subscription' }
+    }
+    if (this.cloudGateway && this.cloudGateway.account.publicState().status !== 'authenticated') {
+      throw new Error('请先在设置 → 账号中登录或重新连接 Stable Cloud，再发送模型任务。')
+    }
     const cloud = this.cloudCatalog()
     if (cloud) {
       if (!cloud.items.length) throw new Error('Stable Cloud 尚未配置可用模型，请联系管理员。')
       const id = cloud.items.some((item) => item.id === modelId) ? modelId : cloud.defaultModelId
+      if (cloud.items.find(item => item.id === id)?.hasApiKey === false) throw new Error('Stable Cloud 尚未提供 DeepSeek-Flash，请联系管理员或手动选择其他模型。')
       return this.cloudGateway.modelRoute(id)
     }
     const catalog = this.store.modelCatalog()
     let id = String(modelId || catalog.defaultModelId)
     const model = this.store.modelProfile(id)
     if (!model) throw new Error('所选模型已不存在，请重新选择模型。')
+    if (model.providerId === 'chatgpt') throw new Error('请通过 ChatGPT 登录入口重新选择订阅模型。')
     const secretKey = modelSecretKey(id)
     const apiKey = this.secrets.get(secretKey) || (id === catalog.legacyModelId ? this.secrets.get('apiKey') : '')
     if (!apiKey) throw new Error(`模型“${model.displayName}”尚未配置 API Key。`)
     return { model: { ...model }, apiKey }
   }
 
+  resolveImageApiKey(preferredModelId) {
+    // Only reuse credentials saved for the official standard API. A GLM name
+    // on a proxy or Coding Plan profile does not authorize sending its key here.
+    const catalog = this.store.modelCatalog()
+    const candidates = catalog.items.filter(item => /^https:\/\/open\.bigmodel\.cn\/api\/paas\/v4\/?$/.test(item.baseURL))
+    const preferred = candidates.find(item => item.id === preferredModelId) || candidates.find(item => item.id === catalog.defaultModelId)
+    for (const item of [...(preferred ? [preferred] : []), ...candidates.filter(item => item !== preferred)]) {
+      const key = this.secrets.get(modelSecretKey(item.id)) || (item.id === catalog.legacyModelId ? this.secrets.get('apiKey') : '')
+      if (key) return key
+    }
+    throw Error('请在设置 → 模型连接中配置智谱标准 API Key，再生成图片（Coding Plan 或代理凭据不能替代）。')
+  }
+
   save(input = {}) {
+    if (cleanProviderId(input.providerId) === 'chatgpt' || String(input.id).startsWith('chatgpt:')) throw new Error('请使用 ChatGPT 登录入口管理订阅连接。')
     if (this.cloudCatalog()) throw new Error('云端模型由管理员统一维护，桌面端不能修改。')
     const existing = input.id ? this.store.modelProfile(String(input.id)) : undefined
     const requestedId = String(input.id || '').trim()

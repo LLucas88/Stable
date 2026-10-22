@@ -1,9 +1,10 @@
 import type { ModelProfile } from './types'
 
-// DeepSeek's documented Chat Completions endpoint and current Flash model.
-// Other providers can be added without changing the credential storage contract.
+// Official Chat Completions presets are available before any key is saved.
+// GLM uses the standard BigModel API, not the separate Coding Plan endpoint.
 export const MODEL_PRESETS: ModelProfile[] = [
-  { id: 'direct-deepseek-flash', providerId: 'deepseek', displayName: 'DeepSeek · Flash', baseURL: 'https://api.deepseek.com', model: 'deepseek-flash', hasApiKey: false },
+  { id: 'direct-deepseek-flash', providerId: 'deepseek', displayName: 'DeepSeek-V4.1-Flash-1017', baseURL: 'https://api.deepseek.com', model: 'deepseek-flash', hasApiKey: false },
+  { id: 'direct-zhipu-glm-5-3-flash', providerId: 'zhipu', displayName: '智谱 GLM-5.3-Flash', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash', hasApiKey: false },
 ]
 
 export function modelConnectionChoices(saved: ModelProfile[]): ModelProfile[] {

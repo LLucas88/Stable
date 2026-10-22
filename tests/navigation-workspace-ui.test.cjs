@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,11 +7,11 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..')
-const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
-const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+const app = readSource(path.join(root, 'src', 'App.tsx'), 'utf8')
+const css = readSource(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
 const preload = readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8')
 const menu = readFileSync(path.join(root,'src','SidebarActionMenu.tsx'),'utf8')
-const main = readFileSync(path.join(root, 'desktop', 'main.cjs'), 'utf8')
+const main = readSource(path.join(root, 'desktop', 'main.cjs'), 'utf8')
 
 test('work and lab navigation split existing modules while repository keeps four real pages', () => {
   assert.match(app, /className="rail-mode-switch"/)
@@ -77,7 +78,7 @@ test('conversation task list exposes persistent pinning and a guarded action men
   assert.match(app, /aria-label="任务清单"/)
   assert.match(app, /aria-label="置顶任务"/)
   assert.match(app, /className="conversation-pin-action"/)
-  assert.match(app, /openConversation=\{\(\) => setPage\('agent'\)\}/)
+  assert.match(app, /openConversation=\{\(\) => \{ setSettingsModule\(null\); setMode\('work'\); setPage\('agent'\) \}\}/)
   assert.match(app, /function selectConversation\(item: ConversationItem\)/)
   assert.match(main, /STABLE_QA_OPEN_CONVERSATION_FROM_TAB/)
   assert.match(menu, /className="conversation-action-menu sidebar-action-menu" role="menu"/)
@@ -97,7 +98,7 @@ test('conversation task list exposes persistent pinning and a guarded action men
 
 test('pinned conversations reuse full task rows with direct unpin and the same menu', () => {
   assert.doesNotMatch(app, /if \(shortcut\)|item=\{item\} shortcut/)
-  assert.match(app, /pinnedConversations\.map\(\(item\) => ConversationRow\(\{ item, mobile \}\)\)/)
+  assert.match(app, /LimitedTaskRows\(pinnedConversations, 'pinned', mobile\)/)
   assert.match(app, /onClick=\{\(\) => togglePin\(item\)\} aria-label=\{item.pinned \? `取消置顶/)
   assert.match(app, /item.pinned \? '取消置顶任务' : '置顶任务'/)
   assert.match(app, /disabled=\{Boolean\(runningMap\[item.id\]\)\}/)
@@ -118,16 +119,16 @@ test('file cards open in Stable and expose a compact context menu with HTML-only
   assert.match(css, /\.conversation-file-menu\s*\{[^}]*position:\s*fixed[^}]*box-shadow:\s*var\(--shadow-float\) !important/)
 })
 
-test('update badge is driven by the manual-download updater state', () => {
-  assert.match(app, /const updateReady = \['available', 'downloading', 'downloaded'\]/)
-  assert.match(app, /className="update-dot"/)
+test('update progress shows automatic download status and installs only on click', () => {
+  assert.match(app, /const ready = update\.status === 'downloaded'/)
+  assert.match(app, /className="rail-update-button"/)
   assert.match(app, /window\.stable\.updater\.download\(\)/)
   assert.match(preload, /stable:update:download/)
-  assert.match(css, /\.rail-account-trigger > \.update-dot/)
+  assert.match(app, /onClick=\{\(\) => ready \? void action\('正在安装软件更新', async \(\) => \{ await window\.stable\.updater\.install\(\) \}\) : onOpen\(\)\}/)
 })
 
-test('account trigger combines the avatar and display name in one rounded control', () => {
-  assert.match(app, /className="rail-account-name">\{displayName\}<\/span>/)
-  assert.match(css, /\.rail-account-trigger\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\)/)
-  assert.match(css, /\.rail-account-name\s*\{/)
+test('settings trigger is an icon control aligned at the end of the sidebar', () => {
+  assert.match(app, /data-tooltip="设置" aria-label=/)
+  assert.doesNotMatch(app, /className="rail-account-name"/)
+  assert.match(readFileSync(path.join(root, 'src/styles/sidebar-layout.css'), 'utf8'), /\.rail-bottom-controls[^}]*margin-top: auto/)
 })

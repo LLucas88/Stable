@@ -43,7 +43,9 @@ function loadClaudeExtensions(userData, { runtime = false, disabled = false } = 
     if (!plain(values)) throw Error('mcpServers 必须是对象。')
     for (const [name, value] of Object.entries(values)) {
       if (!NAME.test(name) || name === 'stable') throw Error('MCP 名称无效或使用了 Stable 保留名称。')
-      keys(value, ['type', 'url', 'headers', 'tools'], 'MCP 配置')
+      keys(value, ['type', 'url', 'headers', 'tools', 'enabled'], 'MCP 配置')
+      if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw Error('MCP enabled 必须是布尔值。')
+      if (value.enabled === false) continue
       if (!['http', 'sse'].includes(value.type)) throw Error('外部 MCP 当前支持 HTTP/SSE；stdio 进程尚未接入 WSL2，不能在 Windows 宿主启动。')
       let url
       try { url = new URL(value.url) } catch { throw Error('MCP URL 无效。') }

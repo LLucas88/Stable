@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
@@ -31,18 +31,20 @@
     "test:wsl-integration": "node --test tests/wsl-sandbox-integration.cjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.296",
+    "@anthropic-ai/claude-agent-sdk": "0.3.308",
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.8",
     "@xmldom/xmldom": "0.8.14",
     "@xyflow/react": "^12.8.6",
     "electron-updater": "^6.8.9",
+    "jose": "6.2.12",
     "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.9.1",
     "parse5": "^7.3.0",
     "pdf-parse": "1.1.1",
     "pptxgenjs": "4.0.1",
+    "proper-lockfile": "4.1.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.3",
@@ -133,11 +135,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.0.2"
+      "output": "release-1.1.0"
     },
     "win": {
       "icon": "build/stable_app_icon.png",
-      "artifactName": "Stable-Setup-1.0.02-${arch}.${ext}",
+      "artifactName": "Stable-Setup-1.1.0-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -168,5 +170,5 @@
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.0.02"
+  "releaseVersion": "1.1.0"
 }

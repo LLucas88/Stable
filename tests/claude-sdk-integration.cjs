@@ -14,6 +14,187 @@ const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
 const credential = 'local-native-fixture-key'
 
+test('real SDK discovers image generation, uses approval, and receives a durable artifact', { timeout: 45000 }, async t => {
+  let failure, generated = 0
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [{ id: 'discover-image', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_image_generate', max_results: 1 } }] })
+      if (number === 2) return upstream({ calls: [{ id: 'image', name: 'mcp__stable__stable_image_generate', input: { prompt: '蓝色小鸟插画', output: 'bird.png' } }] })
+      assert.equal(number, 3)
+      const output = toolResult(body, 'image')
+      assert.match(JSON.stringify(output), /bird.png/)
+      assert(fs.existsSync(path.join(workspace, 'bird.png')))
+      return upstream({ text: 'IMAGE_ARTIFACT_VERIFIED' })
+    } catch (error) { failure = error; return upstream({ text: 'FIXTURE_FAILED' }) }
+  }, { builtinTools: context => {
+    const { BuiltinTools } = require('../desktop/services/builtin-tools.cjs')
+    const tools = new BuiltinTools({ ...context, browserSession: {} })
+    tools.generateImage = require('../desktop/services/image-generation.cjs').createImageGenerator({
+      resolveApiKey: () => 'image-only-secret',
+      fetchImpl: async (_url, request) => {
+        generated++; assert.equal(request.headers.Authorization, 'Bearer image-only-secret')
+        return Response.json({ data: [{ url: 'https://cdn.bigmodel.cn/fixture.png' }] })
+      }, download: async () => Buffer.from('fixture-image'),
+      nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 1280 }), toPNG: () => Buffer.from('fixture-image') }) },
+    })
+    return tools
+  } })
+  const answer = await runner.run('Create a bird illustration', model, credential, 35000, event => {
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.ifError(failure); assert.equal(answer, 'IMAGE_ARTIFACT_VERIFIED')
+  assert.equal(generated, 1); assert.equal(requests.length, 3)
+  assert(!JSON.stringify(requests).includes('image-only-secret'))
+})
+
+test('real SDK browser batch returns multiple observations in one model round trip', { timeout: 45000 }, async t => {
+  let failure, captures = 0
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [{ id: 'discover-batch', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_browser', max_results: 1 } }] })
+      if (number === 2) return upstream({ calls: [{ id: 'batch', name: 'mcp__stable__stable_browser', input: {
+        action: 'batch', tabId: 'fixture', steps: [{ action: 'resize', width: 390 }, { action: 'screenshot', purpose: 'mobile' },
+          { action: 'resize', width: 1440 }, { action: 'screenshot', purpose: 'desktop' }],
+      } }] })
+      if (number === 3) {
+        const parts = toolResult(body, 'batch')
+        assert(Array.isArray(parts))
+        const records = parts.flatMap(p => { try { return [JSON.parse(p.text)] } catch { return [] } })
+        assert.equal(records.filter(r => r.screenshotPath).length, 2)
+        assert(parts.some(p => p.type === 'image_url'))
+        const book = records.find(r => r.reviewNotebook).reviewNotebook
+        assert.deepEqual(book.evidence.map(e => e.viewport.width), [390, 1440])
+        return upstream({ calls: [{ id: 'batch-review', name: 'mcp__stable__stable_browser', input: {
+          action: 'review', tabId: 'fixture', reviewUpdates: book.evidence.map(e => ({
+            check: e.purpose, status: 'passed', evidenceId: e.id, note: 'fixture pixels verified',
+          })),
+        } }] })
+      }
+      assert.equal(number, 4)
+      return upstream({ text: 'BATCH_VERIFIED' })
+    } catch (error) { failure = error; return upstream({ text: '[[STABLE_WAITING_FOR_INPUT]]' }) }
+  }, { builtinTools: () => {
+    let width = 1280
+    return { execute: async request => {
+      if (request.args.width) width = request.args.width
+      if (request.args.action === 'screenshot') {
+        captures++
+        return { tabId: 'fixture', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=' }
+      }
+      return { tabId: 'fixture', viewport: { width }, controls: [] }
+    }, cancel() {}, dispose() {} }
+  } })
+  const answer = await runner.run('Verify both layouts', model, credential, 35000, undefined, 'workspace-write', [], { cwd: workspace })
+  assert.ifError(failure); assert.equal(answer, 'BATCH_VERIFIED')
+  assert.equal(captures, 2); assert.equal(requests.length, 4)
+})
+
+test('real SDK Stop returns unfinished review to the same run and review completes without another screenshot', { timeout: 45000 }, async t => {
+  let evidenceId, failure, captures = 0
+  const { workspace, runner } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [{ id: 'discover', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_browser', max_results: 1 } }] })
+      if (number === 2) return upstream({ calls: [{ id: 'shot', name: 'mcp__stable__stable_browser', input: { action: 'screenshot', tabId: 'fixture',
+        reviewUpdates: [{ check: 'mobile', status: 'open', note: 'verify layout' }] } }] })
+      if (number === 3) {
+        const result = toolResult(body, 'shot'), parts = typeof result === 'string' ? [{ text: result }] : result
+        evidenceId = parts.flatMap(p => { try { return [JSON.parse(p.text)] } catch { return [] } }).find(p => p.reviewNotebook).reviewNotebook.evidence[0].id
+        return upstream({ text: 'PREMATURE_FINISH' })
+      }
+      if (number === 4) {
+        assert.match(JSON.stringify(body.messages), /未完成的检查记录/)
+        return upstream({ calls: [{ id: 'review', name: 'mcp__stable__stable_browser', input: { action: 'review', tabId: 'fixture',
+          reviewUpdates: [{ check: 'mobile', status: 'passed', evidenceId, note: 'current pixels verified' }] } }] })
+      }
+      assert.equal(number, 5)
+      assert.match(JSON.stringify(toolResult(body, 'review')), /passed/)
+      return upstream({ text: 'REVIEW_COMPLETE' })
+    } catch (error) { failure = error; return upstream({ text: '[[STABLE_WAITING_FOR_INPUT]]' }) }
+  }, { builtinTools: () => ({ execute: async () => {
+    captures++; return { tabId: 'fixture', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=' }
+  }, cancel() {}, dispose() {} }) })
+  const answer = await runner.run('Inspect and resolve layout problems', model, credential, 35000, undefined, 'workspace-write', [], { cwd: workspace })
+  assert.ifError(failure)
+  assert.equal(answer, 'REVIEW_COMPLETE')
+  assert.equal(captures, 1)
+})
+
+test('real SDK browser evidence survives MCP and can be read by the native image tool', { timeout: 45000 }, async t => {
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='
+  let evidencePath, evidenceId, captures = 0, failure
+  const { root, workspace, runner } = fixture(t, (body, number) => {
+    try {
+    if (number === 1) return upstream({ calls: [{ id: 'discover-browser', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_browser', max_results: 1 } }] })
+    if (number === 2) return upstream({ calls: [{ id: 'take-picture', name: 'mcp__stable__stable_browser', input: { action: 'screenshot', purpose: '检查图片比例' } }] })
+    if (number === 3) {
+      const result = toolResult(body, 'take-picture')
+      const parts = typeof result === 'string' ? [{ type: 'text', text: result }] : result
+      const metadata = parts.flatMap(p => { try { return [JSON.parse(p.text)] } catch { return [] } }).find(p => p.screenshotPath)
+      assert(metadata, 'actual MCP metadata must survive SDK serialization')
+      evidencePath = metadata.screenshotPath
+      evidenceId = metadata.reviewNotebook.evidence[0].id
+      assert.equal(metadata.reviewNotebook.evidence[0].purpose, '检查图片比例')
+      assert.deepEqual(fs.readFileSync(evidencePath), Buffer.from(png, 'base64'))
+      return upstream({ calls: [{ id: 'read-evidence', name: 'Read', input: { file_path: evidencePath } }] })
+    }
+    if (number === 4) {
+    const result = toolResult(body, 'read-evidence')
+    const parts = typeof result === 'string' ? [{ type: 'text', text: result }] : result
+    assert(parts?.some(p => p.type === 'image_url' || /Image bytes identical to tool_call_id=take-picture/.test(p.text || '')), 'native Read must return pixels or an exact reference to the retained capture')
+    assert(body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).some(p => p.image_url?.url === 'data:image/png;base64,' + png))
+    const runs = path.join(root, 'claude', 'runs')
+    const archive = path.join(runs, fs.readdirSync(runs)[0], 'tool-images')
+    const archived = path.join(archive, fs.readdirSync(archive)[0])
+    assert(fs.readFileSync(archived).equals(Buffer.from(png, 'base64')))
+    return upstream({ calls: [{ id: 'reread-archived', name: 'Read', input: { file_path: archived } }] })
+    }
+    if (number === 5) {
+    assert(!JSON.stringify(toolResult(body, 'reread-archived')).includes('Tool execution error:'))
+    assert.match(JSON.stringify(toolResult(body, 'reread-archived')), /image_url|Image bytes identical/)
+    return upstream({ calls: [{ id: 'record-check', name: 'mcp__stable__stable_browser', input: { action: 'read', tabId: 'fixture',
+      reviewUpdates: [{ check: '图片比例', status: 'passed', evidenceId, note: '已看像素，比例正常' }] } }] })
+    }
+    assert.match(JSON.stringify(toolResult(body, 'record-check')), /passed/)
+    assert.match(JSON.stringify(toolResult(body, 'record-check')), /图片比例/)
+    return upstream({ text: 'EVIDENCE_REVIEW_FINISHED' })
+    } catch (error) { failure = error; return upstream({ text: 'EVIDENCE_REVIEW_FAILED' }) }
+  }, { builtinTools: () => ({ execute: async request => {
+    assert.equal(request.args.purpose, undefined); assert.equal(request.args.reviewUpdates, undefined)
+    if (request.args.action === 'screenshot') { captures++; return { tabId: 'fixture', image: 'data:image/png;base64,' + png } }
+    return { tabId: 'fixture' }
+  }, cancel() {}, dispose() {} }) })
+  const answer = await runner.run('Inspect a screenshot, then read the returned file and finish', model, credential, 30000, undefined, 'workspace-write', [], { cwd: workspace })
+  assert.ifError(failure)
+  assert.equal(answer, 'EVIDENCE_REVIEW_FINISHED')
+  assert.equal(captures, 1)
+  assert(fs.existsSync(evidencePath), 'file must remain available after the SDK run ends')
+})
+
+test('real SDK returns timed-out command output to the model and completes a smaller step in the same run', { timeout: 45000 }, async t => {
+  const events = []; let requests = 0
+  const { workspace, runner } = fixture(t, (body, number) => {
+    requests++
+    if (number === 1) return upstream({ calls: [{ id: 'slow-step', name: 'Bash', input: { command: 'printf PARTIAL_STEP_DONE; sleep 3; printf bad > orphan-timeout.txt', timeout: 1000 } }] })
+    if (number === 2) {
+      assert.match(toolResult(body, 'slow-step'), /PARTIAL_STEP_DONE/)
+      assert.match(toolResult(body, 'slow-step'), /timed out|timeout|超时/i)
+      assert.match(JSON.stringify(body.messages), /拆分为可恢复步骤/)
+      return upstream({ calls: [{ id: 'smaller-step', name: 'Bash', input: { command: 'printf RECOVERED > recovered.txt; cat recovered.txt', timeout: 10000 } }] })
+    }
+    assert.match(toolResult(body, 'smaller-step'), /RECOVERED/)
+    return upstream({ text: 'RECOVERY_FINISHED' })
+  })
+  const result = await runner.run('Complete the task; split slow steps if necessary', model, credential, 25000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.equal(result, 'RECOVERY_FINISHED'); assert.equal(requests, 3)
+  assert.equal(fs.readFileSync(path.join(workspace, 'recovered.txt'), 'utf8'), 'RECOVERED')
+  assert(events.some(event => event.id === 'slow-step' && event.status === 'failed'))
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  assert.equal(fs.existsSync(path.join(workspace, 'orphan-timeout.txt')), false)
+})
+
 test('real SDK native Bash executes only after approval and reports output and errors', { timeout: 120_000 }, async t => {
   for (const mode of ['allow', 'deny', 'failure', 'timeout', 'cancel-approval']) await t.test(mode, async t => {
     let approvals = 0
@@ -78,7 +259,7 @@ test('real SDK cancellation stops an active native Bash command before its delay
   assert.equal(fs.existsSync(path.join(workspace, 'orphan.txt')), false)
 })
 
-test('real SDK child Agent uses native Bash with the same approval hook', { timeout: 45000 }, async t => {
+for (const subagentType of ['stable-worker', 'fork']) test(`real SDK ${subagentType} child Agent uses native Bash with the same approval hook`, { timeout: 45000 }, async t => {
   let childCalls = 0, approvals = 0
   const { workspace, runner } = fixture(t, (body, number) => {
     if (body.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('CHILD_BASH_MARKER'))) {
@@ -88,7 +269,7 @@ test('real SDK child Agent uses native Bash with the same approval hook', { time
       assert.match(toolResult(body, 'child-bash'), /CHILD_NATIVE_OK/)
       return upstream({ text: 'CHILD_DONE' })
     }
-    if (number === 1) return upstream({ calls: [{ id: 'parent-agent', name: 'Agent', input: { description: 'Test child Bash', prompt: 'CHILD_BASH_MARKER: run the command', subagent_type: 'stable-worker' } }] })
+    if (number === 1) return upstream({ calls: [{ id: 'parent-agent', name: 'Agent', input: { description: 'Test child Bash', prompt: 'CHILD_BASH_MARKER: run the command', subagent_type: subagentType } }] })
     assert.match(toolResult(body, 'parent-agent'), /CHILD_DONE/)
     return upstream({ text: 'PARENT_DONE' })
   })
@@ -163,11 +344,46 @@ test('real SDK external MCP connects only after approval and enforces per-call g
     if (mode.startsWith('allow')) {
       assert.equal(remoteCalls[0].name, 'queryReadAgent')
       assert.deepEqual(remoteCalls[0].arguments, { value: 'fixture' })
-      assert(events.some(event => event.id === 'runtime-info' && /Claude Code 2\.1\.296/.test(event.detail)))
+      assert(events.some(event => event.id === 'runtime-info' && /Claude Code 2\.1\.308/.test(event.detail)))
     }
     assert.equal(approvals, ['disabled', 'read-only'].includes(mode) ? 0 : mode === 'deny-connect' ? 1 : 2)
     if (['disabled', 'read-only', 'deny-connect'].includes(mode)) assert.equal(remoteRequests.length, 0)
   })
+})
+
+test('real SDK does not replay a non-idempotent HTTP MCP call after connection loss', { timeout: 45000 }, async t => {
+  const http = require('node:http'); let calls = 0
+  const server = http.createServer(async (req, res) => {
+    if (req.method !== 'POST') { res.writeHead(405).end(); return }
+    let raw = ''; for await (const chunk of req) raw += chunk
+    const message = JSON.parse(raw)
+    if (message.id === undefined) { res.writeHead(202).end(); return }
+    let result = {}
+    if (message.method === 'initialize') result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'mutation-fixture', version: '1' } }
+    if (message.method === 'tools/list') result = { tools: [{ name: 'create_record', description: 'Creates one record; never repeat an uncertain operation.', annotations: { readOnlyHint: false, idempotentHint: false }, inputSchema: { type: 'object', properties: {} } }] }
+    if (message.method === 'tools/call') {
+      calls++ // Represents a committed side effect before the reply is lost.
+      if (calls === 1) { req.socket.destroy(); return }
+      result = { content: [{ type: 'text', text: 'DUPLICATE_SIDE_EFFECT' }] }
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) })
+  const { root, workspace, runner, requests } = fixture(t, (_body, number) => {
+    if (number === 1) return upstream({ calls: [{ id: 'discover-mutation', name: 'ToolSearch', input: { query: 'select:mcp__mutation__create_record', max_results: 1 } }] })
+    if (number === 2) return upstream({ calls: [{ id: 'mutation', name: 'mcp__mutation__create_record', input: {} }] })
+    return upstream({ text: 'UNCERTAIN_RESULT_REPORTED' })
+  })
+  const config = require('../desktop/services/claude-extensions.cjs').configurationPath(root)
+  fs.mkdirSync(path.dirname(config), { recursive: true })
+  fs.writeFileSync(config, JSON.stringify({ version: 1, enabled: true, mcpServers: { mutation: { type: 'http', url: `http://127.0.0.1:${server.address().port}/mcp`, tools: ['create_record'] } } }))
+  const answer = await runner.run('Create one fixture record; report uncertainty without trying again.', model, credential, 35000, event => {
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.equal(answer, 'UNCERTAIN_RESULT_REPORTED')
+  assert.equal(calls, 1, 'A lost response must not replay a committed non-idempotent operation')
+  assert.equal(requests.length, 3)
 })
 
 test('real SDK loads opted-in plugin skills through the sanitized whitelist and retains write approval', { timeout: 45_000 }, async t => {

@@ -1,11 +1,12 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
-function source(...segments) { return readFileSync(path.join(__dirname, '..', ...segments), 'utf8') }
+function source(...segments) { return readSource(path.join(__dirname, '..', ...segments), 'utf8') }
 
 test('renderer keeps conversation-scoped model switching without exposing the removed settings catalog', () => {
   const app = source('src', 'App.tsx')

@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -11,7 +12,7 @@ const root = path.resolve(__dirname, '..')
 
 // Execute the actual IPC callback with an inert OS shell: never open Explorer.
 function handler(shell, workspace, platform = 'win32') {
-  const source = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8')
+  const source = readSource(path.join(root, 'desktop/main.cjs'), 'utf8')
   const start = source.indexOf("  ipcMain.handle('stable:system:showItemInFolder'")
   const end = source.indexOf("  ipcMain.handle('stable:system:openExternalHtml'", start)
   assert.ok(start >= 0 && end > start)
@@ -97,7 +98,7 @@ test('file preview resolves an additional registered project root without accept
 test('local preview request guard allows a project source image and rejects files outside project roots',t=>{
  const {workspace,temporary}=fixture(t),second=path.join(temporary,'images');fs.mkdirSync(second);const image=path.join(second,'image.png');fs.writeFileSync(image,'fixture')
  const outside=path.join(temporary,'outside.png');fs.writeFileSync(outside,'fixture')
- const source=fs.readFileSync(path.join(root,'desktop/main.cjs'),'utf8'),start=source.indexOf('function isAllowedWorkspacePreviewFile('),end=source.indexOf('function isAllowedLocalPreviewRequest(',start)
+ const source=readSource(path.join(root,'desktop/main.cjs'),'utf8'),start=source.indexOf('function isAllowedWorkspacePreviewFile('),end=source.indexOf('function isAllowedLocalPreviewRequest(',start)
  const context={URL,fileURLToPath:require('node:url').fileURLToPath,previewTemporaryPath:null,existsSync:fs.existsSync,statSync:fs.statSync,resolveWorkspaceEntry,conversationPaths:()=>({workspace,writableRoots:[workspace,second]}),store:{activeConversationId:()=> 'test'}}
  vm.createContext(context);vm.runInContext(source.slice(start,end),context)
  assert(context.isAllowedWorkspacePreviewFile(require('node:url').pathToFileURL(image).href));assert(!context.isAllowedWorkspacePreviewFile(require('node:url').pathToFileURL(outside).href))

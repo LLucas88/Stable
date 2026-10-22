@@ -7,6 +7,7 @@ test('direct Chrome screenshot attempts route to the shared browser, including a
   }
   assert(isBrowserScreenshotCommand('chromium --headless --screenshot=/tmp/a.png file:///workspace/a.html'))
   for (const command of ['Get-Content report.html', 'python check.py', 'node build.cjs', 'chrome --version', 'Write-Output "chrome --headless --screenshot"', 'echo "chromium --headless --screenshot"']) assert.equal(isBrowserScreenshotCommand(command), false, command)
-  assert.match(HTML_PREVIEW_GUIDANCE, /read 和 screenshot/)
+  assert.match(HTML_PREVIEW_GUIDANCE, /无需立即重复 read/)
+  assert.match(HTML_PREVIEW_GUIDANCE, /resize\(width,height\)/)
   assert.match(HTML_PREVIEW_GUIDANCE, /仅打开网页或检查源码不等于视觉验证通过/)
 })

@@ -1,10 +1,10 @@
 # Stable
 
-> `cluade-sdk-bash` 分支：基于 `2cluade-agent` 当前源码，命令执行改用 Claude Agent SDK 原生 Bash（Windows Git Bash），保留 Stable 审批，只读或禁网任务禁用 Bash。当前配置见 [原生 Bash 文档](docs/CLAUDE_NATIVE_BASH.md)。以下版本记录为历史记录。
+> `cluade-sdk-bash` 分支：聊天、工作流、定时和协作的本机模型执行使用 Claude Agent SDK，沿用已有模型服务与加密 Key。命令执行采用 Windows Git Bash，保留 Stable 审批，只读或禁网任务禁用 Bash。参见 [SDK 接入](docs/CLAUDE_AGENT_SDK.md)和[原生 Bash 权限边界](docs/CLAUDE_NATIVE_BASH.md)。
 
-> 当前工作区源码（2026-09-30）：聊天、工作流、定时和协作的本机模型执行默认使用官方 Claude Agent SDK，沿用已有模型服务与加密 Key，不需要 Stable Cloud 登录。本次未生成正式安装器或发布。接入与验证记录见 [Claude Agent SDK 文档](docs/CLAUDE_AGENT_SDK.md)。以下版本章节保留历史记录。
+Stable 是一个 Windows 本地 Agent 工作台。本分支当前包版本为 **1.1.0**，采用 Electron、React、Claude Agent SDK 和本地 SQLite；包含对话、项目、定时任务、资源与技能、工作流、数据导入、应用更新和 Team 协作。
 
-Stable 是一个 Windows 本地 Agent 工作台。当前 GitHub 正式发布版本为 **v1.0.01**，当前 `main` 的包版本为 **1.0.1**。项目包含云端内部账号与金额额度、云端多模型切换、对话、定时自动化、数据与知识资源、Skills、模块化工作流、应用内更新，以及 Team 对话快照协作能力。
+当前模块边界、导入兼容标识和样式顺序见 [结构说明](docs/ARCHITECTURE.md)。本地修改后执行 `npm run typecheck`、`npm run build`，再用 `npm start` 启动；普通启动读取构建后的 `dist`。以下发布和安装章节保留历史记录，不代表本分支已经发布或当前最新远端版本。
 
 ## v1.0.01 开发与交付总结
 

@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -31,7 +32,7 @@ test('source default contains all seven user rules verbatim and is included in b
   const update = require('../build/update-builder.config.cjs')
   assert.ok(pkg.build.files.includes('desktop/**/*'))
   assert.ok(update.files.includes('desktop/**/*'))
-  const main = readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
   assert.match(main, /ensureGlobalInstructions\(paths\.userData\)/)
   assert.match(main, /globalInstructions: readGlobalInstructions\(\)\.content/)
 })

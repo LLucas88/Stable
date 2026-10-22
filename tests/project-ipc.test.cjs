@@ -1,9 +1,10 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),vm=require('node:vm')
 const {createRequire}=require('node:module'),{StableStore}=require('../desktop/services/store.cjs')
 function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-project-ipc-')),workspace=path.join(root,'workspace');fs.mkdirSync(workspace)
  const calls=[],shell={openPath:async value=>{calls.push(value);return ''}},store=new StableStore(root),handlers={},agentRunners=new Map(),dialog={showOpenDialog:async()=>({canceled:true,filePaths:[]})}
- const source=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8'),start=source.indexOf("  ipcMain.handle('stable:projects:pickFolders'"),end=source.indexOf("  ipcMain.handle('stable:agent:viewState'",start)
+ const source=readSource(path.join(__dirname,'../desktop/main.cjs'),'utf8'),start=source.indexOf("  ipcMain.handle('stable:projects:pickFolders'"),end=source.indexOf("  ipcMain.handle('stable:agent:viewState'",start)
  const manageStart=source.indexOf("  ipcMain.handle('stable:projects:manage'"),manageEnd=source.indexOf("  ipcMain.handle('stable:agent:rename'",manageStart)
  vm.runInNewContext(source.slice(start,end)+source.slice(manageStart,manageEnd),{shell,ipcMain:{handle:(key,fn)=>handlers[key]=fn},require:createRequire(path.join(__dirname,'../desktop/main.cjs')),store,paths:{workspace},path,mainWindow:null,dialog,agentRunners,requireText:v=>v,agentState:id=>({activeConversationId:id,conversations:store.listConversations(),projects:store.listProjects(),context:store.conversationContext(id)})})
  t.after(()=>{store.close();fs.rmSync(root,{recursive:true,force:true})})

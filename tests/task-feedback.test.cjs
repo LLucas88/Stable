@@ -1,3 +1,4 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { taskErrorMessage } = require('../src/task-feedback.ts')
@@ -17,9 +18,9 @@ test('real failures and unknown messages remain visible even if they mention sto
 })
 
 test('composer filters only task feedback and preserves terminal status and queue decisions', () => {
-  const app = readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
   assert.match(app, /const feedback = taskErrorMessage\(detail\)/)
-  assert.match(app, /\[conversationId\]: feedback/)
+  assert.match(app, /\[conversationId\]: completed \? '' : feedback/)
   assert.match(app, /return \{ accepted: messageAccepted, continue: false, error: detail \}/)
   assert.match(app, /taskErrorMessage\(errorMessage\(item.error\)\)/)
   assert.match(app, /status: trace.status === 'running' \? terminalStatus : trace.status/)

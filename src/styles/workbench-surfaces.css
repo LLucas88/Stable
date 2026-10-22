@@ -95,6 +95,12 @@ html[data-window-material="mica"] #root { background: transparent; }
 }
 .user-bubble { background: var(--surface-selected); border-color: transparent; }
 
+/* Dark surfaces sampled from the user's Codex reference screenshot. */
+html[data-theme="dark"] { --surface-composer-current: #43444e; --surface-composer-filter: none; }
+html[data-theme="dark"] #root .rail-task-pane { background: #24272d !important; }
+html[data-theme="dark"] .user-bubble { background: #32343f; }
+html[data-theme="light"] #root .rail-task-pane { background: #fcfcfc !important; }
+
 /* Screenshot correction: Windows application-menu chrome does not use the
  * 70% sidebar overlay of Codex's other chrome variant. Keep native tint visible.
  * Use system UI text and primary ink for content; muted ink is for metadata. */
@@ -111,11 +117,10 @@ body { font-weight: 400; }
 .rail-nav { gap: .125rem; padding-block: .5rem; }
 .sidebar-project-title { color: var(--color-ink); font-size: .875rem; }
 .conversation-topbar { min-height: 3.25rem; }
-#root .conversation-topbar { border-block-end: 1px solid var(--color-rule-2) !important; }
+#root .conversation-topbar { border-block-end: 0 !important; }
 .conversation-topbar > div strong { font-family: var(--font-body); font-size: .875rem; font-weight: 600; }
 .rail-account-trigger { min-height: 2.75rem; background: transparent; border: 0; border-radius: .5rem; }
-.rail-account-name { font-weight: 400; font-size: .875rem; }
-.rail-account-trigger .account-avatar { width: 1.5rem; height: 1.5rem; font-size: .65rem; }
+
 .user-bubble { border-radius: 1.125rem; padding: .625rem 1rem; }
 /* Retain the role label for accessibility, without a second visible text row. */
 .user-bubble .turn-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -165,16 +170,21 @@ body { font-weight: 400; }
 html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srgb, var(--skill-icon-ink) 18%, var(--color-paper)); color: color-mix(in srgb, var(--skill-icon-ink) 48%, white); }
 @media (forced-colors: active) { .market-avatar[data-tone] { background: Canvas !important; color: CanvasText !important; border: 1px solid CanvasText; } }
 
-/* Shared reading scale; tables and code remain legible alongside the prose. */
+/* Codex desktop reading scale (26.1013); headings retain Stable's h2/h3/h4 markup. */
 .user-bubble > p,
 .composer #agent-prompt,
-.assistant-answer .markdown-body { font-size:var(--text-conversation); line-height:1.6; letter-spacing:normal; }
-.assistant-answer .markdown-body h2 { font-size:1.125rem; }
-.assistant-answer .markdown-body h3,
-.assistant-answer .markdown-body h4 { font-size:var(--text-base); }
-.assistant-answer .markdown-body :is(h1,h2,h3,h4) { font-weight:600; line-height:1.4; letter-spacing:normal; }
-.assistant-answer .markdown-body table { font-size:var(--text-sm); line-height:1.5; }
-.assistant-answer .markdown-body code { font-size:.875em; letter-spacing:normal; }
+.assistant-answer .markdown-body { font-family:var(--font-conversation); font-size:var(--text-conversation); font-weight:400; line-height:var(--line-conversation); letter-spacing:normal; }
+.composer #agent-prompt { line-height:var(--line-composer); }
+.assistant-answer .markdown-body :is(h1,h2,h3,h4) { font-family:inherit; font-weight:600; letter-spacing:normal; }
+.assistant-answer .markdown-body h2 { font-size:1.5em; line-height:calc(var(--text-conversation) * 2); }
+.assistant-answer .markdown-body h3 { font-size:1.25em; line-height:calc(var(--text-conversation) * 1.75); }
+.assistant-answer .markdown-body h4 { font-size:1.125em; line-height:calc(var(--text-conversation) * 1.75); }
+.assistant-answer .markdown-body table { font-size:max(var(--text-conversation-code), calc(var(--text-conversation) * .875)); line-height:calc(var(--text-conversation) * var(--line-conversation)); }
+.assistant-answer .markdown-body th { font-family:inherit; line-height:var(--text-conversation); }
+.assistant-answer .markdown-body blockquote { line-height:1.5; }
+.assistant-answer .markdown-body code { font-family:var(--font-conversation-mono); font-size:.92em; letter-spacing:normal; }
+.assistant-answer .markdown-body .code-block pre,
+.assistant-answer .markdown-body .code-block code { font-family:var(--font-conversation-mono); font-size:var(--text-conversation-code); line-height:max(1.5em, var(--line-composer)); }
 
 /* Market navigation divider and purpose-based skill labels. */
 #root .skill-market-top { border-bottom:1px solid var(--color-rule-soft) !important; }
@@ -243,9 +253,7 @@ html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srg
 .composer-add-popover .composer-option strong{font-weight:400;flex-shrink:0}
 .composer-add-popover .composer-option small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* Compact permission choices retain their explanatory text. */
-#root .permission-popover { width: min(320px, calc(100vw - 48px)); padding: 6px; border: 1px solid var(--color-rule-soft) !important; border-radius: 12px; background: var(--color-paper) !important; box-shadow: 0 4px 16px #00000014 !important; }
+/* Compact permission choices reveal explanations through the info control. */
+#root .permission-popover { width: min(256px, calc(100vw - 48px)); padding: 6px; border: 1px solid var(--color-rule-soft) !important; border-radius: 12px; background: var(--color-paper) !important; box-shadow: 0 4px 16px #00000014 !important; }
 .permission-popover .composer-popover-head { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
-.permission-popover .permission-option { padding: 8px !important; gap: 8px; }
-.permission-popover .permission-option strong { font-size: 13px; }
-.permission-popover .permission-option small { font-size: 11px; line-height: 1.5; }
+.permission-popover .permission-option { padding: 0; gap: 8px; }

@@ -1,9 +1,10 @@
+const { readSource } = require('./../helpers/read-source.cjs')
 const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=require('node:path');const {build}=require('esbuild');const root=path.resolve(__dirname,'../..');let win;app.disableHardwareAcceleration();app.setPath('userData',fs.mkdtempSync(path.join(require('node:os').tmpdir(),'stable-close-ui-')));
 app.whenReady().then(async()=>{
 win=new BrowserWindow({show:false,width:1100,height:760,webPreferences:{offscreen:true,sandbox:true}});
 const result=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {CloseWindowDialog} from './src/CloseWindowDialog';window.stable={windowClose:{onRequest:fn=>{window.openClose=fn;return()=>{}},decide:async(choice,remember)=>{window.choice={choice,remember};return true}}};createRoot(document.getElementById('root')).render(<CloseWindowDialog/>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife'});
 await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html data-theme="light"><body><div id="root"></div></body></html>'));
-for(const file of ['tokens.css','app.css','workbench-surfaces.css'])if(fs.existsSync(path.join(root,'src/styles',file)))await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'));
+for(const file of ['tokens.css','app.css','workbench-surfaces.css'])if(fs.existsSync(path.join(root,'src/styles',file)))await win.webContents.insertCSS(readSource(path.join(root,'src/styles',file),'utf8'));
 await win.webContents.executeJavaScript(result.outputFiles[0].text);await new Promise(r=>setTimeout(r,200));
 await win.webContents.executeJavaScript('window.openClose()');await new Promise(r=>setTimeout(r,100));
 const out=path.join(root,'qa-artifacts/close-window');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'dialog.png'),(await win.webContents.capturePage()).toPNG());

@@ -3,11 +3,13 @@
   --font-body: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-display: var(--font-body);
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Microsoft YaHei UI", "Microsoft YaHei", monospace;
+  --font-conversation: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-conversation-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", "Microsoft YaHei UI", monospace;
 
-  --color-paper: #181818;
-  --color-paper-2: #232323;
-  --color-paper-3: #282828;
-  --color-paper-4: #303030;
+  --color-paper: #282a36;
+  --color-paper-2: #32343f;
+  --color-paper-3: #35373c;
+  --color-paper-4: #43444e;
   --color-ink: #dfdfdf;
   --color-ink-2: rgba(255, 255, 255, 0.71);
   --color-muted: rgba(255, 255, 255, 0.498);
@@ -49,7 +51,10 @@
 
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
-  --text-conversation: 0.9375rem;
+  --text-conversation: 0.875rem;
+  --text-conversation-code: 0.75rem;
+  --line-conversation: 1.625;
+  --line-composer: 1.25rem;
   --text-base: 1rem;
   --text-md: 1.25rem;
   --text-lg: 1.5rem;

@@ -2,7 +2,7 @@
 
 # Claude Agent SDK + WSL2
 
-`2cluade-agent` 分支仅使用官方 `@anthropic-ai/claude-agent-sdk@0.3.296`（Claude Code 运行时 2.1.296）。聊天、工作流 AI 节点、定时任务、协作规划/执行/综合、审批模型共用这个入口；旧的 STABLE_HARNESS 值不再切换引擎。
+`cluade-sdk-bash` 分支仅使用官方 `@anthropic-ai/claude-agent-sdk@0.3.308`（Claude Code 运行时 2.1.308）。聊天、工作流 AI 节点、定时任务、协作规划/执行/综合、审批模型共用这个入口；旧的 STABLE_HARNESS 值不再切换引擎。
 
 模型服务沿用 Stable 当前配置。供应商密钥留在 Electron 主进程，Claude 使用每轮独立回环令牌访问 Messages → Chat Completions 适配器。不要求 Stable Cloud；已配置的 Cloud 模型来源仍可选。第三方模型兼容性由 Stable 适配，并非 Anthropic 官方保证。
 
@@ -44,6 +44,37 @@ WSL 或工具不完整时命令报错，不回退到宿主 shell。旧运行程�
 - 修改前备份：`C:\Users\HUAWEI\AppData\Local\Temp\stable-sdk-features-ded890c5e51c43f8b3ea0039da7140e3`。未修改共享数据库、用户配置、主分支，未重启 Stable。
 
 ## 安装与验证
+
+### 2026-10-22 SDK 升级验收（cluade-sdk-bash）
+
+- 从 `0.3.304` 精确升级到官方 npm latest `0.3.308`，配套 Windows x64 运行时确认 `2.1.308 (Claude Code)`；仅 SDK 及平台包发生依赖变化，入口与当前版本文档同步。
+- 升级前完整真实 SDK/本地模拟模型集成 55 项通过；升级后 56 项通过（含新增 HTTP MCP 丢失响应不重复执行专项）。相关回归 137 项、类型检查、生产构建通过；功能和界面未改，未调用付费模型。
+- 上游改善集中在自动压缩异常、MCP 连接与错误恢复。Stable 既有自动压缩和工具错误处理继续通过测试，但本轮没有证明真实任务提速。新增断线专项在旧版同样通过，不将其计为已重现的升级收益。
+- 详细适用性、证据和限制见 [SDK_0308_VALIDATION.md](SDK_0308_VALIDATION.md)。备份与日志：`D:\stable\.local\sdk-0308-validation-20261022`。开发版重启后加载新版；未制作安装包。
+
+### 2026-10-20 SDK 升级验收（cluade-sdk-bash）
+
+- 从 `0.3.303` 精确升级至官方 npm latest `0.3.304`，配套 Windows x64 运行时实测为 `2.1.304 (Claude Code)`。依赖声明、锁文件、已安装包与入口版本标记一致；相对本轮备份，仅 SDK 及配套平台包发生依赖变化。Codex Harness、全局 CLI、界面和用户数据未修改。
+- 官方发布记录：https://github.com/anthropics/claude-agent-sdk-typescript/releases/tag/v0.3.304 。上游修复启动钩子的超时计算及进度消息累积，增强上下文用量明细，并为浏览器 SDK 增加事件流暂停/恢复接口；本轮没有额外接入新接口。
+- 相关回归 95 项通过。真实 SDK 完整集成首次运行 51 项：48 项通过，3 项失败为 MCP 组内两个旧运行时版本断言及其父测试；将预期版本从 `2.1.303` 更新为 `2.1.304` 后，整个 MCP 组 8 项复测全部通过，未删除测试或放宽审批、工具输出校验。覆盖会话恢复、原生文件/Bash、审批、取消、超时后继续、MCP HTTP/SSE、子代理、技能和自动上下文压缩。
+- TypeScript、Vite 构建和改动文件检查通过。保留原有大 chunk 与 MCP callback shadowed 提示；既有工具处理器及 PreToolUse 审批约束未改变。
+- 验证使用真实 SDK/配套运行时及本地模拟模型，未调用付费推理接口、未进行桌面 GUI 验收或制作安装包。备份、版本证据及原始测试日志位于 `qa-artifacts/sdk-0.3.304-upgrade/`。重启此工作区的开发版后加载新版；此次更新不会替换已经安装的发行版。
+
+### 2026-10-19 SDK 升级验收（cluade-sdk-bash）
+
+- 从 `0.3.300` 精确升级到 npm latest `0.3.303`，项目内 Windows x64 二进制实测为 `2.1.303 (Claude Code)`。官方发布记录：https://github.com/anthropics/claude-agent-sdk-typescript/releases/tag/v0.3.303 。同步运行入口的版本标记、测试及当前版本文档，全局 CLI 未更新。
+- 相对安装前，依赖版本仅变更 SDK 及配套平台包。npm 同时校正了现有 `jose`、`proper-lockfile`、`retry`、`signal-exit` 锁文件中的 peer/dev 标记，以匹配工作区已有的生产依赖声明；这些包的版本未改变。`package.json` 除 SDK 版本外与安装前一致。
+- 相关回归 126 项全部通过；真实 SDK 集成 49 项通过，另对子 Agent 的 stable-worker/fork 两种请求运行 2 项专项检查并通过。覆盖本机 Bash 审批允许/拒绝/取消、原生文件工具、MCP、会话恢复、消息队列、自动压缩和追问续接。新版 fork 请求仍经现有 hooks 约束到 stable-worker，保留工具限制与审批。
+- 修复旧入口测试 VM 未声明 `chatgptAccount` 的环境遗漏；保留原业务断言。受限环境运行回归时出现失败并中止，宿主环境重跑及补齐测试环境后得到上述通过结果。SDK 的 MCP callback shadowed 提示仍存在：内置工具通过自身处理器执行权限检查，外部 MCP 通过 PreToolUse 和许可回调检查；没有为消除提示而放宽权限。
+- TypeScript、入口语法检查和 Vite 构建通过；构建仍有现有的大 chunk 提示。真实 SDK 集成使用隔离临时目录与本地模拟模型，没有付费推理请求，也未验证真实模型或桌面 GUI。未制作安装包或重启用户的 Stable。
+- 安装前依赖备份、入口备份和验证日志：`qa-artifacts/sdk-0.3.303-upgrade/`。重启此工作区的开发版后加载新版；已安装的发行版不会由此次源码更新自动替换。
+
+### 2026-10-15 SDK 升级验收（cluade-sdk-bash）
+
+- 精确升级到 SDK `0.3.300`，项目内 Windows x64 二进制实测为 `2.1.300 (Claude Code)`。相对本轮安装前的锁文件，仅 SDK 及其平台运行时包发生变化；全局 CLI 未更新。
+- 相关回归 119 项、真实 SDK 集成测试 49 项全部通过；TypeScript 类型检查、入口语法检查通过。集成覆盖 Bash、原生文件工具、审批允许/拒绝/取消、MCP、子代理、会话恢复、排队输入，以及 128k/200k/1m 上下文的自动压缩恢复。新版 `updatedInput` 校验下，这些工具与审批链路通过现有集成断言。
+- 真实 SDK 集成使用隔离临时目录和模拟模型响应，无真实供应商推理请求，未重跑用户报告；不代表真实模型或桌面 GUI 验收。本轮未打安装包，重启该工作区的本地开发版后加载新版。
+- 日志与安装前依赖清单位于 `qa-artifacts/sdk-0.3.300-upgrade/`。此前验收记录保留如下，版本及旧 WSL 操作说明仅反映当时环境；当前本机 Bash 行为见 `CLAUDE_NATIVE_BASH.md`。
 
 ### 2026-10-10 SDK 升级验收
 

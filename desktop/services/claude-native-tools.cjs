@@ -5,6 +5,11 @@ const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { resolveBoundPath } = require('./claude-tools.cjs')
 const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
+const { TOOL_WATCHDOG_MS } = require('./run-progress.cjs')
+// Leave time for native process cleanup and the SDK result before the run guard.
+const BASH_TIMEOUT_MS = TOOL_WATCHDOG_MS - 60_000
+const TIMEOUT_RECOVERY = '本次命令超时，整轮任务仍可继续。根据已返回的输出检查已完成步骤和文件；超时不代表已有写入已回滚。请缩小范围、拆分为可恢复步骤或改用其他可用方法继续，不要原样重复长命令；仍须遵守用户停止、审批和费用上限。'
+const QUOTING_RECOVERY = 'Bash 报告了引号或变量展开错误。不要原样重复或继续叠加转义；先核对已有文件和部分写入，用原生 Write / Edit 保存脚本或长文本，再用简短 Bash 命令执行脚本文件。不要把 JavaScript 的 ${...} 或反引号直接放入 shell 双引号字符串。已有操作未自动回滚，后续写入和命令仍须审批。'
 
 const TOOLS = Object.freeze(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit'])
 const WRITES = new Set(['Write', 'Edit', 'NotebookEdit'])
@@ -127,7 +132,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
       if (args.description !== undefined && typeof args.description !== 'string') throw Error('Bash description 必须为文字。')
       for (const key of ['run_in_background', 'dangerouslyDisableSandbox']) if (args[key] !== undefined && args[key] !== false) throw Error('Bash 不允许后台运行或覆盖沙箱设置。')
       if (browserAvailable && isBrowserScreenshotCommand(args.command)) throw Error('截图命令未执行。' + HTML_PREVIEW_GUIDANCE)
-      args.timeout ??= 60_000
+      args.timeout = Math.min(args.timeout ?? 60_000, BASH_TIMEOUT_MS)
       args.run_in_background = false
       const target = resolveBoundPath(executionCwd, cwd, writes)
       if (!fs.statSync(target).isDirectory()) throw Error('命令工作目录不是文件夹。')
@@ -204,18 +209,26 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   async function postToolUse(input) {
     const id = input.tool_use_id
     const entry = calls.get(id)
-    if (entry) { calls.delete(id); onToolEvent({ id, name: entry.name, args: entry.args, status: entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response }) }
+    if (entry) {
+      const timedOut = entry.name === 'Bash' && !signal?.aborted && input.tool_response?.interrupted === true
+      calls.delete(id)
+      onToolEvent({ id, name: entry.name, args: entry.args, status: timedOut ? 'failed' : entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response })
+      if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: TIMEOUT_RECOVERY } }
+    }
     return {}
   }
   async function postToolUseFailure(input) {
     const entry = calls.get(input.tool_use_id)
     if (entry) {
+      const timedOut = entry.name === 'Bash' && !signal?.aborted && /(?:timed out|timeout|超时)/i.test(String(input.error || ''))
       calls.delete(input.tool_use_id)
-      onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, status: input.is_interrupt ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
+      onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, status: input.is_interrupt && !timedOut ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
+      if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: TIMEOUT_RECOVERY } }
+      if (entry.name === 'Bash' && !signal?.aborted && !input.is_interrupt && /bad substitution|unexpected EOF|syntax error near unexpected token/i.test(String(input.error || ''))) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: QUOTING_RECOVERY } }
     }
     return {}
   }
   return { tools, preToolUse, postToolUse, postToolUseFailure, canUseTool }
 }
 
-module.exports = { createNativeToolGuard, NATIVE_FILE_TOOLS: TOOLS }
+module.exports = { createNativeToolGuard, NATIVE_FILE_TOOLS: TOOLS, BASH_TIMEOUT_MS }

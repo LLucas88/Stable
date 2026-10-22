@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Hidden renderer, mock IPC and isolated profile; no live accounts or API calls.
 const {app,BrowserWindow,session}=require('electron')
 const {build}=require('esbuild'),fs=require('node:fs'),path=require('node:path')
@@ -20,7 +21,7 @@ async function main(){
     createRoot(document.getElementById('root')).render(<Fixture/>);
   `,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'}})).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>'))
-  for(const file of ['tokens.css','app.css','workbench-surfaces.css','answer-tools.css','conversation-tools.css'])await win.webContents.insertCSS(fs.readFileSync(path.join(root,'src/styles',file),'utf8'))
+  for(const file of ['tokens.css','app.css','workbench-surfaces.css','answer-tools.css','conversation-tools.css'])await win.webContents.insertCSS(readSource(path.join(root,'src/styles',file),'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh}main{padding:40px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await win.webContents.executeJavaScript(`window.tick=()=>new Promise(r=>setTimeout(r,70));window.expect=(ok,msg)=>{if(!ok)throw Error(msg)};window.menu=()=>document.querySelector('.conversation-tools-panel');window.openMenu=async()=>{document.querySelector('.conversation-tools-trigger').click();await tick()};window.key=k=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));undefined`)

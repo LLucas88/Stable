@@ -1,6 +1,18 @@
+import { cloudAccessHint } from './settings/CloudAccessSettings'
+import { errorMessage, formatBytes, formatAutomationSchedule } from './shared/format'
+import { type ConversationPreviewTarget } from './shared/conversation-preview'
+import { DropTarget, Empty } from './components/ResourcePrimitives'
+import { MarkdownContent, renderInline } from './components/MarkdownContent'
+import { DataPage } from './pages/DataPage'
+import { KnowledgePage } from './pages/KnowledgePage'
+import { SkillsPage } from './pages/SkillsPage'
+import { AutomationsPage } from './pages/AutomationsPage'
+import './styles/sidebar-layout.css'
 import { ContextUsageButton } from './ContextUsageButton'
 import { TemplateLibrary } from './TemplateLibrary'
-import { ModelConnectionSettings } from './ModelConnectionSettings'
+import { type AccountModuleId, AccountDock, SettingsNavigation, SettingsContent, UpdateProgressButton } from './settings/SettingsWorkspace'
+
+import { ImportedConversationContinuation } from './imports/DataImport'
 import { EffortSlider } from './EffortSlider'
 import { ModelProviderIcon } from './ModelProviderIcon'
 import { CloseWindowDialog } from './CloseWindowDialog'
@@ -13,33 +25,29 @@ import { SkillMarket } from './SkillMarket'
 import { RenameConversationDialog } from './RenameConversationDialog'
 import { AnswerToolbar } from './AnswerTools'
 import { ConversationTools } from './ConversationTools'
-import { ToolTrace } from './ToolTrace'
+
 import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  Gift, Activity, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert,
-  CircleStop, Clock3, Copy, Database, Download, ExternalLink, Eye, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderOpen, Home, Library, ListTree,
-  Image as ImageIcon, Laptop2, LoaderCircle, LogOut, MessageSquareText, Minus, Moon, MoreHorizontal, MoreVertical, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Play, Plus, Save,
-  RotateCw, SendHorizontal, Share2, Shield, ShieldCheck, Sparkles, Sun, Trash2, Search, UploadCloud, UsersRound, Wifi, Workflow, Wrench, X,
-} from 'lucide-react'
+import { Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import launchLogoUrl from '../build/stable_launch_logo.png'
 import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
-import { buildTraceTimeline, groupTraceTimeline, savedTraceStatus, traceCommand, traceItemStatus } from './trace-timeline'
+import { buildTraceTimeline, groupTraceTimeline, traceGroupLabel, savedTraceStatus, traceCommand, traceItemStatus, traceToolInput, traceToolIcon, latestTraceTool } from './trace-timeline'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { taskErrorMessage } from './task-feedback'
 import { ClarificationCard } from './ClarificationCard'
-import { clarificationDisplay } from './clarification-display'
+import { clarificationDisplay, clarificationPendingContent, isClarificationQuestion } from './clarification-display'
+import { clarificationContinuation, groupConversationTurns, conversationTurnTrace, type LiveConversationTurn } from './conversation-turns'
 import { ApprovalComposer } from './ApprovalComposer'
 import { useComposerAutosize } from './use-composer-autosize'
 import { useMessagePrediction } from './use-message-prediction'
 import { useConversationUnread } from './use-conversation-unread'
-import type { ClarificationResponse, AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationDraft, AutomationItem, AutomationSchedule, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, DataItem, DataLibraryCategory, DataLibraryItem, GlobalInstructionsFile, KnowledgeDocument, KnowledgeItem, LibraryRunStatus, MessageItem, ModelProfile, Page, SkillItem, TeamState, ThemeMode, WendingCliStatus } from './types'
+import type { ClarificationResponse, AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, MessageItem, Page, TeamState, WendingCliStatus } from './types'
 
 type WorkspaceMode = 'work' | 'lab'
 type ComposerMessage = { prompt: string; attachments: AgentAttachment[]; references: AgentReference[]; clarificationResponse?: ClarificationResponse }
@@ -84,41 +92,17 @@ const REPOSITORY_TABS: Array<{ id: RepositoryPageId; label: string; icon: typeof
 const PAGE_IDS = [...WORK_NAV.filter((item) => item.id !== 'repository').map((item) => item.id), ...LAB_NAV.map((item) => item.id), ...REPOSITORY_TABS.map((item) => item.id)] as Page[]
 const isRepositoryPage = (value: Page): value is RepositoryPageId => REPOSITORY_TABS.some((item) => item.id === value)
 
-function errorMessage(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error)
-  return raw.replace(/^Error invoking remote method '[^']+': Error:\s*/, '')
-}
-
 function attachmentIsImage(item: { name?: string; path?: string; type?: string; mediaType?: string }) {
   if (String(item.mediaType || '').startsWith('image/')) return true
   return /\.(?:png|jpe?g|webp)$/i.test(String(item.path || item.name || '')) || /^(?:png|jpe?g|webp)$/i.test(String(item.type || ''))
-}
-
-
-function DropTarget({ label, onPaths, className = '', children }: { label: string; onPaths: (paths: string[]) => void | Promise<void>; className?: string; children: ReactNode }) {
-  const [dragging, setDragging] = useState(false)
-  const dragDepth = useRef(0)
-  function pathsFromEvent(event: DragEvent<HTMLDivElement>) {
-    return Array.from(event.dataTransfer.files).map((file) => window.stable.files.path(file)).filter(Boolean)
-  }
-  return <div
-    className={`drop-target ${className}`.trim()}
-    data-dragging={dragging || undefined}
-    onDragEnter={(event) => { event.preventDefault(); dragDepth.current += 1; setDragging(true) }}
-    onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
-    onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragging(false) }}
-    onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDragging(false); void onPaths(pathsFromEvent(event)) }}
-  >
-    {children}
-    {dragging && <div className="drop-overlay" role="status"><UploadCloud size={24} aria-hidden="true" /><strong>{label}</strong><span>松开即可继续</span></div>}
-  </div>
 }
 
 export function App() {
   const requestedPage = new URLSearchParams(window.location.search).get('page') as Page | null
   const initialPage = requestedPage && PAGE_IDS.includes(requestedPage) ? requestedPage : 'agent'
   const [page, setPage] = useState<Page>(initialPage)
-  useEffect(() => window.stable.agent.onTaskOpen?.(agent => {setState(current=>current?{...current,...agent}:current);setPage('agent');setMode('work')}), [])
+  const [settingsModule, setSettingsModule] = useState<AccountModuleId | null>(null)
+  useEffect(() => window.stable.agent.onTaskOpen?.(agent => {setState(current=>current?{...current,...agent}:current);setSettingsModule(null);setPage('agent');setMode('work')}), [])
 
   const [mode, setMode] = useState<WorkspaceMode>(LAB_NAV.some((item) => item.id === initialPage) ? 'lab' : 'work')
   const [repositoryTab, setRepositoryTab] = useState<RepositoryPageId>(isRepositoryPage(initialPage) ? initialPage : 'data')
@@ -262,11 +246,14 @@ export function App() {
   }
 
   function selectMode(next: WorkspaceMode) {
+    setSettingsModule(null)
     setMode(next)
     setPage(next === 'work' ? 'agent' : 'workflows')
   }
 
   function navigate(id: PrimaryNavId) {
+    setSettingsModule(null)
+    if (settingsModule && id === 'agent') { setPage('agent'); return }
     if (id === 'agent') {
       if (creatingConversationRef.current) return
       creatingConversationRef.current = true
@@ -337,6 +324,7 @@ export function App() {
 
   function selectConversationSearchResult(id: string) {
     closeConversationSearch(false)
+    setSettingsModule(null)
     setMode('work')
     setPage('agent')
     if (state?.activeConversationId === id) return
@@ -359,28 +347,39 @@ export function App() {
   const launch = showLaunch ? <LaunchSplash running={launchRunning} onFinish={finishLaunch} /> : null
 
   if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div>{launch}</>
-  if (!['disabled', 'authenticated'].includes(state.cloud.status)) return <><div className="window-shell"><WindowTitlebar /><CloudAccessPage state={state} onComplete={(value) => { document.documentElement.dataset.theme = value.theme; setState(value); setError('') }} /></div>{launch}</>
 
   return (
     <><div className="window-shell">
       <WindowTitlebar railCollapsed={railCollapsed} searchOpen={conversationSearchOpen} searchButtonRef={conversationSearchButtonRef} onToggleRail={() => setRailCollapsed((current) => !current)} onSearch={openConversationSearch} />
       <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
       {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">
-        <div className="rail-mode-switch" role="tablist" aria-label="Stable 工作区">
-          <button type="button" role="tab" aria-selected={mode === 'work'} data-active={mode === 'work' || undefined} onClick={() => selectMode('work')}><BriefcaseBusiness size={14} aria-hidden="true" /><span>工作</span></button>
-          <button type="button" role="tab" aria-selected={mode === 'lab'} data-active={mode === 'lab' || undefined} onClick={() => selectMode('lab')}><FlaskConical size={14} aria-hidden="true" /><span>实验室</span></button>
-        </div>
+        <div className="rail-icon-dock">
         <nav className="rail-nav" aria-label={mode === 'work' ? '工作模块' : '实验室模块'}>
           {(mode === 'work' ? WORK_NAV : LAB_NAV).map(({ id, label, icon: Icon }) => {
-            const active = id === 'repository' ? isRepositoryPage(page) : page === id
-            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} disabled={id === 'agent' && busy === '正在新建对话'} title={id === 'agent' ? '新建任务对话' : undefined} aria-label={label} aria-current={active ? 'page' : undefined}>
+            const active = !settingsModule && (id === 'repository' ? isRepositoryPage(page) : page === id)
+            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} disabled={id === 'agent' && busy === '正在新建对话'} data-tooltip={id === 'agent' ? '新建任务对话' : label} aria-label={label} aria-current={active ? 'page' : undefined}>
               <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </button>
           })}
         </nav>
-        {mode === 'work' && <div className="rail-conversation-tasks-slot" ref={setConversationTasksTarget} aria-label="对话任务" />}
-        <AccountDock state={state} replaceState={setState} updateTheme={(theme) => update('theme', theme)} action={action} />
+        <div className="rail-mode-switch" role="tablist" aria-label="Stable 工作区">
+          <button type="button" role="tab" aria-label="工作" data-tooltip="工作" aria-selected={mode === 'work'} data-active={mode === 'work' || undefined} onClick={() => selectMode('work')}><BriefcaseBusiness size={14} aria-hidden="true" /><span>工作</span></button>
+          <button type="button" role="tab" aria-label="实验室" data-tooltip="实验室" aria-selected={mode === 'lab'} data-active={mode === 'lab' || undefined} onClick={() => selectMode('lab')}><FlaskConical size={14} aria-hidden="true" /><span>实验室</span></button>
+        </div>
+        <div className="rail-bottom-controls">
+          <UpdateProgressButton state={state} action={action} onOpen={() => setSettingsModule('updates')} />
+          <AccountDock state={state} onSelect={module => { setSettingsModule(module); setRailCollapsed(false) }} />
+        </div>
+        </div>
+        {settingsModule && <SettingsNavigation activeModule={settingsModule} onSelect={setSettingsModule} />}
+        <section className="rail-task-pane" aria-label="项目与任务" hidden={Boolean(settingsModule)}>
+          <header className="rail-task-header">
+            <button type="button" className="rail-new-chat" disabled={busy === '正在新建对话'} onClick={() => { setMode('work'); navigate('agent') }}><SquarePen size={14} aria-hidden="true" /><span>新聊天</span></button>
+            <button type="button" className="rail-task-search" onClick={openConversationSearch} aria-label="搜索对话" title="搜索对话"><Search size={18} aria-hidden="true" /></button>
+          </header>
+          <div className="rail-conversation-tasks-slot" ref={setConversationTasksTarget} aria-label="对话任务" />
+        </section>
       </aside>}
 
       {!railCollapsed && <div
@@ -401,9 +400,10 @@ export function App() {
         onPointerCancel={endRailResize}
       />}
 
-      <main className="main-frame" id="stable-main-frame">
+      <main className="main-frame" id="stable-main-frame" data-settings-open={Boolean(settingsModule) || undefined}>
+        {settingsModule && <SettingsContent module={settingsModule} state={state} replaceState={setState} updateTheme={theme => update('theme', theme)} action={action} onSelect={setSettingsModule} onOpenImported={agent => { setState(current => current ? { ...current, ...agent } : current); setSettingsModule(null); setPage('agent'); setMode('work') }} />}
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage onDraftsChange={ids => { composerDraftIds.current = ids }} active={page === 'agent'} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => setPage('agent')} conversationTasksTarget={conversationTasksTarget} />
+          <AgentPage onOpenAccount={() => { setSettingsModule('account'); setRailCollapsed(false) }} onDraftsChange={ids => { composerDraftIds.current = ids }} active={page === 'agent' && !settingsModule} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => { setSettingsModule(null); setMode('work'); setPage('agent') }} conversationTasksTarget={conversationTasksTarget} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
@@ -418,8 +418,6 @@ export function App() {
         </div>}
 
       </main>
-
-        {(state.update.status === 'downloaded' || state.update.status === 'installing') && <section className="update-notice" role="status" aria-live="polite"><div><strong>Stable {state.update.availableVersion} {state.update.status === 'installing' ? '正在打开安装窗口' : '已准备好'}</strong><span>{state.update.status === 'installing' ? 'Stable 即将关闭，独立窗口会持续显示真实安装进度。' : '安装时会关闭 Stable，并在独立窗口中显示百分比；完成后请重新点击图标打开新版。'}</span></div>{state.update.status === 'downloaded' && <button className="button primary" type="button" onClick={() => void window.stable.updater.install()}>安装更新</button>}</section>}
 
         {confirmation && <ConfirmModal value={confirmation} onCancel={() => resolveConfirmation(false)} onConfirm={() => resolveConfirmation(true)} />}
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
@@ -541,55 +539,6 @@ function RepositoryPage({ activeTab, onTabChange, state, update, action }: {
       {activeTab === 'knowledge' && <KnowledgePage items={state.knowledge} update={(items) => update('knowledge', items)} action={action} />}
     </div>
   </section>
-}
-
-function CloudAccessPage({ state, onComplete }: { state: BootstrapData; onComplete: (value: BootstrapData) => void }) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [pending, setPending] = useState(false)
-  const [message, setMessage] = useState(state.cloud.error || '')
-  const errorRef = useRef<HTMLDivElement>(null)
-  const mustChange = state.cloud.status === 'password_change_required'
-  const unavailable = state.cloud.status === 'unavailable'
-  const checking = state.cloud.status === 'checking'
-  useEffect(() => { setMessage(state.cloud.error || '') }, [state.cloud.error])
-
-  async function submit(run: () => Promise<BootstrapData>) {
-    setPending(true); setMessage('')
-    try { onComplete(await run()) }
-    catch (reason) {
-      setMessage(errorMessage(reason))
-      window.requestAnimationFrame(() => errorRef.current?.focus())
-    } finally { setPending(false) }
-  }
-
-  return <main className="cloud-access-shell">
-    <section className="cloud-access-card" aria-labelledby="cloud-access-title">
-      <div className="cloud-access-brand"><img src={logoUrl} alt="" width="52" height="52" /><span>STABLE CLOUD</span></div>
-      <div className="cloud-access-copy">
-        <h1 id="cloud-access-title">{checking ? '正在连接云端' : mustChange ? '设置你的正式密码' : unavailable ? '暂时无法连接云端' : '登录 Stable'}</h1>
-        <p>{checking ? '正在恢复登录状态，请稍候。' : mustChange ? '这是一次性临时密码。修改完成后，其他设备会话将失效，本机继续使用新会话。' : unavailable ? '已保存的登录凭据仍在 Windows 安全存储中。网络恢复后可直接重试。' : '使用管理员分配的内部账号登录。模型凭据由 Stable 平台统一保管。'}</p>
-      </div>
-      {message && <div className="cloud-auth-error" role="alert" tabIndex={-1} ref={errorRef}><CircleAlert size={18} aria-hidden="true" /><span>{message}</span></div>}
-      {checking ? <div role="status"><LoaderCircle className="spin" size={20} aria-label="正在连接" /></div> : mustChange ? <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.changePassword(currentPassword, newPassword, confirmPassword)) }}>
-        <div className="field"><label htmlFor="current-password">当前临时密码</label><input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
-        <div className="field"><label htmlFor="new-password">新密码</label><input id="new-password" type="password" autoComplete="new-password" required minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-describedby="new-password-help" /><small id="new-password-help">至少 12 个字符，建议使用密码管理器生成并保存。</small></div>
-        <div className="field"><label htmlFor="confirm-password">确认新密码</label><input id="confirm-password" type="password" autoComplete="new-password" required minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></div>
-        <button className="button primary cloud-auth-submit" type="submit" disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} />正在修改…</> : '修改密码并继续'}</button>
-      </form> : unavailable ? <div className="cloud-auth-actions">
-        <button className="button primary" type="button" disabled={pending} onClick={() => void submit(() => window.stable.cloud.refresh())}>{pending ? '正在重试…' : '重新连接'}</button>
-        <button className="text-button" type="button" disabled={pending} onClick={() => void submit(() => window.stable.cloud.logout())}>清除本机登录</button>
-      </div> : <form className="cloud-auth-form" onSubmit={(event) => { event.preventDefault(); void submit(() => window.stable.cloud.login(username, password)) }}>
-        <div className="field"><label htmlFor="cloud-username">账号</label><input id="cloud-username" autoComplete="username" required autoFocus value={username} onChange={(event) => setUsername(event.target.value)} /></div>
-        <div className="field"><label htmlFor="cloud-password">密码</label><input id="cloud-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
-        <button className="button primary cloud-auth-submit" type="submit" disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} />正在登录…</> : '登录'}</button>
-      </form>}
-      <div className="cloud-access-foot"><ShieldCheck size={16} aria-hidden="true" /><span>账号密码不会保存；设备会话由 Windows 安全存储加密。</span></div>
-    </section>
-  </main>
 }
 
 function ConfirmModal({ value, onCancel, onConfirm }: { value: { title: string; message: string; detail: string }; onCancel: () => void; onConfirm: () => void }) {
@@ -782,23 +731,37 @@ function HomePage({ state, go }: { state: BootstrapData; go: (page: Page) => voi
 }
 
 
-const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; detail: string }> = [
-  { id: 'request', label: '请求审批', detail: '收到的审批请求由你确认；已有精确对话授权可复用。' },
-  { id: 'auto', label: '帮我审批', detail: '收到的审批请求交给审批 Agent；无法判断时由你确认。' },
-  { id: 'full', label: '完全访问', detail: '自动允许收到的全部审批请求，包括删除和敏感操作；仍受运行时沙箱限制。' },
+const PERMISSION_OPTIONS: Array<{ id: AgentPermissionMode; label: string; risk: string; icon: typeof Shield; detail: string }> = [
+  { id: 'request', label: '请求批准', risk: '较低风险', icon: ShieldCheck, detail: '收到的审批请求由你确认；已有精确对话授权可复用。' },
+  { id: 'auto', label: '帮我批准', risk: '中等风险', icon: ShieldAlert, detail: '收到的审批请求交给审批 Agent；无法判断时由你确认。' },
+  { id: 'full', label: '完全访问', risk: '高风险', icon: TriangleAlert, detail: '自动允许收到的全部审批请求，包括删除和敏感操作；仍受运行时沙箱限制。' },
 ]
 
+function PermissionOption({ item, selected, onSelect }: { item: typeof PERMISSION_OPTIONS[number]; selected: boolean; onSelect: () => void }) {
+  const [help, setHelp] = useState<'hover' | 'pinned' | null>(null)
+  const helpId = useId()
+  const Icon = item.icon
+  return <div className="permission-option" data-active={selected || undefined}>
+    <button type="button" className="permission-select" aria-pressed={selected} onClick={onSelect}>
+      <Icon size={17} aria-label={item.risk} /><span>{item.label}</span>
+    </button>
+    <span className="permission-help" onMouseEnter={() => setHelp(current => current || 'hover')} onMouseLeave={() => setHelp(current => current === 'pinned' ? current : null)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setHelp(null) }} onKeyDown={event => { if (event.key === 'Escape' && help) { event.preventDefault(); event.stopPropagation(); setHelp(null) } }}>
+      <button type="button" className="permission-info" aria-label={`${item.label}说明`} aria-describedby={help ? helpId : undefined} aria-expanded={Boolean(help)} onFocus={() => setHelp(current => current || 'hover')} onClick={() => setHelp(current => current === 'pinned' ? null : 'pinned')}><Info size={15} aria-hidden="true" /></button>
+      {help && <span id={helpId} className="permission-tooltip" role="tooltip">{item.risk}：{item.detail}</span>}
+    </span>
+  </div>
+}
+
 interface AgentTraceRun {
+  submittedAt?: number
+  deliveryId?: string
+  continuationOf?: string
   runId: string
   items: AgentTraceItem[]
   status: AgentTraceStatus
   startedAt: number
   endedAt?: number
 }
-
-type ConversationPreviewTarget =
-  | { requestId: number; kind: 'web'; value: string; title: string }
-  | { requestId: number; kind: 'file'; value: string; title: string }
 
 type MessageAttachmentItem = NonNullable<MessageItem['attachments']>[number]
 type ViewerImageItem = { name: string; path?: string; previewUrl?: string }
@@ -808,7 +771,7 @@ interface ImageViewerTarget {
   index: number
 }
 
-function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget }: { onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
+function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget }: { onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
   const [promptMap, setPromptMap] = useState<Record<string, string>>({})
   const prompt = promptMap[state.activeConversationId] || ''
   function setPrompt(next: string | ((current: string) => string)) {
@@ -827,6 +790,8 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
   useTransientScrollbar(conversationTasksTarget)
   useTransientScrollbar(mobileTasksTarget)
   const [recentCollapsed,setRecentCollapsed]=useState(false)
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({})
+  const [expandedTaskGroups, setExpandedTaskGroups] = useState<Record<string, boolean>>({})
   const [projectMenuId,setProjectMenuId]=useState('')
   const menuAnchor=useRef<HTMLElement|null>(null)
   const [menuMobile,setMenuMobile]=useState(false)
@@ -941,7 +906,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
   const composerError = composerErrorMap[state.activeConversationId] || ''
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
   const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
-  const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || defaultModel
+  const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || (activeConversation?.modelId?.startsWith('chatgpt:') ? { id: activeConversation.modelId, providerId: 'chatgpt', displayName: 'ChatGPT（请重新登录）', model: activeConversation.modelId.split(':').at(-1) || '', baseURL: 'https://api.openai.com/v1', hasApiKey: false, reasoningOptions: [] } : defaultModel)
   const latestMessage = state.messages.at(-1)
   const prediction = useMessagePrediction({
     conversationId: state.activeConversationId, messageId: latestMessage?.id, modelId: activeModel?.id,
@@ -1055,6 +1020,9 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
       const terminal = status !== 'running'
       return { ...all, [event.conversationId!]: {
         runId: event.runId,
+        deliveryId: current?.deliveryId,
+        submittedAt: current?.submittedAt,
+        continuationOf: current?.continuationOf,
         items,
         status,
         startedAt: sameRun || awaitingFirstEvent ? current.startedAt : event.time,
@@ -1260,13 +1228,13 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
     return <article className="conversation-list-item" data-conversation-id={item.id} data-activity={activity} data-active={item.id === activeConversation.id || undefined} data-pinned={item.pinned || undefined} key={item.id}>
       <button className="conversation-pin-action" type="button" onClick={() => togglePin(item)} aria-label={item.pinned ? `取消置顶 ${item.title}` : `置顶 ${item.title}`}><span>{item.pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</span></button>
       <button className="conversation-select" type="button" onClick={() => selectConversation(item)} onDoubleClick={() => { setEditingId(item.id); setEditingTitle(item.title) }}>
-        <strong>{item.title}{item.deletionState==='pending'?' · 删除待同步':''}</strong>{item.waitingForInput && <span className="conversation-input-badge">需要用户回答</span>}{activityLabel && <span className="sr-only">{activityLabel}</span>}
+        <ConversationTitle title={item.title + (item.deletionState === 'pending' ? ' · 删除待同步' : '')} />{item.waitingForInput && <span className="conversation-input-badge">需要用户回答</span>}{activityLabel && <span className="sr-only">{activityLabel}</span>}
       </button>
       {activity && <span className="conversation-activity" title={activityLabel} aria-hidden="true">
-        {activity === 'running' ? <LoaderCircle className="spin" size={15} /> : <span className={activity === 'approval' ? 'conversation-approval-dot' : 'conversation-unread-dot'} />}
+        {activity === 'running' ? <span className="conversation-spinner spin" /> : <span className={activity === 'approval' ? 'conversation-approval-dot' : 'conversation-unread-dot'} />}
       </span>}
       <div className="conversation-item-actions" data-conversation-menu={item.id}>
-        <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={event => {menuAnchor.current=event.currentTarget;setMenuMobile(Boolean(event.currentTarget.closest('.conversation-sidebar-mobile')));setProjectMenuId('');setConversationMenuId(current=>current===item.id?'':item.id)}}><MoreVertical size={15} aria-hidden="true" /></button>
+        <button type="button" aria-label={`更多操作 ${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={event => {menuAnchor.current=event.currentTarget;setMenuMobile(Boolean(event.currentTarget.closest('.conversation-sidebar-mobile')));setProjectMenuId('');setConversationMenuId(current=>current===item.id?'':item.id)}}><MoreHorizontal size={16} aria-hidden="true" /></button>
         {menuOpen && menuAnchor.current && <SidebarActionMenu anchor={menuAnchor.current} label={`任务操作 ${item.title}`} onClose={()=>setConversationMenuId('')}>
           <button type="button" role="menuitem" onClick={() => togglePin(item)}>{item.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{item.pinned ? '取消置顶任务' : '置顶任务'}</span></button>
           <button type="button" role="menuitem" onClick={() => { setConversationMenuId(''); void action('正在打开资源管理器', async () => { await window.stable.agent.openWorkspace(item.id) }) }}><FolderOpen size={14} /><span>在资源管理器打开</span></button>
@@ -1279,11 +1247,19 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
     </article>
   }
 
+  function LimitedTaskRows(items: ConversationItem[], groupId: string, mobile: boolean) {
+    const expanded = expandedTaskGroups[groupId] || false
+    return <>
+      {(expanded ? items : items.slice(0, 5)).map(item => ConversationRow({ item, mobile }))}
+      {items.length > 5 && <button className="task-group-expand" type="button" aria-expanded={expanded} onClick={() => { setExpandedTaskGroups(current => ({ ...current, [groupId]: !expanded })); setConversationMenuId('') }}>{expanded ? '收起显示' : '展开显示'}</button>}
+    </>
+  }
+
   function ConversationTaskSections(mobile=false) {
     return <>
       {pinnedConversations.length > 0 && <section className="conversation-pinned" aria-label="置顶任务">
         <div className="conversation-section-head"><span>置顶</span></div>
-        <div className="conversation-list">{pinnedConversations.map((item) => ConversationRow({ item, mobile }))}</div>
+        <div className="conversation-list">{LimitedTaskRows(pinnedConversations, 'pinned', mobile)}</div>
       </section>}
       <section className="conversation-history-card" aria-label="任务清单">
         {(state.projects||[]).length>0&&<div className="conversation-section-head"><span>项目</span></div>}
@@ -1295,18 +1271,20 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
           {(state.projects||[]).map(project=>{
             const items=listedConversations.filter(item=>item.projectId===project.id&&!item.pinned&&!item.archivedAt)
             const menuOpen=projectMenuId===project.id&&menuMobile===mobile
+            const collapsed=collapsedProjects[project.id] || false
+            const listId=`project-tasks-${mobile ? 'mobile' : 'rail'}-${project.id}`
             return <section className="sidebar-project" key={project.id} aria-label={'项目 '+project.name}>
               <div className="sidebar-project-heading" data-pinned={project.pinned||undefined}>
-                <button className="sidebar-project-title" type="button" title={project.rootPath} onClick={()=>void action('正在打开项目',async()=>{updateAgent(await window.stable.projects.open(project.id));openConversation()})}><FolderOpen size={17}/><span>{project.name}</span>{project.pinned&&<Pin size={13}/>}</button>
+                <button className="sidebar-project-title" type="button" title={project.rootPath} aria-expanded={!collapsed} aria-controls={listId} onClick={() => { setCollapsedProjects(current => ({ ...current, [project.id]: !collapsed })); setConversationMenuId(''); setProjectMenuId('') }}>{collapsed ? <FolderClosed size={16} strokeWidth={1.6} /> : <FolderOpen size={16} strokeWidth={1.6} />}<span>{project.name}</span>{project.pinned&&<Pin size={13}/>}</button>
                 <button className="sidebar-project-more" type="button" aria-label={'项目操作 '+project.name} aria-haspopup="menu" aria-expanded={menuOpen} onClick={event=>{menuAnchor.current=event.currentTarget;setMenuMobile(Boolean(event.currentTarget.closest('.conversation-sidebar-mobile')));setConversationMenuId('');setProjectMenuId(current=>current===project.id?'':project.id)}}><MoreHorizontal size={17}/></button>
-                <button className="sidebar-project-new" type="button" aria-label={'在 '+project.name+' 中新建对话'} onClick={()=>void action('正在新建对话',async()=>{updateAgent(await window.stable.projects.open(project.id));openConversation()})}><SquarePen size={17}/></button>
+                <button className="sidebar-project-new" type="button" aria-label={'在 '+project.name+' 中新建对话'} onClick={()=>void action('正在新建对话',async()=>{setCollapsedProjects(current => ({ ...current, [project.id]: false }));updateAgent(await window.stable.projects.open(project.id));openConversation()})}><SquarePen size={16}/></button>
                 {menuOpen&&menuAnchor.current&&<SidebarActionMenu anchor={menuAnchor.current} label={'项目操作 '+project.name} onClose={()=>setProjectMenuId('')}>
                   <button type="button" role="menuitem" onClick={()=>{setProjectMenuId('');void action('正在保存项目排序',async()=>updateAgent(await window.stable.projects.manage(project.id,project.pinned?'unpin':'pin')))}}>{project.pinned?<PinOff size={15}/>:<Pin size={15}/>}<span>{project.pinned?'取消置顶':'置顶'}</span></button>
                   <button type="button" role="menuitem" onClick={()=>{setProjectMenuId('');void action('正在打开项目目录',async()=>{await window.stable.projects.manage(project.id,'open')})}}><FolderOpen size={15}/><span>在资源管理器中打开</span></button>
                   <button type="button" role="menuitem" className="danger" disabled={state.conversations.some(item=>item.projectId===project.id&&runningMap[item.id])} onClick={()=>{setProjectMenuId('');setRemoveTarget({kind:'project',id:project.id,name:project.name})}}><X size={15}/><span>移除项目</span></button>
                 </SidebarActionMenu>}
               </div>
-              {items.length?items.map(item=>ConversationRow({item,mobile})):<p className="sidebar-project-empty">暂无聊天</p>}
+              <div id={listId} hidden={collapsed}>{items.length ? LimitedTaskRows(items, `project:${project.id}`, mobile) : <p className="sidebar-project-empty">暂无聊天</p>}</div>
             </section>
           })}
         </div>
@@ -1315,7 +1293,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
           <button type="button" className="recent-new" aria-label="新建对话" onClick={()=>{setRecentCollapsed(false);replaceConversation(()=>window.stable.agent.create(),'正在新建对话');openConversation()}}><SquarePen size={17}/></button>
         </div>
         {!recentCollapsed&&<div className="conversation-list recent-conversations">
-          {listedConversations.filter((item) => !item.pinned && !item.archivedAt && !(state.projects||[]).some(project=>project.id===item.projectId)).map((item) => ConversationRow({ item, mobile }))}
+          {LimitedTaskRows(listedConversations.filter((item) => !item.pinned && !item.archivedAt && !(state.projects||[]).some(project=>project.id===item.projectId)), 'recent', mobile)}
         </div>}
       </section>
     </>
@@ -1340,6 +1318,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
   }
 
   function send() {
+    if (cloudAccessHint(state.cloud.status) && activeModel?.providerId !== 'chatgpt') { onOpenAccount(); return }
     if (pendingQuestion && !prompt.trim()) return
     if (!prompt.trim() && !attachments.length && !selectedReferences.length) return
     const conversationId = state.activeConversationId
@@ -1369,8 +1348,8 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
       ...currentAttachments.map((item) => ({ kind: item.type === 'skill' ? 'skill' as const : 'attachment' as const, name: item.name, size: item.size, type: item.type, path: item.path })),
     ]
     setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
-    setPendingMap((current) => ({ ...current, [conversationId]: { content: value, attachments: messageAttachments } }))
-    setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', items: [], status: 'running', startedAt: Date.now() } }))
+    setPendingMap((current) => ({ ...current, [conversationId]: { content: clarificationPendingContent(value, entry.payload.clarificationResponse, activeConversationIdRef.current === conversationId ? stateRef.current.messages : []), attachments: messageAttachments } }))
+    setTraceMap((current) => ({ ...current, [conversationId]: { runId: '', deliveryId: entry.id, submittedAt: Date.now(), items: [], status: 'running', startedAt: Date.now(), ...clarificationContinuation(activeConversationIdRef.current === conversationId ? stateRef.current.messages : [], entry.payload.clarificationResponse?.id) } }))
     setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
     setRunningMap((current) => ({ ...current, [conversationId]: true }))
     markRead(conversationId)
@@ -1379,6 +1358,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
     let previousMessageIds: Set<string> | undefined
     let dispatched = false
     let retainedCancellation = false
+    let retainedQuestion = false
     const startedAt = Date.now()
     const retainCancelledMessage = () => {
       retainedCancellation = true
@@ -1392,6 +1372,9 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
       await skillSaves.current[conversationId]
       const before = await window.stable.agent.state(conversationId)
       previousMessageIds = new Set(before.messages.map((item) => item.id))
+      const continuation = clarificationContinuation(before.messages, entry.payload.clarificationResponse?.id)
+      if (continuation) setTraceMap(current => ({ ...current, [conversationId]: current[conversationId] ? { ...current[conversationId]!, ...continuation } : undefined }))
+      setPendingMap(current => ({ ...current, [conversationId]: { content: clarificationPendingContent(value, entry.payload.clarificationResponse, before.messages), attachments: messageAttachments } }))
       const conversation = before.conversations.find((item) => item.id === conversationId)
       if (!conversation) throw new Error('找不到这个对话。')
       await window.stable.agent.configure(conversationId, conversation.capability, [])
@@ -1414,6 +1397,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
       try {
         const recovered = await window.stable.agent.state(conversationId)
         messageAccepted = Boolean(dispatched && previousMessageIds && recovered.messages.some((item) => item.role === 'user' && !previousMessageIds!.has(item.id)))
+        retainedQuestion = !messageAccepted && !!clarificationContinuation(recovered.messages, entry.payload.clarificationResponse?.id)
         updateAgentForConversation(recovered, conversationId)
         completed = recovered.messages.some(item => item.role === 'assistant' && !previousMessageIds?.has(item.id) && item.trace?.some(event => event.id === 'runtime' && event.runId === entry.id && ['failed', 'cancelled'].includes(event.status)))
       } catch { /* do not resend a possibly accepted message without a confirmed receipt */ }
@@ -1432,7 +1416,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
       setPendingMap((current) => ({ ...current, [conversationId]: undefined }))
       setTraceMap((current) => {
         const trace = current[conversationId]
-        return { ...current, [conversationId]: completed || !trace || retainedCancellation ? undefined : { ...trace, status: trace.status === 'running' ? terminalStatus : trace.status, endedAt: trace.endedAt || Date.now() } }
+        return { ...current, [conversationId]: completed || !trace || retainedCancellation || retainedQuestion ? undefined : { ...trace, status: trace.status === 'running' ? terminalStatus : trace.status, endedAt: trace.endedAt || Date.now() } }
       })
       setStreamingAnswerMap((current) => ({ ...current, [conversationId]: undefined }))
       setRunningMap((current) => ({ ...current, [conversationId]: false }))
@@ -1458,6 +1442,10 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
     else updateAgent({ ...result, activeConversationId: activeConversationIdRef.current, messages: stateRef.current.messages, catchAttachments: stateRef.current.catchAttachments, draftReference: stateRef.current.draftReference, skillReferences: stateRef.current.skillReferences, beforeCursor: stateRef.current.beforeCursor, paths: stateRef.current.paths, deliveries: stateRef.current.deliveries, recoveryText: stateRef.current.recoveryText, recoveryDiagnostic: stateRef.current.recoveryDiagnostic })
   }
 
+  const pendingMessage: MessageItem | undefined = pendingPrompt && !state.messages.some(message => message.role === 'user' && message.content === pendingPrompt.content)
+    ? { id: `pending:${liveTrace?.deliveryId || ''}`, role: 'user', content: pendingPrompt.content, attachments: pendingPrompt.attachments, createdAt: new Date(liveTrace?.submittedAt || Date.now()).toISOString() } : undefined
+  const conversationTurns = groupConversationTurns([...visibleMessages, ...(pendingMessage ? [pendingMessage] : [])], liveTrace ? { ...liveTrace, status: running && liveTrace.status === 'completed' ? 'running' : liveTrace.status, streaming: running ? streamingAnswer : undefined } : undefined)
+
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
 
   return <section className="agent-layout reveal" data-sidebar-open={sidebarOpen || undefined}>
@@ -1481,9 +1469,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
             try { const page = await window.stable.agent.messages(id, beforeCursor); setOlderPages(current => ({ ...current, [id]: { messages: [...page.messages, ...(current[id]?.messages || [])], beforeCursor: page.beforeCursor } })); window.requestAnimationFrame(() => { if (element && activeConversationIdRef.current === id) element.scrollTop = top + element.scrollHeight - height }) }
             finally { setLoadingOlder(false) }
           })}>{loadingOlder ? '读取中…' : '加载更早的消息'}</button>}
-          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : visibleMessages.map((message) => <MessageTurn conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} answerActions={message.role === 'assistant' ? <AnswerToolbar message={message} chapter={chapters.find(item => item.messageId === message.id)} onFork={() => forkAnswer(message)} onPin={() => changeChapter(message.id, chapters.some(item => item.messageId === message.id) ? null : message.content.replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名章节')} /> : undefined} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={message.id} />)}
-          {pendingPrompt && !state.messages.some((message) => message.role === 'user' && message.content === pendingPrompt.content) && <UserTurn content={pendingPrompt.content} attachments={pendingPrompt.attachments} onPreviewImages={openImageViewer} pending />}
-          {liveTrace && <RunTrace items={liveTrace.items} status={liveTrace.status} active={running} startedAt={liveTrace.startedAt} endedAt={liveTrace.endedAt} streaming={running ? streamingAnswer : undefined} />}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : conversationTurns.map((turn) => { const message = [...turn.messages].reverse().find(item => item.role === 'assistant') || turn.messages.at(-1); return message ? <MessageTurn onCopyReply={copyUserMessage} turnMessages={turn.messages} live={turn.live} waiting={turn.waiting} conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} answerActions={message.role === 'assistant' ? <AnswerToolbar message={message} chapter={chapters.find(item => item.messageId === message.id)} onFork={() => forkAnswer(message)} onPin={() => changeChapter(message.id, chapters.some(item => item.messageId === message.id) ? null : message.content.replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名章节')} /> : undefined} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={turn.key} /> : <RunTrace key={turn.key} items={turn.live!.items} status={turn.live!.status} startedAt={turn.live!.startedAt} endedAt={turn.live!.endedAt} streaming={turn.live!.streaming} /> })}
 
         </div>
       </div>
@@ -1496,7 +1482,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
         const result = await window.stable.agent.rename(editingId, title)
         updateAgentForConversation(result, editingId)
       }}/>}
-      <div className="composer" data-question={Boolean(pendingQuestion) || undefined}>
+      {activeConversation.sourceType === 'workbuddy' ? <div className="composer"><ImportedConversationContinuation key={activeConversation.id} conversationId={activeConversation.id} onOpen={agent => { updateAgent(agent); openConversation() }} /></div> : <div className="composer" data-question={Boolean(pendingQuestion) || undefined}>
         {active && pendingQuestion?.id && <div hidden={hiddenQuestionId === pendingQuestion.id}><ClarificationCard key={pendingQuestion.id} question={pendingQuestion} onClose={() => setHiddenQuestionId(pendingQuestion.id)} onSend={async response => {
           const result = await outbox.reply(activeConversation.id, { prompt: response.source === 'custom' ? response.text! : pendingQuestion.options[response.option!].label, attachments: [], references: [], clarificationResponse: response }, false)
           if (result.error) throw new Error(result.error)
@@ -1551,6 +1537,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
               {documentAttachments.map((item) => <ConversationFileCard compact item={{ name: item.name, path: item.path, detail: item.type.toUpperCase() }} onOpen={() => openConversationPreview({ kind: 'file', value: item.path, title: item.name })} onRemove={() => removeAttachment(item)} key={item.path} />)}
             </div>}
+            {cloudAccessHint(state.cloud.status) && activeModel?.providerId !== 'chatgpt' && <div className="cloud-login-notice" role="status"><span>{cloudAccessHint(state.cloud.status)}</span><button type="button" className="text-button" onClick={onOpenAccount}>账号设置</button></div>}
             {composerError && <div className="composer-error" role="alert"><span>{composerError}</span><button type="button" onClick={() => setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))} aria-label="关闭发送错误"><X size={16} /></button></div>}
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
@@ -1609,17 +1596,15 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
                 </details>
                   </div>
                 </details>
-              <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />
-              </div>
-              <details className="composer-menu permission-menu" ref={permissionMenuRef}>
+              <details className="composer-menu permission-menu" ref={permissionMenuRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector<HTMLElement>('summary')?.focus() } }}>
                 <summary><Shield size={17} /><span>{activePermission.label}</span><ChevronDown size={14} /></summary>
                 <div className="composer-popover permission-popover">
-                  <div className="composer-popover-head"><strong>批准 Agent 操作</strong><span>当前对话独立保存</span></div>
-                  {PERMISSION_OPTIONS.map((item) => <button type="button" className="capability-option permission-option" data-active={item.id === activeConversation.permissionMode || undefined} key={item.id} onClick={() => configurePermission(item.id)}>
-                    <span>{item.id === activeConversation.permissionMode ? <Check size={15} /> : <span className="capability-placeholder" />}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span>
-                  </button>)}
+                  <div className="composer-popover-head"><strong>审批操作</strong></div>
+                  {PERMISSION_OPTIONS.map((item) => <PermissionOption item={item} selected={item.id === activeConversation.permissionMode} key={item.id} onSelect={() => configurePermission(item.id)} />)}
                 </div>
               </details>
+              </div>
+              <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />
               <div className="model-effort-control">
               <details className="composer-menu model-menu capability-menu" ref={modelMenuRef} onToggle={event=>{if(!event.currentTarget.open)setShowModelList(false)}}>
                 <summary aria-label={`模型与思考强度：${activeModel?.displayName.toUpperCase() || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}>{activeModel && <ModelProviderIcon model={activeModel} />}<span>{activeModel?.displayName.toUpperCase() || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
@@ -1630,10 +1615,10 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} disabled={switchingModel} onChange={() => configureModel(item.id)} />
                       <ModelProviderIcon model={item} />
-                      <span className="model-option-copy"><strong>{item.displayName.toUpperCase()}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}<span className="model-free-badge"><Gift size={12} aria-hidden="true" />免费使用</span>{['glm-5.3-flashx', 'deepseek-flash', 'glm-5.3-flash'].includes(item.model.toLowerCase()) && <span className="model-recommended-badge">推荐</span>}</span>
+                      <span className="model-option-copy"><strong>{item.displayName.toUpperCase()}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}<span className="model-free-badge"><Gift size={12} aria-hidden="true" />{item.providerId === 'chatgpt' ? '订阅额度' : '免费使用'}</span>{['glm-5.3-flashx', 'deepseek-flash', 'glm-5.3-flash'].includes(item.model.toLowerCase()) && <span className="model-recommended-badge">推荐</span>}</span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
-                  })}</fieldset></div> : <p className="composer-menu-empty">还没有可用模型，请先在设置页添加。</p>}
+                  })}</fieldset></div> : <p className="composer-menu-empty">{cloudAccessHint(state.cloud.status) ? <>登录后可选择云端模型。<button type="button" className="text-button" onClick={onOpenAccount}>账号设置</button></> : '还没有可用模型，请先在设置页添加。'}</p>}
 
                   </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModel?.displayName.toUpperCase() || ''} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
                 </div>
@@ -1648,7 +1633,7 @@ function AgentPage({ onDraftsChange, active, state, prefill, consumePrefill, upd
             </div>
           </div>
         </DropTarget>}
-      </div>
+      </div>}
     </div>
     {browserPanel?.open && active && <BrowserPanel obscured={Boolean(editingId || imageViewer || projectOverlay || removeTarget || conversationMenuId || projectMenuId)} key={state.activeConversationId} conversationId={state.activeConversationId} initialTarget={browserPanel.target} onEditRequest={acceptHtmlEditRequest} onClose={()=>setBrowserPanels(current=>({...current,[state.activeConversationId]:{...current[state.activeConversationId],open:false}}))} onImport={value=>setAttachmentMap(current=>({...current,[state.activeConversationId]:[...(current[state.activeConversationId]||[]),value]}))}/>}
 
@@ -1675,14 +1660,32 @@ function ResourceGroup({ title, items, selected, toggle }: { title: string; item
   </section>
 }
 
-function MessageTurn({ conversationId, artifactRefreshKey, message, answerActions, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function ConversationTitle({ title }: { title: string }) {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const measure = () => { element.dataset.overflow = String(element.scrollWidth > element.clientWidth) }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    measure()
+    return () => observer.disconnect()
+  }, [title])
+  return <strong ref={ref} title={title} className="conversation-title">{title}</strong>
+}
+
+function MessageTurn({ onCopyReply, turnMessages, live, waiting, conversationId, artifactRefreshKey, message, answerActions, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { onCopyReply?: (message: MessageItem) => void; turnMessages?: MessageItem[]; live?: LiveConversationTurn; waiting?: boolean; conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
+  const items = conversationTurnTrace(turnMessages || [message], live)
+  const status = live?.status || savedTraceStatus(message.trace || [])
+  const startedAt = Math.min(...items.map(item => item.startedAt ?? item.time), live?.startedAt ?? Infinity)
   return <article className="assistant-turn" data-message-id={message.id} data-message-seq={message.seq}>
-    {message.trace?.length ? <RunTrace items={message.trace} status={savedTraceStatus(message.trace)} finalContent={message.content} /> : null}
-    <div className="assistant-answer">
+    {(turnMessages || []).filter(item => item.id !== message.id).map(item => <span key={item.id} data-message-id={item.id} data-message-seq={item.seq} />)}
+    {items.length || live || waiting ? <RunTrace onCopyReply={onCopyReply} items={items} status={status} waiting={waiting} startedAt={Number.isFinite(startedAt) ? startedAt : undefined} endedAt={live?.status === 'running' ? undefined : live?.endedAt} streaming={live?.streaming} finalContent={live ? undefined : message.content} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /> : null}
+    {!live && !isClarificationQuestion(message) && <div className="assistant-answer">
       <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
-    </div>
-    {answerActions}
+    </div>}
+    {!live && !waiting && !isClarificationQuestion(message) && answerActions}
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
       <span className="automation-card-icon"><Clock3 size={18} aria-hidden="true" /></span>
       <div><small>定时任务</small><h3>{message.automationProposal.title}</h3><p>{message.automationProposal.prompt}</p><strong>{formatAutomationSchedule(message.automationProposal.schedule)}</strong></div>
@@ -1888,15 +1891,10 @@ function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', on
   const artifacts = verified.key === requestKey ? localArtifactPaths(content, workspace).filter(item => verified.paths.includes(item.path)) : []
   if (!artifacts.length) return null
   return <div className="conversation-file-list artifact-links" aria-label="交付文件">
-    {artifacts.map((item) => <ConversationFileCard item={{ ...item, detail: '本地文件 · 侧栏预览' }} onOpen={() => onOpen(item)} key={item.path} />)}
+    {artifacts.map((item) => attachmentIsImage(item)
+      ? <div className="composer-image-selection" key={item.path}><button className="composer-image-preview" type="button" onClick={() => onOpen(item)} aria-label={`预览图片 ${item.name}`}><AttachmentImage item={item} /></button></div>
+      : <ConversationFileCard compact item={{ ...item, detail: '' }} onOpen={() => onOpen(item)} key={item.path} />)}
   </div>
-}
-
-function formatAutomationSchedule(schedule: AutomationSchedule) {
-  if (schedule.type === 'once') return `${schedule.date} ${schedule.time}`
-  if (schedule.type === 'daily') return `每天 ${schedule.time}`
-  if (schedule.type === 'weekly') return `每周 ${schedule.weekdays.map((day) => '日一二三四五六'[day]).join('、')} ${schedule.time}`
-  return `每月 ${schedule.day} 日 ${schedule.time}`
 }
 
 function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment, onPreviewImages }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void }) {
@@ -1918,14 +1916,14 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
       {staticAttachments.length > 0 && <div className="message-attachments" aria-label="随消息发送的引用">
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
-      {content && <div className="user-bubble"><div className="turn-label">你</div>{reply && <div className="user-question" title={reply.question}>{reply.question}</div>}<p>{reply?.answer ?? content}</p></div>}
+      {content && <div className="user-bubble" data-clarification={Boolean(reply) || undefined}><div className="turn-label">你</div>{reply && <div className="user-question" title={reply.question}>{reply.question}</div>}<p>{reply?.answer ?? content}</p></div>}
       {onCopy && content && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息" title="复制文字"><Copy size={15} aria-hidden="true" /></button></div>}
     </div>
   </article>
 }
 
 // Reveal only text already received; keep the pace responsive for large chunks.
-function useStreamingText(content: string, live: boolean) {
+function useStreamingText(content: string, live: boolean, followLines = false) {
   const animate = live && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const [visible, setVisible] = useState(live ? '' : content)
   const received = useRef(content)
@@ -1936,10 +1934,12 @@ function useStreamingText(content: string, live: boolean) {
       const target = received.current
       const prefix = target.startsWith(current) ? current : ''
       const remaining = Array.from(target.slice(prefix.length))
-      return prefix + remaining.slice(0, Math.max(1, Math.ceil(remaining.length / 4))).join('')
+      const nextLine = followLines ? remaining.indexOf('\n') : -1
+      const count = Math.max(1, Math.ceil(remaining.length / 4))
+      return prefix + remaining.slice(0, nextLine >= 0 ? Math.min(count, nextLine + 1) : count).join('')
     }), 24)
     return () => window.clearInterval(timer)
-  }, [animate])
+  }, [animate, followLines])
   return animate ? visible : content
 }
 
@@ -1951,6 +1951,16 @@ function TraceText({ content, live = false }: { content: string; live?: boolean 
   </div>
 }
 
+function TraceToolIcon({ item }: { item: AgentTraceItem }) {
+  const Icon = { edit: SquarePen, write: FilePlus2, move: FolderInput, delete: Trash2, terminal: Terminal, table: FileSpreadsheet, read: BookOpenText, search: Search, browser: Globe, tool: Wrench }[traceToolIcon(item)]
+  return <Icon size={15} aria-hidden="true" data-tool-icon={traceToolIcon(item)} />
+}
+function TraceToolPreview({ item }: { item: AgentTraceItem }) {
+  const visible = useStreamingText(traceToolInput(item), true, true)
+  const line = visible.split(/\r?\n/).filter(line => line.trim()).at(-1) || '…'
+  return <span className="trace-tool-preview trace-running-label" title={line}>{line}</span>
+}
+
 function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status: AgentTraceStatus; agentName?: string }) {
   const itemStatus = traceItemStatus(item, status)
   const command = useStreamingText(traceCommand(item), itemStatus === 'running' && item.kind === 'tool')
@@ -1960,7 +1970,7 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   const Icon = item.entity === 'agent' ? Bot : item.kind === 'approval' ? ShieldCheck : item.kind === 'tool' ? Wrench : CircleAlert
   return <details className="trace-action" data-status={itemStatus}>
     <summary>
-      <Icon size={15} aria-hidden="true" />
+      {item.kind === 'tool' ? <TraceToolIcon item={item} /> : <Icon size={15} aria-hidden="true" />}
       <span className={`trace-command${itemStatus === 'running' && item.kind === 'tool' ? ' trace-running-label' : ''}`}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : command}</span>
       {item.kind === 'approval' && <span className="trace-action-state">{statusLabel}</span>}
     </summary>
@@ -1973,802 +1983,60 @@ function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status
   </details>
 }
 
-function RunTrace({ items, status, active = false, startedAt, endedAt, streaming, finalContent }: { items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
+function RunTrace({ items, status, startedAt, endedAt, streaming, finalContent, waiting = false, onCopyReply, onPreviewAttachment, onPreviewImages }: { onCopyReply?: (message: MessageItem) => void; waiting?: boolean; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
   const firstEventAt = useMemo(() => items.length ? Math.min(...items.map((item) => item.startedAt ?? item.time)) : Date.now(), [items])
   const lastEventAt = useMemo(() => items.length ? Math.max(...items.map((item) => item.time)) : Date.now(), [items])
   const timerStartedAt = startedAt ?? firstEventAt
-  const timerEndedAt = endedAt ?? (status === 'running' ? undefined : lastEventAt)
+  const timerEndedAt = waiting ? undefined : endedAt ?? (status === 'running' ? undefined : lastEventAt)
   const [now, setNow] = useState(() => Date.now())
+  const [expanded, setExpanded] = useState(false)
+  const timelineId = useId()
+  const showTimeline = waiting || status === 'running' || expanded
+  useEffect(() => { setExpanded(false) }, [status])
   const timeline = useMemo(() => {
     const entries = streaming?.content && !items.some((item) => item.id === streaming.id)
       ? [...items, { id: streaming.id, runId: '', kind: 'reasoning' as const, eventType: 'agent/answer' as const, title: '', status: 'running' as const, time: streaming.time, content: streaming.content }]
       : items
     return buildTraceTimeline(entries, finalContent)
   }, [items, streaming, finalContent])
+  const latestTool = latestTraceTool(items)
+  const liveTool = status === 'running' && latestTool?.status === 'running' ? latestTool : undefined
   const groupedTimeline = useMemo(() => groupTraceTimeline(timeline), [timeline])
   const pendingCount = timeline.filter(item => item.kind === 'approval' && traceItemStatus(item, status) === 'running').length
   const agentNames = new Map(items.filter((item) => item.entity === 'agent' && item.sessionId).map((item) => [item.sessionId!, item.title]))
   useEffect(() => {
     setNow(Date.now())
-    if (status !== 'running') return
+    if (status !== 'running' && !waiting) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [status, timerStartedAt])
+  }, [status, waiting, timerStartedAt])
   const elapsed = formatElapsedTime(Math.max(0, (timerEndedAt ?? now) - timerStartedAt))
   return <section className="run-trace" data-status={status}>
-    <div className="trace-header"><div className="trace-summary">
-      <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status !== 'running' && '用时 '}{elapsed}</span>
+    <div className="trace-header"><button type="button" className="trace-summary" disabled={status === 'running' || waiting} aria-expanded={showTimeline} aria-controls={timelineId} aria-label={waiting ? '等待你补充信息' : status === 'running' ? '正在执行' : `${expanded ? '收起' : '展开'}思考过程`} onClick={() => setExpanded(current => !current)}>
+      <span className="trace-elapsed" role="timer" aria-label={`执行时长 ${elapsed}`}>{status !== 'running' && !waiting && '用时 '}{elapsed}</span>
       {status !== 'running' && status !== 'completed' && <span className="trace-run-state">{status === 'failed' ? '任务受阻' : '已取消'}</span>}
       {pendingCount > 0 && <span className="trace-pending">{pendingCount} 项待审批</span>}
+      {status !== 'running' && !waiting && <ChevronRight size={14} className="trace-chevron" data-open={expanded} aria-hidden="true" />}
+    </button>
     </div>
-    </div>
-    <div className="trace-timeline">
+    <div className="trace-timeline" id={timelineId} hidden={!showTimeline}>
+      {showTimeline && <>
       {groupedTimeline.map(entry => {
         if (entry.kind === 'group') {
-          const running = entry.items.some(item => traceItemStatus(item, status) === 'running')
+          const current = entry.items.find(item => item.id === liveTool?.id)
           return <details className="trace-group" key={entry.id}>
-            <summary><Wrench size={15} aria-hidden="true" /><span className={`trace-group-label${running ? ' trace-running-label' : ''}`}>{entry.label} · {entry.items.length} 次</span></summary>
+            <summary><TraceToolIcon item={current || entry.items.at(-1)!} /><span className="trace-group-label">{traceGroupLabel(entry.items, status)}</span>{current && <TraceToolPreview key={current.id} item={current} />}</summary>
             <div className="trace-group-items">{entry.items.map(item => <TraceAction key={item.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />)}</div>
           </details>
         }
         const item = entry.item
-        return item.eventType === 'agent/answer'
+        return item.clarificationReply ? <div key={entry.id} data-message-id={item.clarificationReply.id} data-message-seq={item.clarificationReply.seq}><UserTurn onCopy={() => onCopyReply?.(item.clarificationReply!)} content={item.clarificationReply.content} attachments={item.clarificationReply.attachments} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
+          : item.eventType === 'agent/answer'
           ? <TraceText key={entry.id} content={item.content!} live={status === 'running' && item.id === streaming?.id} />
           : <TraceAction key={entry.id} item={item} status={status} agentName={item.parentSessionId ? agentNames.get(item.sessionId!) || '子 Agent' : undefined} />
       })}
-      {!timeline.length && <p className="trace-waiting">{status === 'running' ? '正在处理任务…' : '本次任务没有额外执行记录。'}</p>}
-    </div>
-    {active && <div className="live-trace-footer"><span className="trace-activity" role="status" aria-label="正在处理"><i /><i /><i /></span><ToolTrace items={items} status={status} /></div>}
-  </section>
-}
-
-function markdownTableCells(line: string) {
-  return line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'))
-}
-
-function isMarkdownTableStart(lines: string[], index: number) {
-  if (!lines[index]?.includes('|') || !lines[index + 1]?.includes('|')) return false
-  const separators = markdownTableCells(lines[index + 1])
-  return separators.length > 1 && separators.every((cell) => /^:?-{3,}:?$/.test(cell))
-}
-
-type PreviewOpener = (target: Omit<ConversationPreviewTarget, 'requestId'>) => void
-
-function markdownTableSource(headers: string[], separators: string[], rows: string[][]) {
-  const cell = (value: string) => value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
-  const line = (values: string[]) => `| ${values.map(cell).join(' | ')} |`
-  return [line(headers), line(separators), ...rows.map((row) => line(headers.map((_, index) => row[index] || '')))].join('\n')
-}
-
-function MarkdownTable({ headers, separators, alignments, rows, tableIndex, onPreview }: { headers: string[]; separators: string[]; alignments: Array<'left' | 'center' | 'right'>; rows: string[][]; tableIndex: number; onPreview?: PreviewOpener }) {
-  const [copied, setCopied] = useState(false)
-  async function copyTable() {
-    await window.stable.clipboard.writeText(markdownTableSource(headers, separators, rows))
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1_500)
-  }
-  return <div className="markdown-table-shell">
-    <button className="markdown-table-copy" type="button" onClick={() => void copyTable()} aria-label={copied ? '表格已复制' : '复制表格'} title={copied ? '已复制' : '复制表格'}>{copied ? <Check size={15} /> : <Copy size={15} />}</button>
-    <div className="markdown-table-wrap"><table><thead><tr>{headers.map((cell, cellIndex) => <th style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(cell, `table-head-${tableIndex}-${cellIndex}`, onPreview)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td style={{ textAlign: alignments[cellIndex] || 'left' }} key={cellIndex}>{renderInline(row[cellIndex] || '', `table-${tableIndex}-${rowIndex}-${cellIndex}`, onPreview)}</td>)}</tr>)}</tbody></table></div>
-  </div>
-}
-
-function MarkdownContent({ content, onPreview }: { content: string; onPreview?: PreviewOpener }) {
-  const lines = content.replace(/\r/g, '').split('\n')
-  const blocks: ReactNode[] = []
-  let index = 0
-  while (index < lines.length) {
-    const line = lines[index]
-    if (!line.trim()) { index += 1; continue }
-    if (line.trim().startsWith('```')) {
-      const language = line.trim().slice(3).trim()
-      const code: string[] = []
-      index += 1
-      while (index < lines.length && !lines[index].trim().startsWith('```')) { code.push(lines[index]); index += 1 }
-      index += 1
-      blocks.push(<div className="code-block" key={`code-${index}`}><div className="code-label">{language || 'code'}</div><pre><code>{code.join('\n')}</code></pre></div>)
-      continue
-    }
-    if (isMarkdownTableStart(lines, index)) {
-      const headers = markdownTableCells(line)
-      const separators = markdownTableCells(lines[index + 1])
-      const alignments = separators.map((cell) => cell.startsWith(':') && cell.endsWith(':') ? 'center' : cell.endsWith(':') ? 'right' : 'left') as Array<'left' | 'center' | 'right'>
-      const rows: string[][] = []
-      index += 2
-      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) { rows.push(markdownTableCells(lines[index])); index += 1 }
-      blocks.push(<MarkdownTable headers={headers} separators={separators} alignments={alignments} rows={rows} tableIndex={index} onPreview={onPreview} key={`table-${index}`} />)
-      continue
-    }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/)
-    if (heading) {
-      const level = heading[1].length
-      const children = renderInline(heading[2], `heading-${index}`, onPreview)
-      blocks.push(level === 1 ? <h2 key={`h-${index}`}>{children}</h2> : level === 2 ? <h3 key={`h-${index}`}>{children}</h3> : <h4 key={`h-${index}`}>{children}</h4>)
-      index += 1; continue
-    }
-    const bullet = line.match(/^\s*([-*]|\d+\.)\s+(.+)$/)
-    if (bullet) {
-      const ordered = /\d+\./.test(bullet[1])
-      const entries: string[] = []
-      while (index < lines.length) {
-        const match = lines[index].match(/^\s*([-*]|\d+\.)\s+(.+)$/)
-        if (!match || /\d+\./.test(match[1]) !== ordered) break
-        entries.push(match[2]); index += 1
-      }
-      const List = ordered ? 'ol' : 'ul'
-      blocks.push(<List key={`list-${index}`}>{entries.map((entry, itemIndex) => <li key={itemIndex}>{renderInline(entry, `list-${index}-${itemIndex}`, onPreview)}</li>)}</List>)
-      continue
-    }
-    if (line.trimStart().startsWith('> ')) {
-      const quote: string[] = []
-      while (index < lines.length && lines[index].trimStart().startsWith('> ')) { quote.push(lines[index].trimStart().slice(2)); index += 1 }
-      blocks.push(<blockquote key={`quote-${index}`}>{renderInline(quote.join(' '), `quote-${index}`, onPreview)}</blockquote>)
-      continue
-    }
-    const paragraph: string[] = [line.trim()]
-    index += 1
-    while (index < lines.length && lines[index].trim() && !isMarkdownTableStart(lines, index) && !/^(#{1,3})\s+|^\s*([-*]|\d+\.)\s+|^\s*>\s+|^\s*```/.test(lines[index])) { paragraph.push(lines[index].trim()); index += 1 }
-    blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(' '), `p-${index}`, onPreview)}</p>)
-  }
-  return <div className="markdown-body">{blocks}</div>
-}
-
-function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener): ReactNode[] {
-  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^)\s]+|[A-Za-z]:[\\/][^)\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15})\)|https?:\/\/[^\s<]+|[A-Za-z]:[\\/][^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?=$|[\s`)\]}，。；、]))/gi
-  return text.split(token).filter(Boolean).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) return <strong key={`${keyPrefix}-${index}`}>{part.slice(2, -2)}</strong>
-    if (part.startsWith('`') && part.endsWith('`')) return <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
-    const link = part.match(/^\[([^\]]+)\]\((.+)\)$/)
-    if (link && /^https?:\/\//i.test(link[2])) return onPreview
-      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
-      : <a href={link[2]} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{link[1]}</a>
-    if (link && /^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(link[2])) return onPreview
-      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
-      : <Fragment key={`${keyPrefix}-${index}`}>{link[1]}</Fragment>
-    if (/^https?:\/\//i.test(part)) return onPreview
-      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: part, title: new URL(part).hostname })} key={`${keyPrefix}-${index}`}>{part}</button>
-      : <a href={part} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{part}</a>
-    if (/^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(part) && onPreview) return <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: part, title: part.split(/[/\\]/).pop() || '文件' })} key={`${keyPrefix}-${index}`}>{part}</button>
-    return <Fragment key={`${keyPrefix}-${index}`}>{part}</Fragment>
-  })
-}
-
-type DataSection = 'database' | DataLibraryCategory
-
-const DATA_SECTIONS: Array<{ id: DataSection; label: string; detail: string; icon: typeof Database }> = [
-  { id: 'database', label: '数据库', detail: '本地资料', icon: Database },
-  { id: 'collection', label: '数据采集', detail: '执行脚本', icon: Activity },
-  { id: 'cleaning', label: '数据清洗', detail: '执行脚本', icon: Sparkles },
-  { id: 'processing', label: '数据加工', detail: 'Markdown', icon: Library },
-]
-
-const RUN_STATUS_LABEL: Record<LibraryRunStatus, string> = {
-  idle: '未运行', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已停止',
-}
-
-function DataPage({ dataItems, libraryItems, updateData, updateLibrary, action }: {
-  dataItems: DataItem[]
-  libraryItems: DataLibraryItem[]
-  updateData: (items: DataItem[]) => void
-  updateLibrary: (items: DataLibraryItem[]) => void
-  action: (label: string, run: () => Promise<void>) => Promise<void>
-}) {
-  const [section, setSection] = useState<DataSection>('database')
-  const [runningId, setRunningId] = useState('')
-  const [logId, setLogId] = useState('')
-  const [logs, setLogs] = useState<Record<string, string>>({})
-  const [markdownId, setMarkdownId] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [scriptInput, setScriptInput] = useState('')
-  const [inputState, setInputState] = useState<'idle' | 'sending' | 'error' | 'success'>('idle')
-  const [inputMessage, setInputMessage] = useState('输入回答后按 Enter 发送；只按 Enter 可提交空回答。')
-  const libraryRef = useRef(libraryItems)
-  const logsRef = useRef(logs)
-  libraryRef.current = libraryItems
-  logsRef.current = logs
-
-  useEffect(() => window.stable.library.onEvent((event) => {
-    const decoratedChunk = event.stream === 'stderr'
-      ? `[错误] ${event.chunk}`
-      : event.stream === 'status'
-        ? `${event.status === 'running' ? '' : '\n'}${event.chunk}${event.chunk.endsWith('\n') ? '' : '\n'}`
-        : event.chunk
-    const nextLog = `${logsRef.current[event.itemId] || ''}${decoratedChunk}`.slice(-120_000)
-    logsRef.current = { ...logsRef.current, [event.itemId]: nextLog }
-    setLogs(logsRef.current)
-    if (libraryRef.current.find((item) => item.id === event.itemId)?.kind === 'script') setLogId(event.itemId)
-    if (event.status) {
-      updateLibrary(libraryRef.current.map((item) => item.id === event.itemId ? {
-        ...item,
-        lastStatus: event.status!,
-        lastOutput: event.status === 'running' ? '' : nextLog,
-        lastRunAt: new Date(event.time).toISOString(),
-      } : item))
-      if (event.status === 'running') {
-        setRunningId(event.itemId)
-        setInputState('idle')
-        setInputMessage('输入回答后按 Enter 发送；只按 Enter 可提交空回答。')
-      } else {
-        setRunningId('')
-        setInputState(event.status === 'completed' ? 'success' : 'idle')
-        setInputMessage(event.status === 'completed' ? '脚本已完成，不再接收输入。' : '脚本已停止，不再接收输入。')
-      }
-    }
-  }), [])
-
-  const selectedMarkdown = libraryItems.find((item) => item.id === markdownId && item.kind === 'markdown')
-  useEffect(() => {
-    if (!selectedMarkdown) return
-    setDraft(selectedMarkdown.content)
-    setEditing(false)
-  }, [selectedMarkdown?.id])
-
-  const categoryItems = section === 'database' ? [] : libraryItems.filter((item) => item.category === section)
-  const logItem = libraryItems.find((item) => item.id === logId)
-  const logContent = logId ? (logs[logId] || logItem?.lastOutput || '') : ''
-  const sectionConfig = DATA_SECTIONS.find((item) => item.id === section) || DATA_SECTIONS[0]
-
-  function importAssets(category: DataLibraryCategory) {
-    void action(`正在导入${sectionConfig.label}`, async () => updateLibrary((await window.stable.library.importFiles(category)).items))
-  }
-
-  function removeAsset(item: DataLibraryItem) {
-    void action(`正在删除 ${item.name}`, async () => {
-      updateLibrary(await window.stable.library.remove(item.id))
-      if (markdownId === item.id) setMarkdownId('')
-      if (logId === item.id) setLogId('')
-    })
-  }
-
-  async function runScript(item: DataLibraryItem) {
-    setRunningId(item.id)
-    setLogId(item.id)
-    setLogs((current) => ({ ...current, [item.id]: '' }))
-    logsRef.current = { ...logsRef.current, [item.id]: '' }
-    setScriptInput('')
-    setInputState('idle')
-    setInputMessage('输入回答后按 Enter 发送；只按 Enter 可提交空回答。')
-    try {
-      await action(`正在运行 ${item.name}`, async () => {
-        const result = await window.stable.library.run(item.id)
-        updateLibrary(result.items)
-      })
-    } finally {
-      setRunningId('')
-    }
-  }
-
-  async function sendScriptInput(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!logId || runningId !== logId || inputState === 'sending') return
-    setInputState('sending')
-    setInputMessage('正在发送输入…')
-    try {
-      await window.stable.library.sendInput(logId, scriptInput)
-      setScriptInput('')
-      setInputState('success')
-      setInputMessage('已发送，等待脚本继续输出。')
-    } catch (reason) {
-      setInputState('error')
-      setInputMessage(errorMessage(reason))
-    }
-  }
-
-  function importDropped(paths: string[]) {
-    if (!paths.length) return
-    void action(`正在导入${sectionConfig.label}`, async () => {
-      if (section === 'database') updateData((await window.stable.data.importPaths(paths)).items)
-      else updateLibrary((await window.stable.library.importPaths(section, paths)).items)
-    })
-  }
-
-  return <DropTarget className="page-drop-target" label={`导入到${sectionConfig.label}`} onPaths={importDropped}><section className="data-hub reveal">
-    <aside className="data-subnav" aria-label="数据分类">
-      <div className="data-subnav-heading"><span>DATA HUB</span><strong>数据中心</strong></div>
-      <nav>
-        {DATA_SECTIONS.map(({ id, label, detail, icon: Icon }) => {
-          const count = id === 'database' ? dataItems.length : libraryItems.filter((item) => item.category === id).length
-          return <button key={id} data-active={section === id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
-            <Icon size={18} strokeWidth={1.7} />
-            <span><strong>{label}</strong><small>{detail}</small></span>
-            <em>{count}</em>
-          </button>
-        })}
-      </nav>
-      <p>导入内容会复制到 Stable 私有目录，原始文件保持不变。</p>
-    </aside>
-
-    <div className="data-workspace">
-      {section === 'database' ? <>
-        <PageLead title="数据库" copy="导入文档和表格。Stable 在本机提取可检索文本，可按需启用给 Agent 调用。" action={<button className="button primary" onClick={() => void action('正在导入数据', async () => updateData((await window.stable.data.importFiles()).items))}><FilePlus2 size={17} />导入文件</button>} />
-        {dataItems.length === 0 ? <Empty icon={Database} title="还没有本地数据" detail="支持 TXT、Markdown、CSV、JSON、PDF、DOCX、PPTX 和 Excel。" /> : <div className="resource-list">
-          {dataItems.map((item) => <ResourceRow key={item.id} title={item.name} detail={`${item.type.toUpperCase()} · ${formatBytes(item.size)}`} enabled={item.enabled}
-            onToggle={(enabled) => void action('正在更新数据状态', async () => updateData(await window.stable.data.setEnabled(item.id, enabled)))}
-            onRemove={() => void action('正在移出数据', async () => updateData(await window.stable.data.remove(item.id)))} />)}
-        </div>}
-      </> : <>
-        <PageLead
-          title={sectionConfig.label}
-          copy={section === 'processing' ? '集中保存可复用的数据加工说明、口径和模板，可直接预览与编辑。' : section === 'collection' ? '集中管理数据采集脚本。支持单文件、完整文件夹和 ZIP；运行时可在日志下方直接回答脚本问题。' : '集中管理数据清洗脚本。支持单文件、完整文件夹和 ZIP；切换页面后脚本仍会在后台继续运行。'}
-          action={<button className="button primary" onClick={() => importAssets(section)}><FolderInput size={17} />{section === 'processing' ? '导入 Markdown' : '导入脚本或包'}</button>}
-        />
-        {categoryItems.length === 0 ? <Empty icon={sectionConfig.icon} title={`还没有${sectionConfig.label}资产`} detail={section === 'processing' ? '支持 MD 和 MARKDOWN 文件。' : '支持 Python、PowerShell、CMD 和 BAT 脚本。'} /> : <div className="library-grid">
-          {categoryItems.map((item) => item.kind === 'script'
-            ? <ScriptCard key={item.id} item={item} running={runningId === item.id} onRun={() => void runScript(item)} onLog={() => setLogId(item.id)} onRename={(name) => void action(`正在重命名 ${item.name}`, async () => updateLibrary(await window.stable.library.rename(item.id, name)))} onRemove={() => removeAsset(item)} />
-            : <MarkdownCard key={item.id} item={item} selected={markdownId === item.id} onOpen={() => setMarkdownId(item.id)} onRemove={() => removeAsset(item)} />)}
-        </div>}
-
-        {logId && logItem?.kind === 'script' && logItem.category === section && <section className="asset-panel script-console" aria-live="polite">
-          <div className="asset-panel-head">
-            <div><span>RUN LOG</span><h3>{logItem?.name || '脚本日志'}</h3></div>
-            <div className="button-row">{runningId === logId && <button className="button danger" onClick={() => window.stable.library.cancel()}><CircleStop size={16} />停止</button>}<button className="icon-button" onClick={() => setLogId('')} aria-label="关闭日志"><X size={17} /></button></div>
-          </div>
-          <pre>{logContent || (runningId === logId ? '等待脚本输出…' : '这次运行没有输出。')}</pre>
-          {runningId === logId && <form className="script-input" data-state={inputState} onSubmit={(event) => void sendScriptInput(event)}>
-            <label htmlFor={`script-input-${logId}`}>脚本输入</label>
-            <div className="script-input-row">
-              <input
-                id={`script-input-${logId}`}
-                value={scriptInput}
-                onChange={(event) => { setScriptInput(event.target.value); if (inputState !== 'sending') setInputState('idle') }}
-                placeholder="输入脚本要求的回答"
-                autoComplete="off"
-                aria-invalid={inputState === 'error' ? 'true' : undefined}
-                aria-describedby={`script-input-help-${logId}`}
-                disabled={inputState === 'sending'}
-              />
-              <button className="button primary" type="submit" data-state={inputState} disabled={inputState === 'sending'}>
-                {inputState === 'sending' ? <LoaderCircle className="spin" size={16} /> : inputState === 'success' ? <Check size={16} /> : <SendHorizontal size={16} />}
-                {inputState === 'sending' ? '发送中' : '发送'}
-              </button>
-            </div>
-            <p id={`script-input-help-${logId}`} role={inputState === 'error' ? 'alert' : 'status'}>{inputMessage}</p>
-          </form>}
-        </section>}
-
-        {section === 'processing' && selectedMarkdown && <section className="asset-panel markdown-panel">
-          <div className="asset-panel-head">
-            <div><span>MARKDOWN</span><h3>{selectedMarkdown.name}</h3></div>
-            <div className="button-row">
-              {editing ? <button className="button primary" onClick={() => void action('正在保存 Markdown', async () => { updateLibrary(await window.stable.library.saveMarkdown(selectedMarkdown.id, draft)); setEditing(false) })}><Save size={16} />保存</button> : <button className="button" onClick={() => setEditing(true)}><Pencil size={16} />编辑</button>}
-              <button className="icon-button" onClick={() => setMarkdownId('')} aria-label="关闭 Markdown"><X size={17} /></button>
-            </div>
-          </div>
-          {editing ? <textarea className="markdown-editor" value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="Markdown 内容" /> : <div className="markdown-preview"><MarkdownContent content={selectedMarkdown.content} /></div>}
-        </section>}
+      {!timeline.length && <p className="trace-waiting">{waiting ? '等待你补充信息…' : status === 'running' ? '正在处理任务…' : '本轮没有可展示的过程说明或工具调用记录。'}</p>}
       </>}
     </div>
-  </section></DropTarget>
-}
-
-function ScriptCard({ item, running, onRun, onLog, onRename, onRemove }: { item: DataLibraryItem; running: boolean; onRun: () => void; onLog: () => void; onRename: (name: string) => void; onRemove: () => void }) {
-  const [editingName, setEditingName] = useState(false)
-  const [nameDraft, setNameDraft] = useState(item.name)
-
-  useEffect(() => { if (!editingName) setNameDraft(item.name) }, [item.name, editingName])
-
-  function commitName() {
-    const name = nameDraft.trim()
-    setEditingName(false)
-    if (!name || name === item.name) { setNameDraft(item.name); return }
-    onRename(name)
-  }
-
-  return <article className="library-card" data-status={item.lastStatus}>
-    <div className="library-card-top"><span className="asset-type"><Wrench size={16} />{item.extension.toUpperCase()}</span><span className="asset-status">{running ? <LoaderCircle className="spin" size={13} /> : null}{RUN_STATUS_LABEL[running ? 'running' : item.lastStatus]}</span></div>
-    <div className="library-card-copy">
-      <div className="library-card-title">
-        {editingName
-          ? <input autoFocus maxLength={100} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitName} onKeyDown={(event) => {
-            if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
-            if (event.key === 'Escape') { event.preventDefault(); setNameDraft(item.name); setEditingName(false) }
-          }} aria-label="脚本显示名称" />
-          : <h3 title={item.name}>{item.name}</h3>}
-        {!editingName && <button className="library-card-rename" disabled={running} onClick={() => setEditingName(true)} aria-label={`重命名 ${item.name}`} title="重命名"><Pencil size={15} /></button>}
-      </div>
-      <p>{item.description}</p>
-    </div>
-    <div className="library-card-meta"><span>{item.lastRunAt ? `上次 ${formatLocalTime(item.lastRunAt)}` : '尚未执行'}</span></div>
-    <div className="library-card-actions"><button className="button primary" disabled={running} onClick={onRun}><Play size={16} />{running ? '运行中' : '运行'}</button>{item.lastRunAt && <button className="button" onClick={onLog}>日志</button>}<button className="icon-button" disabled={running} onClick={onRemove} aria-label={`删除 ${item.name}`}><Trash2 size={16} /></button></div>
-  </article>
-}
-
-function MarkdownCard({ item, selected, onOpen, onRemove }: { item: DataLibraryItem; selected: boolean; onOpen: () => void; onRemove: () => void }) {
-  return <article className="library-card" data-selected={selected || undefined}>
-    <div className="library-card-top"><span className="asset-type"><Library size={16} />MD</span><span className="asset-status">本地文档</span></div>
-    <button className="library-card-open" onClick={onOpen}><span>{item.name}</span><small>{item.description}</small></button>
-    <div className="library-card-meta"><span>更新于 {formatLocalTime(item.updatedAt)}</span></div>
-    <div className="library-card-actions"><button className="button primary" onClick={onOpen}>预览</button><button className="icon-button" onClick={onRemove} aria-label={`删除 ${item.name}`}><Trash2 size={16} /></button></div>
-  </article>
-}
-
-function formatLocalTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '未知时间'
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
-}
-
-function KnowledgePage({ items, update, action }: {
-  items: KnowledgeItem[]
-  update: (items: KnowledgeItem[]) => void
-  action: (label: string, run: () => Promise<void>) => Promise<void>
-}) {
-  const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState('')
-  const [document, setDocument] = useState<KnowledgeDocument | null>(null)
-  const visibleItems = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    return term ? items.filter((item) => `${item.name}\n${item.summary}`.toLowerCase().includes(term)) : items
-  }, [items, query])
-
-  useEffect(() => {
-    if (selectedId && !items.some((item) => item.id === selectedId)) { setSelectedId(''); setDocument(null) }
-  }, [items, selectedId])
-
-  useEffect(() => {
-    if (selectedId || !items[0]) return
-    setSelectedId(items[0].id)
-    void window.stable.knowledge.get(items[0].id).then(setDocument)
-  }, [items, selectedId])
-
-  function openDocument(item: KnowledgeItem) {
-    setSelectedId(item.id)
-    void action('正在读取知识文档', async () => setDocument(await window.stable.knowledge.get(item.id)))
-  }
-
-  function toggleDocument(item: KnowledgeItem, enabled: boolean) {
-    void action('正在更新知识调用状态', async () => {
-      const next = await window.stable.knowledge.setEnabled(item.id, enabled)
-      update(next)
-      setDocument((current) => current?.id === item.id ? { ...current, enabled } : current)
-    })
-  }
-
-  function removeDocument(item: KnowledgeItem) {
-    void action('正在删除知识文档', async () => {
-      const next = await window.stable.knowledge.remove(item.id)
-      update(next)
-      if (selectedId === item.id) { setSelectedId(''); setDocument(null) }
-    })
-  }
-
-  return <DropTarget className="page-drop-target" label="导入知识库 Markdown" onPaths={(paths) => { if (paths.length) void action('正在导入知识库', async () => update((await window.stable.knowledge.importPaths(paths)).items)) }}><section className="knowledge-layout reveal">
-    <div className="knowledge-toolbar">
-      <div><h2>知识库</h2><p>管理本机 Markdown 文档，库内内容不会作为对话资料发送给模型。</p></div>
-      <button className="button primary" onClick={() => void action('正在导入知识库', async () => update((await window.stable.knowledge.importFiles()).items))}><FolderInput size={17} />导入 Markdown</button>
-    </div>
-    <div className="knowledge-workbench">
-      <aside className="knowledge-index">
-        <label className="knowledge-search">
-          <Search size={16} aria-hidden="true" />
-          <span className="sr-only">搜索知识库</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" />
-        </label>
-        <div className="knowledge-count"><span>{visibleItems.length} 篇文档</span><span>{items.filter((item) => item.enabled).length} 篇可调用</span></div>
-        {visibleItems.length === 0 ? <div className="knowledge-empty"><BookOpenText size={24} /><strong>{items.length ? '没有匹配文档' : '还没有知识文档'}</strong><span>{items.length ? '换一个关键词试试。' : '导入 Markdown 文件或文件夹。'}</span></div> : <div className="knowledge-list">
-          {visibleItems.map((item) => <article className="knowledge-item" data-selected={selectedId === item.id || undefined} key={item.id}>
-            <button className="knowledge-open" onClick={() => openDocument(item)}>
-              <FileText size={18} aria-hidden="true" />
-              <span><strong>{item.name}</strong><small>{item.summary}</small></span>
-            </button>
-            <div className="knowledge-item-actions">
-              <label className="switch"><input type="checkbox" checked={item.enabled} onChange={(event) => toggleDocument(item, event.target.checked)} /><span aria-hidden="true" /><em>{item.enabled ? '可调用' : '未启用'}</em></label>
-              <button className="icon-button" onClick={() => openDocument(item)} aria-label={`预览 ${item.name}`}><Eye size={16} /></button>
-              <button className="icon-button" onClick={() => removeDocument(item)} aria-label={`删除 ${item.name}`}><Trash2 size={16} /></button>
-            </div>
-          </article>)}
-        </div>}
-      </aside>
-      <article className="knowledge-reader">
-        {document ? <>
-          <header className="knowledge-reader-head">
-            <div><span>MARKDOWN</span><h3>{document.name}</h3><p>{formatBytes(document.size)} · 更新于 {formatLocalTime(document.updatedAt)}</p></div>
-            <span className="knowledge-call-state" data-enabled={document.enabled}>{document.enabled ? 'Agent 可调用' : '未启用调用'}</span>
-          </header>
-          <div className="knowledge-preview"><MarkdownContent content={document.content} /></div>
-        </> : <div className="knowledge-reader-empty"><BookOpenText size={28} /><h2>选择一篇文档预览</h2><p>启用后的文档会按问题关键词加载相关片段，供 Agent 回答时使用。</p></div>}
-      </article>
-    </div>
-  </section></DropTarget>
-}
-
-function SkillsPage({ items, update, action }: { items: SkillItem[]; update: (items: SkillItem[]) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const [previewId, setPreviewId] = useState('')
-  const preview = items.find((item) => item.id === previewId)
-  useEffect(() => {
-    if (!previewId) return
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setPreviewId('') }
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [previewId])
-  return <section className="library-page skill-library reveal">
-    <PageLead title="Skills" copy="这里仅展示已由 Agent 安装的全局 Skills。发送完整 Skill 文件夹到对话，即可识别并安装。" action={<div className="skill-library-count"><Braces size={16} /><strong>{items.length}</strong><span>个已安装</span></div>} />
-    {items.length === 0 ? <Empty icon={Braces} title="还没有已安装的 Skill" detail="前往对话，发送根目录中包含 SKILL.md 的完整文件夹。" /> : <div className="skill-card-grid">
-      {items.map((item) => <article className="skill-card" key={item.id}>
-        <div className="skill-card-top"><span className="skill-card-mark"><Braces size={18} /></span><span className="skill-scope">GLOBAL SKILL</span></div>
-        <div className="skill-card-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
-        <div className="skill-card-meta"><FileText size={14} /><span>SKILL.md</span><span>·</span><time dateTime={item.createdAt}>安装于 {formatLocalTime(item.createdAt)}</time></div>
-        <div className="skill-card-actions">
-          <button className="skill-preview-button" type="button" onClick={() => setPreviewId(item.id)}><Eye size={16} />预览</button>
-          <label className="switch"><input type="checkbox" checked={item.enabled} onChange={(event) => void action('正在更新 Skill 状态', async () => update(await window.stable.skills.setEnabled(item.id, event.target.checked)))} /><span aria-hidden="true" /><em>{item.enabled ? '已启用' : '未启用'}</em></label>
-          <button className="icon-button" type="button" onClick={() => void action('正在移出 Skill', async () => { update(await window.stable.skills.remove(item.id)); if (previewId === item.id) setPreviewId('') })} aria-label={`移出 ${item.name}`}><Trash2 size={17} /></button>
-        </div>
-      </article>)}
-    </div>}
-    {preview && <div className="skill-preview-overlay" role="presentation" onMouseDown={() => setPreviewId('')}>
-      <section className="skill-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="skill-preview-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><span>SKILL.md · RAW</span><h2 id="skill-preview-title">{preview.name}</h2></div><button className="icon-button" type="button" onClick={() => setPreviewId('')} aria-label="关闭 Skill 预览"><X size={18} /></button></header>
-        <pre tabIndex={0}><code>{preview.content}</code></pre>
-      </section>
-    </div>}
   </section>
-}
-
-function AutomationsPage({ state, update, goChat, action }: { state: AutomationState; update: (value: AutomationState) => void; goChat: () => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const [tab, setTab] = useState<'configured' | 'history' | 'templates'>('configured')
-  const [draft, setDraft] = useState<AutomationDraft>()
-  const tomorrow = () => { const date = new Date(); date.setDate(date.getDate() + 1); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
-  const newDraft = (): AutomationDraft => ({ title: '', prompt: '', schedule: { type: 'once', date: tomorrow(), time: '09:00' } })
-  function changeType(type: AutomationSchedule['type']) {
-    if (!draft) return
-    const time = draft.schedule.time || '09:00'
-    const schedule: AutomationSchedule = type === 'once' ? { type, date: tomorrow(), time }
-      : type === 'daily' ? { type, time }
-        : type === 'weekly' ? { type, time, weekdays: [1] }
-          : { type, time, day: 1 }
-    setDraft({ ...draft, schedule })
-  }
-  function saveDraft() {
-    if (!draft) return
-    void action('正在保存定时任务', async () => { update(await window.stable.automations.save(draft)); setDraft(undefined); setTab('configured') })
-  }
-  function edit(item: AutomationItem) { setDraft({ id: item.id, title: item.title, prompt: item.prompt, schedule: { ...item.schedule } as AutomationSchedule }) }
-  return <section className="automations-page reveal">
-    <header className="automations-head">
-      <div><span>AUTOMATION</span><h1>定时</h1><p>Stable 开启期间按计划运行任务。退出软件后不在后台执行。</p></div>
-      <div className="button-row"><button className="button" type="button" onClick={() => setDraft(newDraft())}><Plus size={16} />手动新建</button><button className="button primary" type="button" onClick={goChat}><MessageSquareText size={16} />在对话中创建</button></div>
-    </header>
-    <nav className="automation-tabs" aria-label="定时任务视图">
-      <button data-active={tab === 'configured' || undefined} onClick={() => setTab('configured')}>已配置 <span>{state.items.length}</span></button>
-      <button data-active={tab === 'history' || undefined} onClick={() => setTab('history')}>执行历史</button>
-      <button data-active={tab === 'templates' || undefined} onClick={() => setTab('templates')}>任务模板</button>
-    </nav>
-    {tab === 'configured' && (state.items.length ? <div className="automation-grid">{state.items.map((item) => <article className="automation-card" key={item.id} data-enabled={item.enabled || undefined}>
-      <header><span className="automation-card-icon"><Clock3 size={17} /></span><div><h2>{item.title}</h2><p>{formatAutomationSchedule(item.schedule)}</p></div><label className="switch"><input type="checkbox" checked={item.enabled} onChange={(event) => void action('正在更新定时任务', async () => update(await window.stable.automations.setEnabled(item.id, event.target.checked)))} /><span aria-hidden="true" /><em>{item.enabled ? '已启用' : '已暂停'}</em></label></header>
-      <p className="automation-prompt">{item.prompt}</p>
-      <div className="automation-meta"><span>下次运行</span><strong>{item.nextRunAt ? formatLocalTime(item.nextRunAt) : '暂无'}</strong><small data-status={item.lastStatus}>{item.lastStatus === 'running' ? '运行中' : item.lastStatus === 'completed' ? '上次成功' : item.lastStatus === 'failed' ? '上次失败' : item.source === 'chat' ? '由对话创建' : '手动创建'}</small></div>
-      <footer><button className="text-button" type="button" disabled={item.lastStatus === 'running'} onClick={() => void action('正在运行定时任务', async () => update(await window.stable.automations.run(item.id)))}><Play size={15} />立即运行</button><span /><button className="icon-button" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title}`}><Pencil size={15} /></button><button className="icon-button" type="button" disabled={item.lastStatus === 'running'} onClick={() => void action('正在删除定时任务', async () => update(await window.stable.automations.remove(item.id)))} aria-label={`删除 ${item.title}`}><Trash2 size={15} /></button></footer>
-    </article>)}</div> : <div className="automation-empty"><Clock3 size={24} /><h2>尚未配置定时任务</h2><p>手动设置日期时间，或直接告诉 Stable 何时执行什么任务。</p><button className="button primary" onClick={() => setDraft(newDraft())}>手动新建</button></div>)}
-    {tab === 'history' && (state.runs.length ? <div className="automation-history">{state.runs.map((run) => <article key={run.id}><span className="run-dot" data-status={run.status} /><div><strong>{run.title}</strong><p>{run.error || (run.result ? run.result.slice(0, 180) : '任务正在执行')}</p></div><div><span>{run.status === 'completed' ? '已完成' : run.status === 'running' ? '运行中' : run.status === 'cancelled' ? '已取消' : '失败'}</span><time>{formatLocalTime(run.startedAt)}</time></div></article>)}</div> : <div className="automation-empty"><Activity size={24} /><h2>还没有执行记录</h2><p>任务首次运行后，结果与错误会显示在这里。</p></div>)}
-    {tab === 'templates' && <div className="automation-grid">{state.templates.map((template) => <article className="automation-card template" key={template.id}><header><span className="automation-card-icon"><Sparkles size={17} /></span><div><h2>{template.title}</h2><p>{formatAutomationSchedule(template.schedule)}</p></div></header><p className="automation-prompt">{template.description}</p><footer><span /><button className="button" type="button" onClick={() => setDraft({ title: template.title, prompt: template.prompt, schedule: { ...template.schedule } as AutomationSchedule })}>使用模板</button></footer></article>)}</div>}
-    {draft && <div className="automation-editor-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setDraft(undefined) }}><section className="automation-editor" role="dialog" aria-modal="true" aria-labelledby="automation-editor-title">
-      <header><div><span>AUTOMATION</span><h2 id="automation-editor-title">{draft.id ? '编辑定时任务' : '新建定时任务'}</h2></div><button className="icon-button" onClick={() => setDraft(undefined)} aria-label="关闭"><X size={17} /></button></header>
-      <div className="field"><label htmlFor="automation-title">任务名称</label><input id="automation-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="例如：每日工作摘要" /></div>
-      <div className="field"><label htmlFor="automation-prompt">指定任务</label><textarea id="automation-prompt" rows={6} value={draft.prompt} onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} placeholder="到点后让 Stable 执行什么？" /></div>
-      <div className="automation-schedule-fields"><div className="field"><label htmlFor="automation-type">重复方式</label><select id="automation-type" value={draft.schedule.type} onChange={(event) => changeType(event.target.value as AutomationSchedule['type'])}><option value="once">仅一次</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option></select></div>
-        {draft.schedule.type === 'once' && <div className="field"><label htmlFor="automation-date">执行日期</label><input id="automation-date" type="date" value={draft.schedule.date} onChange={(event) => setDraft({ ...draft, schedule: { type: 'once', time: draft.schedule.time, date: event.target.value } })} /></div>}
-        {draft.schedule.type === 'monthly' && <div className="field"><label htmlFor="automation-day">每月日期</label><input id="automation-day" type="number" min="1" max="31" value={draft.schedule.day} onChange={(event) => setDraft({ ...draft, schedule: { type: 'monthly', time: draft.schedule.time, day: Number(event.target.value) } })} /></div>}
-        <div className="field"><label htmlFor="automation-time">执行时间</label><input id="automation-time" type="time" value={draft.schedule.time} onChange={(event) => setDraft({ ...draft, schedule: { ...draft.schedule, time: event.target.value } as AutomationSchedule })} /></div>
-      </div>
-      {draft.schedule.type === 'weekly' && <fieldset className="weekday-picker"><legend>每周执行日</legend>{['日','一','二','三','四','五','六'].map((label, day) => { const selected = draft.schedule.type === 'weekly' && draft.schedule.weekdays.includes(day); return <button type="button" data-active={selected || undefined} aria-pressed={selected} key={label} onClick={() => { if (draft.schedule.type !== 'weekly') return; const weekdays = selected ? draft.schedule.weekdays.filter((item) => item !== day) : [...draft.schedule.weekdays, day].sort(); setDraft({ ...draft, schedule: { ...draft.schedule, weekdays } }) }}>{label}</button> })}</fieldset>}
-      <footer><button className="button" type="button" onClick={() => setDraft(undefined)}>取消</button><button className="button primary" type="button" disabled={!draft.title.trim() || !draft.prompt.trim()} onClick={saveDraft}><Save size={16} />保存任务</button></footer>
-    </section></div>}
-  </section>
-}
-
-function PageLead({ title, copy, action, headingId }: { title: string; copy: string; action: React.ReactNode; headingId?: string }) {
-  return <div className="page-lead"><div><h2 id={headingId}>{title}</h2><p>{copy}</p></div>{action}</div>
-}
-
-function ResourceRow({ title, detail, enabled, onToggle, onRemove }: { title: string; detail: string; enabled: boolean; onToggle: (enabled: boolean) => void; onRemove: () => void }) {
-  return <article className="resource-row">
-    <div className="resource-main"><strong>{title}</strong><span>{detail}</span></div>
-    <label className="switch"><input type="checkbox" checked={enabled} onChange={(event) => onToggle(event.target.checked)} /><span aria-hidden="true" /><em>{enabled ? '已启用' : '未启用'}</em></label>
-    <button className="icon-button" onClick={onRemove} aria-label={`移出 ${title}`}><Trash2 size={17} /></button>
-  </article>
-}
-
-type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history' | 'models'
-
-const ACCOUNT_MODULES: Array<{ id: AccountModuleId; label: string; detail: string; icon: typeof Home }> = [
-  { id: 'models', label: '模型连接', detail: '本地直连与设备配置', icon: Network },
-  { id: 'appearance', label: '主题设置', detail: '深色或浅色界面', icon: Sun },
-  { id: 'account', label: '账号情况', detail: '身份、额度与用量', icon: ShieldCheck },
-  { id: 'updates', label: '软件更新', detail: '版本与安装状态', icon: RotateCw },
-  { id: 'agent-history', label: 'Agent 对话记录', detail: '全局对话提醒', icon: MessageSquareText },
-]
-
-function AccountDock({ state, replaceState, updateTheme, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const [activeModule, setActiveModule] = useState<AccountModuleId | null>(null)
-  const dockRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const account = state.cloud.account
-  const displayName = account?.displayName || 'Stable 用户'
-  const avatar = displayName.trim().slice(0, 1).toUpperCase() || 'S'
-  const selected = ACCOUNT_MODULES.find((item) => item.id === activeModule)
-  const updateReady = ['available', 'downloading', 'downloaded'].includes(state.update.status)
-
-  useEffect(() => {
-    if (!open) return
-    const closeFromOutside = (event: globalThis.PointerEvent) => {
-      if (!dockRef.current?.contains(event.target as Node)) {
-        setOpen(false)
-        setActiveModule(null)
-      }
-    }
-    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      if (activeModule) setActiveModule(null)
-      else {
-        setOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('pointerdown', closeFromOutside)
-    window.addEventListener('keydown', closeFromKeyboard)
-    return () => {
-      document.removeEventListener('pointerdown', closeFromOutside)
-      window.removeEventListener('keydown', closeFromKeyboard)
-    }
-  }, [activeModule, open])
-
-  function toggleMenu() {
-    setOpen((current) => {
-      if (current) setActiveModule(null)
-      return !current
-    })
-  }
-
-  return <div className="rail-account-dock" ref={dockRef}>
-    {open && <section className="account-menu-popover" id="account-menu-popover" aria-label="账号与设置菜单">
-      <div className="account-menu-identity">
-        <span className="account-avatar" aria-hidden="true">{avatar}</span>
-        <span><strong>{displayName}</strong><small>{account ? `@${account.username}` : '本地直连'}</small></span>
-      </div>
-      <nav aria-label="账号设置模块">
-        {ACCOUNT_MODULES.map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" data-active={activeModule === id || undefined} data-update-ready={id === 'updates' && updateReady || undefined} aria-pressed={activeModule === id} onClick={() => setActiveModule(id)}>
-          <Icon size={17} aria-hidden="true" />
-          <span><strong>{label}</strong><small>{detail}</small></span>
-          {id === 'updates' && updateReady && <i className="update-dot" aria-label="发现可用更新" />}
-          <ChevronRight size={15} aria-hidden="true" />
-        </button>)}
-      </nav>
-      <div className="rail-version" aria-label={`Stable 版本 ${state.appVersion}`}>Stable v{state.appVersion}</div>
-    </section>}
-
-    {open && selected && <section className="account-content-popover" role="dialog" aria-labelledby="account-module-title">
-      <header>
-        <span><strong id="account-module-title">{selected.label}</strong><small>{selected.detail}</small></span>
-        <button type="button" className="icon-button" onClick={() => setActiveModule(null)} aria-label={`关闭${selected.label}`}><X size={17} aria-hidden="true" /></button>
-      </header>
-      <div className="account-content-body">
-        <AccountModuleContent module={selected.id} state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} />
-      </div>
-    </section>}
-
-    <button ref={triggerRef} className="rail-account-trigger" type="button" aria-label={`打开${displayName}的账号菜单${updateReady ? '，发现可用更新' : ''}`} aria-expanded={open} aria-controls="account-menu-popover" onClick={toggleMenu}>
-      <span className="account-avatar" aria-hidden="true">{avatar}</span>
-      <span className="rail-account-name">{displayName}</span>
-      {updateReady && <i className="update-dot" aria-label="发现可用更新" />}
-    </button>
-  </div>
-}
-
-function AccountModuleContent({ module, state, replaceState, updateTheme, action }: { module: AccountModuleId; state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  if (module === 'models') return <ModelConnectionSettings state={state} replaceState={replaceState} />
-  if (module === 'appearance') return <ThemeSettingsModule state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} />
-  if (module === 'account') return <CloudAccountModule state={state} replaceState={replaceState} action={action} />
-  if (module === 'updates') return <UpdateSettingsModule state={state} action={action} />
-  return <AgentHistoryModule state={state} action={action} />
-}
-
-function ThemeSettingsModule({ state, replaceState, updateTheme, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  function setTheme(theme: ThemeMode) {
-    void action('正在切换主题', async () => {
-      const saved = await window.stable.appearance.setTheme(theme)
-      document.documentElement.dataset.theme = saved
-      updateTheme(saved)
-    })
-  }
-  return <><div className="theme-options account-theme-options">
-    {([
-      { id: 'dark' as const, label: '黑色', detail: '深色背景，适合长时间工作', icon: Moon },
-      { id: 'light' as const, label: '白色', detail: '暖白背景，适合长时间查看', icon: Sun },
-    ]).map(({ id, label, detail, icon: Icon }) => <button key={id} type="button" className="theme-option" data-active={state.theme === id || undefined} aria-pressed={state.theme === id} onClick={() => setTheme(id)}>
-      <span className="theme-sample" data-preview={id} aria-hidden="true"><span /><span /></span>
-      <span className="theme-option-copy"><span><Icon size={17} aria-hidden="true" />{label}</span><small>{detail}</small></span>
-      {state.theme === id && <Check className="theme-selected" size={17} aria-hidden="true" />}
-    </button>)}
-  </div><label className="prediction-setting"><span><strong>显示下一步消息建议</strong><small>回答结束后预测你可能发送的下一句话，会额外使用当前模型额度。</small></span><input type="checkbox" checked={state.messagePredictionsEnabled !== false} onChange={event => {
-    const enabled = event.target.checked
-    void action('正在保存消息建议设置', async () => { const saved = await window.stable.settings.messagePredictions(enabled); replaceState({ ...state, messagePredictionsEnabled: saved }) })
-  }} /></label></>
-}
-
-function formatCloudMoney(micros: number, currency = 'CNY') {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(micros || 0) / 1_000_000)
-}
-
-function CloudAccountModule({ state, replaceState, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const account = state.cloud.account
-  const quota = state.cloud.quota
-  const usage = state.cloud.usage?.totals
-  if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>本地直连模式</strong><span>无需 Stable Cloud 登录。模型连接在设置中配置，用量与额度由模型供应商管理。</span></div>
-  const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
-  const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
-  return <section className="cloud-account-settings account-module">
-    <div className="cloud-account-grid">
-      <article className="cloud-account-identity"><span className="cloud-account-avatar" aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{account.displayName}</strong><span>{account.username} · {account.role === 'admin' ? '管理员' : '成员'}</span></div><em><ShieldCheck size={13} aria-hidden="true" />已登录</em></article>
-      <article className="cloud-quota-card">
-        <div><span>本期额度</span><strong>{quota ? `${formatCloudMoney(committed, quota.currency)} / ${formatCloudMoney(quota.limitMicros, quota.currency)}` : '未分配'}</strong></div>
-        {quota && <><div className="cloud-quota-track" role="progressbar" aria-label="本期额度使用比例" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div className="cloud-quota-meta"><span>剩余 {formatCloudMoney(quota.remainingMicros, quota.currency)}</span><span>截止 {new Date(quota.periodEnd).toLocaleDateString('zh-CN')}</span></div></>}
-      </article>
-    </div>
-    <div className="cloud-usage-grid" aria-label="近 30 天模型用量">
-      <div><span>模型请求</span><strong>{Number(usage?.request_count || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>输入 Token</span><strong>{Number(usage?.prompt_tokens || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>输出 Token</span><strong>{Number(usage?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>确认消耗</span><strong>{formatCloudMoney(Number(usage?.actual_micros || 0), quota?.currency || 'CNY')}</strong></div>
-    </div>
-    <div className="account-module-actions"><button className="button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新账号</button><button className="text-button account-logout" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}><LogOut size={15} aria-hidden="true" />退出账号</button></div>
-  </section>
-}
-
-function UpdateSettingsModule({ state, action }: { state: BootstrapData; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const update = state.update
-  const status = update.status === 'development' ? '开发模式不连接更新服务'
-    : update.status === 'checking' ? '正在检查更新…'
-      : update.status === 'available' ? `发现新版本 v${update.availableVersion}，等待下载`
-        : update.status === 'downloading' ? `正在下载 ${update.progress}%`
-          : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，等待安装`
-            : update.status === 'installing' ? `正在打开 v${update.availableVersion} 安装进度窗口`
-              : update.status === 'error' ? update.error : '启动时自动检查更新，不会自动下载'
-  const buttonLabel = update.status === 'available' ? '下载更新'
-    : update.status === 'downloading' ? `下载中 ${update.progress}%`
-      : update.status === 'downloaded' ? '安装更新'
-        : update.status === 'installing' ? '正在安装' : '检查更新'
-  const runUpdateAction = () => {
-    if (update.status === 'available') return action('正在下载软件更新', async () => { await window.stable.updater.download() })
-    if (update.status === 'downloaded') return action('正在安装软件更新', async () => { await window.stable.updater.install() })
-    return action('正在检查软件更新', async () => { await window.stable.updater.check() })
-  }
-  return <section className="update-settings account-update-settings">
-    <div className="update-settings-row" data-update-ready={['available', 'downloading', 'downloaded'].includes(update.status) || undefined}><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'installing'].includes(update.status)} onClick={() => void runUpdateAction()}>{buttonLabel}</button></div>
-    <p>Stable 启动时只检查新版本；只有你点击“下载更新”后才会下载，安装继续使用现有独立进度窗口。</p>
-  </section>
-}
-
-function AgentHistoryModule({ state, action }: { state: BootstrapData; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
-  const [globalFile, setGlobalFile] = useState<GlobalInstructionsFile>({ path: `${state.paths.userData}\\AGENTS.md`, content: '', exists: false })
-  const [globalDraft, setGlobalDraft] = useState('')
-  const [globalStatus, setGlobalStatus] = useState('正在读取本机记录…')
-  useEffect(() => {
-    let active = true
-    window.stable.settings.globalInstructions().then((value) => {
-      if (!active) return
-      setGlobalFile(value)
-      setGlobalDraft(value.content)
-      setGlobalStatus(value.exists ? '已读取当前记录' : '文件尚未创建，保存时会自动创建')
-    }).catch((reason) => { if (active) setGlobalStatus(errorMessage(reason)) })
-    return () => { active = false }
-  }, [])
-  return <section className="global-instructions-settings account-agent-history">
-    <p>内容保存到本机 AGENTS.md，仅在之后启动的新任务中读取。</p>
-    <div className="field"><label htmlFor="account-global-instructions">本机全局说明</label><textarea id="account-global-instructions" rows={9} value={globalDraft} onChange={(event) => { setGlobalDraft(event.target.value); setGlobalStatus('有尚未保存的更改') }} placeholder="例如：默认使用简体中文；交付文件保存到工作区并返回完整路径。" /></div>
-    <div className="global-instructions-meta"><code>{globalFile.path}</code><span role="status">{globalStatus}</span></div>
-    <button className="button primary" type="button" onClick={() => void action('正在保存全局 Agent 对话提醒', async () => { const saved = await window.stable.settings.saveGlobalInstructions(globalDraft); setGlobalFile(saved); setGlobalDraft(saved.content); setGlobalStatus('已保存，只影响之后启动的新任务') })}><Save size={17} aria-hidden="true" />保存记录</button>
-  </section>
-}
-
-function Empty({ icon: Icon, title, detail }: { icon: typeof Database; title: string; detail: string }) {
-  return <div className="empty-state"><Icon size={26} strokeWidth={1.5} /><h2>{title}</h2><p>{detail}</p></div>
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }

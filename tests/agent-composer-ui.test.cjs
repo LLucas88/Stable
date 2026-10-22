@@ -1,31 +1,33 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { existsSync, readFileSync, statSync } = require('node:fs')
 const path = require('node:path')
 
-test('agent composer multi-selects data, scripts, knowledge and Skills into removable chips', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+test('agent composer multi-selects scripts and Skills into removable chips without legacy data or knowledge injection', () => {
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu permission-menu"'))
   assert.doesNotMatch(menu, /type="checkbox"/)
-  assert.match(menu, /<ResourceGroup title="数据库"/)
+  assert.doesNotMatch(menu, /<ResourceGroup title="数据库"/)
   assert.match(menu, /<ResourceGroup title="脚本"/)
-  assert.match(menu, /<ResourceGroup title="知识库"/)
+  assert.doesNotMatch(menu, /<ResourceGroup title="知识库"/)
   assert.match(app, /function ResourceGroup/)
   assert.match(app, /aria-label="选择 Skill"/)
   assert.match(app, /className="composer-selections"/)
   assert.match(app, /data-kind=\{item\.kind\}/)
-  assert.match(app, /data-kind=\{item\.type === 'skill' \? 'skill' : 'attachment'\}/)
+  assert.match(app, /documentAttachments\.map\(\(item\) => <ConversationFileCard compact/)
+  assert.match(app, /onRemove=\{\(\) => removeAttachment\(item\)\}/)
   assert.match(app, /document\.addEventListener\('pointerdown', closeOutside, true\)/)
-  assert.match(css, /\.composer-selections[^}]*overflow-x: auto/)
+  assert.match(css, /\.composer-selections[^}]*max-width: 100%;[^}]*flex-wrap: wrap/)
   assert.match(css, /\.selection-chip[^}]*flex: 0 0 auto/)
 })
 
 test('conversation selection has a clear neutral active surface while history labels use available width', () => {
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   assert.match(css, /#root \.conversation-history-card \.conversation-list-item\[data-active="true"\],[\s\S]*background: var\(--color-paper-4\) !important;/)
   assert.match(css, /\.conversation-select strong \{[^}]*font-family: var\(--font-body\);[^}]*font-weight: 400;/)
   assert.match(css, /\.conversation-list-item \{[^}]*transition: none;/)
@@ -40,8 +42,8 @@ test('conversation selection has a clear neutral active surface while history la
 })
 
 test('plus menu opens the image and file picker while Skill installation stays separate', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(app, /accept="[^"]*\.zip"/)
   assert.match(app, /aria-label="添加附件与内容"/)
@@ -58,11 +60,11 @@ test('plus menu opens the image and file picker while Skill installation stays s
 })
 
 test('conversation images support selection, drag, paste, thumbnail removal without provider-wide image blocking', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
-  const harness = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'harness.cjs'), 'utf8')
+  const harness = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'claude-harness.cjs'), 'utf8')
   assert.match(app, /accept="[^"]*\.png,[^"]*\.jpg,[^"]*\.webp/)
   assert.match(app, /onPaste=\{handlePromptPaste\}/)
   assert.match(app, /window\.stable\.agent\.savePastedImage/)
@@ -80,8 +82,8 @@ test('conversation images support selection, drag, paste, thumbnail removal with
   assert.match(main, /dialog\.showSaveDialog\(mainWindow/)
   assert.match(main, /copyFileSync\(inspected\.path, result\.filePath\)/)
   assert.doesNotMatch(main, /requestedAttachments\.some\(isImageAttachment\) && isDeepSeekModel/)
-  assert.match(harness, /input: \['text', 'image'\]/)
-  assert.match(harness, /attachments\.saveImage/)
+  assert.match(harness, /type: 'image', source: \{ type: 'base64'/)
+  assert.match(harness, /const images = this\.loadImages\(imageAttachments\)/)
   assert.match(css, /\.message-image-gallery/)
   assert.match(css, /\.message-image \{[^}]*width: fit-content;[^}]*height: auto;[^}]*background: transparent;/)
   assert.match(css, /\.composer-image-selection \{[^}]*width: fit-content;[^}]*height: auto;/)
@@ -100,7 +102,7 @@ test('conversation images support selection, drag, paste, thumbnail removal with
 })
 
 test('resource entry in plus menu has a label and submenu arrow', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const menu = app.slice(app.indexOf('<details className="composer-menu data-menu"'), app.indexOf('<details className="composer-menu permission-menu"'))
   const summary = menu.slice(menu.indexOf('<summary'), menu.indexOf('</summary>'))
   assert.match(summary, /aria-label=\{`选择引用资源/)
@@ -109,9 +111,9 @@ test('resource entry in plus menu has a label and submenu arrow', () => {
 })
 
 test('generated deliverables and materialized uploads share clickable file cards behind a real workspace guard', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preview = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'preview.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(app, /function localArtifactPaths/)
@@ -120,8 +122,8 @@ test('generated deliverables and materialized uploads share clickable file cards
   assert.match(app, /item\.kind === 'attachment' && item\.path/)
   assert.match(app, /kind: 'file', value: item\.path, title: item\.name/)
   assert.match(app, /previewRequestRef\.current \+= 1[\s\S]*requestId: previewRequestRef\.current/)
-  assert.match(app, /本地文件 · 侧栏预览/)
-  assert.match(app, /上传附件 · \$\{item\.type\.toUpperCase\(\)\}/)
+  assert.match(app, /aria-label=\{`在 Stable 内置浏览器预览 \$\{item.name\}`\}/)
+  assert.match(app, /detail: item\.type\.toUpperCase\(\)/)
   assert.match(css, /\.conversation-file-card[^}]*min-height: 3\.5rem/)
   assert.match(css, /\.conversation-file-card:focus-visible[^}]*outline-color: var\(--color-focus\)/)
   assert.match(main, /stable:preview:openFile/)
@@ -133,8 +135,8 @@ test('generated deliverables and materialized uploads share clickable file cards
 })
 
 test('the conversation context panel and its toggle are removed while the file preview sidebar remains', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.doesNotMatch(app, /contextOpen|className="context-toggle"|className="context-panel"|data-context-open|function ContextLine/)
   assert.doesNotMatch(css, /\.context-toggle|\.context-panel|\.context-line|\.context-note|data-context-open/)
   assert.match(app, /<BrowserPanel/)
@@ -143,9 +145,9 @@ test('the conversation context panel and its toggle are removed while the file p
 })
 
 test('large attachment previews no longer reject the send and failures stay recoverable in the composer', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const prompts = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'prompts.cjs'), 'utf8')
   assert.doesNotMatch(main, /正文合计超过 30 万字|let totalText/)
   assert.match(main, /const materializedRoots = \[\]/)
@@ -168,38 +170,41 @@ test('large attachment previews no longer reject the send and failures stay reco
 })
 
 test('sent attachments follow the user message and completed execution timelines collapse without cards', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.match(app, /setPrompt\(''\); setAttachments\(\[\]\); setReferences\(current => current\.filter\(item => item\.kind === 'skill'\)\)/)
-  assert.match(app, /setPendingMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: \{ content: value, attachments: messageAttachments \} \}\)\)/)
+  assert.match(app, /setPendingMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: \{ content: clarificationPendingContent\(value, entry\.payload\.clarificationResponse,[^\n]+attachments: messageAttachments \} \}\)\)/)
   assert.match(app, /window\.stable\.agent\.configure\(conversationId, conversation\.capability,/)
   assert.match(app, /window\.stable\.agent\.run\(conversationId, value, currentAttachments, currentReferences, entry\.id, entry\.payload\.clarificationResponse\)/)
   assert.match(app, /<UserTurn content=\{message\.content\} attachments=\{message\.attachments\}/)
   assert.match(app, /className="message-attachments"/)
   assert.match(css, /\.message-attachments[^}]*overflow-x: auto/)
   const trace = app.slice(app.indexOf('function RunTrace'), app.indexOf('function markdownTableCells'))
-  assert.match(trace, /if \(status !== 'running'\) setExpanded\(false\)/)
+  assert.match(trace, /useEffect\(\(\) => \{ setExpanded\(false\) \}, \[status\]\)/)
+  assert.match(trace, /const showTimeline = status === 'running' \|\| expanded/)
   assert.match(trace, /buildTraceTimeline\(entries, finalContent\)/)
-  assert.match(trace, /timeline\.map\(\(item\) => item\.eventType === 'agent\/answer'/)
-  assert.match(trace, /<TraceText key=\{item.id\}/)
-  assert.match(trace, /<TraceAction key=\{item.id\}/)
+  assert.match(trace, /groupTraceTimeline\(timeline\)/)
+  assert.match(trace, /groupedTimeline\.map\(entry =>/)
+  assert.match(trace, /return item\.eventType === 'agent\/answer'/)
+  assert.match(trace, /<TraceText key=\{entry.id\}/)
+  assert.match(trace, /<TraceAction key=\{entry.id\}/)
   assert.match(css, /\.trace-timeline[^}]*flex-direction: column/)
   assert.doesNotMatch(app, /TraceModuleCard|SubagentTraceCard|完整过程输出|过程 \{index/)
   assert.doesNotMatch(css, /trace-card-grid|trace-module-card|trace-card-swap|stream-output-card/)
 })
 
 test('agent conversations run independently and keep a persisted permission mode', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   const store = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'store.cjs'), 'utf8')
   assert.match(app, /runningMap/)
   assert.match(app, /traceMap/)
   assert.match(app, /pendingMap/)
   assert.match(app, /PERMISSION_OPTIONS/)
-  assert.match(app, /请求审批/)
-  assert.match(app, /帮我审批/)
-  assert.match(app, /完全访问权限/)
+  assert.match(app, /请求批准/)
+  assert.match(app, /帮我批准/)
+  assert.match(app, /完全访问/)
   assert.doesNotMatch(app, /<ApprovalCard/)
   assert.match(app, /pendingApproval \? <ApprovalComposer/)
   assert.match(app, /approvalUnread\.has\(item\.id\)/)
@@ -217,11 +222,11 @@ test('agent conversations run independently and keep a persisted permission mode
 })
 
 test('conversation installs Skill folders globally and the Skill library is preview-only cards', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const skillsPage = app.slice(app.indexOf('function SkillsPage'), app.indexOf('function PageLead'))
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const skillsPage = readFileSync(path.join(__dirname, '..', 'src', 'pages', 'SkillsPage.tsx'), 'utf8')
   assert.match(app, /window\.stable\.agent\.selectSkillFolder\(\)/)
   assert.match(app, /aria-label="选择 Skill"/)
   assert.match(app, /安装新的 Skill 文件夹/)
@@ -241,9 +246,9 @@ test('conversation installs Skill folders globally and the Skill library is prev
 })
 
 test('workflow page is a resource-backed editable topology and conversation has no collaboration graph', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const studio = readFileSync(path.join(__dirname, '..', 'src', 'WorkflowStudio.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.doesNotMatch(app, /collaboration-toggle|AgentGraph|团队执行/)
   assert.match(app, /<WorkflowStudio state=\{state\}/)
   assert.match(studio, /ReactFlow/)
@@ -315,7 +320,7 @@ test('workflow page is a resource-backed editable topology and conversation has 
 
 test('workflow execution can stop, keeps semi-automatic scripts alive, auto names outputs and deletes only selected edges', () => {
   const studio = readFileSync(path.join(__dirname, '..', 'src', 'WorkflowStudio.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(studio, /workflowRunning \? <button className="button danger"/)
   assert.match(studio, /window\.stable\.workflows\.cancel\(\)/)
@@ -338,7 +343,7 @@ test('workflow execution can stop, keeps semi-automatic scripts alive, auto name
   assert.match(main, /function cancelWorkflow\(\)/)
   assert.match(main, /timestampedOutputName\(outputName\)/)
   assert.match(workflowRun, /scheduleWorkflowTasks\(graph, executeNode\)/)
-  assert.match(workflowRun, /new ScriptRunner\(\{ workspace: paths\.workspace \}\)/)
+  assert.match(workflowRun, /new ScriptRunner\(\{ workspace: paths\.workspace, packaged: app\.isPackaged, resourcesPath: process\.resourcesPath \}\)/)
   assert.match(workflowRun, /const aiRunner = createHarnessRunner\(\)/)
   assert.doesNotMatch(workflowRun, /result = await runner\.run\(/)
   const outputBranch = workflowRun.slice(workflowRun.indexOf("node.type === 'output'"))
@@ -353,7 +358,7 @@ test('workflow execution can stop, keeps semi-automatic scripts alive, auto name
 
 test('module prompt creation is per-node and every existing edge animates for the full workflow run', () => {
   const studio = readFileSync(path.join(__dirname, '..', 'src', 'WorkflowStudio.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const enhancement = studio.slice(studio.indexOf('async function enhanceSelectedNode'), studio.indexOf('async function removeWorkflow'))
   assert.match(studio, /AI提示词创作中/)
   assert.match(studio, /enhancementRunsRef/)
@@ -367,7 +372,7 @@ test('module prompt creation is per-node and every existing edge animates for th
 
 test('completed workflow outputs expose a temporary connected exit node with file actions', () => {
   const studio = readFileSync(path.join(__dirname, '..', 'src', 'WorkflowStudio.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
   assert.match(main, /artifacts\.push\(\{ nodeId, path: output\.path, name: path\.basename\(output\.path\) \}\)/)
   assert.match(main, /return \{ output, artifacts, workflows:/)
@@ -380,13 +385,13 @@ test('completed workflow outputs expose a temporary connected exit node with fil
 })
 
 test('agent runs refresh Stable native resource status in the shared app state', () => {
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   assert.match(main, /library: store\.listLibrary\(\), skills: store\.listSkills\(\), workflows: store\.listWorkflows\(\)/)
 })
 
 test('assistant Markdown tables keep stable hover geometry and expose Markdown-only copy', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.match(app, /function isMarkdownTableStart/)
   assert.match(app, /className="markdown-table-wrap"/)
   assert.match(app, /className="markdown-table-copy"/)
@@ -398,12 +403,12 @@ test('assistant Markdown tables keep stable hover geometry and expose Markdown-o
   assert.doesNotMatch(hoverLift, /\.markdown-table-wrap/)
   assert.match(css, /\.markdown-body table/)
   assert.match(css, /\.markdown-body \{[^}]*width: 100%;[^}]*max-width: none/)
-  assert.match(css, /\.assistant-answer \.markdown-body \{[^}]*font-family: "Microsoft YaHei", "微软雅黑", sans-serif;[^}]*font-size: var\(--text-sm\)/)
+  assert.match(css, /\.assistant-answer \.markdown-body \{[^}]*font-family: var\(--font-body\);[^}]*font-size: var\(--text-sm\)/)
   assert.match(css, /\.assistant-answer \.markdown-body h2 \{[^}]*font-family: inherit;[^}]*font-size: var\(--text-md\)/)
 })
 
 test('agent page stays mounted across tabs and each answer has only one execution module above it', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   assert.match(app, /data-page="agent" hidden=\{page !== 'agent'\}/)
   assert.doesNotMatch(app, /page === 'agent' && <AgentPage/)
   const turn = app.slice(app.indexOf('function MessageTurn'), app.indexOf('function UserTurn'))
@@ -414,17 +419,18 @@ test('agent page stays mounted across tabs and each answer has only one executio
 })
 
 test('home lead keeps the requested three fixed lines', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.match(app, /<span>AI_Native助力业务流程优化<\/span><span>本地部署的Agent助理，确保数据安全<\/span><span>数据存储库致力专注<\/span>/)
   assert.match(css, /\.home-intro h2 > span[^}]*display: block[^}]*white-space: nowrap/)
 })
 
-test('workspace mode switch is the first sidebar component and no large sidebar logo remains', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+test('workspace mode switch follows the module navigation and no large sidebar logo remains', () => {
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   const sidebar = app.slice(app.indexOf('<aside className="side-rail"'), app.indexOf('</aside>'))
-  assert.ok(sidebar.indexOf('className="rail-mode-switch"') < sidebar.indexOf('className="rail-nav"'))
+  assert.ok(sidebar.indexOf('className="rail-nav"') >= 0)
+  assert.ok(sidebar.indexOf('className="rail-mode-switch"') > sidebar.indexOf('className="rail-nav"'))
   assert.doesNotMatch(sidebar, /rail-conversation-new-slot/)
   assert.doesNotMatch(sidebar, /brand-mark|<img/)
   assert.doesNotMatch(css, /\.brand-mark/)
@@ -432,13 +438,13 @@ test('workspace mode switch is the first sidebar component and no large sidebar 
 
 test('a new empty conversation centers the full composer beneath the supplied looping animation', () => {
   const root = path.join(__dirname, '..')
-  const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(root, 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
   const animation = path.join(root, 'src', 'assets', 'bloub-2.mp4')
   assert.equal(existsSync(animation), true)
   assert.ok(statSync(animation).size > 0)
   assert.match(app, /import conversationStartAnimationUrl from '\.\/assets\/bloub-2\.mp4'/)
-  assert.match(app, /const conversationIsEmpty = state\.messages\.length === 0 && !pendingPrompt/)
+  assert.match(app, /const conversationIsEmpty = visibleMessages\.length === 0 && !pendingPrompt && !liveTrace/)
   assert.match(app, /className="conversation" data-empty=\{conversationIsEmpty \|\| undefined\}/)
   assert.match(app, /className="conversation-start-animation"[\s\S]*autoPlay=\{!reduceConversationMotion\}[\s\S]*loop muted playsInline/)
   assert.match(app, /<h2>准备好了，随时开始<\/h2>/)
@@ -450,9 +456,9 @@ test('a new empty conversation centers the full composer beneath the supplied lo
 })
 
 test('assistant text deltas render immediately while the final answer remains persisted by the existing run result', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   assert.match(main, /source\.eventType === 'agent\/answer-delta'/)
   assert.match(main, /mainWindow\.webContents\.send\('stable:agent:event', event\)/)
   assert.match(app, /const \[streamingAnswerMap, setStreamingAnswerMap\]/)
@@ -467,16 +473,16 @@ test('assistant text deltas render immediately while the final answer remains pe
   assert.match(main, /transcript\.flush\(\)/)
   assert.match(app, /updateAgentForConversation\(result, conversationId\)/)
   assert.match(app, /setStreamingAnswerMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: undefined \}\)\)/)
-  assert.match(css, /\.trace-text-content:not\(\[data-expanded="true"\]\)[^}]*-webkit-line-clamp: 2/)
-  assert.match(app, /aria-expanded=\{expanded\} aria-controls=\{textId\}/)
+  assert.match(css, /\.trace-text\[data-live\] \.trace-text-content[^}]*max-height: none;[^}]*-webkit-line-clamp: unset/)
+  assert.match(app, /className="trace-text-content">\{renderInline\(visible, textId\)\}/)
   assert.match(app, /new ResizeObserver\(measure\)/)
   assert.match(main, /event.inputDetail = previous\?\.inputDetail/)
   assert.match(main, /event.startedAt = previous\?\.startedAt \?\? previous\?\.time \?\? event.time/)
 })
 
 test('all script categories expose the shared console and cards keep a shadow-free hover state', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
   const dataLibrary = app.slice(app.indexOf('function DataPage'), app.indexOf('function ScriptCard'))
   assert.match(dataLibrary, /kind === 'script'\) setLogId\(event\.itemId\)/)
   assert.match(dataLibrary, /setRunningId\(item\.id\)\s+setLogId\(item\.id\)/)

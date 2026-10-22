@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowLeft, ArrowRight, Plus, RotateCw, X, Download, History, Hand, Globe2, FileText, Maximize2, Minimize2, PanelRightClose, List, Pencil } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plus, RotateCw, X, Download, History, Hand, Globe2, FileText, Maximize2, Minimize2, PanelRightClose, List, Pencil, Scan } from 'lucide-react'
 import type { PreviewState } from './types'
 
 type Tab = { sourcePath?:string; id:string; title:string; url:string; state:string; error?:string; blockedURL?:string; diagnostics:boolean;blockedSites?:string[];loading?:boolean;canGoBack?:boolean;canGoForward?:boolean }
@@ -126,6 +126,7 @@ export function BrowserPanel({ conversationId, initialURL, initialTarget, onClos
     </header>
     <form className="browser-address" onSubmit={e=>{e.preventDefault();navigate()}}>
       <button type="button" disabled={!current?.canGoBack} aria-label="后退" onClick={()=>void (file?window.stable.preview.navigate('back'):perform('navigate',{tabId:tab?.id,navigation:'back'}))}><ArrowLeft size={16}/></button><button type="button" disabled={!current?.canGoForward} aria-label="前进" onClick={()=>void (file?window.stable.preview.navigate('forward'):perform('navigate',{tabId:tab?.id,navigation:'forward'}))}><ArrowRight size={16}/></button><button type="button" disabled={!file&&!tab} aria-label="重新加载" onClick={()=>editorRef.current?.sessionId?void editorAction('editorReload'):file?setReload(v=>v+1):void perform('navigate',{tabId:tab?.id,navigation:'reload'})}><RotateCw className={current?.loading?'spin':undefined} size={16}/></button><input aria-label="网页地址" value={url} onChange={e=>setURL(e.target.value)} placeholder="输入网址或本地文件路径" onFocus={e=>e.target.select()}/>
+      {editor&&section==='page'&&<button type="button" aria-label="区域 AI 编辑" title="区域 AI 编辑：框选后描述新增内容" onClick={()=>void editorAction('editorRegion')}><Scan size={16}/></button>}
       {(file&&/\.html?$/i.test(file.value)||tab?.sourcePath)&&<button type="button" disabled={editorBusy||section!=='page'||Boolean(current?.loading)} aria-label="可视化编辑" aria-pressed={Boolean(editor)} title={editor?'退出编辑':'编辑本地 HTML'} onClick={()=>void toggleEditor()}><Pencil size={16}/></button>}
       <button type="button" disabled={saving||(!file&&!tab)} aria-label="保存当前文件" title="保存当前文件" onClick={()=>void saveCurrent()}><Download size={16}/></button>
       <button type="button" aria-label="下载记录" aria-pressed={section==='downloads'} title="下载记录" onClick={()=>void viewSection(section==='downloads'?'page':'downloads')}><List size={16}/></button><button type="button" aria-label="浏览历史" aria-pressed={section==='history'} title="浏览历史" onClick={()=>void viewSection(section==='history'?'page':'history')}><History size={16}/></button>

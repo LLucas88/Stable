@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Render the real AgentPage in a hidden window with mock IPC. Never touch the
 // user's running app, account, workspace or network.
 const { app, BrowserWindow, session } = require('electron')
@@ -17,14 +18,14 @@ async function main() {
   win = new BrowserWindow({ show: false, width: 1280, height: 800, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } })
   win.webContents.on('console-message', (_event, level, message) => { if(level >= 2) console.error(message) })
 
-  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(')
+  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(').replace('function AccountDock(', 'export function AccountDock(')
   const bundle = (await build({ stdin: { contents: `
-    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
+    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {AgentPage,LaunchSplash} from './src/App'; import {AccountDock} from './src/settings/SettingsWorkspace';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
-    conversations.push({...conversations[0],id:'pc',title:'项目已有聊天',projectId:'p1'});const initial={projects:[{id:'p1',name:'项目一',rootPath:'D:/mock/project-one'},{id:'p2',name:'项目二',rootPath:'D:/mock/project-two'}],activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
+    conversations.push({...conversations[0],id:'pc',title:'根据上传的数据源做一个经营情况的数据分析报告，交付 HTML 格式并核对数据',projectId:'p1'});const initial={update:{status:'available',currentVersion:'1.1.0',availableVersion:'1.1.1'},appVersion:'1.1.0',projects:[{id:'p1',name:'项目一',rootPath:'D:/mock/project-one'},{id:'p2',name:'项目二',rootPath:'D:/mock/project-two'}],activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?messages:[],catchAttachments:id==='b'?[draft]:[]});
     window.stable={projects:{
@@ -44,14 +45,44 @@ async function main() {
     window.paste=text=>paste(text);window.selectAll=()=>selectAll();
     window.event=(status='running')=>listener({conversationId:'a',runId:'run-a',id:status==='completed'?'complete':'runtime',kind:'status',status,title:'任务状态',time:Date.now()});
     function Test(){const [value,setValue]=useState(initial); window.changeState=setValue;window.fixtureState=state;window.draft=draft;
-      return <AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/>}
+      return <>{createPortal(<AccountDock state={value} onSelect={module=>{window.selectedSettingsModule=module}}/>,document.getElementById('settings'))}<AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/></>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks" class="rail-conversation-tasks-slot"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail side-rail"><div id="tasks" class="rail-conversation-tasks-slot"></div><div id="settings" style="display:contents"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.main-frame > #root{background:var(--color-paper)}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
+  await new Promise(resolve => setTimeout(resolve, 350))
+  await win.webContents.executeJavaScript(`(async()=>{
+    const tick=()=>new Promise(r=>setTimeout(r,120)),expect=(ok,msg)=>{if(!ok)throw Error(msg)};
+    const title=document.querySelector('[data-conversation-id="pc"] .conversation-title');
+    expect(title.dataset.overflow==='true'&&getComputedStyle(title).maskImage.includes('linear-gradient'),'Long title does not fade');
+    expect(getComputedStyle(title).textOverflow==='clip'&&title.title===title.textContent,'Title truncation or accessible full name incorrect');
+    expect(document.querySelector('[data-conversation-id="a"] .conversation-title').dataset.overflow==='false','Short title should not fade');
+    title.style.width='1500px';await tick();expect(title.dataset.overflow==='false','Title fade did not clear after resize');title.style.width='';await tick();expect(title.dataset.overflow==='true','Title fade did not return after resize');
+    const trigger=document.querySelector('.rail-account-trigger'),rail=document.querySelector('.rail');
+    expect(trigger.textContent.trim()===''&&!trigger.querySelector('.account-avatar'),'Old account identity remains');
+    expect(trigger.getAttribute('aria-label').startsWith('设置'),'Settings label or update badge missing');
+    expect(Math.abs(trigger.getBoundingClientRect().right-(rail.getBoundingClientRect().right-18))<2&&trigger.getBoundingClientRect().bottom>innerHeight-65,'Settings not at sidebar bottom right');
+    trigger.click();await tick();expect(document.querySelector('.account-menu-popover')&&!document.querySelector('.settings-menu-heading'),'Settings menu should omit heading');
+    [...document.querySelectorAll('.account-menu-popover nav button')].find(el=>el.textContent.includes('软件更新')).click();await tick();
+    expect(window.selectedSettingsModule==='updates'&&!document.querySelector('.account-menu-popover'),'Settings did not navigate to selected page');trigger.click();await tick();
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));await tick();window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));await tick();
+    expect(!document.querySelector('.account-menu-popover')&&document.activeElement===trigger,'Settings Escape/focus broken');
+    const scroll=document.querySelector('.message-scroll');
+    scroll.scrollTop=0;scroll.dispatchEvent(new Event('scroll'));await tick();
+    expect(scroll.dataset.fadeTop==='false'&&scroll.dataset.fadeBottom==='true','Top-of-history fade state incorrect');
+    scroll.scrollTop=(scroll.scrollHeight-scroll.clientHeight)/2;scroll.dispatchEvent(new Event('scroll'));await tick();
+    expect(scroll.dataset.fadeTop==='true'&&scroll.dataset.fadeBottom==='true','Middle-of-history fades missing');
+    expect(getComputedStyle(scroll).maskImage.includes('24px')&&getComputedStyle(scroll).maskImage.includes('28px'),'Narrow fade mask missing');
+    const rect=scroll.getBoundingClientRect();expect(scroll.contains(document.elementFromPoint(rect.left+60,rect.top+12)),'Fade intercepts pointer');
+    document.documentElement.dataset.theme='dark';await tick();expect(getComputedStyle(title).maskImage.includes('linear-gradient'),'Dark theme title mask missing');
+  })()`)
+  fs.writeFileSync(path.join(output,'fades-dark.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`document.documentElement.dataset.theme='light'`)
+  fs.writeFileSync(path.join(output,'fades-light.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`(async()=>{const scroll=document.querySelector('.message-scroll');scroll.scrollTop=scroll.scrollHeight;scroll.dispatchEvent(new Event('scroll'));await new Promise(r=>setTimeout(r,100));if(scroll.dataset.fadeBottom!=='false'||scroll.dataset.fadeTop!=='true')throw Error('Bottom fade should clear at latest message');})()`)
   // Force a CSS hover in this isolated renderer, without moving the user's mouse.
   await new Promise(resolve => setTimeout(resolve, 200))
   win.webContents.debugger.attach('1.3')
@@ -78,9 +109,9 @@ async function main() {
   const typography=await win.webContents.executeJavaScript('(()=>{ const style=selector=>getComputedStyle(document.querySelector(selector)); const answer=style(".assistant-answer .markdown-body"),input=style("#agent-prompt"); return {bodyWeight:style("body").fontWeight,answerColor:answer.color,answerSize:answer.fontSize,answerFamily:answer.fontFamily,inputMinHeight:input.minHeight,inputOverflow:input.overflowY,headerBorder:style(".conversation-topbar").borderBottomWidth}; })()')
   require('node:assert/strict').equal(typography.answerColor,'rgb(26, 28, 31)')
   require('node:assert/strict').equal(typography.bodyWeight,'400')
-  require('node:assert/strict').equal(typography.answerSize,'14px')
+  require('node:assert/strict').equal(typography.answerSize,'15px')
   require('node:assert/strict').equal(typography.inputOverflow,'auto')
-  require('node:assert/strict').equal(typography.headerBorder,'1px')
+  require('node:assert/strict').equal(typography.headerBorder,'0px')
   fs.writeFileSync(path.join(output,'design-typography.json'),JSON.stringify(typography,null,2))
   fs.writeFileSync(path.join(output,'design-conversation.png'),(await win.webContents.capturePage()).toPNG())
   const result=await win.webContents.executeJavaScript(`(async()=>{
@@ -97,10 +128,10 @@ async function main() {
     expect(host.dataset.scrolling==='true','Scrollbar hid while still scrolling');
     await new Promise(r=>setTimeout(r,600));expect(!host.dataset.scrolling,'Scrollbar did not hide after idle');
     expect(host.clientWidth===width,'Scrollbar changed content width');host.style.cssText=previous;host.scrollTop=0;await tick();
-    expect(document.querySelector('.browser-launch')?.textContent.trim()==='','Browser button must be icon only');expect(!document.querySelector('.conversation-section-head').textContent.includes('归档'),'Archive button remains');
+    expect(document.querySelector('.conversation-tools-trigger')?.textContent.trim()==='' ,'Conversation tools button must be icon only');expect(!document.querySelector('.conversation-section-head').textContent.includes('归档'),'Archive button remains');
     expect(!document.querySelector('.recent-heading .sidebar-project-more'),'Recent ellipsis should not exist');
     click('.recent-toggle');await tick();expect(!document.querySelector('.recent-conversations'),'Recent collapse failed');expect(document.querySelector('[data-conversation-id="pc"]'),'Collapse hid project tasks');
-    click('.recent-new');await tick();expect(window.newCount===1&&document.querySelector('.recent-conversations'),'New conversation did not expand recents');
+    click('.recent-new');await tick();expect(window.newCount===1&&document.querySelector('.recent-conversations'),'New conversation did not expand recents');expect(document.querySelector('.message-scroll').dataset.fadeTop==='false'&&document.querySelector('.message-scroll').dataset.fadeBottom==='false','Empty conversation retained fade');
     click('[aria-label="更多操作 来源对话"]');await tick();
     const anchor=document.querySelector('[aria-label="更多操作 来源对话"]'),menu=document.querySelector('.sidebar-action-menu');
     expect(menu.getBoundingClientRect().left>=anchor.getBoundingClientRect().right,'Task menu did not open to the right');expect(menu.getBoundingClientRect().bottom<=innerHeight,'Menu outside screen');expect(!document.querySelector('.rail').contains(menu),'Menu remains inside clipped sidebar');

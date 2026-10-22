@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,8 +7,8 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
-const app = readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8')
-const css = readFileSync(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
+const app = readSource(path.join(root, 'src', 'App.tsx'), 'utf8')
+const css = readSource(path.join(root, 'src', 'styles', 'app.css'), 'utf8')
 
 test('Team conversation sharing replaces the old remote task modules', () => {
   assert.match(app, /<AtSign[^>]*aria-hidden="true"/)
@@ -26,10 +27,10 @@ test('Team conversation sharing replaces the old remote task modules', () => {
 test('agent workbench keeps pinned tasks and inline subagent actions without execution cards', () => {
   assert.match(app, /className="conversation-history-card"/)
   assert.match(app, /className="conversation-pinned"/)
-  assert.match(app, /pinnedConversations\.map/)
+  assert.match(app, /LimitedTaskRows\(pinnedConversations, 'pinned', mobile\)/)
   assert.match(app, /function TraceAction/)
   assert.match(app, /item.entity === 'agent' \? Bot/)
-  assert.match(app, /agentName=\{item.parentSessionId \? agentNames.get\(item.sessionId\)/)
+  assert.match(app, /agentName=\{item.parentSessionId \? agentNames.get\(item.sessionId!\)/)
   assert.match(css, /#root \.trace-summary:hover,[\s\S]*box-shadow: none !important/)
   assert.match(css, /#root \.composer-box,[\s\S]*#root \.composer-box:focus-within[^}]*box-shadow: none !important[^}]*transition: none !important/)
   assert.match(css, /\.conversation-pinned\s*\{/)

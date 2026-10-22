@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,9 +7,9 @@ const { readFileSync } = require('node:fs')
 const path = require('node:path')
 
 test('launch splash plays every mount, supports skip, and restores the saved window theme', () => {
-  const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
-  const css = readFileSync(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   const preload = readFileSync(path.join(__dirname, '..', 'desktop', 'preload.cjs'), 'utf8')
 
   assert.match(app, /const \[showLaunch, setShowLaunch\] = useState\(true\)/)
@@ -31,7 +32,7 @@ test('launch splash plays every mount, supports skip, and restores the saved win
 })
 
 test('QA capture delay can inspect a frame during the launch animation', () => {
-  const main = readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
+  const main = readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8')
   assert.match(main, /STABLE_QA_CAPTURE_DELAY/)
   assert.match(main, /setTimeout\(async \(\) => \{[\s\S]*\}, captureDelay\)/)
 })

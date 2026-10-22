@@ -1,0 +1,5 @@
+.chatgpt-connection { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border, #9996); }
+.chatgpt-connection h3 { margin: 0; font-size: 16px; }
+.chatgpt-connection p { margin: 0; }
+.model-connection-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.model-connection-actions button:disabled { cursor: not-allowed; opacity: .6; }

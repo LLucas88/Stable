@@ -1,6 +1,7 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),{DatabaseSync}=require('node:sqlite')
-const source=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8')
+const source=readSource(path.join(__dirname,'../desktop/main.cjs'),'utf8')
 const block=source.slice(source.indexOf('function pendingApproval'),source.indexOf('const { TaskAlerts }'))
 test('notification and dialog share single-use decision and exact audit row',()=>{
  const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE approval_requests(id TEXT,conversation_id TEXT,request_json TEXT,state TEXT,created_at TEXT,decision_json TEXT,decided_at TEXT)')

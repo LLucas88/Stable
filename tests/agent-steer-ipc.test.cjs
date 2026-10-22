@@ -1,9 +1,10 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
-const main = readFileSync(path.join(__dirname, '..', 'desktop/main.cjs'), 'utf8')
+const main = readSource(path.join(__dirname, '..', 'desktop/main.cjs'), 'utf8')
 const source = main.slice(main.indexOf("ipcMain.handle('stable:agent:steer'"), main.indexOf("ipcMain.handle('stable:agent:cancel'"))
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 function setup() {
@@ -17,7 +18,7 @@ function setup() {
     prepareAgentMessage: async (_payload, _id, route) => { prepareRoute = route; return { attachments: [] } },
     store: { listMessages: () => [], getSetting: () => '', conversation: () => ({ capability: 'auto' }) },
     conversationLifecycle:{beginSteer:()=> 'pending',saveSteer:()=>{}},
-    isWendingCliPrompt: () => false, composeAgentPrompt: ({ query }) => query,
+    automaticSkillCatalog: () => [], attachmentImages: () => [], isWendingCliPrompt: () => false, composeAgentPrompt: ({ query }) => query,
     isImageAttachment: () => false, commitAgentMessage: () => { commits++ }, agentState: () => ({ activeConversationId: 'a' }),
   })
   return { control, send: (id = 'message') => handler(null, { conversationId: 'a', requestId: id, prompt: 'new instruction' }), stats: () => ({ calls, commits, prepareRoute }), answer: () => answer }

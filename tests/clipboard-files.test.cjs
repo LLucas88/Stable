@@ -1,11 +1,12 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const { transformSync } = require('esbuild')
-const source = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
+const source = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
 const code = transformSync(source.slice(source.indexOf('  async function addPastedAttachments('), source.indexOf('  function removeAttachment(')), { loader: 'tsx' }).code
 
 function setup(existing = []) {

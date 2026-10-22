@@ -1,9 +1,10 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test'), assert = require('node:assert/strict')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm')
 const { StableStore } = require('../desktop/services/store.cjs')
 const { MessagePredictions } = require('../desktop/services/message-predictions.cjs')
-const source = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+const source = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-prediction-ipc-'))
   const store = new StableStore(root), id = store.activeConversationId(), calls = [], handlers = new Map()
@@ -11,7 +12,7 @@ function fixture(t) {
   store.addMessage(id, 'user', '修复问题，先不发布。')
   const { id: messageId } = store.addMessage(id, 'assistant', '已完成修复。', [{ id: 'complete', kind: 'status', status: 'completed', time: 1 }])
   const context = vm.createContext({
-    MessagePredictions, store, AbortController, process, paths: { userData: root, workspace: root }, app: { isPackaged: false },
+    MessagePredictions, store, AbortController, process, chatgptAccount: null, paths: { userData: root, workspace: root }, app: { isPackaged: false },
     modelRegistry: { resolve: () => ({ model: { model: 'mock', baseURL: 'http://local.invalid' }, apiKey: 'fixture' }) },
     conversationPaths: () => ({ workspace: root }), conversationLifecycle: { locks: new Map() },
     agentRunners: new Map(), automationRunners: new Map(), teamTaskRunners: new Map(), collaborationRunners: new Map(), runner: null, activeWorkflowRun: null,

@@ -10,7 +10,7 @@ const { computeNextRun, normalizeAutomationInput } = require('./automation.cjs')
 const DEFAULT_IDENTITY = 'Stable 是你的本地智能工作助理，擅长数据分析、知识管理、Skills 调用和自动化工作流。它优先保护本地数据，执行涉及文件修改、脚本运行或外部请求的操作前会明确说明，并保留可追溯的运行记录。'
 const LEGACY_MODEL_PROFILE_ID = 'legacy-default-model'
 const DEFAULT_MODEL_SETTING = {
-  providerId: 'deepseek', displayName: 'DeepSeek', baseURL: 'https://api.deepseek.com',
+  providerId: 'deepseek', displayName: 'DeepSeek-V4.1-Flash-1017', baseURL: 'https://api.deepseek.com',
   model: 'deepseek-flash', hasApiKey: false,
 }
 
@@ -169,7 +169,7 @@ class StableStore {
       this.setSetting('codingPermissionsV0927', true)
     }
     if (this.getSetting('identity') === undefined) this.setSetting('identity', DEFAULT_IDENTITY)
-    if (this.getSetting('theme') === undefined) this.setSetting('theme', 'dark')
+    if (this.getSetting('theme') === undefined) this.setSetting('theme', 'light')
     require('./conversation-state.cjs').initializeConversationState(this, root)
     require('./conversation-state.cjs').initializeMessageSearch(this)
     require('./conversation-state.cjs').initializeProjectFolders(this)
@@ -246,7 +246,7 @@ class StableStore {
       const id = randomUUID(); const now = new Date().toISOString()
       const hasMessages = Boolean(this.db.prepare('SELECT id FROM messages LIMIT 1').get())
       this.db.prepare('INSERT INTO conversations(id,title,capability,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?)')
-        .run(id, hasMessages ? '历史对话 1' : '新对话', 'auto', '[]', now, now)
+        .run(id, hasMessages ? '历史对话 1' : '新对话', hasMessages ? 'auto' : (this.getSetting('defaultReasoning') || 'high'), '[]', now, now)
       first = { id }
     }
     this.db.prepare("UPDATE messages SET conversation_id=? WHERE conversation_id IS NULL OR conversation_id=''").run(first.id)
@@ -268,7 +268,7 @@ class StableStore {
       modelId: row.model_id || defaultModelId,
       waitingForInput: JSON.parse(row.latest_trace || '[]').some(item => item.clarification?.status === 'waiting'),
       dataIds: JSON.parse(row.data_ids_json || '[]'), messageCount: Number(row.message_count || 0),
-      sourceType: row.source_type === 'team' ? 'team' : 'local',
+      sourceType: ['team', 'workbuddy'].includes(row.source_type) ? row.source_type : 'local',
       pinned: pinnedIds.has(row.id),
       ...(row.source_device_id ? { sourceDeviceId: row.source_device_id } : {}),
       ...(row.source_device_name ? { sourceDeviceName: row.source_device_name } : {}),
@@ -295,7 +295,7 @@ class StableStore {
     const requestedModelId = String(options.modelId || '')
     const modelId = this.modelProfile(requestedModelId)?.id || this.modelCatalog().defaultModelId
     this.db.prepare('INSERT INTO conversations(id,title,capability,permission_mode,model_id,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
-      .run(id, title, 'auto', permissionMode, modelId, '[]', now, now)
+      .run(id, title, this.getSetting('defaultReasoning') || 'auto', permissionMode, modelId, '[]', now, now)
     if (options.select !== false) this.setSetting('activeConversationId', id)
     return id
   }
@@ -550,7 +550,7 @@ class StableStore {
       this.db.prepare(`INSERT INTO conversations(
         id,title,capability,permission_mode,model_id,data_ids_json,source_type,source_device_id,source_device_name,created_at,updated_at
       ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
-        id, offer.title || 'Team 对话', 'auto', 'request', this.modelCatalog().defaultModelId, '[]', 'team',
+        id, offer.title || 'Team 对话', this.getSetting('defaultReasoning') || 'auto', 'request', this.modelCatalog().defaultModelId, '[]', 'team',
         offer.sourceDeviceId || '', offer.sourceDeviceName || '', offer.createdAt || now, now,
       )
       const insert = this.db.prepare('INSERT INTO messages(id,conversation_id,role,content,trace_json,attachments_json,created_at) VALUES(?,?,?,?,?,?,?)')
@@ -692,6 +692,7 @@ class StableStore {
 
   listMessages(conversationId = this.activeConversationId()) { return this.messagePage(conversationId).messages }
   addMessage(conversationId, role, content, trace, attachments, automationProposal) {
+    if (this.db.prepare('SELECT source_type FROM conversations WHERE id=?').get(conversationId)?.source_type === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
     if(this.conversationContext(conversationId).deletionState==='pending')throw Error('此对话正在删除，拒绝迟到消息。')
     if (!this.conversation(conversationId)) throw new Error('找不到这个对话。')
     const allowedKinds = new Set(['data', 'skill', 'script', 'knowledge'])

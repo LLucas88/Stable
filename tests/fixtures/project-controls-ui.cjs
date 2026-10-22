@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Render the real AgentPage in a hidden window with mock IPC. Never touch the
 // user's running app, account, workspace or network.
 const { app, BrowserWindow, session } = require('electron')
@@ -18,7 +19,7 @@ async function main() {
   win.webContents.on('console-message', (_event, level, message) => { if(level >= 2) console.error(message) })
 
   const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(').replace('  function setAttachments(', '  window.setTestAttachments = setAttachments;\n  function setAttachments(')
-  const bundle = (await build({ stdin: { contents: `
+  const built = await build({ outfile: 'fixture.js', stdin: { contents: `
     import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
@@ -44,11 +45,41 @@ async function main() {
       return <AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.svg': 'dataurl', '.mp4': 'dataurl', '.css': 'css' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })
+  const bundle=built.outputFiles.find(file=>file.path.endsWith('.js')).text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(fs.readFileSync(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
+  for(const file of built.outputFiles.filter(file=>file.path.endsWith('.css'))) await win.webContents.insertCSS(file.text)
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
+  await win.webContents.executeJavaScript(`(async()=>{
+    const tick=()=>new Promise(r=>setTimeout(r,100));await tick();await tick();
+    const projects=Array.from({length:30},(_,i)=>({id:'preview-'+i,name:i===0?'经营分析与复盘报告项目':'项目 '+(i+1),rootPath:'D:/mock/project-'+i}));
+    window.changeState({...window.fixtureState('a'),projects});await tick();document.querySelector('.project-trigger').click();await tick();
+    const menu=document.querySelector('.project-picker'),rect=menu.getBoundingClientRect();
+    if(menu.parentElement!==document.body||rect.top<12||rect.bottom>innerHeight-12||rect.width!==270)throw Error('Picker positioning or size incorrect');
+    const list=menu.querySelector('.project-options');if(list.scrollHeight<=list.clientHeight)throw Error('Long list does not scroll');
+    list.scrollTop=list.scrollHeight;await tick();
+    for(const selector of ['.project-search','.project-create-action','.project-none-action']){
+      const r=menu.querySelector(selector).getBoundingClientRect();if(r.top<rect.top||r.bottom>rect.bottom)throw Error('Fixed picker control clipped: '+selector);
+    }
+    menu.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
+    if(document.querySelector('.project-picker')||document.activeElement!==document.querySelector('.project-trigger'))throw Error('Escape did not restore trigger focus');
+    document.querySelector('.project-trigger').click();await tick();
+  })()`)
+  fs.writeFileSync(path.join(output,'project-picker.png'),(await win.webContents.capturePage()).toPNG())
+  // Verify the same anchored menu remains usable in a short window.
+  win.setSize(980, 550)
+  await win.webContents.executeJavaScript(`(async()=>{await new Promise(r=>setTimeout(r,200));const r=document.querySelector('.project-picker').getBoundingClientRect();if(r.top<12||r.bottom>innerHeight-12)throw Error('Short-window picker clipped');document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));await new Promise(r=>setTimeout(r,100));if(document.querySelector('.project-picker'))throw Error('Outside click did not close picker');window.changeState(window.fixtureState('a'));})()`)
+  win.setSize(1280, 800)
+  await win.webContents.executeJavaScript(`(async()=>{
+    const tick=()=>new Promise(r=>setTimeout(r,100));await tick();document.querySelector('.project-trigger').click();await tick();document.querySelector('.project-create-action').click();await tick();
+    const dialog=document.querySelector('.project-dialog'),name=dialog.querySelector('.project-name'),input=name.querySelector('input');
+    if(dialog.getBoundingClientRect().width!==520||getComputedStyle(dialog).backgroundColor!=='rgb(255, 255, 255)')throw Error('Dialog sizing or opaque background incorrect');
+    if(document.activeElement!==input||input.getBoundingClientRect().width<400||getComputedStyle(input).outlineStyle!=='none'||getComputedStyle(name).borderTopWidth!=='1px')throw Error('Full-width focus field incorrect '+JSON.stringify({active:document.activeElement.outerHTML,width:input.getBoundingClientRect().width,outline:getComputedStyle(input).outlineStyle,border:getComputedStyle(name).borderTopWidth}));
+  })()`)
+  fs.writeFileSync(path.join(output,'create-project-empty.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`document.querySelector('.project-dialog-close').click()`)
   const result=await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100)),expect=(yes,msg)=>{if(!yes)throw Error(msg)};
     const click=selector=>{const el=document.querySelector(selector);expect(el,'Missing '+selector);el.click()};
@@ -69,18 +100,18 @@ async function main() {
     expect(window.opened.conversationId==='a','Selection must carry source conversation so backend can protect old history');
     expect(document.querySelector('[data-conversation-id="a"]'),'Original history row disappeared');
     click('.project-trigger');await tick();input('[aria-label="搜索项目"]','no-match');await tick();expect(document.querySelector('.project-empty'),'No-match state missing');
-    input('[aria-label="搜索项目"]','经营');await tick();expect(document.querySelectorAll('.project-options > button').length===2,'Project search missing result');
+    input('[aria-label="搜索项目"]','经营');await tick();expect(document.querySelectorAll('.project-options > button').length===1,'Project search missing result');expect(document.querySelector('.project-options > button').getAttribute('aria-pressed')==='true','Selection check missing');
     click('.project-create-action');await tick();click('.project-dialog-close');await tick();expect(!document.querySelector('.project-dialog'),'Cancel did not close');expect(window.created.id==='p1','Cancel created project');
-    click('.project-trigger');await tick();click('.project-options > button');await tick();expect(document.querySelector('.project-trigger').textContent.includes('选择项目'),'Default workspace selection failed');
+    click('.project-trigger');await tick();click('.project-none-action');await tick();expect(document.querySelector('.project-trigger').textContent.includes('选择项目'),'Default workspace selection failed');
     expect(document.querySelector('.sidebar-project-empty'),'Empty project placeholder missing');
-    click('.sidebar-project-title');await tick();expect(window.opened.projectId==='p1'&&!window.opened.conversationId,'Sidebar new conversation not project-bound');
+    click('.sidebar-project-new');await tick();expect(window.opened.projectId==='p1'&&!window.opened.conversationId,'Sidebar new conversation not project-bound');
     expect(window.uiErrors.length===0,JSON.stringify(window.uiErrors));
     click('.project-trigger');await tick();click('.project-create-action');await tick();window.pickResult=['D:/mock/source','E:/mock/data'];click('.project-folder-add');await tick();input('[aria-label="项目名称"]','经营分析');await tick();
     const dialog=document.querySelector('.project-dialog'),r=dialog.getBoundingClientRect();expect(r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,'Dialog leaves viewport');
     return {projectCreateAndCancel:true,multipleFolders:true,searchAndSelection:true,sidebarGrouping:true};
   })()`)
   fs.writeFileSync(path.join(output,'create-project.png'),(await win.webContents.capturePage()).toPNG())
-  await win.webContents.executeJavaScript(`(async()=>{const tick=()=>new Promise(r=>setTimeout(r,100));const state=window.fixtureState('a');window.changeState({...state,messages:[{id:'u1',role:'user',content:'测试消息'},{id:'a1',role:'assistant',content:'测试回复\\n\\n| 会员等级 | 人数 |\\n| --- | --- |\\n| 普通会员 | 100 |'}]});await tick();if(document.querySelector('.project-trigger'))throw Error('Project selector visible after first message');for(const selector of ['#agent-prompt','.user-bubble > p','.assistant-answer .markdown-body']){const node=document.querySelector(selector);if(!node||parseFloat(getComputedStyle(node).fontSize)!==14)throw Error('Unexpected font size: '+selector)}for(const selector of ['.conversation','.composer-drop-target','.assistant-answer']){const el=document.querySelector(selector);if(el.scrollWidth>el.clientWidth+1)throw Error('Horizontal overflow: '+selector)}if(getComputedStyle(document.querySelector('.assistant-answer .markdown-body')).letterSpacing!=='1px')throw Error('Letter spacing missing');window.changeState({...state,messages:[]});await tick();if(!document.querySelector('.project-trigger'))throw Error('New conversation lost selector');const prompt=document.querySelector('#agent-prompt');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(prompt,'开始测试');prompt.dispatchEvent(new Event('input',{bubbles:true}));await tick();document.querySelector('[aria-label="发送任务"]').click();await tick();if(document.querySelector('.project-trigger'))throw Error('Sending first message did not hide selector');})()`)
+  await win.webContents.executeJavaScript(`(async()=>{const tick=()=>new Promise(r=>setTimeout(r,100));const state=window.fixtureState('a');window.changeState({...state,messages:[{id:'u1',createdAt:'2026-10-16T00:00:00Z',role:'user',content:'测试消息'},{id:'a1',createdAt:'2026-10-16T00:00:01Z',role:'assistant',content:'测试回复\\n\\n| 会员等级 | 人数 |\\n| --- | --- |\\n| 普通会员 | 100 |'}]});await tick();if(document.querySelector('.project-trigger'))throw Error('Project selector visible after first message');for(const selector of ['#agent-prompt','.user-bubble > p','.assistant-answer .markdown-body']){const node=document.querySelector(selector);if(!node||parseFloat(getComputedStyle(node).fontSize)!==15)throw Error('Unexpected font size: '+selector+' '+(node&&getComputedStyle(node).fontSize))}for(const selector of ['.conversation','.composer-drop-target','.assistant-answer']){const el=document.querySelector(selector);if(el.scrollWidth>el.clientWidth+1)throw Error('Horizontal overflow: '+selector)}if(getComputedStyle(document.querySelector('.assistant-answer .markdown-body')).letterSpacing!=='normal')throw Error('Letter spacing missing');window.changeState({...state,messages:[]});await tick();if(!document.querySelector('.project-trigger'))throw Error('New conversation lost selector');const prompt=document.querySelector('#agent-prompt');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(prompt,'开始测试');prompt.dispatchEvent(new Event('input',{bubbles:true}));await tick();document.querySelector('[aria-label="发送任务"]').click();await tick();if(document.querySelector('.project-trigger'))throw Error('Sending first message did not hide selector');})()`)
   await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));
     const expect=(value,message)=>{if(!value)throw Error(message)};

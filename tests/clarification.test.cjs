@@ -14,12 +14,36 @@ test('only meaningful uncertainty below 90% produces a card despite old ask-ever
  for(const raw of ['{"status":"ready"}',assessment({confidence:0.9}),assessment({confidence:0.99}),assessment({confidence:-1}),assessment({confidence:'0.7'}),assessment({missing:''}),assessment({options:[]}), 'invalid']){
   const result=await clarifyBeforeExecution({payload,messages:[],instructions:rules,ask:async()=>raw});assert.equal(result.status,'ready');
  }
- const result=await clarifyBeforeExecution({payload,messages:[],instructions:rules,ask:async()=>assessment({confidence:0.89})});assert.equal(result.status,'waiting');assert.equal(result.trace[0].clarification.options.length,2);
+ const result=await clarifyBeforeExecution({payload,messages:[],instructions:rules,ask:async()=>assessment({confidence:0.89})});assert.equal(result.status,'waiting');assert.equal(result.trace.at(-1).clarification.options.length,2);
 });
 test('screenshot greeting and capability questions never invoke the assessor',async()=>{
  for(const prompt of ['你好你叫什么，你能帮我做哪些事','你好','你是谁？','你能做什么？']){
   const result=await clarifyBeforeExecution({payload:{prompt},messages:[],instructions:rules,ask:async()=>{throw Error('unexpected assessment')}});assert.equal(result.status,'ready');
  }
+});
+
+test('explicit continuation resumes serialized task history without a second assessment',async()=>{
+ const messages=JSON.parse(JSON.stringify([{role:'user',content:'给选区卡片加花边'}, {role:'assistant',content:'本轮执行失败：工具参数无效。',trace:[{kind:'status',status:'failed'}]}]));
+ for(const prompt of ['继续','继续执行','继续处理。','继续完成','请继续！','接着做','接着执行','接着处理吧']) {
+  const result=await clarifyBeforeExecution({payload:{prompt},messages,ask:async()=>{throw Error('must not assess continuation')}});
+  assert.equal(result.status,'ready');assert.equal(result.payload.prompt,prompt);
+ }
+});
+
+test('continuation shortcut requires history and never settles questions, approvals or new requirements',async()=>{
+ const user={role:'user',content:'生成报告'},assistant={role:'assistant',content:'本轮执行失败。'};
+ const waiting={role:'assistant',content:'报告给谁看？',trace:[clarificationTrace(payload,'报告给谁看？')]};
+ const cases=[
+  {messages:[],payload:{prompt:'继续'}},
+  {messages:[assistant],payload:{prompt:'继续'}},
+  {messages:[user,waiting],payload:{prompt:'继续'}},
+  {messages:[user,{...assistant,content:'请先确认：报告给谁看？'}],payload:{prompt:'继续'}},
+  {messages:[user,{...assistant,trace:[{kind:'approval',status:'running'}]}],payload:{prompt:'继续'}},
+  ...['继续？','继续删除数据库','不要继续','继续，但换个品牌'].map(prompt=>({messages:[user,assistant],payload:{prompt}})),
+  {messages:[user,assistant],payload:{prompt:'继续',attachments:payload.attachments}},
+  {messages:[user,assistant],payload:{prompt:'继续',references:payload.references}},
+ ];
+ for(const item of cases){let calls=0;const result=await clarifyBeforeExecution({...item,ask:async()=>{calls++;return assessment()}});assert.equal(calls,1);assert.equal(result.status,'waiting')}
 });
 
 test('clarification survives serialization and resumes original delivery, attachments and references',async()=>{
@@ -28,7 +52,7 @@ test('clarification survives serialization and resumes original delivery, attach
  const next=await clarifyBeforeExecution({payload:{prompt:'管理层，三页即可',attachments:[{name:'extra.csv',path:'extra.csv'}]},messages,instructions:rules,ask:async prompt=>{assert.match(prompt,/目标读者/);assert.match(prompt,/管理层/);return '{"status":"ready"}'}});
  assert.equal(next.status,'ready');assert.match(next.payload.prompt,/请生成 Word 报告/);assert.equal(deliveryRequest(next.payload.prompt).type,'artifact');assert.equal(next.payload.attachments.length,2);assert.equal(next.payload.references[0].id,'report');
  const further=await clarifyBeforeExecution({payload:{prompt:'还没想好'},messages,instructions:rules,ask:async()=>assessment({question:'以管理层为读者可以吗？'})});
- assert.equal(further.status,'waiting');assert.match(further.trace[0].clarification.payload.prompt,/还没想好/);
+ assert.equal(further.status,'waiting');assert.match(further.trace.at(-1).clarification.payload.prompt,/还没想好/);
 });
 
 test('cancel and explicit new task do not accidentally execute the pending request',async()=>{
@@ -77,3 +101,12 @@ test('interaction cancellation survives an actual database close and reopen',t=>
  store.addMessage(id,'assistant','给谁看？',[trace]);timerState(store,id,trace.clarification.id,'start',0);timerState(store,id,trace.clarification.id,'interact',100);store.close();store=new StableStore(root)
  try{assert.equal(timerState(store,id,trace.clarification.id,'start',30000).interacted,true);assert.throws(()=>resolveResponse(store,id,{id:trace.clarification.id,source:'timeout'},30000),/提交回答/)}finally{store.close()}
 })
+
+
+test('public explanation before a question survives persistence without assessment internals',async()=>{
+ const result=await clarifyBeforeExecution({payload,messages:[],ask:async()=>assessment({explanation:'已提供截图；需要确认补充内容的用途。'})});
+ const saved=JSON.parse(JSON.stringify(result.trace));
+ assert.equal(saved[0].eventType,'agent/answer');assert.equal(saved[0].content,'已提供截图；需要确认补充内容的用途。');
+ assert.equal(saved.at(-1).clarification.question,result.answer);assert.doesNotMatch(saved[0].content,/confidence|0.7/);
+ const empty=await clarifyBeforeExecution({payload,messages:[],ask:async()=>assessment({hint:''})});assert.equal(empty.trace.length,1);
+});

@@ -224,7 +224,7 @@ export interface ConversationItem {
   modelId: string
   dataIds: string[]
   messageCount: number
-  sourceType: 'local' | 'team'
+  sourceType: 'local' | 'team' | 'workbuddy'
   pinned: boolean
   sourceDeviceId?: string
   sourceDeviceName?: string
@@ -304,6 +304,8 @@ export interface ClarificationResponse {
 }
 export interface ClarificationTimer { id: string; deadline: number | null; interacted: boolean }
 export interface AgentTraceItem {
+  continuationOf?: string
+  clarificationReply?: MessageItem
   clarification?: ClarificationQuestion
   id: string
   runId: string
@@ -348,7 +350,15 @@ export interface AgentAnswerDeltaEvent {
 
 export type AgentEvent = AgentTraceItem | AgentAnswerDeltaEvent
 
+export interface ChatGPTConnectionState {
+  status: 'disconnected' | 'signing-in' | 'connected' | 'reauth-required' | 'error'
+  email: string
+  modelCount: number
+  message: string
+}
+
 export interface ModelProfile {
+  authType?: 'chatgpt'
   reasoningOptions?: Array<{ id: AgentCapability; label: string }>
   id: string
   providerId: string
@@ -540,7 +550,41 @@ export interface BootstrapData {
   runtimeReady: boolean
 }
 
+export type ImportProvider = 'workbuddy' | 'chatgpt' | 'codex'
+export type ImportKind = 'project' | 'session' | 'memory' | 'instruction' | 'skill' | 'file' | 'connector'
+export interface ImportPreviewItem {
+  id: string; kind: ImportKind; name: string; detail: string; size?: number
+  messageCount?: number; activeCount?: number; projectItemId?: string; owner?: string; fileIds: string[]
+  status: 'ready' | 'imported' | 'changed' | 'unavailable'; warnings: string[]; targetId?: string
+}
+export interface ImportPreview { provider?: ImportProvider; token: string; root: string; scannedAt: string; warnings: string[]; items: ImportPreviewItem[] }
+export interface ImportHistoryItem { provider?: ImportProvider; id: string; batchId: string; kind: ImportKind; name: string; targetId: string; createdAt: string }
+export interface DataImportResult {
+  batchId: string
+  results: { id: string; name: string; kind: ImportKind; status: 'imported' | 'skipped' | 'failed'; targetId?: string; error?: string; warnings?: string[] }[]
+  preview: ImportPreview; history: ImportHistoryItem[]
+}
+
+// Compatibility type aliases for existing renderer integrations.
+export type WorkBuddyKind = ImportKind
+export type WorkBuddyPreviewItem = ImportPreviewItem
+export type WorkBuddyPreview = ImportPreview
+export type WorkBuddyHistoryItem = ImportHistoryItem
+export type WorkBuddyImportResult = DataImportResult
+
+export interface DataImportBridge {
+  activateConnector(id: string, config: { authorization: string; tools: string[] }): Promise<{ enabled: boolean }>
+  state(): Promise<{ busy: boolean; preview: ImportPreview | null; history: ImportHistoryItem[]; warnings?: string[] }>
+  scan(chooseDirectory?: boolean, provider?: ImportProvider): Promise<ImportPreview | null>
+  detail(token: string, id: string): Promise<{ text: string; warnings: string[] }>
+  importSelected(token: string, ids: string[]): Promise<DataImportResult>
+  continuationOptions(id: string): Promise<{ documents: { id: string; name: string; kind: ImportKind }[]; messageCount: number; activeCount: number }>
+  continueConversation(id: string, documentIds: string[]): Promise<AgentState>
+}
+
 export interface StableBridge {
+  dataImport: DataImportBridge
+  workbuddy: DataImportBridge
   templates: {list():Promise<TemplateItem[]>;detail(id:string):Promise<TemplateItem & {html:string}>;import():Promise<TemplateItem[]>;save(id:string,value:Partial<TemplateItem>):Promise<TemplateItem[]>;use(id:string):Promise<AgentState>}
 
   windowClose: {
@@ -697,6 +741,15 @@ export interface StableBridge {
     shareConversation(targetDeviceId: string, conversationId: string): Promise<TeamState>
     decideConversation(offerId: string, allowed: boolean): Promise<{ team: TeamState; agent: AgentState }>
     onEvent(handler: (state: TeamState) => void): () => void
+  }
+  chatgpt?: {
+    status(): Promise<ChatGPTConnectionState>
+    signIn(): Promise<ChatGPTConnectionState>
+    cancel(): Promise<ChatGPTConnectionState>
+    signOut(): Promise<ChatGPTConnectionState>
+    refreshModels(): Promise<ChatGPTConnectionState>
+    openUsage(): Promise<void>
+    onState(handler: (state: ChatGPTConnectionState) => void): () => void
   }
   model: {
     discover(): Promise<{ catalog: ModelCatalog; added: number; errors: string[] }>

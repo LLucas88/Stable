@@ -8,3 +8,5 @@ test('hidden Electron editor saves text, images, crop pixels, history, AI contex
 test('actual main process saves via authenticated IPC and retains editor across native view detach',{timeout:90000},()=>runFixture('html-editor-app.cjs','HTML_EDITOR_APP_PASSED'))
 
 test('rendered nested and generated text survives reload, rerender and subsequent edits',{timeout:90000},()=>runFixture('html-editor-compat.cjs','HTML_EDITOR_COMPAT_PASSED'))
+
+test('blank region AI drafts retain coordinates, context, screenshot and ordinary multi-selection',{timeout:90000},()=>runFixture('html-editor-region.cjs','HTML_EDITOR_REGION_PASSED'))

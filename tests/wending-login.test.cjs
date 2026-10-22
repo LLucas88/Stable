@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -138,7 +139,7 @@ test('login IPC accepts only trusted main frame and routes a fixed set of operat
   await scopedHandlers.get('stable:extensions:verifyWendingCode')({}, { code: '654321', conversationId: 'task-a' })
   await scopedHandlers.get('stable:extensions:cancelWendingLogin')({}, { conversationId: 'task-b' })
   assert.deepEqual(scopes.map(item => item.id), ['task-a', 'task-b'])
-  const main = readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8')
+  const main = readSource(path.join(root, 'desktop/main.cjs'), 'utf8')
   assert.match(main, /event\.sender === mainWindow\.webContents && event\.senderFrame === mainWindow\.webContents\.mainFrame/)
 })
 

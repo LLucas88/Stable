@@ -7,6 +7,8 @@ const { runProviderSearch, readSSE, chatURL } = require('./model-provider.cjs')
 const { modelLimits } = require('./model-limits.cjs')
 const { reasoningParameters } = require('./model-reasoning.cjs')
 const { WAIT_MARKER } = require('./clarification.cjs')
+const { compactToolContext } = require('./claude-context.cjs')
+const { workflowGuidance } = require('./claude-workflow.cjs')
 const REASONING_PREFIX = 'stable-claude-reasoning-v1:'
 
 // This state is private to the parent process. Claude's tool IDs survive SDK
@@ -90,15 +92,19 @@ function contentParts(content, references) {
 
 function discoveredTools(input) {
   const names = new Set()
-  const searches = new Set()
+  const calls = new Map()
   for (const message of input.messages || []) {
     if (message.role === 'assistant' && Array.isArray(message.content)) {
-      for (const block of message.content) if (block.type === 'tool_use' && block.name === 'ToolSearch') searches.add(block.id)
+      for (const block of message.content) if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') calls.set(block.id, block.name)
     }
     if (message.role !== 'user' || !Array.isArray(message.content)) continue
     for (const block of message.content) {
-      if (block.type !== 'tool_result' || !searches.has(block.tool_use_id) || block.is_error || !Array.isArray(block.content)) continue
-      for (const part of block.content) if (part.type === 'tool_reference' && typeof part.tool_name === 'string') names.add(part.tool_name)
+      if (block.type !== 'tool_result' || block.is_error || !calls.has(block.tool_use_id)) continue
+      const name = calls.get(block.tool_use_id)
+      // Compaction can retain a successful call/result but drop its ToolSearch.
+      // Only current request schemas may be restored; never infer tools from prose.
+      if (name !== 'ToolSearch') names.add(name)
+      else if (Array.isArray(block.content)) for (const part of block.content) if (part.type === 'tool_reference' && typeof part.tool_name === 'string') names.add(part.tool_name)
     }
   }
   return names
@@ -110,7 +116,7 @@ function translateTools(tools = [], discovered = new Set()) {
   const result = tools.flatMap(tool => {
     // Native hosted tools cannot run against Chat Completions. SDK/MCP tools
     // have input_schema. Apply SDK deferral locally; the Chat Completions
-    // provider only receives schemas discovered in this request's history.
+    // provider only receives schemas discovered or successfully used in this request's history.
     if ((tool.type && tool.type !== 'custom') || typeof tool.name !== 'string' || !tool.name || !tool.input_schema || typeof tool.input_schema !== 'object') throw new Error(`当前模型适配层不支持 Claude 工具：${tool.name || tool.type || 'unknown'}`)
     if (seen.has(tool.name)) throw new Error(`Claude 工具名称重复：${tool.name}`)
     seen.add(tool.name)
@@ -121,7 +127,7 @@ function translateTools(tools = [], discovered = new Set()) {
   return { tools: result, catalog }
 }
 
-function translateMessages(input, reasoning = new ClaudeReasoningStore()) {
+function translateMessages(input, reasoning = new ClaudeReasoningStore(), { preserveToolParts = false } = {}) {
   const messages = []
   const references = new Set((input.tools || []).map(tool => tool.name))
   if (input.system !== undefined) {
@@ -173,7 +179,7 @@ function translateMessages(input, reasoning = new ClaudeReasoningStore()) {
           if (typeof block.tool_use_id !== 'string' || !block.tool_use_id) throw new Error('Claude 工具结果缺少调用 ID。')
           const result = contentParts(block.content ?? '', references)
           if (block.is_error) result.unshift({ type: 'text', text: 'Tool execution error:' })
-          messages.push({ role: 'tool', tool_call_id: block.tool_use_id, content: textContent(result) })
+          messages.push({ role: 'tool', tool_call_id: block.tool_use_id, content: preserveToolParts ? result : textContent(result) })
         } else parts.push(...contentParts([block]))
       }
       flush()
@@ -212,7 +218,9 @@ function usageFromChat(usage, fallback = 0) {
 }
 
 class ClaudeMessagesBridge {
-  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile }) {
+  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile, imageDirectory, chatgpt }) {
+    this.imageDirectory = imageDirectory
+    this.chatgpt = model.providerId === 'chatgpt' ? new (require('./chatgpt-responses.cjs').ChatGPTResponses)({ account: chatgpt, model, reasoningFile }) : null
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl; this.onRequest = onRequest
     this.search = search; this.textOnly = textOnly; this.expectedImages = expectedImages
     this.onDiagnostic = onDiagnostic; this.onFatalError = onFatalError
@@ -260,7 +268,9 @@ class ClaudeMessagesBridge {
       }
       const translated = translateTools(this.textOnly ? [] : input.tools, discoveredTools(input))
       const limits = modelLimits(this.model)
-      const body = { model: this.model.model, messages: translateMessages(input, this.reasoning), stream: true, stream_options: { include_usage: true }, max_tokens: Math.min(Number.isSafeInteger(input.max_tokens) && input.max_tokens > 0 ? input.max_tokens : limits.outputTokens, limits.outputTokens), ...reasoningParameters(this.model) }
+      const messages = compactToolContext(translateMessages(input, this.reasoning, { preserveToolParts: true }), { imageDirectory: this.imageDirectory })
+        .map(message => message.role === 'tool' && Array.isArray(message.content) ? { ...message, content: textContent(message.content) } : message)
+      const body = { model: this.model.model, messages, stream: true, stream_options: { include_usage: true }, max_tokens: Math.min(Number.isSafeInteger(input.max_tokens) && input.max_tokens > 0 ? input.max_tokens : limits.outputTokens, limits.outputTokens), ...reasoningParameters(this.model) }
       if (this.textOnly && body.messages.some(message => message.tool_calls?.length || message.role === 'tool')) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
       if (translated.tools.length) body.tools = translated.tools
       if (input.tool_choice?.type === 'auto') body.tool_choice = 'auto'
@@ -281,12 +291,12 @@ class ClaudeMessagesBridge {
         let guidance
         try { guidance = this.onRequest?.(requestBody, input) }
         catch (error) { throw Object.assign(new Error(String(error.message || error)), { status: 400, requestRejected: true }) }
-        if (typeof guidance === 'string' && guidance.trim()) {
-          const system = requestBody.messages.find(message => message.role === 'system')
-          requestBody.messages = system
-            ? requestBody.messages.map(message => message === system ? { ...message, content: `${message.content}\n\n${guidance}` } : message)
-            : [{ role: 'system', content: guidance }, ...requestBody.messages]
-        }
+        const advisory = [typeof guidance === 'string' ? guidance.trim() : '', this.textOnly ? '' : workflowGuidance(body.messages)].filter(Boolean).join('\n')
+        // Runtime progress changes every request. Keep it after the retained
+        // history, never in its system prefix. Do not persist stale advisories
+        // in SDK history or let them replace user requirements/tool evidence.
+        if (advisory) requestBody.messages.push({ role: 'user', content: `运行状态提醒（不改变用户要求，不代表验收通过）：\n${advisory}` })
+        if (this.chatgpt) return this.chatgpt.request(requestBody, controller.signal)
         const response = await this.fetch(chatURL(this.model.baseURL), { method: 'POST', redirect: 'error', signal: controller.signal, headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', accept: 'text/event-stream' }, body: JSON.stringify(requestBody) })
         if (!response.ok) {
           let detail = await response.text()
@@ -360,28 +370,39 @@ class ClaudeMessagesBridge {
       }
       if (this.textOnly && calls.size) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
       completed = []; const ids = new Set()
+      const invalid = (code, message) => Object.assign(new Error(message), { validationCode: code })
+      const safeName = value => {
+        let name = String(value || '')
+        for (const secret of [this.apiKey, this.token]) if (secret) name = name.split(secret).join('[redacted]')
+        return name.slice(0, 160).replace(/[^a-zA-Z0-9_.:\-\[\]]/g, '?') || '[missing]'
+      }
       try {
         for (const [, call] of [...calls].sort(([a], [b]) => a - b)) {
-          if (!call.id || ids.has(call.id) || !catalog.has(call.name)) throw new Error(`模型返回了未知或不完整的工具调用：${call.name}`)
+          if (!call.id) throw invalid('missing_call_id', '工具调用缺少 ID')
+          if (ids.has(call.id)) throw invalid('duplicate_call_id', '工具调用 ID 重复')
+          if (!catalog.has(call.name)) throw invalid('unknown_tool', `工具未在当前可用清单中：${safeName(call.name)}`)
           ids.add(call.id)
           let args
-          try { args = JSON.parse(call.arguments || '{}') } catch { throw new Error(`模型工具参数不是有效的 JSON：${call.name}`) }
-          if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error(`模型工具参数必须是对象：${call.name}`)
+          try { args = JSON.parse(call.arguments || '{}') } catch { throw invalid('invalid_json', `工具参数不是有效的 JSON：${safeName(call.name)}`) }
+          if (!args || typeof args !== 'object' || Array.isArray(args)) throw invalid('invalid_arguments', `工具参数必须是对象：${safeName(call.name)}`)
           completed.push({ ...call, input: args })
         }
         // No partial tools at a token limit, even if their JSON happens to parse.
-        if (completed.length && finish !== 'tool_calls') throw new Error('模型工具调用没有完整的完成标记。')
-        if (finish === 'tool_calls' && !completed.length) throw new Error('模型工具完成标记缺少工具调用。')
-      } catch {
+        if (completed.length && finish !== 'tool_calls') throw invalid('incomplete_finish', '模型工具调用没有完整的完成标记。')
+        if (finish === 'tool_calls' && !completed.length) throw invalid('missing_calls', '模型工具完成标记缺少工具调用。')
+      } catch (validation) {
         // No tool block has left the bridge: never execute or repair partial JSON.
         // Give the provider one corrective attempt, then stop SDK transport retries.
-        const diagnostic = { kind: 'tool_arguments', attempt: attempt + 1, finishReason: finish, outputBudget,
+        const diagnostic = { kind: 'tool_arguments', reasonCode: validation.validationCode, attempt: attempt + 1, finishReason: finish, outputBudget, availableToolCount: catalog.size,
           completionTokens: usage?.completion_tokens ?? null,
-          calls: [...calls.values()].map(call => ({ name: catalog.has(call.name) ? call.name : 'unknown', argumentBytes: Buffer.byteLength(call.arguments) })) }
+          calls: [...calls.values()].map(call => ({ name: safeName(call.name), availability: catalog.has(call.name) ? 'available' : input.tools?.some(tool => tool.name === call.name) ? 'deferred' : 'absent', argumentBytes: Buffer.byteLength(call.arguments) })) }
         this.onDiagnostic?.(diagnostic)
-        const reason = finish === 'length' ? '工具参数生成达到输出上限' : '模型工具参数无效或完成标记不完整'
-        if (attempt || !regenerate) throw Object.assign(new Error(`${reason}；纠正后仍失败，已停止重试。finish_reason=${finish}，max_tokens=${outputBudget}，arguments_bytes=${diagnostic.calls.map(call => call.argumentBytes).join(',')}。本次未执行任何工具。`), { status: 400, outputFailure: true })
-        const feedback = `Stable 模型适配校验：上一响应${reason}（finish_reason=${finish}）。整组工具调用均未执行，不能假定已写入文件。请继续当前任务，重新生成完整、正确转义的 JSON 对象；文件内容分成小段，每次只写一个完整片段，再用 Edit 逐步补全。不要一次输出整个长报告，不要重复已输出的过程说明。`
+        const reason = finish === 'length' ? '工具参数生成达到输出上限' : validation.message
+        if (attempt || !regenerate) throw Object.assign(new Error(`${reason}；纠正后仍失败，已停止重试。finish_reason=${finish}，max_tokens=${outputBudget}，arguments_bytes=${diagnostic.calls.map(call => call.argumentBytes).join(',')}。本次模型响应中的整组工具调用未执行；此前已完成的操作不会回滚。`), { status: 400, outputFailure: true })
+        const repair = validation.validationCode === 'unknown_tool'
+          ? `只能调用本次 tools 清单里的完整名称（包括 mcp__ 前缀），不要从摘要猜测工具名称。${catalog.has('ToolSearch') ? '需要的工具尚未加载时，先调用 ToolSearch 取得定义，再继续操作。' : '未提供的工具不可调用；若无需工具则直接回复。'}当前可用工具：${[...catalog.keys()].map(safeName).join(', ')}。`
+          : '重新生成完整、正确转义的 JSON 对象；文件内容分成小段，每次只写一个完整片段，再用 Edit 逐步补全。不要一次输出整个长报告。'
+        const feedback = `Stable 模型适配校验：上一响应${reason}（finish_reason=${finish}）。整组工具调用均未执行，不能假定已写入文件。这仅指上一模型响应，此前成功的工具操作依然有效，不要重复执行。请继续当前任务，${repair}不要重复已输出的过程说明。`
         calls.clear(); thought = ''; finish = undefined; usage = undefined
         upstream = await regenerate(feedback)
         continue

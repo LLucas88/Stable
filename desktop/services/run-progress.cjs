@@ -1,9 +1,11 @@
 'use strict'
 const { REPORT_GUIDANCE } = require('./report-guidance.cjs')
+const TOOL_WATCHDOG_MS = 10 * 60_000
 const EXECUTION_GUIDANCE = [
   REPORT_GUIDANCE,
   '执行预算：同一帮助命令只读取一次；整轮帮助查询不超过 12 次。禁止猜测或枚举数据集 ID。',
   '相同操作失败后必须根据新证据修正，不能重复碰运气。权限不足不是空数据；报告已取得结果与缺口。',
+  '工具超时或普通执行错误返回后，整轮任务仍可继续：先分析已有输出，检查已经完成的步骤及可能产生的副作用，再缩小范围、拆分步骤或换策略；不要原样重复长命令，不把超时当作用户要求停止，也不要因此直接放弃。单条 Bash 命令最多 9 分钟，较长工作拆成可恢复步骤。用户停止、权限拒绝、预算耗尽必须遵守，不得绕过。',
   '实时查询不得递归扫描磁盘寻找旧数据。只搜索任务提供或文档明确指出的目录。',
   '普通查询命令设 60 秒超时；较慢查询最多 180 秒。长任务拆成可观察的步骤，不在单条命令内批量探测或循环重试。',
   'SDK 原生 Bash 的临时目录不作为交付位置。后续需要的 JS 库、数据与脚本保存到当前授权工作区的 _work 目录；执行前检查文件确实存在，不重复搜索已消失的 /tmp 文件。',
@@ -31,7 +33,7 @@ function failureKind(item) {
   return null
 }
 class RunProgress {
-  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = 10*60_000, toolIdleMs = 2*60_000, permissionAudit = false } = {}) {
+  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = TOOL_WATCHDOG_MS, toolIdleMs = 2*60_000, permissionAudit = false } = {}) {
     this.permissionAudit = permissionAudit
     this.now=now; this.idleMs=idleMs; this.toolMs=toolMs; this.toolIdleMs=toolIdleMs; this.started=now(); this.lastActivity=this.started
     this.active=new Map(); this.failures=new Map(); this.help=new Map(); this.helpCount=0; this.completed=0; this.seen=new Set(); this.pausedAt=null
@@ -76,4 +78,4 @@ class RunProgress {
   }
   detail(){return `已用时 ${Math.floor((this.now()-this.started)/60000)} 分钟；已完成 ${this.completed} 次命令；帮助查询 ${this.helpCount} 次。`}
 }
-module.exports={RunProgress,failureKind,EXECUTION_GUIDANCE,isPermissionAudit}
+module.exports={RunProgress,failureKind,EXECUTION_GUIDANCE,isPermissionAudit,TOOL_WATCHDOG_MS}

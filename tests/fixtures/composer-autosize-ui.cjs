@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./../helpers/read-source.cjs')
 // Actual React hook and stylesheet in a hidden, network-blocked Electron renderer.
 const { app, BrowserWindow, session } = require('electron')
 const { buildSync } = require('esbuild')
@@ -25,7 +26,7 @@ async function run() {
       </div></div></main>};createRoot(document.getElementById('root')).render(<TestApp/>);`, resolveDir: root, loader: 'tsx' },
     bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' },
   }).outputFiles[0].text
-  const css = readFileSync(path.join(root, 'src/styles/tokens.css'), 'utf8') + readFileSync(path.join(root, 'src/styles/app.css'), 'utf8')
+  const css = readSource(path.join(root, 'src/styles/tokens.css'), 'utf8') + readSource(path.join(root, 'src/styles/app.css'), 'utf8')
   await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="root"></div></html>'))
   window.webContents.debugger.attach('1.3')
   await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })

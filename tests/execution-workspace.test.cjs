@@ -1,9 +1,10 @@
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os')
 const { executionWorkspace } = require('../desktop/services/execution-workspace.cjs')
 test('project execution directory exists before attachment import', { skip: process.platform !== 'win32' }, () => {
   const vm = require('node:vm'), root = fs.mkdtempSync(path.join(os.tmpdir(),'stable-volume-attachments-'))
   try {
-    const source = fs.readFileSync(path.resolve(__dirname,'../desktop/main.cjs'),'utf8')
+    const source = readSource(path.resolve(__dirname,'../desktop/main.cjs'),'utf8')
     const code = source.slice(source.indexOf('function conversationPaths('),source.indexOf('function agentState('))
     const context = {cwd:path.parse(root).root,writableRoots:[path.parse(root).root]}
     const resolve = vm.runInNewContext(code+';conversationPaths',{store:{resolveRunContext:()=>context,conversationContext:()=>context},paths:{workspace:path.join(root,'workspace')},mkdirSync:fs.mkdirSync,require:()=>({executionWorkspace})})

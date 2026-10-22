@@ -1,4 +1,5 @@
 'use strict'
+const { readSource } = require('./helpers/read-source.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -8,12 +9,12 @@ const { ModelRegistry } = require('../desktop/services/model-registry.cjs')
 const { reasoningOptions, reasoningParameters } = require('../desktop/services/model-reasoning.cjs')
 
 // Execute the real IPC handler without starting Electron or touching a user profile.
-const source = fs.readFileSync(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
+const source = readSource(path.join(__dirname, '../desktop/main.cjs'), 'utf8')
 const start = source.indexOf("  ipcMain.handle('stable:agent:configure',")
 const end = source.indexOf("  ipcMain.handle('stable:agent:configurePermission',", start)
 function setup(modelId) {
   const conversation = { id: 'test-conversation', modelId, capability: 'auto' }
-  const registry = new ModelRegistry({}, {}, {
+  const registry = new ModelRegistry({ getSetting: () => undefined }, {}, {
     baseURL: 'http://127.0.0.1:1234/v1',
     account: { publicState: () => ({ status: 'authenticated', models: [{ id: 'deepseek-flash', provider: 'deepseek' }] }) },
     modelRoute: id => ({ model: { id, model: id, cloudReasoning: true, providerId: 'stable-cloud', baseURL: 'http://127.0.0.1:1234/v1' } }),

@@ -22,7 +22,7 @@ function mockSdk(scenario = async function* () { yield { type: 'result', subtype
       const closed = deferred(), capture = { parameters, closed: false }; captures.push(capture)
       const iterator = parameters.prompt[Symbol.asyncIterator]()
       return {
-        async initializationResult() { return { claude_code_version: '2.1.296' } },
+        async initializationResult() { return { claude_code_version: '2.1.304' } },
         close() { capture.closed = true; closed.resolve() },
         async *[Symbol.asyncIterator]() {
           const first = (await iterator.next()).value; capture.first = first
@@ -60,7 +60,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   for (const name of ['Agent', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit']) assert(first.parameters.options.tools.includes(name))
   assert(first.parameters.options.agents['stable-worker'].tools.includes('Read'))
   assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, 123592, 'the child uses the same 80 percent trigger as the parent')
-  assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.296')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.304')
   assert(!first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_exec'))
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_file'))
@@ -116,7 +116,7 @@ test('external config requires opt-in and activation approval; revoked config re
   assert.equal(sdk.captures[1].parameters.options.resume, undefined)
   assert(sdk.captures[1].parameters.options.mcpServers.reports)
   assert.deepEqual(sdk.captures[1].parameters.options.allowedTools, ['mcp__stable__*'])
-  assert(events.some(event => event.id === 'runtime-info' && event.detail.includes('2.1.296')))
+  assert(events.some(event => event.id === 'runtime-info' && event.detail.includes('2.1.304')))
   value.enabled = false; fs.writeFileSync(file, JSON.stringify(value))
   await runner.run('revoke', model, secret, 1000, undefined, 'workspace-write', [], session)
   assert.equal(sdk.captures[2].parameters.options.resume, undefined)
@@ -143,7 +143,7 @@ test('legacy or changed tool policies rebuild SDK context instead of resuming ob
   await runner.run('first', model, secret, 1000, undefined, 'workspace-write', [], session)
   const pointer = path.join(sessionDirectory(root, session.key), 'stable-thread.json')
   const currentPolicy = JSON.parse(fs.readFileSync(pointer, 'utf8')).toolPolicy
-  for (const oldPolicy of [undefined, 'mcp-files-v0', 'native-files-v1', 'native-files-auto-skills-v2']) {
+  for (const oldPolicy of [undefined, 'mcp-files-v0', 'native-files-v1', 'native-files-auto-skills-v2', currentPolicy.replace(/native-bash-v\d+/, 'native-bash-v11')]) {
     const previous = JSON.parse(fs.readFileSync(pointer, 'utf8'))
     if (oldPolicy === undefined) delete previous.toolPolicy
     else previous.toolPolicy = oldPolicy
@@ -244,6 +244,25 @@ test('the SDK subprocess receives only its local bridge capability and no inheri
   assert.equal(base.ANTHROPIC_API_KEY, 'external')
 })
 
+test('Windows native Python defaults to UTF-8 without replacing explicit encoding configuration', { skip: process.platform !== 'win32' }, () => {
+  const bridge = { baseURL: 'http://127.0.0.1:1234', token: 'fixture', model }
+  const defaults = claudeEnvironment({}, 'home', bridge)
+  assert.equal(defaults.PYTHONUTF8, '1')
+  assert.equal(defaults.PYTHONIOENCODING, 'utf-8')
+  const explicit = claudeEnvironment({ PYTHONUTF8: '0', PYTHONIOENCODING: 'gb18030' }, 'home', bridge)
+  assert.equal(explicit.PYTHONUTF8, '0')
+  assert.equal(explicit.PYTHONIOENCODING, 'gb18030')
+})
+
+test('a timed-out SDK request exposes a typed timeout and closes the runner', async t => {
+  const sdk = mockSdk(async function* ({ closed }) { await closed })
+  const { runner, workspace } = fixture(t, sdk)
+  await assert.rejects(runner.run('assess', model, secret, 30, undefined, 'read-only', [], { cwd: workspace, textOnly: true }), error => {
+    assert.equal(error.code, 'CLAUDE_RUN_TIMEOUT'); assert.equal(error.timeoutMs, 30); return true
+  })
+  assert.equal(runner.busy, false); assert.equal(sdk.captures[0].closed, true)
+})
+
 test('an unapproved write stays blocked and cancellation cannot later approve or execute it', async t => {
   const entered = deferred(), handled = deferred()
   const sdk = mockSdk(async function* ({ parameters, closed }) {
@@ -255,7 +274,7 @@ test('an unapproved write stays blocked and cancellation cannot later approve or
   const { root, workspace, runner } = fixture(t, sdk)
   let approval
   const running = runner.run('write a file', model, secret, 2000, event => { if (event.kind === 'approval' && event.eventType === 'approval/request') { approval = event; entered.resolve() } }, 'workspace-write', [], { key: 'cancel', cwd: workspace })
-  const outcome = assert.rejects(running, /任务已停止/)
+  const outcome = assert.rejects(running, error => { assert.match(error.message, /任务已停止/); assert.notEqual(error.code, 'CLAUDE_RUN_TIMEOUT'); return true })
   await entered.promise
   assert(approval)
   assert.equal(fs.existsSync(path.join(workspace, 'cancelled.txt')), false)
@@ -323,7 +342,7 @@ test('a steering acknowledgment does not close the run before the extra prompt r
 })
 
 test('a runner refuses linked session homes and pointers before starting the SDK', async t => {
-  for (const name of ['home', 'stable-thread.json']) await t.test(name, async subtest => {
+  for (const name of ['home', 'tool-images', 'stable-thread.json']) await t.test(name, async subtest => {
     const { root, workspace, runner, sdk } = fixture(subtest)
     const directory = sessionDirectory(root, 'linked-session')
     const outside = path.join(root, 'outside-session')
@@ -414,3 +433,7 @@ test('unsupported small compaction windows fail before touching session data or 
   assert.equal(runner.busy, false)
   assert.equal(fs.existsSync(sessionDirectory(root, 'small')), false)
 })
+
+ test('native Bash receives the bundled Python path instead of guessing a PATH installation', {skip:process.platform!=='win32'}, async t=>{const {runner,sdk}=fixture(t);await runner.run('read a spreadsheet',model,secret,1000,undefined,'workspace-write',[],{networkAccess:true});const options=sdk.captures[0].parameters.options;const python=path.resolve(__dirname,'../vendor/wending-cli/python/python.exe');assert(fs.existsSync(python));assert(options.systemPrompt.prompt.includes(python.replaceAll('\\','/')));assert.equal(options.env.STABLE_BUNDLED_PYTHON,python);});
+
+test('read-only and text-only turns do not advertise a bundled shell runtime', async t=>{for(const session of [{networkAccess:true},{networkAccess:true,textOnly:true}]){const {runner,sdk}=fixture(t);await runner.run('inspect',model,secret,1000,undefined,'read-only',[],session);const opts=sdk.captures[0].parameters.options;assert.equal(opts.env.STABLE_BUNDLED_PYTHON,undefined);assert(!opts.systemPrompt.prompt.includes('本机内置 Python：'));assert(!opts.tools.includes('Bash'));}});
