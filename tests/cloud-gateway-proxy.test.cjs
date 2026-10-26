@@ -5,6 +5,40 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const { CloudGatewayProxy } = require('../desktop/services/cloud-gateway-proxy.cjs')
 
+test('Cloud receives tool images as attributed user evidence after the complete tool batch',async t=>{
+ let sent
+ const proxy=new CloudGatewayProxy({account:{baseURL:'https://cloud.invalid',token:()=> 'secret'},fetchImpl:async(_url,options)=>{sent=JSON.parse(options.body);return Response.json({choices:[]})}})
+ await proxy.start();t.after(()=>proxy.stop())
+ const image={type:'image_url',image_url:{url:'data:image/png;base64,cGl4ZWxz'}}
+ const body={model:'test',reasoning_effort:'high',messages:[
+  {role:'assistant',content:null,reasoning_content:'retained',tool_calls:[{id:'shot'},{id:'read'}]},
+  {role:'tool',tool_call_id:'shot',content:[{type:'text',text:'screenshot metadata'},image]},
+  {role:'tool',tool_call_id:'read',content:'other result'},
+  {role:'user',content:'continue'}]}
+ const response=await fetch(proxy.baseURL+'/chat/completions',{method:'POST',headers:{authorization:'Bearer '+proxy.secret},body:JSON.stringify(body)})
+ assert.equal(response.status,200)
+ assert.deepEqual(sent.messages.map(m=>m.role),['assistant','tool','tool','user','user'])
+ assert.equal(sent.messages[1].tool_call_id,'shot');assert.equal(typeof sent.messages[1].content,'string')
+ assert.match(sent.messages[3].content[0].text,/shot/);assert.deepEqual(sent.messages[3].content[1],image)
+ assert.equal(sent.messages[0].reasoning_content,'retained');assert.equal(sent.reasoning_effort,'high')
+ assert.equal(sent.messages.at(-1).content,'continue')
+})
+
+test('disconnecting a local caller aborts the upstream cloud request',async t=>{
+ let signal,startedResolve,abortedResolve
+ const started=new Promise(r=>startedResolve=r),aborted=new Promise(r=>abortedResolve=r)
+ const proxy=new CloudGatewayProxy({account:{baseURL:'https://cloud.invalid',token:()=> 'secret'},fetchImpl:async(_url,options)=>{
+  signal=options.signal;startedResolve()
+  return new Promise((resolve,reject)=>{signal?.addEventListener('abort',()=>{abortedResolve();reject(new Error('aborted'))},{once:true});setTimeout(()=>resolve(Response.json({})),1000).unref()})
+ }})
+ await proxy.start();t.after(()=>proxy.stop())
+ const controller=new AbortController()
+ const request=fetch(proxy.baseURL+'/chat/completions',{method:'POST',signal:controller.signal,headers:{authorization:'Bearer '+proxy.secret},body:'{}'}).catch(()=>{})
+ await started;controller.abort();await request
+ await Promise.race([aborted,new Promise(r=>setTimeout(r,100))])
+ assert.equal(signal?.aborted,true)
+})
+
 function listen(server) {
   return new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolve(server.address())) })
 }

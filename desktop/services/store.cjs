@@ -258,11 +258,14 @@ class StableStore {
     const defaultModelId = this.modelCatalog().defaultModelId
     const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
     return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count,
+      (SELECT substr(content,1,240) FROM messages WHERE conversation_id=c.id ORDER BY seq DESC LIMIT 1) AS latest_preview,
       (SELECT CASE WHEN role='assistant' THEN trace_json END FROM messages WHERE conversation_id=c.id ORDER BY seq DESC LIMIT 1) AS latest_trace
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
       GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all().map((row) => ({
       ...this.conversationContext(row.id),
       networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
+      design: this.getSetting(`design:${row.id}`) || undefined,
+      lastMessagePreview: String(row.latest_preview || '').replace(/\s+/g, ' '),
       id: row.id, title: row.title, capability: ['none','enabled','low','high','max'].includes(row.capability) ? row.capability : 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
       modelId: row.model_id || defaultModelId,

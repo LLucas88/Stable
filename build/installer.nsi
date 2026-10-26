@@ -167,8 +167,9 @@ FunctionEnd
     Sleep 1000
     ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 == 0
-      ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-      Sleep 300
+      MessageBox MB_OK|MB_ICONSTOP "Stable 尚未安全退出，请保存编辑内容并手动退出后重试。" /SD IDOK
+      SetErrorLevel 24
+      Quit
     ${endif}
   ${endif}
 !macroend
@@ -298,8 +299,9 @@ Function stableCheckAppRunning
     Sleep 1000
     ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 == 0
-      ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-      Sleep 300
+      MessageBox MB_OK|MB_ICONSTOP "Stable 尚未安全退出，请保存编辑内容并手动退出后重试。" /SD IDOK
+      SetErrorLevel 24
+      Quit
     ${endif}
     stableProcessStopped:
   ${endif}

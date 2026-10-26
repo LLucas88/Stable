@@ -7,19 +7,57 @@ const rules=fs.readFileSync(path.resolve(__dirname,'../desktop/defaults/AGENTS.m
 const main=readSource(path.resolve(__dirname,'../desktop/main.cjs'),'utf8');
 const source=main.slice(main.indexOf("ipcMain.handle('stable:agent:run'"),main.indexOf("ipcMain.handle('stable:agent:steer'"));
 function setup(){
- let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[];let executionResult={answer:'完成',trace:[]};
+ let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[],routes=[];let executionResult={answer:'完成',trace:[]};
  const runner={supportsTextOnly:true,run:async(...args)=>{runs.push(args);const result=queue.shift();if(result instanceof Error)throw result;return result||'{"status":"ready"}'}};
- const settings=new Map();const store={getSetting:key=>settings.get(key),setSetting:(key,value)=>settings.set(key,value),conversation:()=>({modelId:'mock'}),listMessages:()=>messages,db:{exec:()=>{},prepare:()=>({get:()=>({state:'preparing'})})},addMessage:(_id,role,content,trace,attachments)=>{const m={id:String(++id),role,content,trace,attachments};messages.push(m);return m},updateConversationContext:()=>{},listLibrary:()=>[],listSkills:()=>[],listWorkflows:()=>[]};
+ const settings=new Map();const store={revokeConversationGrants:()=>{},updateConversationModel:(id,model)=>{settings.set('chosen-model',model)},getSetting:key=>settings.get(key),setSetting:(key,value)=>settings.set(key,value),conversation:()=>({modelId:'mock'}),listMessages:()=>messages,db:{exec:()=>{},prepare:()=>({get:()=>({state:'preparing'})})},addMessage:(_id,role,content,trace,attachments)=>{const m={id:String(++id),role,content,trace,attachments};messages.push(m);return m},updateConversationContext:()=>{},listLibrary:()=>[],listSkills:()=>[],listWorkflows:()=>[]};
  let lastTask;
  vm.runInNewContext(source,{
+  require: name=>require(path.resolve(__dirname,'../desktop',name)),
   messagePredictions:{interrupt(){}},
-  taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{resolve:()=>({model:{model:'mock'},apiKey:'test-only'})},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
+  taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{publicCatalog:()=>({items:[{id:"glm-chat",model:"glm-5.3-flashx",hasApiKey:true}]}),resolve:id=>{routes.push(id);return {model:{model:id},apiKey:'test-only'}}},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
   prepareAgentMessage:async(payload,_id,_route,displayPayload=payload)=>{prepared++;lastTask=payload;return {messageAttachments:displayPayload.attachments||[],attachments:payload.attachments,selectedReferences:payload.references,extractedAttachments:{installedSkills:[]},selectedData:[],selectedKnowledge:[],selectedSkills:[],selectedScripts:[]}},
-  commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,undefined,prepared.messageAttachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,
+  commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,require('../desktop/services/design-request.cjs').designMessageTrace(prepared.design),prepared.messageAttachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,
   runAgent:async(query)=>{executed++;lastTask={...lastTask,query};return executionResult},
  });
- return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,setResult:result=>{executionResult=result},stats:()=>({prepared,executed,lastTask})};
+ return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,routes,setResult:result=>{executionResult=result},stats:()=>({prepared,executed,lastTask})};
 }
+
+test('Design dispatch pins FlashX for an old chat while retaining GLM-image generation settings',async()=>{
+ const env=setup(),design={model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''};
+ env.store.conversation=()=>({modelId:'deepseek',design});
+ await env.send({prompt:'生成早餐海报',design});
+ assert.equal(env.store.getSetting('chosen-model'),'glm-chat');assert.deepEqual(env.routes,['glm-chat']);assert.equal(env.runs[0][1].model,'glm-chat');
+ assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/glm-image/);
+})
+
+test('Design send keeps user history clean but delivers validated settings to the execution model', async()=>{
+ const env=setup();const design={model:'glm-image',mode:'preserve',ratio:'9:16',resolution:'2k',count:2,text:'仅限今日'};
+ await env.send({prompt:'生成早餐海报',attachments:[{path:'original.png',name:'original.png'}],design});
+ assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/1152x2048/);assert.match(env.stats().lastTask.query,/原样合成/);
+ assert.equal(env.messages[0].content,'生成早餐海报');assert.doesNotMatch(env.messages[0].content,/stable_design_request/);
+ assert.equal(env.messages[0].trace[0].designRequest.size,'1152x2048');
+ assert.equal(env.messages[0].trace[0].designRequest.count,2);
+})
+
+test('Design chat never inherits stored image parameters, while a clarification retains its original request',async()=>{
+ const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};
+ env.store.conversation=()=>({modelId:'deepseek',design});
+ await env.send('解释一下这个设计');
+ assert.doesNotMatch(env.stats().lastTask.query,/stable_design_request|1536x2048|最多 4 张/);
+ assert.equal(env.messages[0].trace,undefined);assert.equal(env.routes[0],'glm-chat');
+ const next=setup();next.store.conversation=env.store.conversation;next.queue.push(assessment('报告给谁看？'));
+ await next.send({prompt:'生成一个海报',design});
+ assert.equal(next.messages[0].trace[0].designRequest.count,4);
+ await next.send('给管理层');
+ assert.match(next.stats().lastTask.query,/1536x2048/);assert.match(next.stats().lastTask.query,/最多 4 张/);
+ assert.equal(next.messages.find(m=>m.role==='user'&&m.content==='给管理层').trace,undefined);
+})
+test('invalid Design parameters and missing originals fail before any model request',async()=>{
+ const env=setup();const design={model:'glm-image',mode:'preserve',ratio:'1:1',resolution:'standard',count:1,text:''};
+ await assert.rejects(env.send({prompt:'生成海报',design}),/原始图片/);
+ await assert.rejects(env.send({prompt:'生成海报',design:{...design,count:9}}),/参数无效/);
+ assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);assert.equal(env.messages.length,0)
+})
 test('actual send handler asks before preparing attachments or running any task, then resumes with original resources',async()=>{
  const env=setup();env.queue.push(assessment('报告给谁看？'));
  await env.send({prompt:'请生成 Word 报告',attachments:[{path:'source.csv',name:'source.csv'}],references:[{kind:'skill',id:'report'}]});
@@ -69,6 +107,22 @@ test('preflight timeout reports its phase, persists the same error and never sta
  await assert.rejects(env.send('请生成报告'),/执行前需求判断超时（90 秒），尚未开始执行本次任务/);
  assert.equal(env.runs[0][3],90_000);assert.equal(env.stats().prepared,0);assert.equal(env.stats().executed,0);assert.equal(env.messages.length,0);
  assert.equal(env.failures[0].state,'rejected');assert.match(env.failures[0].error,/执行前需求判断超时/);
+});
+
+test('poster follow-up runs once without preflight and preserves execution clarification',async()=>{
+ const env=setup();env.messages.push({role:'user',content:'生成海报'},{role:'assistant',content:'可以把原图放回中间区域。',trace:[{kind:'tool',toolName:'Bash',status:'completed'}]});
+ env.queue.push(new Error('preflight must not run'));
+ await env.send('把原产品照片放回新版式的中间区域，只保留这版的贴纸和促销带。');
+ assert.equal(env.runs.length,0);assert.equal(env.stats().executed,1);assert.equal(env.failures.length,0);assert.equal(env.messages.length,4);
+ const card=helpers.waitingCard(helpers.WAIT_MARKER+'\n'+assessment('用哪张原图？'));
+ env.setResult({status:'waiting',answer:card.question,clarification:card,trace:[]});
+ env.messages.at(-1).trace.push({kind:'tool',toolName:'Read',status:'completed'});
+ await env.send('再调整一下');assert.equal(env.runs.length,0);assert.equal(helpers.pendingClarification(env.messages).question,'用哪张原图？');
+});
+
+test('provider timeout retains HTTP cause instead of being renamed to clarification timeout',async()=>{
+ const env=setup();env.queue.push(Object.assign(new Error('模型服务请求失败（HTTP 502）：upstream unavailable\n等待服务恢复时达到本轮时限。'),{code:'CLAUDE_PROVIDER_TIMEOUT'}));
+ await assert.rejects(env.send('生成报告'),/HTTP 502/);assert.match(env.failures[0].error,/HTTP 502/);assert.doesNotMatch(env.failures[0].error,/需求判断超时/);assert.equal(env.stats().executed,0);
 });
 
 test('mid-task clarification timeout does not claim completed operations never ran',async()=>{

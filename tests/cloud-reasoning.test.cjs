@@ -9,7 +9,7 @@ for (const [id,provider] of [['glm-5.3-flash','zhipu'],['glm-5.3-flashx','z.ai']
  const gateway=new CloudGatewayProxy({account,fetchImpl:async(_url,request)=>{requests.push(JSON.parse(request.body));return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}})}})
  await gateway.start()
  try {
- const registry=new ModelRegistry({}, {}, gateway),profile=registry.publicCatalog().items[0]
+ const registry=new ModelRegistry({getSetting:()=>undefined}, {}, gateway),profile=registry.publicCatalog().items[0]
  assert.deepEqual(reasoningOptions(profile).map(x=>x.id),['auto','low','high','max'])
  for(const effort of ['low','high','max','auto']) {
  const route=registry.resolve(profile.id);route.model.reasoningSelection=effort

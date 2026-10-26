@@ -10,7 +10,7 @@ const { toolFile } = require('./tool-files.cjs')
 
 const ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/images/generations'
 const MAX_BYTES = 20 * 1024 * 1024
-const IMAGE_GUIDANCE = '需要新生成插画、海报、封面或其他图片素材时，使用 stable_image_generate（GLM-Image），无需切换对话模型；凭据由 Stable 读取，不要查找或传入 API Key。已有图片查看、截图、数据图表或原图编辑不属于文本生图，不要为这些任务调用。每次生成一张，复用已生成的文件；成功后用 Read 查看实际图片并提供本地文件链接或嵌入交付文件。失败如实说明，不伪造产物、不反复付费重试。'
+const IMAGE_GUIDANCE = '需要新生成插画、海报、封面或其他图片素材时，使用 stable_image_generate（GLM-Image），无需切换对话模型；凭据由 Stable 读取，不要查找或传入 API Key。已有图片查看、截图、数据图表不属于文本生图，不要为这些任务调用。原图编辑需要新背景或装饰时，仅生成新增素材，再通过脚本合成受保护的原图内容；不能把 GLM 当成原图编辑接口。每次生成一张，复用已生成的文件；成功后用 Read 查看实际图片并提供本地文件链接或嵌入交付文件。失败如实说明，不伪造产物、不反复付费重试。'
 
 // Download only the URL returned by the provider, never a model-supplied URL.
 // Pin public DNS results at connection time, including each redirect; no API key
@@ -77,13 +77,13 @@ async function responseJSON(response) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-function createImageGenerator({ resolveApiKey, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage }) {
+function createImageGenerator({ policy, resolveApiKey, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage }) {
   // Per-run cache also retains successful generation URLs when download fails.
   // Repeating the same call then retries download, not a paid generation.
   const jobs = new Map()
   return async ({ workspace, args, signal }) => {
     signal?.throwIfAborted()
-    const input = validateArgs(args)
+    const input = validateArgs(policy ? { ...args, size: policy.size } : args)
     const root = Array.isArray(workspace) ? workspace[0] : workspace
     const requested = path.resolve(root, input.output)
     const key = JSON.stringify([requested, input.prompt, input.size])
@@ -107,7 +107,7 @@ function createImageGenerator({ resolveApiKey, nativeImage, fetchImpl = globalTh
     let job = jobs.get(key)
     if (!job) {
       if ([...jobs.values()].some(item => item.output === requested)) throw Error('此输出路径已有生图请求，请复用原参数或另选新文件。')
-      if (jobs.size >= 32) throw Error('本轮生图请求过多，请先检查已有产物。')
+      if (jobs.size >= (policy?.count || 32)) throw Error('已达到本轮选择的生图张数，请先检查已有产物。')
       job = { output: requested }; jobs.set(key, job)
       job.generated = (async () => {
         try {

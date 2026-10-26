@@ -9,11 +9,11 @@ const { ModelRegistry } = require('../desktop/services/model-registry.cjs')
 
 const source = (...parts) => readSource(path.join(__dirname, '..', ...parts), 'utf8')
 
-test('desktop opts into Cloud and restores it after window load with a redacted account bridge', () => {
+test('desktop applies Cloud mode policy and restores it after window load with a redacted account bridge', () => {
   const main = source('desktop', 'main.cjs')
   const preload = source('desktop', 'preload.cjs')
   const types = source('src', 'types.ts')
-  assert.match(main, /const cloudEnabled = process\.env\.STABLE_CLOUD_ENABLED === '1'/)
+  assert.match(main, /isCloudEnabled\(\{ isPackaged: app\.isPackaged \}\)/)
   assert.match(main, /cloudStartup = windowLoaded\.then\(async \(\) => \{\s+if \(!cloudAccount\) return\s+try \{\s+await cloudAccount\.restore\(\)/)
   assert.match(preload, /login: \(username, password\) => invoke\('stable:cloud:login'/)
   assert.match(preload, /changePassword: \(currentPassword, newPassword, confirmPassword\)/)

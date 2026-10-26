@@ -9,7 +9,7 @@ function staleInstallPaths(execPath) {
   const parent = path.dirname(installDir)
   const prefix = `${path.basename(installDir)}.__stable_`
   return readdirSync(parent, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix) && /^(?:previous|failed|next)_[0-9A-Za-z.-]+$/.test(entry.name.slice(prefix.length)))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix) && /^(?:next)_[0-9A-Za-z.-]+$/.test(entry.name.slice(prefix.length)))
     .map((entry) => path.join(parent, entry.name))
     .filter((candidate) => path.dirname(candidate) === parent && candidate !== installDir)
 }

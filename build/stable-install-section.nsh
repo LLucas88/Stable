@@ -40,6 +40,27 @@ StrCpy $appExe "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
 !endif
 
 Var /GLOBAL keepShortcuts
+Var /GLOBAL stableRenameAttempt
+!macro stableRenameWithRetry source destination
+  StrCpy $stableRenameAttempt 0
+  ${Do}
+    ClearErrors
+    Rename "${source}" "${destination}"
+    ${IfNot} ${Errors}
+      ${ExitDo}
+    ${EndIf}
+    IntOp $stableRenameAttempt $stableRenameAttempt + 1
+    ${If} $stableRenameAttempt >= 10
+      ${ExitDo}
+    ${EndIf}
+    Sleep 500
+  ${Loop}
+  ${If} $stableRenameAttempt >= 10
+    SetErrors
+  ${Else}
+    ClearErrors
+  ${EndIf}
+!macroend
 Var /GLOBAL stableStageDir
 Var /GLOBAL stablePreviousDir
 Var /GLOBAL stableFailedDir
@@ -69,6 +90,9 @@ ${if} ${isUpdated}
   ${endif}
   Goto stableAtomicUpdate
 ${endif}
+${if} ${FileExists} "$appExe"
+  Goto stableAtomicUpdate
+${endif}
 Goto stableLegacyInstall
 
 stableAtomicUpdate:
@@ -84,6 +108,20 @@ stableChooseFailedDir:
   StrCpy $stableFailedDir "$INSTDIR.__stable_failed_${VERSION}-$R2"
   Goto stableChooseFailedDir
 stableFailedDirReady:
+  StrCpy $R2 0
+stableChoosePreviousDir:
+  IfFileExists "$stablePreviousDir" 0 stablePreviousDirReady
+  IntOp $R2 $R2 + 1
+  StrCpy $stablePreviousDir "$INSTDIR.__stable_previous_${VERSION}-$R2"
+  Goto stableChoosePreviousDir
+stablePreviousDirReady:
+  StrCpy $R2 0
+stableChooseStageDir:
+  IfFileExists "$stableStageDir" 0 stableStageDirReady
+  IntOp $R2 $R2 + 1
+  StrCpy $stableStageDir "$INSTDIR.__stable_next_${VERSION}-$R2"
+  Goto stableChooseStageDir
+stableStageDirReady:
   StrCpy $stableRuntimeMigrated "false"
   StrCpy $stableRuntimeCopied "false"
   ReadEnvStr $stableRuntimeDir "STABLE_RUNTIME_HOME"
@@ -91,7 +129,6 @@ stableFailedDirReady:
     StrCpy $stableRuntimeDir "$LOCALAPPDATA\stable-desktop\runtime-v1"
   ${endif}
 
-  RMDir /r "$stableStageDir"
   CreateDirectory "$stableStageDir"
   SetOutPath "$stableStageDir"
   !insertmacro stableReportProgress "10" "staging" "running" "0"
@@ -107,6 +144,14 @@ stableFailedDirReady:
     !insertmacro stableReportProgress "55" "package_invalid" "failed" "10"
     RMDir /r "$stableStageDir"
     !insertmacro stableStopUpdate 10 "更新包校验失败，安装未完成。"
+  ${endif}
+
+  !insertmacro stableReportProgress "72" "backup" "running" "0"
+  ClearErrors
+  ExecWait '"$stableStageDir\${APP_EXECUTABLE_FILENAME}" --stable-upgrade-backup "--stable-upgrade-install=$INSTDIR" "--stable-upgrade-previous=$stablePreviousDir"' $R0
+  ${if} ${Errors}
+  ${orIf} $R0 != 0
+    !insertmacro stableStopUpdate 25 "升级前备份或数据库迁移检查失败，原程序和数据已保留。"
   ${endif}
 
   ${if} ${FileExists} "$stableRuntimeDir\node\node.exe"
@@ -125,14 +170,9 @@ stableFailedDirReady:
 
   ${if} ${FileExists} "$INSTDIR\resources\runtime\node\node.exe"
     ClearErrors
-    Rename "$INSTDIR\resources\runtime" "$stableRuntimeDir"
-    IfErrors stableCopyOldRuntime stableOldRuntimeMoved
+    Goto stableCopyOldRuntime
   ${endif}
   Goto stableRuntimeFailed
-
-stableOldRuntimeMoved:
-  StrCpy $stableRuntimeMigrated "true"
-  Goto stableRuntimeReady
 
 stableCopyStagedRuntime:
   CreateDirectory "$stableRuntimeDir"
@@ -165,13 +205,12 @@ stableRuntimeReady:
   Call stableCheckAppRunning
   !insertmacro stableReportProgress "76" "switching" "running" "0"
   SetOutPath "$TEMP"
-  RMDir /r "$stablePreviousDir"
   ClearErrors
-  Rename "$INSTDIR" "$stablePreviousDir"
+  !insertmacro stableRenameWithRetry "$INSTDIR" "$stablePreviousDir"
   IfErrors stableSwapFailedBeforeRename 0
   !insertmacro stableReportProgress "82" "switching" "running" "0"
   ClearErrors
-  Rename "$stableStageDir" "$INSTDIR"
+  !insertmacro stableRenameWithRetry "$stableStageDir" "$INSTDIR"
   IfErrors stableSwapRollback 0
   !insertmacro stableReportProgress "86" "switching" "running" "0"
 
@@ -183,18 +222,18 @@ stableRuntimeReady:
     Call stableCheckAppRunning
     SetOutPath "$TEMP"
     ClearErrors
-    Rename "$INSTDIR" "$stableFailedDir"
+    !insertmacro stableRenameWithRetry "$INSTDIR" "$stableFailedDir"
     IfErrors 0 stableHealthNewMoved
     Sleep 1000
     ClearErrors
-    Rename "$INSTDIR" "$stableFailedDir"
+    !insertmacro stableRenameWithRetry "$INSTDIR" "$stableFailedDir"
     IfErrors stableHealthNewMoveFailed 0
 
     stableHealthNewMoved:
     ${if} $stableRuntimeMigrated == "true"
       CreateDirectory "$stablePreviousDir\resources"
       ClearErrors
-      Rename "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
+      !insertmacro stableRenameWithRetry "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
       IfErrors stableHealthRuntimeRestoreFailed 0
     ${elseif} $stableRuntimeCopied == "true"
       ClearErrors
@@ -202,7 +241,7 @@ stableRuntimeReady:
       IfErrors stableHealthRuntimeRestoreFailed 0
     ${endif}
     ClearErrors
-    Rename "$stablePreviousDir" "$INSTDIR"
+    !insertmacro stableRenameWithRetry "$stablePreviousDir" "$INSTDIR"
     IfErrors stableHealthOldRestoreFailed 0
     !insertmacro stableReportProgress "92" "healthcheck_rollback" "failed_rolled_back" "12"
     !insertmacro stableStopUpdate 12 "新版未通过启动检查，旧版本已经恢复。"
@@ -226,7 +265,7 @@ stableSwapRollback:
   ${if} $stableRuntimeMigrated == "true"
     CreateDirectory "$stablePreviousDir\resources"
     ClearErrors
-    Rename "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
+    !insertmacro stableRenameWithRetry "$stableRuntimeDir" "$stablePreviousDir\resources\runtime"
     IfErrors stableSwapRuntimeRestoreFailed 0
   ${elseif} $stableRuntimeCopied == "true"
     ClearErrors
@@ -234,7 +273,7 @@ stableSwapRollback:
     IfErrors stableSwapRuntimeRestoreFailed 0
   ${endif}
   ClearErrors
-  Rename "$stablePreviousDir" "$INSTDIR"
+  !insertmacro stableRenameWithRetry "$stablePreviousDir" "$INSTDIR"
   IfErrors stableSwapRestoreFailed 0
   !insertmacro stableReportProgress "86" "swap_failed" "failed_rolled_back" "13"
   !insertmacro stableStopUpdate 13 "新版目录切换失败，旧版本已经恢复。"
@@ -245,7 +284,7 @@ stableSwapRestoreFailed:
 
 stableSwapRuntimeRestoreFailed:
   ClearErrors
-  Rename "$stablePreviousDir" "$INSTDIR"
+  !insertmacro stableRenameWithRetry "$stablePreviousDir" "$INSTDIR"
   IfErrors stableSwapRestoreFailed 0
   !insertmacro stableReportProgress "86" "rollback_failed" "failed" "20"
   !insertmacro stableStopUpdate 20 "旧版本文件已恢复，但本地运行环境未能恢复。请保留安装目录。"
@@ -254,7 +293,7 @@ stableSwapFailedBeforeRename:
   ${if} $stableRuntimeMigrated == "true"
     CreateDirectory "$INSTDIR\resources"
     ClearErrors
-    Rename "$stableRuntimeDir" "$INSTDIR\resources\runtime"
+    !insertmacro stableRenameWithRetry "$stableRuntimeDir" "$INSTDIR\resources\runtime"
     IfErrors stableRuntimeRestoreBeforeSwapFailed 0
   ${elseif} $stableRuntimeCopied == "true"
     ClearErrors

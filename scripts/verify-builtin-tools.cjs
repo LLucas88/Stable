@@ -13,6 +13,8 @@ function verifyBuiltinTools(context) {
     if (!existsSync(path.join(vendor, 'node_modules', 'exceljs', 'LICENSE'))) throw new Error('ExcelJS license missing')
     require('./verify-python-tools.cjs')
     require('./verify-powershell-runtime.cjs').verifyPowerShell(root)
+    require('./verify-node-runtime.cjs').verifyNodeRuntime(root)
+    require('../desktop/services/git-bash-runtime.cjs').verifyGitBash({ root })
     console.log('Stable built-in tools: ExcelJS 4.4.0 verified; browser uses bundled Electron.')
   } catch (error) { throw new Error(`内置工具依赖不完整，请在分支目录运行 npm run tools:install。${error.message}`) }
 }

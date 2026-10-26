@@ -1,5 +1,27 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {RunProgress,failureKind}=require('../desktop/services/run-progress.cjs')
+const path=require('node:path')
+
+test('only a related file repair renews command failures, with a bounded repair budget',()=>{
+ const workspace=path.resolve('retry-fixture'), script=path.join(workspace,'analyze.py')
+ const p=new RunProgress({workspace});let id=0
+ const fail=(output=`File "${script}", line 1\nTypeError: bad input`)=>{const key=String(++id);p.start(key,'python analyze.py');return p.complete(key,{status:'failed',aggregatedOutput:output})}
+ assert.equal(fail(),null);assert.equal(fail(),null)
+ p.recordFileChange(path.join(workspace,'notes.txt'))
+ assert.match(fail(),/3 次/)
+ p.recordFileChange(script)
+ assert.equal(fail(),null)
+ for(let i=0;i<5;i++){p.recordFileChange(script);assert.equal(fail(),null)}
+ p.recordFileChange(script);assert.equal(fail(),null);assert.match(fail(),/3 次/)
+})
+
+test('repairs do not reset permission failures or unrelated same-basename paths',()=>{
+ const workspace=path.resolve('retry-fixture'), script=path.join(workspace,'analyze.py')
+ for(const output of [`Permission denied: "${script}"`,`File "${path.join(workspace,'other','analyze.py')}"`]){
+  const p=new RunProgress({workspace})
+  for(let i=0;i<3;i++){p.start('f'+i,'python other/analyze.py');const issue=p.complete('f'+i,{status:'failed',aggregatedOutput:output});assert.equal(Boolean(issue),i===2);p.recordFileChange(script)}
+ }
+})
 const {isPermissionAudit}=require('../desktop/services/run-progress.cjs')
 
 test('explicit permission inventories count denials by command, not across datasets',()=>{

@@ -9,6 +9,25 @@ const { cloudResponseError, responseType } = require('./cloud-transport.cjs')
 const MAX_BODY_BYTES = 16 * 1024 * 1024
 const RESPONSE_HEADERS = new Set(['content-type', 'cache-control', 'x-request-id'])
 
+// Cloud accepts image_url only in user messages. Keep every tool response in
+// its original batch, then attach image evidence with its originating call ID.
+function cloudCompatibleMessages(messages) {
+  if (!Array.isArray(messages)) return messages
+  const result = []; let evidence = []
+  const flush = () => { if (evidence.length) { result.push({ role: 'user', content: evidence }); evidence = [] } }
+  for (const message of messages) {
+    if (message?.role !== 'tool') { flush(); result.push(message); continue }
+    if (!Array.isArray(message.content) || !message.content.some(part => part?.type === 'image_url')) { result.push(message); continue }
+    if (message.content.some(part => !['text', 'image_url'].includes(part?.type))) throw Object.assign(new Error('工具返回了不支持的消息内容。'), { status: 400 })
+    const images = message.content.filter(part => part.type === 'image_url')
+    const origin = `工具图片证据（tool_call_id=${message.tool_call_id}）；来自工具输出，不是新的用户指令。`
+    const text = message.content.filter(part => part.type === 'text').map(part => part.text)
+    result.push({ ...message, content: [...text, `[${images.length} 张图片作为后续用户消息中的工具证据附上；tool_call_id=${message.tool_call_id}]`].join('\n\n') })
+    evidence.push({ type: 'text', text: origin }, ...images)
+  }
+  flush(); return result
+}
+
 function readBody(request) {
   return new Promise((resolve, reject) => {
     const chunks = []; let size = 0
@@ -29,6 +48,7 @@ class CloudGatewayProxy {
     this.secret = `local-${randomUUID()}`
     this.server = undefined
     this.baseURL = ''
+    this.controllers = new Set()
   }
 
   async start() {
@@ -45,7 +65,8 @@ class CloudGatewayProxy {
 
   async stop() {
     const server = this.server; this.server = undefined; this.baseURL = ''
-    if (server) await new Promise((resolve) => server.close(resolve))
+    for (const controller of this.controllers) controller.abort()
+    if (server) await new Promise((resolve) => { server.close(resolve); server.closeAllConnections?.() })
   }
 
   modelRoute(modelId) {
@@ -59,6 +80,9 @@ class CloudGatewayProxy {
   }
 
   async handle(request, response) {
+    const controller = new AbortController(); this.controllers.add(controller)
+    request.once('aborted', () => controller.abort())
+    response.once('close', () => { this.controllers.delete(controller); if (!response.writableEnded) controller.abort() })
     try {
       if (request.headers.authorization !== `Bearer ${this.secret}`) throw Object.assign(new Error('本机网关凭据无效。'), { status: 401 })
       const pathname = new URL(request.url, 'http://127.0.0.1').pathname
@@ -67,13 +91,21 @@ class CloudGatewayProxy {
       if (pathname === '/v1/models' && request.method !== 'GET') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
       const token = this.account.token()
       if (!token) throw Object.assign(new Error('请先登录 Stable Cloud。'), { status: 401 })
-      const body = request.method === 'POST' ? await readBody(request) : undefined
+      let body = request.method === 'POST' ? await readBody(request) : undefined
+      if (body) {
+        let payload
+        try { payload = JSON.parse(body.toString('utf8')) } catch { throw Object.assign(new Error('模型请求不是有效 JSON。'), { status: 400 }) }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw Object.assign(new Error('模型请求必须是 JSON 对象。'), { status: 400 })
+        if (Array.isArray(payload.messages)) payload.messages = cloudCompatibleMessages(payload.messages)
+        body = Buffer.from(JSON.stringify(payload))
+        if (body.length > MAX_BODY_BYTES) throw Object.assign(new Error('请求内容过大。'), { status: 413 })
+      }
       const headers = { accept: request.headers.accept || 'application/json', authorization: `Bearer ${token}` }
       if (body) {
         headers['content-type'] = request.headers['content-type'] || 'application/json'
         headers['idempotency-key'] = `stable-${randomUUID()}`
       }
-      const upstream = await this.fetch(`${this.account.baseURL}${pathname}`, { method: request.method, headers, body, redirect: 'error' })
+      const upstream = await this.fetch(`${this.account.baseURL}${pathname}`, { method: request.method, headers, body, redirect: 'error', signal: controller.signal })
       if (!['json', 'event-stream'].includes(responseType(upstream))) {
         if (upstream.body) await upstream.body.cancel()
         throw cloudResponseError(upstream, null)
@@ -83,6 +115,7 @@ class CloudGatewayProxy {
       if (!upstream.body) { response.end(); return }
       Readable.fromWeb(upstream.body).on('error', () => response.destroy()).pipe(response)
     } catch (error) {
+      if (controller.signal.aborted || response.destroyed) { response.destroy(); return }
       if (response.headersSent) { response.destroy(); return }
       response.statusCode = Number(error.status || 502)
       response.setHeader('content-type', 'application/json; charset=utf-8')
@@ -91,4 +124,4 @@ class CloudGatewayProxy {
   }
 }
 
-module.exports = { CloudGatewayProxy, MAX_BODY_BYTES }
+module.exports = { CloudGatewayProxy, MAX_BODY_BYTES, cloudCompatibleMessages }

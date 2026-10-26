@@ -17,10 +17,39 @@ test('only meaningful uncertainty below 90% produces a card despite old ask-ever
  const result=await clarifyBeforeExecution({payload,messages:[],instructions:rules,ask:async()=>assessment({confidence:0.89})});assert.equal(result.status,'waiting');assert.equal(result.trace.at(-1).clarification.options.length,2);
 });
 test('screenshot greeting and capability questions never invoke the assessor',async()=>{
- for(const prompt of ['你好你叫什么，你能帮我做哪些事','你好','你是谁？','你能做什么？']){
+ for(const prompt of ['你好你叫什么，你能帮我做哪些事','你好','你是谁？','你能做什么？','你是什么模型','请问你现在是哪个模型？','你用的是什么模型？','谢谢','hello']){
   const result=await clarifyBeforeExecution({payload:{prompt},messages:[],instructions:rules,ask:async()=>{throw Error('unexpected assessment')}});assert.equal(result.status,'ready');
  }
 });
+
+test('simple chat never bypasses resource tasks or a pending clarification', async()=>{
+ const cases = [
+  {payload:{prompt:'你好，帮我删除文件'}},
+  {payload:{prompt:'你是什么模型？然后修改报告'}},
+  {payload:{prompt:'你是什么模型',attachments:[{name:'data.csv',path:'data.csv'}]}},
+  {payload:{prompt:'你好',references:[{name:'report',kind:'file',id:'report'}]}},
+  {payload:{prompt:'谢谢'},messages:[{role:'assistant',trace:[clarificationTrace(payload,'报告给谁看？')]}]},
+ ];
+ for (const item of cases) {
+  let calls=0;await clarifyBeforeExecution({messages:[],...item,ask:async()=>{calls++;return assessment()}});assert.equal(calls,1);
+ }
+});
+
+test('clear knowledge and arithmetic questions skip auxiliary assessment but mixed/resource requests do not',async()=>{
+ for(const prompt of ['用一句话解释什么是缓存','什么是缓存？','缓存和内存有什么区别？','请简单解释一下光合作用','1+1等于几？','Explain caching']) {
+  const result=await clarifyBeforeExecution({payload:{prompt},messages:[],ask:()=>{throw Error('unexpected auxiliary model')}})
+  assert.equal(result.status,'ready',prompt)
+ }
+ for(const prompt of ['解释缓存，然后修改配置','什么是这个？','读取文件说明缓存','最新的缓存价格是多少？','解释缓存；删除文件','生成报告','Explain caching and delete file','Explain caching and run scripts','Explain latest news']) {
+  let calls=0;await clarifyBeforeExecution({payload:{prompt},messages:[],ask:async()=>{calls++;return assessment()}});assert.equal(calls,1,prompt)
+ }
+ for(const extra of [{attachments:[{path:'a.txt'}]},{references:[{kind:'file',id:'a'}]}]){
+  let calls=0;await clarifyBeforeExecution({payload:{prompt:'解释缓存',...extra},messages:[],ask:async()=>{calls++;return assessment()}});assert.equal(calls,1)
+ }
+ for(const latest of [{role:'assistant',trace:[clarificationTrace(payload,'给谁看？')]},{role:'assistant',trace:[{kind:'approval',status:'pending'}]}]){
+  let calls=0;await clarifyBeforeExecution({payload:{prompt:'解释缓存'},messages:[latest],ask:async()=>{calls++;return assessment()}});assert.equal(calls,1)
+ }
+})
 
 test('explicit continuation resumes serialized task history without a second assessment',async()=>{
  const messages=JSON.parse(JSON.stringify([{role:'user',content:'给选区卡片加花边'}, {role:'assistant',content:'本轮执行失败：工具参数无效。',trace:[{kind:'status',status:'failed'}]}]));
@@ -28,6 +57,18 @@ test('explicit continuation resumes serialized task history without a second ass
   const result=await clarifyBeforeExecution({payload:{prompt},messages,ask:async()=>{throw Error('must not assess continuation')}});
   assert.equal(result.status,'ready');assert.equal(result.payload.prompt,prompt);
  }
+});
+
+test('edits after executed work use in-context clarification without another assessor',async()=>{
+ const messages=[{role:'user',content:'制作海报'}, {role:'assistant',content:'可以把原图放回新版式中间。',trace:[{kind:'tool',toolName:'Bash',status:'completed'}]}];
+ const request={prompt:'把原产品照片放回新版式的中间区域，只保留这版的贴纸和促销带。',attachments:[{path:'original.png',name:'原图'}]};
+ const result=await clarifyBeforeExecution({payload:request,messages,ask:async()=>{throw Error('unexpected preflight')}});
+ assert.equal(result.status,'ready');assert.deepEqual(result.payload.attachments[0].path,'original.png');assert.equal(result.payload.prompt,request.prompt);
+ for(const latest of [
+  {...messages[1],trace:[...messages[1].trace,clarificationTrace(request,'用哪张原图？')]},
+  {...messages[1],trace:[...messages[1].trace,{kind:'approval',status:'pending'}]},
+ ]) {let calls=0;const waiting=await clarifyBeforeExecution({payload:request,messages:[messages[0],latest],ask:async()=>{calls++;return assessment()}});assert.equal(calls,1);assert.equal(waiting.status,'waiting')}
+ let calls=0;await clarifyBeforeExecution({payload:{prompt:'新任务：生成报告'},messages,ask:async()=>{calls++;return assessment()}});assert.equal(calls,1);
 });
 
 test('continuation shortcut requires history and never settles questions, approvals or new requirements',async()=>{

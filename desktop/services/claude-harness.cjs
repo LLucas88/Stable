@@ -2,7 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { randomUUID, createHash } = require('node:crypto')
 const { spawn, spawnSync } = require('node:child_process')
 const { approvalScope } = require('./tool-approval.cjs')
 const { RunProgress, EXECUTION_GUIDANCE, isPermissionAudit } = require('./run-progress.cjs')
@@ -51,6 +51,9 @@ function claudeEnvironment(base, home, bridge, memoryEnabled = false, toolSearch
   env.NO_PROXY = env.no_proxy = [...bypass].join(',')
   return { ...env, CLAUDE_CONFIG_DIR: home, ANTHROPIC_BASE_URL: bridge.baseURL, ANTHROPIC_API_KEY: bridge.token,
     CLAUDE_AGENT_SDK_CLIENT_APP: 'stable', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    // Stable grants only sanitized, explicitly authorized Skill names. SDK
+    // bundled skills are outside that allowlist; avoid loading their catalog.
+    CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: '1',
     CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: memoryEnabled ? '0' : '1', ENABLE_TOOL_SEARCH: toolSearch ? 'true' : 'false',
     CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(require('./model-limits.cjs').modelLimits(bridge.model).outputTokens) }
 }
@@ -92,6 +95,13 @@ class ClaudeHarnessRunner {
   }
   ready() { return fs.existsSync(this.runtimePaths().cli) }
   async run(prompt, model, apiKey, timeoutMs = 0, onEvent = () => {}, sandboxMode = 'workspace-write', imageAttachments = [], session = {}) {
+    const timingStart = performance.now(), timings = {}
+    const mark = name => {
+      if (timings[name] !== undefined) return
+      timings[name] = Math.round((performance.now() - timingStart) * 1000) / 1000
+      this.lastTimings = { ...timings }
+      try { this.options.onTiming?.(name, timings[name]) } catch { /* Diagnostics cannot interrupt a task. */ }
+    }
     const prediction = session.purpose === 'message-prediction'
     if (prediction) { session = { cwd: session.cwd, textOnly: true, purpose: session.purpose }; sandboxMode = 'read-only'; imageAttachments = [] }
     if (this.busy) throw new Error('已有任务正在运行。')
@@ -171,7 +181,7 @@ class ClaudeHarnessRunner {
         else publish(event)
       })
     }
-    const progress = new RunProgress({ permissionAudit: isPermissionAudit(session.userQuery) })
+    const progress = new RunProgress({ permissionAudit: isPermissionAudit(session.userQuery), workspace })
     const visibleDelta = clarificationStream(); let answer = ''; let currentMessage; let step = 0; let accepted = false
     const acknowledge = message => {
       const ids = new Set([message.uuid, message.user_message_uuid, ...(message.user_message_uuids || [])].filter(Boolean))
@@ -188,7 +198,10 @@ class ClaudeHarnessRunner {
       }
     }
     let cliVersion
-    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, toolPolicy, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded), contextUsage: this.contextSnapshot })
+    const promptContextHash = typeof session.promptContext === 'string' ? createHash('sha256').update(session.promptContext).digest('hex') : undefined
+    const turnPrompt = saved?.seeded && promptContextHash && saved.promptContextHash !== promptContextHash
+      ? `## 会话规则更新\n以下是当前完整规则和技能目录，替代此前同类说明；历史任务内容保留。\n${session.promptContext}\n\n${prompt}` : prompt
+    const metadata = () => ({ threadId: this.threadId, home, cwd: workspace, model: model.model, baseURL: model.baseURL, version: SDK_VERSION, cliVersion, contextPolicy: session.contextPolicy, promptContextHash, toolPolicy, skillPolicy: skillOptions.fingerprint, extensionPolicy: extensions.fingerprint, memoryEnabled: memory.enabled, seeded: accepted || Boolean(saved?.seeded), contextUsage: this.contextSnapshot })
     const acceptTurn = () => {
       if (accepted) return
       accepted = true; this.steerReady = !session.textOnly
@@ -197,20 +210,40 @@ class ClaudeHarnessRunner {
     }
     this.saveContextSnapshot = () => { if (accepted && session.key && !session.textOnly) writePointer(pointer, metadata()) }
     let bridge; let timer; let progressTimer; let stopReason; let nativeProcess; let nativeExit; let providerFailure = false; let predictionRequests = 0; let timedOut = false
+    mark('localPrepared')
     try {
-      const sdk = this.options.sdk || await import('@anthropic-ai/claude-agent-sdk')
+      const sdk = this.options.sdk || await require('./claude-runtime-loader.cjs').loadClaudeSDK()
+      mark('sdkLoaded')
       bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, chatgpt: this.options.chatgpt, onRequest: (...args) => {
+        mark('firstRequest')
         if (prediction) {
           if (++predictionRequests > 1) throw new Error('消息预测请求预算已耗尽。')
           args[0].max_tokens = Math.min(args[0].max_tokens, 2048)
         }
         acceptTurn(); progress.touch(); return this.options.onModelRequest?.(...args)
       }, search: this.options.search,
-        onDiagnostic: diagnostic => publish({ id: `provider-diagnostic:${randomUUID()}`, kind: 'status', title: diagnostic.attempt === 1 ? '工具参数校验失败，正在纠正' : '工具参数纠正失败', status: diagnostic.attempt === 1 ? 'running' : 'failed', detail: JSON.stringify(diagnostic) }),
+        onDiagnostic: diagnostic => {
+          const context = diagnostic.reasonCode === 'context_window_exceeded'
+          const recovering = context ? diagnostic.recovering : diagnostic.attempt === 1
+          publish({ id: `provider-diagnostic:${randomUUID()}`, kind: 'status',
+            title: context ? recovering ? '网关拒绝上下文长度，正在自动压缩' : '上下文压缩恢复次数已达上限' : recovering ? '工具参数校验失败，正在纠正' : '工具参数纠正失败',
+            status: recovering ? 'running' : 'failed', detail: context ? `${diagnostic.message}\n界面用量为 SDK 统计，可能与网关校验口径不同。已允许恢复 ${Math.min(diagnostic.attempt, 3)}/3 次。` : JSON.stringify(diagnostic) })
+        },
         onFatalError: message => { providerFailure = true; stopReason = message; this.cancel() },
         textOnly: session.textOnly === true, expectedImages: images.length, imageDirectory, reasoningFile: path.join(directory, 'stable-reasoning.jsonl') })
       await bridge.start()
-      const env = claudeEnvironment(this.options.environment || process.env, home, bridge, memory.enabled, !session.textOnly)
+      mark('bridgeReady')
+      const baseEnvironment = { ...(this.options.environment || process.env) }
+      const bundledBash = require('./git-bash-runtime.cjs').gitBashPath(this.options)
+      if (process.platform === 'win32' && (this.options.packaged || fs.existsSync(bundledBash))) {
+        if (!fs.existsSync(bundledBash)) throw Error('内置 Git Bash 缺失，请使用 Stable 完整安装包修复。')
+        baseEnvironment.CLAUDE_CODE_GIT_BASH_PATH = bundledBash
+        const gitRoot = path.dirname(path.dirname(bundledBash))
+        const inheritedPath = Object.entries(baseEnvironment).find(([key]) => key.toLowerCase() === 'path')?.[1] || ''
+        for (const key of Object.keys(baseEnvironment)) if (key.toLowerCase() === 'path') delete baseEnvironment[key]
+        baseEnvironment.PATH = [path.join(gitRoot, 'cmd'), path.join(gitRoot, 'usr', 'bin'), inheritedPath].join(path.delimiter)
+      }
+      const env = claudeEnvironment(baseEnvironment, home, bridge, memory.enabled, !session.textOnly)
       const python = !session.textOnly && networkAccess && sandboxMode !== 'read-only' ? require('./claude-python.cjs').bundledPython(this.options) : null
       if (python) env.STABLE_BUNDLED_PYTHON = python
       if (prediction) env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '2048'
@@ -226,9 +259,12 @@ class ClaudeHarnessRunner {
             output.persistedOutputPath ? '完整输出：' + output.persistedOutputPath : '',
           ].filter(Boolean).join('\n') || '命令执行完成，无输出。')
           : event.detail || (output === undefined ? '' : typeof output === 'string' ? output : JSON.stringify(output))
-        if (event.status !== 'running') { const issue = progress.complete(event.id, { status: event.status, aggregatedOutput: detail }); if (issue) { stopReason = issue; this.cancel() } }
+        if(event.status==='completed' && event.changedFile) progress.recordFileChange(event.changedFile)
+        const issue = event.status !== 'running' ? progress.complete(event.id, { status: event.status, aggregatedOutput: detail }) : null
         publish({ id: event.id, kind: 'tool', entity: 'tool', eventType: event.status === 'running' ? 'tool/start' : 'tool/end',
           title: `使用工具 ${event.name}`, toolName: event.name, inputDetail: bash ? event.args?.command : JSON.stringify(event.args || {}, null, 2).slice(0, 32000), detail: String(detail || '').slice(-32000), status: event.status })
+        // Preserve the last exception before cancellation suppresses new events.
+        if(issue) { stopReason=issue;this.cancel() }
       }
       const extensionRuntime = createExtensionRuntime({ userData: this.options.userData, config: extensions, disabled: extensionsDisabled,
         networkAccess, requestApproval: this.requestApproval, signal: this.abortController.signal, onToolEvent })
@@ -257,7 +293,7 @@ class ClaudeHarnessRunner {
         `本轮工作目录：${workspace}\n可读取目录：${readableRoots.join('\n')}\n可写入目录：${sandboxMode === 'read-only' ? '无（只读模式）' : writableRoots.join('\n')}`,
       ].filter(Boolean).join('\n\n')
       const first = { type: 'user', uuid: this.turnId, session_id: this.threadId, parent_tool_use_id: null, client_composed: true,
-        message: { role: 'user', content: [{ type: 'text', text: !saved?.seeded && session.initialPrompt ? session.initialPrompt : prompt }, ...images] } }
+        message: { role: 'user', content: [{ type: 'text', text: !saved?.seeded && session.initialPrompt ? session.initialPrompt : turnPrompt }, ...images] } }
       queue.push(first)
       const skillTools = skillOptions.names.length ? ['Skill'] : []
       const workerTools = ['ToolSearch', ...(nativeTools?.tools || []), ...skillTools, ...extensionRuntime.names, ...['stable_search', ...(this.options.trustedCli ? ['stable_wending'] : []), ...(this.builtins ? ['stable_excel', 'stable_browser', 'stable_skill_install', ...(networkAccess && sandboxMode !== 'read-only' ? ['stable_image_generate'] : [])] : [])].map(name => `mcp__stable__${name}`)]
@@ -270,6 +306,7 @@ class ClaudeHarnessRunner {
         delete value.model; delete value.isolation; delete value.mode
         return value
       }
+      mark('toolsPrepared')
       this.query = sdk.query({ prompt: queue, options: {
         cwd: workspace, pathToClaudeCodeExecutable: this.runtimePaths().cli, env,
         // Recent SDKs may default to auto/classifier mode. Stable owns approval
@@ -312,6 +349,7 @@ class ClaudeHarnessRunner {
           : nativeTools ? nativeTools.canUseTool(name, input, options) : { behavior: 'deny', message: '本轮不允许调用工具。' },
         abortController: this.abortController, extraArgs: { 'replay-user-messages': null },
         spawnClaudeCodeProcess: options => {
+          mark('processSpawn')
           nativeProcess = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, signal: options.signal })
           this.nativeProcess = nativeProcess
           nativeExit = new Promise(resolve => nativeProcess.once('close', resolve))
@@ -321,6 +359,7 @@ class ClaudeHarnessRunner {
       if (timeoutMs > 0) timer = setTimeout(() => { if (this.cancelled) return; timedOut = true; stopReason = 'Claude 任务执行超时。'; this.cancel() }, timeoutMs)
       if (typeof this.query.initializationResult === 'function') {
         const initialization = await this.query.initializationResult()
+        mark('sdkInitialized')
         cliVersion = initialization.claude_code_version
         if (typeof cliVersion !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(cliVersion)) cliVersion = undefined
         publish({ id: 'runtime-info', kind: 'status', title: '执行环境', detail: `Claude Agent SDK ${SDK_VERSION} · Claude Code ${cliVersion || '版本未返回'} · SDK 原生 Bash（${nativeTools?.tools.includes('Bash') ? '本机执行，无 WSL2 隔离' : '本轮已禁用'}）`, status: 'completed' })
@@ -380,15 +419,17 @@ class ClaudeHarnessRunner {
             // turn's result already includes it. Wait for the correct result.
             if (!resultInputs.includes(this.expectedResultUuid)) continue
           }
-          if (message.is_error || message.subtype !== 'success') throw new Error((message.errors || []).join('\n') || 'Claude Agent SDK 执行失败。')
+          if (message.is_error || message.subtype !== 'success') throw new Error(bridge?.lastProviderError?.message || (message.errors || []).filter(value=>typeof value==='string'&&value.trim()).join('\n') || (typeof message.result==='string'&&message.result.trim()) || `Claude Agent SDK 执行失败（${message.subtype || 'unknown'}）。`)
           if (review.failure) throw new Error(review.failure)
           answer = message.result || answer
           const incomplete = review.incomplete?.()
           if (incomplete && !answer.includes('[[STABLE_WAITING_FOR_INPUT]]')) answer += '\n\n未完成的检查项：\n' + incomplete
           if (this.pendingInputs.size) continue
           if (!answer.trim()) throw new Error('Claude Agent SDK 未返回最终回答。')
+          mark('resultReceived')
           const resultFor = this.expectedResultUuid
           if (session.key && !session.textOnly) await this.getContextUsage()
+          mark('contextReady')
           if (this.cancelled) throw new Error('任务已停止。')
           if (this.pendingInputs.size || this.expectedResultUuid !== resultFor) continue
           record(answer.trim()); queue.close()
@@ -399,11 +440,17 @@ class ClaudeHarnessRunner {
       throw new Error(this.cancelled ? stopReason || '任务已停止。' : 'Claude 连接提前结束，未取得任务完成结果。')
     } catch (error) {
       if (accepted) record(answer, this.cancelled && !providerFailure ? 'interrupted' : 'failed')
+      if (timedOut && bridge?.lastProviderError) {
+        providerFailure = true
+        stopReason = `${bridge.lastProviderError.message}\n等待服务恢复时达到本轮时限。`
+        throw Object.assign(new Error(stopReason), { code: 'CLAUDE_PROVIDER_TIMEOUT', status: bridge.lastProviderError.status, timeoutMs })
+      }
       if (timedOut) throw Object.assign(new Error(stopReason), { code: 'CLAUDE_RUN_TIMEOUT', timeoutMs })
       if (this.cancelled) throw new Error(stopReason || '任务已停止。')
       error.message = String(error.message || error).split(apiKey).join('[redacted]')
       throw error
     } finally {
+      mark('cleanupStart')
       clearTimeout(timer); clearInterval(progressTimer); this.steerReady = false; queue.close()
       for (const entry of this.approvals.values()) entry.resolve(false)
       this.approvals.clear()
@@ -423,6 +470,7 @@ class ClaudeHarnessRunner {
         }
       }
       publish({ id: 'run-progress', kind: 'status', title: providerFailure ? '执行失败' : this.cancelled ? '任务已取消' : '执行已结束', status: providerFailure ? 'failed' : this.cancelled ? 'cancelled' : 'completed', detail: providerFailure ? stopReason : progress.detail() })
+      mark('finished')
     }
   }
   async getContextUsage() {

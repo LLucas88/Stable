@@ -74,7 +74,7 @@ test('non-Windows platforms retain native file selection', async t => {
   assert.deepEqual(calls, [file])
 })
 
-test('delivery card sends the exact Windows path and visibly handles failure and retry', { skip: process.platform !== 'win32', timeout: 20000 }, async () => {
+test('compact delivery links preserve paths and upload cards retain failure and retry handling', { skip: process.platform !== 'win32', timeout: 20000 }, async () => {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   const result = await new Promise((resolve, reject) => {
     const child = spawn(require('electron'), [path.join(__dirname, 'fixtures/file-location-ui.cjs')], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -99,7 +99,7 @@ test('local preview request guard allows a project source image and rejects file
  const {workspace,temporary}=fixture(t),second=path.join(temporary,'images');fs.mkdirSync(second);const image=path.join(second,'image.png');fs.writeFileSync(image,'fixture')
  const outside=path.join(temporary,'outside.png');fs.writeFileSync(outside,'fixture')
  const source=readSource(path.join(root,'desktop/main.cjs'),'utf8'),start=source.indexOf('function isAllowedWorkspacePreviewFile('),end=source.indexOf('function isAllowedLocalPreviewRequest(',start)
- const context={URL,fileURLToPath:require('node:url').fileURLToPath,previewTemporaryPath:null,existsSync:fs.existsSync,statSync:fs.statSync,resolveWorkspaceEntry,conversationPaths:()=>({workspace,writableRoots:[workspace,second]}),store:{activeConversationId:()=> 'test'}}
+ const context={URL,fileURLToPath:require('node:url').fileURLToPath,previewTemporaryPath:null,existsSync:fs.existsSync,statSync:fs.statSync,resolveWorkspaceEntry,attachmentPreviews:{roots:()=>[workspace,second]},conversationPaths:()=>({workspace,readableRoots:[workspace,second]}),store:{activeConversationId:()=> 'test'}}
  vm.createContext(context);vm.runInContext(source.slice(start,end),context)
  assert(context.isAllowedWorkspacePreviewFile(require('node:url').pathToFileURL(image).href));assert(!context.isAllowedWorkspacePreviewFile(require('node:url').pathToFileURL(outside).href))
 })

@@ -11,6 +11,54 @@ const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.
 
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
 const secret = 'fixture-provider-secret'
+
+test('phase timing is monotonic and diagnostics cannot interrupt an answer', async t => {
+  const seen = []
+  const { workspace, runner } = fixture(t, mockSdk(), { onTiming: (name, ms) => {
+    seen.push([name, ms]); if (name === 'sdkLoaded') throw Error('diagnostic unavailable')
+  } })
+  assert.equal(await runner.run('hello', model, secret, 5000, undefined, 'read-only', [], { cwd: workspace }), 'done')
+  assert.equal(seen[0][0], 'localPrepared'); assert.equal(seen.at(-1)[0], 'finished')
+  assert(seen.every((entry, index) => index === 0 || entry[1] >= seen[index - 1][1]))
+  assert.equal(runner.lastTimings.finished, seen.at(-1)[1])
+})
+test('SDK error results retain the real API error when errors is empty',async t=>{
+ const sdk=mockSdk(async function*(){yield {type:'result',subtype:'error_during_execution',is_error:true,errors:[],result:'API Error: 400 screenshot role invalid'}})
+ const {workspace,runner}=fixture(t,sdk)
+ await assert.rejects(runner.run('test',model,secret,5000,undefined,'read-only',[],{cwd:workspace}),/400 screenshot role invalid/)
+})
+test('retry exhaustion publishes the final tool exception before cancelling',async t=>{
+ const events=[]
+ const sdk=mockSdk(async function*({parameters}){
+  const hooks=parameters.options.hooks,pre=hooks.PreToolUse.find(x=>x.matcher.includes('Bash')).hooks[0],failed=hooks.PostToolUseFailure.find(x=>x.matcher.includes('Bash')).hooks[0]
+  for(let i=0;i<3;i++){await pre({tool_name:'Bash',tool_use_id:'fail'+i,tool_input:{command:'python broken.py'},cwd:parameters.options.cwd});await failed({tool_use_id:'fail'+i,error:'specific exception '+i})}
+  yield {type:'result',subtype:'success',result:'unreachable'}
+ })
+ const {workspace,runner}=fixture(t,sdk)
+ await assert.rejects(runner.run('test',model,secret,5000,event=>{events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/3 次/)
+ assert.equal(events.find(event=>event.id==='fail2'&&event.status==='failed')?.detail,'specific exception 2')
+})
+test('script edits let the real native-hook progress pipeline continue after prior failures',async t=>{
+ const sdk=mockSdk(async function*({parameters}){
+  const hooks=parameters.options.hooks
+  const pre=hooks.PreToolUse.find(x=>x.matcher.includes('Bash')).hooks[0]
+  const post=hooks.PostToolUse.find(x=>x.matcher.includes('Bash')).hooks[0]
+  const failed=hooks.PostToolUseFailure.find(x=>x.matcher.includes('Bash')).hooks[0]
+  const file=path.join(parameters.options.cwd,'analyze.py');fs.writeFileSync(file,'broken')
+  for(let i=0;i<4;i++){
+   assert.equal((await pre({tool_name:'Bash',tool_use_id:'b'+i,tool_input:{command:'python analyze.py'},cwd:parameters.options.cwd})).hookSpecificOutput.permissionDecision,'allow')
+   if(i<3)await failed({tool_use_id:'b'+i,error:`File "${file}", line 1\nTypeError: error-${i}`})
+   else await post({tool_use_id:'b'+i,tool_response:{stdout:'report verified'}})
+   if(i===1){
+    assert.equal((await pre({tool_name:'Write',tool_use_id:'repair',tool_input:{file_path:file,content:'repaired'},cwd:parameters.options.cwd})).hookSpecificOutput.permissionDecision,'allow')
+    fs.writeFileSync(file,'repaired');await post({tool_use_id:'repair',tool_response:{success:true}})
+   }
+  }
+  yield {type:'result',subtype:'success',result:'report verified'}
+ })
+ const {workspace,runner}=fixture(t,sdk)
+ assert.equal(await runner.run('repair report',model,secret,5000,event=>{if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),'report verified')
+})
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 function mockSdk(scenario = async function* () { yield { type: 'result', subtype: 'success', result: 'done' } }) {
   const captures = []
@@ -47,6 +95,37 @@ function fixture(t, sdk = mockSdk(), options = {}) {
   return { root, workspace, runner, sdk }
 }
 
+test('persistent prompt rules are sent once, updated once and survive runner restart', async t => {
+  const { root, workspace, runner, sdk } = fixture(t)
+  const context='unique rules and catalog', session={key:'incremental',cwd:workspace,promptContext:context,initialPrompt:context+'\nfirst'}
+  await runner.run('first',model,secret,1000,undefined,'workspace-write',[],session)
+  await runner.run('second',model,secret,1000,undefined,'workspace-write',[],session)
+  assert.equal(sdk.captures[0].first.message.content[0].text,session.initialPrompt)
+  assert.equal(sdk.captures[1].first.message.content[0].text,'second')
+  const changed={...session,promptContext:'new rules and catalog',initialPrompt:'new rules and catalog\nfull history'}
+  await runner.run('third',model,secret,1000,undefined,'workspace-write',[],changed)
+  assert.match(sdk.captures[2].first.message.content[0].text,/会话规则更新[\s\S]*new rules and catalog[\s\S]*third/)
+  assert.equal(sdk.captures[2].parameters.options.resume,sdk.captures[0].parameters.options.sessionId)
+  const reopened=new ClaudeHarnessRunner({userData:root,workspace,executable:process.execPath,sdk})
+  t.after(()=>reopened.cancel())
+  await reopened.run('fourth',model,secret,1000,undefined,'workspace-write',[],changed)
+  assert.equal(sdk.captures[3].first.message.content[0].text,'fourth')
+  // Permission/model changes must continue to start with full context.
+  await reopened.run('fifth',model,secret,1000,undefined,'read-only',[],changed)
+  assert.equal(sdk.captures[4].parameters.options.resume,undefined)
+  assert.equal(sdk.captures[4].first.message.content[0].text,changed.initialPrompt)
+})
+
+test('legacy session with no context fingerprint receives rules once without losing its SDK history', async t => {
+  const {workspace,runner,sdk}=fixture(t),session={key:'legacy',cwd:workspace,initialPrompt:'legacy first'}
+  await runner.run('first',model,secret,1000,undefined,'workspace-write',[],session)
+  await runner.run('next',model,secret,1000,undefined,'workspace-write',[],{...session,promptContext:'current rules'})
+  assert.equal(sdk.captures[1].parameters.options.resume,sdk.captures[0].parameters.options.sessionId)
+  assert.match(sdk.captures[1].first.message.content[0].text,/current rules/)
+  await runner.run('next again',model,secret,1000,undefined,'workspace-write',[],{...session,promptContext:'current rules'})
+  assert.equal(sdk.captures[2].first.message.content[0].text,'next again')
+})
+
 test('persistent SDK turns resume without repeating initialPrompt and restart after a context-policy change', async t => {
   const { root, workspace, runner, sdk } = fixture(t)
   const session = { key: 'same', cwd: workspace, contextPolicy: 'uploaded-only-v1', initialPrompt: 'full initial context' }
@@ -75,6 +154,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert.equal(first.parameters.options.env.ANTHROPIC_API_KEY === secret, false)
   assert.equal(first.parameters.options.env.CLAUDE_CONFIG_DIR, path.join(sessionDirectory(root, 'same'), 'home'))
   assert.equal(first.parameters.options.env.ENABLE_TOOL_SEARCH, 'true')
+  assert.equal(first.parameters.options.env.CLAUDE_CODE_DISABLE_BUNDLED_SKILLS, '1')
   assert.equal(first.parameters.options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '0')
   assert.equal(first.parameters.options.settings.autoMemoryEnabled, true)
   assert.equal(first.parameters.options.settings.autoCompactEnabled, true)
@@ -262,6 +342,35 @@ test('a timed-out SDK request exposes a typed timeout and closes the runner', as
   })
   assert.equal(runner.busy, false); assert.equal(sdk.captures[0].closed, true)
 })
+
+test('timeout during SDK provider backoff preserves the actual 502 and cleans up', async t => {
+ const sdk=mockSdk(async function*({parameters,closed}){
+  const env=parameters.options.env;
+  const response=await fetch(env.ANTHROPIC_BASE_URL+'/v1/messages',{method:'POST',headers:{'x-api-key':env.ANTHROPIC_API_KEY},body:JSON.stringify({model:'alias',max_tokens:32,messages:[{role:'user',content:'assess'}]})});
+  assert.equal(response.status,502);await response.text();await closed;
+ });
+ const {runner,workspace}=fixture(t,sdk,{fetchImpl:async()=>Response.json({error:{message:'upstream '+secret+' unavailable'}},{status:502})});
+ const events=[];
+ await assert.rejects(runner.run('assess',model,secret,500,e=>events.push(e),'read-only',[],{cwd:workspace,textOnly:true}),error=>{
+  assert.equal(error.code,'CLAUDE_PROVIDER_TIMEOUT');assert.equal(error.status,502);assert.match(error.message,/HTTP 502/);assert.doesNotMatch(error.message,new RegExp(secret));return true;
+ });
+ assert.equal(runner.busy,false);assert.equal(sdk.captures[0].closed,true);assert.equal(events.at(-1).status,'failed');
+});
+
+test('supplier balance failure reaches the user-facing failed turn after a single request',async t=>{
+ let requests=0;const sdk=mockSdk(async function*({parameters,closed}){
+  const env=parameters.options.env;
+  const response=await fetch(env.ANTHROPIC_BASE_URL+'/v1/messages',{method:'POST',headers:{'x-api-key':env.ANTHROPIC_API_KEY},body:JSON.stringify({model:'alias',max_tokens:32,messages:[{role:'user',content:'edit poster'}]})});
+  assert.equal(response.status,402);await response.text();await closed;
+ });
+ const {runner,workspace}=fixture(t,sdk,{fetchImpl:async()=>{requests++;return Response.json({error:{code:'upstream_insufficient_balance',message:'模型供应商余额不足（上游 HTTP 402）。这不是 Stable 账号额度不足。'}},{status:402})}});
+ await assert.rejects(runner.run('edit poster',model,secret,5000,undefined,'workspace-write',[],{cwd:workspace}),error=>{
+  assert.match(error.message,/模型供应商余额不足/);
+  const terminal=require('../desktop/services/failed-turn.cjs').failedTurn({id:'balance-fixture',trace:[],items:[],error:error.message,state:'failed',time:Date.now()});
+  assert.match(terminal.content,/模型供应商余额不足/);assert.match(terminal.content,/HTTP 402/);return true;
+ });
+ assert.equal(requests,1);assert.equal(runner.busy,false);
+});
 
 test('an unapproved write stays blocked and cancellation cannot later approve or execute it', async t => {
   const entered = deferred(), handled = deferred()

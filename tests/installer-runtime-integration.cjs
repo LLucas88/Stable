@@ -5,7 +5,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawnSync, spawn } = require('node:child_process')
 const { getMakeNsisPath } = require('app-builder-lib/out/toolsets/windows')
 
 async function main() {
@@ -32,7 +32,34 @@ async function main() {
     checked(compiler.path, ['/V2', '/INPUTCHARSET', 'UTF8', script])
     return path.join(root, `${name}.exe`)
   }
-  const health = compile('health', `Section\nReadEnvStr $0 "STABLE_TEST_HEALTH_EXIT"\nSetErrorLevel $0\nSectionEnd`)
+  const locker = path.join(root, 'lock-stage.ps1')
+  fs.writeFileSync(locker, `$ErrorActionPreference='Stop'\n$taskRoot=$env:STABLE_TEST_ROOT\n$file=Join-Path $taskRoot 'App.__stable_next_0.91.7/resources/app.asar'\n$deadline=[DateTime]::UtcNow.AddSeconds(20)\nwhile(!(Test-Path -LiteralPath $file)){if([DateTime]::UtcNow -gt $deadline){throw 'Stage did not appear'};Start-Sleep -Milliseconds 20}\n$handle=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)\ntry{[IO.File]::WriteAllText((Join-Path $taskRoot 'stage-locked'),'locked');Start-Sleep -Milliseconds ([int]$env:STABLE_TEST_STAGE_LOCK)}finally{$handle.Dispose()}\n`)
+  const health = compile('health', `!include LogicLib.nsh
+!include FileFunc.nsh
+Section
+\u0024{GetParameters} $1
+\u0024{GetOptions} $1 "--stable-upgrade-backup" $2
+\u0024{IfNot} \u0024{Errors}
+ReadEnvStr $3 "STABLE_TEST_STAGE_LOCK"
+\u0024{If} $3 != "0"
+ReadEnvStr $4 "STABLE_TEST_ROOT"
+StrCpy $5 0
+\u0024{Do}
+IfFileExists "$4\\stage-locked" stageLockReady
+Sleep 20
+IntOp $5 $5 + 1
+\u0024{LoopUntil} $5 >= 1000
+SetErrorLevel 99
+Quit
+stageLockReady:
+\u0024{EndIf}
+ReadEnvStr $0 "STABLE_TEST_BACKUP_EXIT"
+SetErrorLevel $0
+Quit
+\u0024{EndIf}
+ReadEnvStr $0 "STABLE_TEST_HEALTH_EXIT"
+SetErrorLevel $0
+SectionEnd`)
   function fixture(lightweight) {
     return compile(lightweight ? 'lightweight' : 'full', `
 !include LogicLib.nsh
@@ -108,6 +135,13 @@ SectionEnd
     { name: 'in-app-embedded', old: true, updated: true, runtime: 'embedded', code: 0 },
     { name: 'in-app-persistent', old: true, updated: true, runtime: 'persistent', code: 0 },
     { name: 'manual-fresh-rejected', code: 21 },
+    { name: 'repeated-upgrade-retains-backups', full: true, old: true, runtime: 'embedded', priorBackup: true, code: 0 },
+    { name: 'full-manual-upgrade', full: true, old: true, runtime: 'embedded', code: 0 },
+    { name: 'full-manual-rollback', full: true, old: true, runtime: 'embedded', healthExit: 4, code: 12 },
+    { name: 'transient-stage-lock-upgrade', full: true, old: true, runtime: 'embedded', stageLock: 1500, code: 0 },
+    { name: 'transient-stage-lock-rollback', full: true, old: true, runtime: 'embedded', stageLock: 1500, healthExit: 4, code: 12 },
+    { name: 'persistent-stage-lock-retains-old', full: true, old: true, runtime: 'embedded', stageLock: 7000, code: 13 },
+    { name: 'backup-failure-retains-old', full: true, old: true, runtime: 'embedded', backupExit: 25, code: 25 },
     { name: 'full-manual-fresh-accepted', full: true, fresh: true, code: 0 },
     { name: 'full-updated-wrong-path-rejected', full: true, updated: true, code: 21 },
     { name: 'in-app-missing-runtime', old: true, updated: true, code: 11 },
@@ -122,6 +156,10 @@ SectionEnd
     fs.mkdirSync(home)
     const sentinel = path.join(home, 'user-data-sentinel')
     fs.writeFileSync(sentinel, 'preserve-user-data')
+    if (scenario.priorBackup) {
+      fs.mkdirSync(path.join(home, 'App.__stable_previous_0.91.7'));
+      fs.writeFileSync(path.join(home, 'App.__stable_previous_0.91.7', 'original.txt'), 'retained-original')
+    }
     if (scenario.staleFailure) {
       const retained = path.join(home, 'App.__stable_failed_0.91.7', ...Array(12).fill('long-resource-directory'), 'retained.txt')
       fs.mkdirSync(path.dirname(retained), { recursive: true })
@@ -140,10 +178,16 @@ SectionEnd
         fs.writeFileSync(target, 'runtime-sentinel')
       }
     }
+    const runEnv = { ...env, STABLE_TEST_ROOT: home, STABLE_RUNTIME_HOME: persistent, STABLE_TEST_HEALTH_EXIT: String(scenario.healthExit || 0), STABLE_TEST_BACKUP_EXIT: String(scenario.backupExit || 0), STABLE_TEST_STAGE_LOCK: String(scenario.stageLock || 0) }
+    const lockDone = scenario.stageLock ? new Promise((resolve, reject) => {
+      const process = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', locker], { env: runEnv, windowsHide: true, stdio: 'ignore' })
+      process.once('error', reject); process.once('exit', code => code === 0 ? resolve() : reject(new Error('Stage lock fixture failed: ' + code)))
+    }) : Promise.resolve()
     const result = spawnSync(scenario.full ? full : light, scenario.updated ? ['--updated', '/S'] : ['/S'], {
       cwd: home, windowsHide: true, encoding: 'utf8', timeout: 30000,
-      env: { ...env, STABLE_TEST_ROOT: home, STABLE_RUNTIME_HOME: persistent, STABLE_TEST_HEALTH_EXIT: String(scenario.healthExit || 0) },
+      env: runEnv,
     })
+    await lockDone
     assert.equal(result.error, undefined, result.error?.message)
     assert.equal(result.status, scenario.code, `${scenario.name}: ${result.stderr}`)
     assert.equal(fs.existsSync(path.join(home, 'legacy-uninstall-called')), Boolean(scenario.fresh), `${scenario.name}: installer dispatch`)
@@ -160,6 +204,10 @@ SectionEnd
       if (scenario.healthExit) assert.equal(fs.readFileSync(path.join(embedded, 'node/node.exe'), 'utf8'), 'runtime-sentinel')
     } else {
       assert.equal(fs.existsSync(app), false, 'invalid target must stay untouched')
+    }
+    if (scenario.priorBackup) {
+      assert.equal(fs.readFileSync(path.join(home, 'App.__stable_previous_0.91.7/original.txt'), 'utf8'), 'retained-original')
+      assert.equal(fs.readFileSync(path.join(home, 'App.__stable_previous_0.91.7-1/Stable.exe'), 'utf8'), 'old-executable')
     }
     results.push(scenario.name)
   }

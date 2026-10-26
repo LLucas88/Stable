@@ -1,10 +1,12 @@
 'use strict'
 const { REPORT_GUIDANCE } = require('./report-guidance.cjs')
+const path = require('node:path')
 const TOOL_WATCHDOG_MS = 10 * 60_000
 const EXECUTION_GUIDANCE = [
   REPORT_GUIDANCE,
   '执行预算：同一帮助命令只读取一次；整轮帮助查询不超过 12 次。禁止猜测或枚举数据集 ID。',
   '相同操作失败后必须根据新证据修正，不能重复碰运气。权限不足不是空数据；报告已取得结果与缺口。',
+  '脚本报错时先读取具体异常与相关数据类型，再修改对应脚本并重试、验证结果；不要只换命令写法或修改无关文件。经过确认的相关文件内容修改可获得新的重试机会，每条命令本轮最多 6 轮修复；权限拒绝和费用上限不因此重置。',
   '工具超时或普通执行错误返回后，整轮任务仍可继续：先分析已有输出，检查已经完成的步骤及可能产生的副作用，再缩小范围、拆分步骤或换策略；不要原样重复长命令，不把超时当作用户要求停止，也不要因此直接放弃。单条 Bash 命令最多 9 分钟，较长工作拆成可恢复步骤。用户停止、权限拒绝、预算耗尽必须遵守，不得绕过。',
   '实时查询不得递归扫描磁盘寻找旧数据。只搜索任务提供或文档明确指出的目录。',
   '普通查询命令设 60 秒超时；较慢查询最多 180 秒。长任务拆成可观察的步骤，不在单条命令内批量探测或循环重试。',
@@ -33,8 +35,9 @@ function failureKind(item) {
   return null
 }
 class RunProgress {
-  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = TOOL_WATCHDOG_MS, toolIdleMs = 2*60_000, permissionAudit = false } = {}) {
+  constructor({ now = Date.now, idleMs = 5*60_000, toolMs = TOOL_WATCHDOG_MS, toolIdleMs = 2*60_000, permissionAudit = false, workspace = process.cwd() } = {}) {
     this.permissionAudit = permissionAudit
+    this.workspace = workspace; this.failureEvidence = new Map(); this.repairs = new Map()
     this.now=now; this.idleMs=idleMs; this.toolMs=toolMs; this.toolIdleMs=toolIdleMs; this.started=now(); this.lastActivity=this.started
     this.active=new Map(); this.failures=new Map(); this.help=new Map(); this.helpCount=0; this.completed=0; this.seen=new Set(); this.pausedAt=null
   }
@@ -50,6 +53,18 @@ class RunProgress {
     return null
   }
   output(id) { const entry=this.active.get(id); if(entry){entry.lastOutput=this.now();this.touch()} }
+  // Called only after a successful native write verified different file bytes.
+  recordFileChange(file) {
+    const normalize = value => { const result=path.resolve(this.workspace,value).replace(/\\/g,'/');return process.platform==='win32'?result.toLowerCase():result }
+    const target=normalize(file)
+    for(const [key,evidence] of this.failureEvidence) {
+      if(!this.failures.has(key) || !evidence.repairable || (this.repairs.get(key)||0)>=6) continue
+      const tokens=[...evidence.text.matchAll(/"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s;&|<>"']+)/g)].map(match=>match[1]||match[2]||match[3])
+      if(!tokens.some(token=>normalize(token)===target)) continue
+      this.failures.delete(key);this.failureEvidence.delete(key)
+      this.repairs.set(key,(this.repairs.get(key)||0)+1)
+    }
+  }
   complete(id,item) {
     const entry=this.active.get(id)
     if(!entry) return null
@@ -57,6 +72,7 @@ class RunProgress {
     const failure=failureKind(item)
     if (!failure) {
       this.failures.delete('命令执行失败|'+entry.command);this.failures.delete('接口返回业务失败|'+entry.command)
+      this.failureEvidence.delete('命令执行失败|'+entry.command)
       return null
     }
     // An explicit permissions inventory expects denials across different named
@@ -64,6 +80,10 @@ class RunProgress {
     const auditCommand=this.permissionAudit && failure.startsWith('数据权限') && /crm-brand-cli/i.test(entry.command) ? entry.command.match(/\bquery-[a-z0-9-]+\b/i)?.[0]?.toLowerCase() : null
     const key=auditCommand ? failure+'|'+auditCommand : failure.startsWith('命令') || failure.startsWith('接口') ? failure+'|'+entry.command : failure
     const count=(this.failures.get(key)||0)+1;this.failures.set(key,count)
+    if(failure==='命令执行失败') {
+      const output=String(item.aggregatedOutput||item.error?.message||'')
+      this.failureEvidence.set(key,{text:entry.command+'\n'+output,repairable:!/(?:EACCES|EPERM|permission denied|access denied|权限|拒绝|预算|额度|quota|budget)/i.test(output)})
+    }
     if(count>=3) return failure+'；本轮已出现 3 次，已停止重复尝试。已完成文件保留，可修正问题后继续。'
     return null
   }

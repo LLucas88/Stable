@@ -1,3 +1,7 @@
+import { ConversationActivity } from './ConversationActivity'
+import { DesignControls, DesignMessageParameters, DEFAULT_DESIGN } from './DesignControls'
+import type { DesignRequest } from './types'
+import './styles/design-activity.css'
 import { cloudAccessHint } from './settings/CloudAccessSettings'
 import { errorMessage, formatBytes, formatAutomationSchedule } from './shared/format'
 import { type ConversationPreviewTarget } from './shared/conversation-preview'
@@ -30,7 +34,7 @@ import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
 import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
+import { Bell, Palette, Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import launchLogoUrl from '../build/stable_launch_logo.png'
 import conversationStartAnimationUrl from './assets/bloub-2.mp4'
@@ -49,8 +53,8 @@ import { useMessagePrediction } from './use-message-prediction'
 import { useConversationUnread } from './use-conversation-unread'
 import type { ClarificationResponse, AgentAttachment, AgentCapability, AgentPermissionMode, AgentReference, AgentReferenceKind, AgentState, AgentTraceItem, AgentTraceStatus, AutomationState, BootstrapData, ConversationItem, ConversationSearchResult, MessageItem, Page, TeamState, WendingCliStatus } from './types'
 
-type WorkspaceMode = 'work' | 'lab'
-type ComposerMessage = { prompt: string; attachments: AgentAttachment[]; references: AgentReference[]; clarificationResponse?: ClarificationResponse }
+type WorkspaceMode = 'work' | 'lab' | 'design'
+type ComposerMessage = { design?: DesignRequest; prompt: string; attachments: AgentAttachment[]; references: AgentReference[]; clarificationResponse?: ClarificationResponse }
 type RepositoryPageId = Extract<Page, 'data' | 'reports' | 'skills' | 'knowledge'>
 type PrimaryNavId = Page | 'repository'
 
@@ -116,6 +120,8 @@ export function App() {
   const [confirmation, setConfirmation] = useState<{ title: string; message: string; detail: string } | null>(null)
   const creatingConversationRef = useRef(false)
   const composerDraftIds = useRef<string[]>([])
+  const [activityView, setActivityView] = useState(false)
+  const [activityCount, setActivityCount] = useState(0)
   const [conversationTasksTarget, setConversationTasksTarget] = useState<HTMLDivElement | null>(null)
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH)
   const [railCollapsed, setRailCollapsed] = useState(false)
@@ -245,13 +251,37 @@ export function App() {
     finally { setBusy('') }
   }
 
+  async function openDesign() {
+    if (creatingConversationRef.current) return
+    creatingConversationRef.current = true
+    setSettingsModule(null); setMode('design'); setPage('agent')
+    await action('正在打开 Design', async () => {
+      try {
+        const previous = state?.conversations.find(item => item.design && !item.archivedAt)
+        const agent = previous ? await window.stable.agent.select(previous.id) : await window.stable.agent.create(DEFAULT_DESIGN)
+        setState(current => current ? { ...current, ...agent } : current)
+      } finally { creatingConversationRef.current = false }
+    })
+  }
+
+  useEffect(() => {
+    if (page === 'agent' && state) setMode(state.conversations.find(item=>item.id===state.activeConversationId)?.design ? 'design' : 'work')
+  }, [state?.activeConversationId, page])
+
   function selectMode(next: WorkspaceMode) {
     setSettingsModule(null)
     setMode(next)
     setPage(next === 'work' ? 'agent' : 'workflows')
+    if (next === 'work' && state?.conversations.find(item=>item.id===state.activeConversationId)?.design) {
+      void action('正在打开对话', async () => {
+        const previous = state.conversations.find(item=>!item.design && !item.archivedAt)
+        const agent = previous ? await window.stable.agent.select(previous.id) : await window.stable.agent.create()
+        setState(current=>current?{...current,...agent}:current)
+      })
+    }
   }
 
-  function navigate(id: PrimaryNavId) {
+  function navigate(id: PrimaryNavId, design?: DesignRequest) {
     setSettingsModule(null)
     if (settingsModule && id === 'agent') { setPage('agent'); return }
     if (id === 'agent') {
@@ -259,8 +289,8 @@ export function App() {
       creatingConversationRef.current = true
       void action('正在新建对话', async () => {
         try {
-          const draftId = composerDraftIds.current.find(id => state?.conversations.some(item => item.id === id && !item.messageCount && !item.archivedAt))
-          const agent = draftId ? await window.stable.agent.select(draftId) : await window.stable.agent.create()
+          const draftId = composerDraftIds.current.find(id => state?.conversations.some(item => item.id === id && Boolean(item.design) === Boolean(design) && !item.messageCount && !item.archivedAt))
+          const agent = draftId ? await window.stable.agent.select(draftId) : await window.stable.agent.create(design)
           setState(current => current ? { ...current, ...agent } : current)
           setAgentPrefill('')
           setPage('agent')
@@ -354,10 +384,10 @@ export function App() {
       <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
       {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">
         <div className="rail-icon-dock">
-        <nav className="rail-nav" aria-label={mode === 'work' ? '工作模块' : '实验室模块'}>
-          {(mode === 'work' ? WORK_NAV : LAB_NAV).map(({ id, label, icon: Icon }) => {
+        <nav className="rail-nav" aria-label={mode === 'lab' ? '实验室模块' : '工作模块'}>
+          {(mode === 'lab' ? LAB_NAV : WORK_NAV).map(({ id, label, icon: Icon }) => {
             const active = !settingsModule && (id === 'repository' ? isRepositoryPage(page) : page === id)
-            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => navigate(id)} disabled={id === 'agent' && busy === '正在新建对话'} data-tooltip={id === 'agent' ? '新建任务对话' : label} aria-label={label} aria-current={active ? 'page' : undefined}>
+            return <button key={id} className="rail-button" data-active={active || undefined} onClick={() => { if(id === 'agent') setMode('work'); navigate(id) }} disabled={id === 'agent' && busy === '正在新建对话'} data-tooltip={id === 'agent' ? '新建任务对话' : label} aria-label={label} aria-current={active ? 'page' : undefined}>
               <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </button>
@@ -367,6 +397,7 @@ export function App() {
           <button type="button" role="tab" aria-label="工作" data-tooltip="工作" aria-selected={mode === 'work'} data-active={mode === 'work' || undefined} onClick={() => selectMode('work')}><BriefcaseBusiness size={14} aria-hidden="true" /><span>工作</span></button>
           <button type="button" role="tab" aria-label="实验室" data-tooltip="实验室" aria-selected={mode === 'lab'} data-active={mode === 'lab' || undefined} onClick={() => selectMode('lab')}><FlaskConical size={14} aria-hidden="true" /><span>实验室</span></button>
         </div>
+        <button type="button" className="rail-design-button" aria-label="Design" data-tooltip="Design · 图像创作" data-active={mode === 'design' || undefined} onClick={() => void openDesign()}><Palette size={21}/><span>Design</span></button>
         <div className="rail-bottom-controls">
           <UpdateProgressButton state={state} action={action} onOpen={() => setSettingsModule('updates')} />
           <AccountDock state={state} onSelect={module => { setSettingsModule(module); setRailCollapsed(false) }} />
@@ -375,7 +406,8 @@ export function App() {
         {settingsModule && <SettingsNavigation activeModule={settingsModule} onSelect={setSettingsModule} />}
         <section className="rail-task-pane" aria-label="项目与任务" hidden={Boolean(settingsModule)}>
           <header className="rail-task-header">
-            <button type="button" className="rail-new-chat" disabled={busy === '正在新建对话'} onClick={() => { setMode('work'); navigate('agent') }}><SquarePen size={14} aria-hidden="true" /><span>新聊天</span></button>
+            <button type="button" className="rail-new-chat" disabled={busy === '正在新建对话'} onClick={() => navigate('agent', mode === 'design' ? DEFAULT_DESIGN : undefined)}><SquarePen size={18} aria-hidden="true" /><span>新聊天</span></button>
+            <button type="button" className="rail-task-activity" aria-label="查看活动" title="查看活动" aria-pressed={activityView} onClick={() => setActivityView(value=>!value)}><Bell size={18}/>{activityCount > 0 && <i aria-label={`${activityCount} 条未读活动`}/>}</button>
             <button type="button" className="rail-task-search" onClick={openConversationSearch} aria-label="搜索对话" title="搜索对话"><Search size={18} aria-hidden="true" /></button>
           </header>
           <div className="rail-conversation-tasks-slot" ref={setConversationTasksTarget} aria-label="对话任务" />
@@ -403,7 +435,7 @@ export function App() {
       <main className="main-frame" id="stable-main-frame" data-settings-open={Boolean(settingsModule) || undefined}>
         {settingsModule && <SettingsContent module={settingsModule} state={state} replaceState={setState} updateTheme={theme => update('theme', theme)} action={action} onSelect={setSettingsModule} onOpenImported={agent => { setState(current => current ? { ...current, ...agent } : current); setSettingsModule(null); setPage('agent'); setMode('work') }} />}
         <div className="page-stage" data-page="agent" hidden={page !== 'agent'}>
-          <AgentPage onOpenAccount={() => { setSettingsModule('account'); setRailCollapsed(false) }} onDraftsChange={ids => { composerDraftIds.current = ids }} active={page === 'agent' && !settingsModule} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => { setSettingsModule(null); setMode('work'); setPage('agent') }} conversationTasksTarget={conversationTasksTarget} />
+          <AgentPage onOpenAccount={() => { setSettingsModule('account'); setRailCollapsed(false) }} onDraftsChange={ids => { composerDraftIds.current = ids }} active={page === 'agent' && !settingsModule} state={state} prefill={agentPrefill} consumePrefill={() => setAgentPrefill('')} updateAgent={(agent) => setState((current) => current ? { ...current, ...agent } : current)} updateAutomations={(automations) => update('automations', automations)} updateTeam={(team) => update('team', team)} action={action} openConversation={() => { setSettingsModule(null); setPage('agent') }} activityView={activityView} onActivityCount={setActivityCount} conversationTasksTarget={conversationTasksTarget} />
         </div>
         <div className="page-stage" data-page="workflows" hidden={page !== 'workflows'}>
           <WorkflowStudio state={state} update={(items) => update('workflows', items)} action={action} busy={busy} />
@@ -771,14 +803,14 @@ interface ImageViewerTarget {
   index: number
 }
 
-function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget }: { onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
+function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget, activityView = false, onActivityCount }: { activityView?: boolean; onActivityCount?: (count: number) => void; onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
   const [promptMap, setPromptMap] = useState<Record<string, string>>({})
   const prompt = promptMap[state.activeConversationId] || ''
   function setPrompt(next: string | ((current: string) => string)) {
     const id = state.activeConversationId
     setPromptMap(current => ({ ...current, [id]: typeof next === 'function' ? next(current[id] || '') : next }))
   }
-  const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']> } | undefined>>({})
+  const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']>; design?: DesignRequest } | undefined>>({})
   const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
   const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
   const referenceMapRef = useRef(referenceMap)
@@ -846,6 +878,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const [streamingAnswerMap, setStreamingAnswerMap] = useState<Record<string, { id: string; runId: string; turn: number; step: number; time: number; content: string } | undefined>>({})
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({})
   const { unread, approvalUnread, markRead, markCompleted, markApproval, clearApprovals } = useConversationUnread(state.activeConversationId, active)
+  useEffect(() => { onActivityCount?.(new Set([...unread, ...approvalUnread]).size) }, [unread, approvalUnread, onActivityCount])
   const completedUnreadCount = state.conversations.filter((item) => unread.has(item.id) && !runningMap[item.id]).length
   useEffect(() => {
     // Optional chaining keeps development/older preview bridges compatible.
@@ -874,6 +907,21 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const activeConversationIdRef = useRef(state.activeConversationId)
   const stateRef = useRef(state)
   const activeConversation = state.conversations.find((item) => item.id === state.activeConversationId) || state.conversations[0]
+  const designMode = Boolean(activeConversation?.design)
+  const [designInputModes, setDesignInputModes] = useState<Record<string, 'generate' | 'chat'>>({})
+  const designInputMode = designInputModes[state.activeConversationId] || (activeConversation?.messageCount ? 'chat' : 'generate')
+  const imageMode = designMode && designInputMode === 'generate'
+  const changeDesignMode = (mode: 'generate' | 'chat') => setDesignInputModes(current=>({...current,[state.activeConversationId]:mode}))
+  const [designDrafts, setDesignDrafts] = useState<Record<string, DesignRequest>>({})
+  const design: DesignRequest = { ...(designDrafts[state.activeConversationId] || activeConversation?.design || DEFAULT_DESIGN), mode: 'generate' }
+  function insertDesignReference(index: number) {
+    setPrompt(current => current.replace(/@$/, '') + `@图${index + 1} `)
+    promptRef.current?.focus()
+  }
+  function changeDesign(value: DesignRequest) {
+    const id = state.activeConversationId
+    setDesignDrafts(current=>({...current,[id]:value}))
+  }
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
@@ -1256,6 +1304,11 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }
 
   function ConversationTaskSections(mobile=false) {
+    if (activityView) {
+      const activityRunning = Object.fromEntries(listedConversations.map(item => [item.id, Boolean(runningMap[item.id] || traceMap[item.id]?.status === 'running')]))
+      const pendingApprovals = new Set([...approvalUnread, ...Object.entries(traceMap).filter(([, value]) => value?.status === 'running' && value.items.some(item => item.kind === 'approval' && item.status === 'running')).map(([id]) => id)])
+      return <ConversationActivity items={listedConversations} projects={state.projects || []} activeId={state.activeConversationId} running={activityRunning} unread={unread} approvals={pendingApprovals} summaries={Object.fromEntries(Object.entries(streamingAnswerMap).filter(([, value]) => value?.content).map(([id, value]) => [id, value!.content]))} onSelect={selectConversation} onReadAll={() => listedConversations.forEach(item => markRead(item.id))} />
+    }
     return <>
       {pinnedConversations.length > 0 && <section className="conversation-pinned" aria-label="置顶任务">
         <div className="conversation-section-head"><span>置顶</span></div>
@@ -1303,6 +1356,10 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
     const id = state.activeConversationId, draft = cancelledDrafts.current[id]
     if (!draft || running || queue.running) return
     delete cancelledDrafts.current[id]
+    if (draft.design) {
+      setDesignDrafts(current=>({...current,[id]:draft.design!}))
+      setDesignInputModes(current=>({...current,[id]:'generate'}))
+    }
     setPrompt(current => current.trim() ? current + '\n\n' + draft.prompt : draft.prompt)
     setAttachmentMap(current => ({ ...current, [id]: [...(current[id] || []), ...draft.attachments.filter(item => !(current[id] || []).some(existing => existing.path === item.path))] }))
     const refs = referenceMapRef.current[id] || []
@@ -1327,12 +1384,14 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
       if (!pendingQueue.running && !pendingQueue.items.length) outbox.resume(conversationId)
       const dispatch = pendingQuestion ? outbox.reply.bind(outbox) : outbox.enqueue.bind(outbox)
       void Promise.resolve(dispatch(conversationId, {
+        ...(imageMode ? {design:{...design}} : {}),
         prompt: prompt.trim() || '请读取并分析本次引用的资源与附件。',
         attachments: attachments.map((item) => ({ ...item })),
         references: selectedReferences.map((item) => ({ ...item })),
         ...(pendingQuestion ? { clarificationResponse: { id: pendingQuestion.id, source: 'custom' as const, text: prompt.trim() } } : {}),
       })).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
       setPrompt(''); setAttachments([]); setReferences(current => current.filter(item => item.kind === 'skill'))
+      if (imageMode) changeDesignMode('chat')
       setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
       window.requestAnimationFrame(() => promptRef.current?.focus())
     } catch (error) {
@@ -1374,7 +1433,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
       previousMessageIds = new Set(before.messages.map((item) => item.id))
       const continuation = clarificationContinuation(before.messages, entry.payload.clarificationResponse?.id)
       if (continuation) setTraceMap(current => ({ ...current, [conversationId]: current[conversationId] ? { ...current[conversationId]!, ...continuation } : undefined }))
-      setPendingMap(current => ({ ...current, [conversationId]: { content: clarificationPendingContent(value, entry.payload.clarificationResponse, before.messages), attachments: messageAttachments } }))
+      setPendingMap(current => ({ ...current, [conversationId]: { content: clarificationPendingContent(value, entry.payload.clarificationResponse, before.messages), attachments: messageAttachments, design: entry.payload.design } }))
       const conversation = before.conversations.find((item) => item.id === conversationId)
       if (!conversation) throw new Error('找不到这个对话。')
       await window.stable.agent.configure(conversationId, conversation.capability, [])
@@ -1385,7 +1444,8 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
         return { accepted: false, continue: false, cancelled: true }
       }
       dispatched = true
-      const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences, entry.id, entry.payload.clarificationResponse)
+      if (entry.payload.design) await window.stable.agent.configureDesign(conversationId, entry.payload.design)
+      const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences, entry.id, entry.payload.clarificationResponse, entry.payload.design)
       updateAgentForConversation(result, conversationId)
       completed = true
       const lastAnswer = [...result.messages].reverse().find((item) => item.role === 'assistant')
@@ -1424,6 +1484,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }
 
   async function steerQueuedMessage(conversationId: string, entry: OutboxEntry<ComposerMessage>) {
+    if (entry.payload.design) throw new Error('Design 参数随排队消息在下一轮生效，请等待当前任务完成。')
     await skillSaves.current[conversationId]
     const result = await window.stable.agent.steer(conversationId, entry.id, entry.payload.prompt, entry.payload.attachments, entry.payload.references)
     updateAgentForConversation(result, conversationId)
@@ -1443,7 +1504,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }
 
   const pendingMessage: MessageItem | undefined = pendingPrompt && !state.messages.some(message => message.role === 'user' && message.content === pendingPrompt.content)
-    ? { id: `pending:${liveTrace?.deliveryId || ''}`, role: 'user', content: pendingPrompt.content, attachments: pendingPrompt.attachments, createdAt: new Date(liveTrace?.submittedAt || Date.now()).toISOString() } : undefined
+    ? { id: `pending:${liveTrace?.deliveryId || ''}`, role: 'user', content: pendingPrompt.content, attachments: pendingPrompt.attachments, trace: pendingPrompt.design ? [{id:'design-request',runId:'design-request',kind:'context',title:'图片生成参数',status:'completed',time:Date.now(),designRequest:pendingPrompt.design}] : undefined, createdAt: new Date(liveTrace?.submittedAt || Date.now()).toISOString() } : undefined
   const conversationTurns = groupConversationTurns([...visibleMessages, ...(pendingMessage ? [pendingMessage] : [])], liveTrace ? { ...liveTrace, status: running && liveTrace.status === 'completed' ? 'running' : liveTrace.status, streaming: running ? streamingAnswer : undefined } : undefined)
 
   if (!activeConversation) return <section className="agent-layout reveal"><Empty icon={MessageSquareText} title="正在准备对话" detail="Stable 正在创建第一个独立任务。" /></section>
@@ -1504,11 +1565,12 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
               <div><button type="button" disabled={!queueEdit.text.trim()} onClick={() => { outbox.edit(activeConversation.id, item.id, { ...item.payload, prompt: queueEdit.text.trim() }); setQueueEdit(undefined) }}>保存</button><button type="button" onClick={() => setQueueEdit(undefined)}>取消</button></div>
             </div> : <>
               <div className="queue-copy"><p>{item.payload.prompt}</p>
+                <DesignMessageParameters value={item.payload.design}/>
                 {(item.payload.attachments.length > 0 || item.payload.references.length > 0) && <small>{[...item.payload.attachments, ...item.payload.references].map((resource) => resource.name).join(' · ')}</small>}
                 {item.error && taskErrorMessage(errorMessage(item.error)) && <small className="queue-error" role="alert">{errorMessage(item.error)}</small>}
               </div>
               <div className="queue-actions">
-                <button type="button" disabled={Boolean(pendingQuestion) || item.status === 'steering' || queue.items.some((entry) => entry.status === 'steering')} onClick={() => void outbox.steer(activeConversation.id, item.id)} title="立即补充到当前任务，不中断当前执行；下一模型步骤读取">
+                <button type="button" disabled={Boolean(item.payload.design) || Boolean(pendingQuestion) || item.status === 'steering' || queue.items.some((entry) => entry.status === 'steering')} onClick={() => void outbox.steer(activeConversation.id, item.id)} title={item.payload.design ? 'Design 参数随排队消息在下一轮生效' : '立即补充到当前任务，不中断当前执行；下一模型步骤读取'}>
                   {item.status === 'steering' ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : <ArrowRight size={14} aria-hidden="true" />}{item.status === 'steering' ? '正在发送' : queue.running ? '调整方向' : '立即发送'}
                 </button>
                 <button type="button" disabled={item.status === 'steering'} aria-label="编辑这条排队消息" onClick={() => { outbox.pause(activeConversation.id); setQueueEdit({ conversationId: activeConversation.id, id: item.id, text: item.payload.prompt }) }}><Pencil size={14} aria-hidden="true" /></button>
@@ -1525,13 +1587,14 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
           markApproval(conversationId, `${liveTrace?.runId}:${item.id}`, false)
           setTraceMap((all) => ({ ...all, [conversationId]: all[conversationId] ? { ...all[conversationId]!, items: all[conversationId]!.items.map((entry) => entry.id === item.id ? { ...entry, title: decision === 'deny' ? '已拒绝本次操作' : decision === 'conversation' ? '此对话已允许该类操作' : '已允许本次操作', status: 'completed' } : entry) } : undefined }))
         })} /> : <DropTarget className="composer-drop-target" label="作为本次任务附件" onPaths={addAttachments}>
-          <div className="composer-box" data-compact-question={Boolean(pendingQuestion) && !hasComposerContent && !composerError || undefined}>
+          <div className="composer-box" data-design={imageMode || undefined} data-design-chat={designMode && !imageMode || undefined} data-compact-question={Boolean(pendingQuestion) && !hasComposerContent && !composerError || undefined}>
             {annotationAttachments.length > 0 && <div className="composer-annotations" aria-label="待发送注释"><span>{annotationAttachments.length} 条注释</span>{annotationAttachments.map(item=><div className="composer-annotation" key={item.path}><details><summary><img src={item.annotation!.thumbnail} alt="注释页面缩略图"/><code>{item.annotation!.tag}</code><span>{item.annotation!.text}</span></summary><div className="annotation-detail"><blockquote>{item.annotation!.text}</blockquote><p>{item.annotation!.comment}</p><small>{item.annotation!.source}</small></div></details><button type="button" onClick={()=>removeAttachment(item)} aria-label={`移除注释 ${item.annotation!.comment}`}><X size={14}/></button></div>)}</div>}
-            {imageAttachments.length > 0 && <div className="composer-image-selections" aria-label="待发送图片">
+            {(imageAttachments.length > 0 || imageMode) && <div className="composer-image-selections" aria-label="待发送图片">
               {imageAttachments.map((item, index) => <div className="composer-image-selection" key={item.path}>
                 <button className="composer-image-preview" type="button" onClick={() => openImageViewer(imageAttachments, index)} aria-label={`预览图片 ${item.name}`}><AttachmentImage item={item} /></button>
                 <button className="composer-image-remove" type="button" onClick={() => removeAttachment(item)} aria-label={`移除图片 ${item.name}`}><X size={14} aria-hidden="true" /></button>
               </div>)}
+              {imageMode && <button type="button" className="design-add-reference" aria-label="添加参考图片" onClick={()=>attachmentInputRef.current?.click()}><Plus size={21}/><span>参考图</span></button>}
             </div>}
             {(selectedReferences.length > 0 || documentAttachments.length > 0) && <div className="composer-selections" aria-label="本次引用的资源与文件">
               {selectedReferences.map((item) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}:${item.id}`} title={item.name}><ReferenceIcon kind={item.kind} /><strong>{item.name}</strong><button type="button" onClick={() => toggleReference(item)} aria-label={`移除引用 ${item.name}`}><X size={13} /></button></div>)}
@@ -1542,6 +1605,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
             <div className="composer-prediction-field" data-prediction={Boolean(prediction.text) || undefined} title={prediction.text || undefined}>
+            {imageMode && /@$/.test(prompt) && <div className="design-inline-references" role="listbox" aria-label="参考图引用">{imageAttachments.length ? imageAttachments.map((item,index)=><button type="button" role="option" aria-selected="false" key={item.path} onClick={()=>insertDesignReference(index)}>图{index+1} · {item.name}</button>) : <span>先添加参考图片</span>}</div>}
             {prediction.text && <div className="composer-prediction-overlay" aria-hidden="true">{prediction.text}</div>}
             {prediction.text && <span className="sr-only" id="prediction-help">建议：{prediction.text}。按 Tab、右方向键或回车采纳，再次发送才会执行。Esc 关闭建议。</span>}
             <textarea ref={promptRef} id="agent-prompt" value={prompt} aria-describedby={prediction.text ? 'prediction-help' : undefined} onCompositionStart={prediction.onCompositionStart} onCompositionEnd={prediction.onCompositionEnd} onKeyUp={prediction.onKeyUp} onBlur={prediction.onBlur} onPaste={handlePromptPaste} onChange={(event) => { prediction.dismiss(); setPrompt(event.target.value); if (composerError) setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' })) }} onKeyDown={(event) => {
@@ -1554,9 +1618,10 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
                   window.requestAnimationFrame(() => { input.setSelectionRange(start + 1, start + 1) })
                 } else if (!event.shiftKey) { event.preventDefault(); send() }
               }
-            }} placeholder={prediction.text ? '' : pendingQuestion ? '回答上方问题…' : running ? '继续输入，发送后将排队等待…' : '给 Stable 一个任务，或选择、拖入、粘贴图片与文件'} />
+            }} placeholder={prediction.text ? '' : pendingQuestion ? '回答上方问题…' : running ? '继续输入，发送后将排队等待…' : imageMode ? '结合参考图片，描述你想创作的画面；使用 @ 引用图片…' : '给 Stable 一个任务，或选择、拖入、粘贴图片与文件'} />
             </div>
             <div className="composer-actions">
+              {designMode && <DesignControls mode={designInputMode} onModeChange={changeDesignMode} value={design} onChange={changeDesign} references={imageAttachments.map(item=>item.name)} onReference={insertDesignReference}/>}
               <div className="composer-tools">
                 <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.pptx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
                 <details className="composer-menu composer-add-menu" ref={addMenuRef}>
@@ -1604,8 +1669,8 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
                 </div>
               </details>
               </div>
-              <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />
-              <div className="model-effort-control">
+              {!imageMode && <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />}
+              {!designMode && <div className="model-effort-control">
               <details className="composer-menu model-menu capability-menu" ref={modelMenuRef} onToggle={event=>{if(!event.currentTarget.open)setShowModelList(false)}}>
                 <summary aria-label={`模型与思考强度：${activeModel?.displayName.toUpperCase() || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}>{activeModel && <ModelProviderIcon model={activeModel} />}<span>{activeModel?.displayName.toUpperCase() || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
                 <div className="composer-popover model-popover effort-popover" data-models={showModelList || undefined} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();if(showModelList)setShowModelList(false);else if(modelMenuRef.current)modelMenuRef.current.open=false;modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()}}}>
@@ -1623,7 +1688,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
                   </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModel?.displayName.toUpperCase() || ''} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
                 </div>
               </details>
-              </div>
+              </div>}
               <button className={showComposerStop ? 'composer-stop' : 'composer-send'} type="button" onClick={showComposerStop ? stopConversation : send} disabled={!hasComposerContent && !running && !pendingQuestion} aria-label={showComposerStop ? '停止执行' : (hasComposerContent && (running || queue.items.length) ? '加入排队' : '发送任务')} title={showComposerStop ? '停止执行' : (hasComposerContent ? (running ? '加入队列，当前任务结束后自动发送' : '发送任务') : '请输入内容或添加附件后发送')}>
                 <span className="composer-action-visual" aria-hidden="true">
                   {showComposerStop ? <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" /></svg> : <ArrowUp size={20} aria-hidden="true" />}
@@ -1675,7 +1740,7 @@ function ConversationTitle({ title }: { title: string }) {
 }
 
 function MessageTurn({ onCopyReply, turnMessages, live, waiting, conversationId, artifactRefreshKey, message, answerActions, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { onCopyReply?: (message: MessageItem) => void; turnMessages?: MessageItem[]; live?: LiveConversationTurn; waiting?: boolean; conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
-  if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
+  if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} design={message.trace?.find(item=>item.id==='design-request')?.designRequest} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
   const items = conversationTurnTrace(turnMessages || [message], live)
   const status = live?.status || savedTraceStatus(message.trace || [])
   const startedAt = Math.min(...items.map(item => item.startedAt ?? item.time), live?.startedAt ?? Infinity)
@@ -1683,7 +1748,7 @@ function MessageTurn({ onCopyReply, turnMessages, live, waiting, conversationId,
     {(turnMessages || []).filter(item => item.id !== message.id).map(item => <span key={item.id} data-message-id={item.id} data-message-seq={item.seq} />)}
     {items.length || live || waiting ? <RunTrace onCopyReply={onCopyReply} items={items} status={status} waiting={waiting} startedAt={Number.isFinite(startedAt) ? startedAt : undefined} endedAt={live?.status === 'running' ? undefined : live?.endedAt} streaming={live?.streaming} finalContent={live ? undefined : message.content} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /> : null}
     {!live && !isClarificationQuestion(message) && <div className="assistant-answer">
-      <div className="answer-content"><MarkdownContent content={message.content} onPreview={onPreviewLink} /><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onOpen={(item) => onPreviewLink?.({ kind: 'file', value: item.path, title: item.name })} /></div>
+      <div className="answer-content"><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onPreview={onPreviewLink} /></div>
     </div>}
     {!live && !waiting && !isClarificationQuestion(message) && answerActions}
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
@@ -1859,7 +1924,7 @@ function ImageLightbox({ items, index, onIndexChange, onClose }: { items: Viewer
 
 function localArtifactPaths(content: string, workspace: string) {
   const root = workspace.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLocaleLowerCase()
-  const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?::\d+(?::\d+)?)?(?=$|[\s`)\]}，。；、])/gi
+  const pattern = /(?:file:\/\/\/)?([a-z]:[\\/][^\r\n<>|"?*]*?\.[a-z0-9]{1,15})(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?(?=$|[\s`)>\]}，。；、])/gi
   const matches = new Map<string, { name: string; path: string }>()
   for (const match of content.matchAll(pattern)) {
     let filePath = match[1].replace(/\//g, '\\')
@@ -1871,7 +1936,7 @@ function localArtifactPaths(content: string, workspace: string) {
   return [...matches.values()]
 }
 
-function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', onOpen }: { content: string; workspace: string; conversationId: string; refreshKey?: string; onOpen: (item: { name: string; path: string }) => void }) {
+function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', onPreview }: { content: string; workspace: string; conversationId: string; refreshKey?: string; onPreview?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   const requestKey = JSON.stringify([content, workspace, conversationId, refreshKey])
   const [verified, setVerified] = useState<{ key: string; paths: string[] }>({ key: '', paths: [] })
   useEffect(() => {
@@ -1888,16 +1953,12 @@ function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', on
     window.addEventListener('focus', refresh)
     return () => { active = false; window.removeEventListener('focus', refresh) }
   }, [content, workspace, conversationId, requestKey])
-  const artifacts = verified.key === requestKey ? localArtifactPaths(content, workspace).filter(item => verified.paths.includes(item.path)) : []
-  if (!artifacts.length) return null
-  return <div className="conversation-file-list artifact-links" aria-label="交付文件">
-    {artifacts.map((item) => attachmentIsImage(item)
-      ? <div className="composer-image-selection" key={item.path}><button className="composer-image-preview" type="button" onClick={() => onOpen(item)} aria-label={`预览图片 ${item.name}`}><AttachmentImage item={item} /></button></div>
-      : <ConversationFileCard compact item={{ ...item, detail: '' }} onOpen={() => onOpen(item)} key={item.path} />)}
-  </div>
+  const available = new Set(verified.key === requestKey ? verified.paths.map(path => path.replace(/\//g, '\\').toLowerCase()) : [])
+  const fileAvailability = new Map(localArtifactPaths(content, workspace).map(item => { const key = item.path.replace(/\//g, '\\').toLowerCase(); return [key, available.has(key)] }))
+  return <MarkdownContent content={content} onPreview={onPreview} fileAvailability={fileAvailability} />
 }
 
-function UserTurn({ content, attachments = [], pending = false, onCopy, onPreviewAttachment, onPreviewImages }: { content: string; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void }) {
+function UserTurn({ content, design, attachments = [], pending = false, onCopy, onPreviewAttachment, onPreviewImages }: { content: string; design?: DesignRequest; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void }) {
   const reply = clarificationDisplay(content)
   const uploadedFiles = attachments.filter((item) => item.kind === 'attachment' && item.path)
   const imageFiles = uploadedFiles.filter(attachmentIsImage)
@@ -1917,6 +1978,7 @@ function UserTurn({ content, attachments = [], pending = false, onCopy, onPrevie
         {staticAttachments.map((item, index) => <div className="selection-chip" data-kind={item.kind} key={`${item.kind}-${item.name}-${index}`} title={`${item.name} · ${formatBytes(item.size)}`}>{item.kind === 'attachment' ? <FileText size={14} aria-hidden="true" /> : <ReferenceIcon kind={item.kind} />}<strong>{item.name}</strong></div>)}
       </div>}
       {content && <div className="user-bubble" data-clarification={Boolean(reply) || undefined}><div className="turn-label">你</div>{reply && <div className="user-question" title={reply.question}>{reply.question}</div>}<p>{reply?.answer ?? content}</p></div>}
+      <DesignMessageParameters value={design}/>
       {onCopy && content && <div className="user-turn-actions"><button type="button" onClick={onCopy} aria-label="复制这条消息" title="复制文字"><Copy size={15} aria-hidden="true" /></button></div>}
     </div>
   </article>

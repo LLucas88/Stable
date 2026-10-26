@@ -1,6 +1,21 @@
-import { Fragment, useState, type ReactNode } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { createContext, Fragment, useContext, useState, type ReactNode } from 'react'
+import { Check, Copy, FileText, FileCode2, Braces, FileSpreadsheet, Image, FileArchive, Presentation } from 'lucide-react'
 import type { ConversationPreviewTarget } from '../shared/conversation-preview'
+import { parseFileReference } from '../shared/file-reference'
+
+const FileAvailability = createContext<ReadonlyMap<string, boolean> | undefined>(undefined)
+
+function FileLink({ reference, onPreview }: { reference: NonNullable<ReturnType<typeof parseFileReference>>; onPreview?: PreviewOpener }) {
+  const available = useContext(FileAvailability)
+  const disabled = !onPreview || available?.get(reference.key) === false
+  const Icon = /^(html?|jsx?|tsx?|py|css|sh|cjs|mjs)$/.test(reference.extension) ? FileCode2
+    : /^(json|ya?ml|toml)$/.test(reference.extension) ? Braces
+    : /^(xlsx?|csv|ods)$/.test(reference.extension) ? FileSpreadsheet
+    : /^(png|jpe?g|gif|svg|webp)$/.test(reference.extension) ? Image
+    : /^(pptx?|odp)$/.test(reference.extension) ? Presentation
+    : /^(zip|rar|7z|tar|gz)$/.test(reference.extension) ? FileArchive : FileText
+  return <button className="markdown-file-link" type="button" disabled={disabled} title={`${reference.reference}${disabled ? '（文件不可用）' : ''}`} onClick={() => onPreview?.({ kind: 'file', value: reference.path, title: reference.name })}><Icon size={15} aria-hidden="true" /><span>{reference.label}</span></button>
+}
 function markdownTableCells(line: string) {
   return line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'))
 }
@@ -32,7 +47,7 @@ function MarkdownTable({ headers, separators, alignments, rows, tableIndex, onPr
   </div>
 }
 
-export function MarkdownContent({ content, onPreview }: { content: string; onPreview?: PreviewOpener }) {
+export function MarkdownContent({ content, onPreview, fileAvailability }: { content: string; onPreview?: PreviewOpener; fileAvailability?: ReadonlyMap<string, boolean> }) {
   const lines = content.replace(/\r/g, '').split('\n')
   const blocks: ReactNode[] = []
   let index = 0
@@ -89,25 +104,26 @@ export function MarkdownContent({ content, onPreview }: { content: string; onPre
     while (index < lines.length && lines[index].trim() && !isMarkdownTableStart(lines, index) && !/^(#{1,3})\s+|^\s*([-*]|\d+\.)\s+|^\s*>\s+|^\s*```/.test(lines[index])) { paragraph.push(lines[index].trim()); index += 1 }
     blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(' '), `p-${index}`, onPreview)}</p>)
   }
-  return <div className="markdown-body">{blocks}</div>
+  return <FileAvailability.Provider value={fileAvailability}><div className="markdown-body">{blocks}</div></FileAvailability.Provider>
 }
 
 export function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener): ReactNode[] {
-  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^)\s]+|[A-Za-z]:[\\/][^)\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15})\)|https?:\/\/[^\s<]+|[A-Za-z]:[\\/][^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?=$|[\s`)\]}，。；、]))/gi
+  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:<[^>\r\n]+>|(?:https?:\/\/[^)\s]+|(?:file:\/\/\/)?[A-Za-z]:[\\/][^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?|\/[^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?))\)|https?:\/\/[^\s<]+|(?:file:\/\/\/)?[A-Za-z]:[\\/][^\r\n<>|"?*]+?\.[A-Za-z0-9]{1,15}(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?(?=$|[\s`)\]}，。；、]))/gi
   return text.split(token).filter(Boolean).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) return <strong key={`${keyPrefix}-${index}`}>{part.slice(2, -2)}</strong>
-    if (part.startsWith('`') && part.endsWith('`')) return <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={`${keyPrefix}-${index}`}>{renderInline(part.slice(2, -2), `${keyPrefix}-${index}`, onPreview)}</strong>
+    if (part.startsWith('`') && part.endsWith('`')) {
+      const reference = parseFileReference(part.slice(1, -1))
+      return reference ? <FileLink reference={reference} onPreview={onPreview} key={`${keyPrefix}-${index}`} /> : <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
+    }
     const link = part.match(/^\[([^\]]+)\]\((.+)\)$/)
+    const reference = parseFileReference(link?.[2] || part, link?.[1])
+    if (reference) return <FileLink reference={reference} onPreview={onPreview} key={`${keyPrefix}-${index}`} />
     if (link && /^https?:\/\//i.test(link[2])) return onPreview
       ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
       : <a href={link[2]} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{link[1]}</a>
-    if (link && /^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(link[2])) return onPreview
-      ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: link[2], title: link[1] })} key={`${keyPrefix}-${index}`}>{link[1]}</button>
-      : <Fragment key={`${keyPrefix}-${index}`}>{link[1]}</Fragment>
     if (/^https?:\/\//i.test(part)) return onPreview
       ? <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'web', value: part, title: new URL(part).hostname })} key={`${keyPrefix}-${index}`}>{part}</button>
       : <a href={part} target="_blank" rel="noreferrer" key={`${keyPrefix}-${index}`}>{part}</a>
-    if (/^[A-Za-z]:[\\/].*\.[A-Za-z0-9]{1,15}$/i.test(part) && onPreview) return <button className="markdown-preview-link" type="button" onClick={() => onPreview({ kind: 'file', value: part, title: part.split(/[/\\]/).pop() || '文件' })} key={`${keyPrefix}-${index}`}>{part}</button>
     return <Fragment key={`${keyPrefix}-${index}`}>{part}</Fragment>
   })
 }

@@ -4,9 +4,9 @@ const { BrowserTool } = require('./browser-tool.cjs')
 const { executeExcel } = require('./excel-tool.cjs')
 
 class BuiltinTools {
-  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, networkAccess = true }) {
+  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, imagePolicy, networkAccess = true }) {
     this.networkAccess = networkAccess
-    this.generateImage = require('./image-generation.cjs').createImageGenerator({ resolveApiKey: resolveImageApiKey, nativeImage: electron?.nativeImage })
+    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, resolveApiKey: resolveImageApiKey, nativeImage: electron?.nativeImage })
     this.installSkill = installSkill
     this.workspace = writableRoots?.length ? writableRoots : workspace
     this.localHtml = new (require('./local-html-preview.cjs').LocalHtmlPreview)(this.workspace)

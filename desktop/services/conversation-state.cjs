@@ -102,9 +102,9 @@ const methods = {
     const hasMore = rows.length > size, page = rows.slice(0, size).reverse()
     return { messages: page.map(mapMessage), beforeCursor: hasMore ? page[0].seq : null }
   },
-  recentContext(id, budget = 24000) {
+  recentContext(id, budget = 24000, excludeMessageId) {
     const rows = this.messagePage(id, undefined, 200).messages.reverse(), result = []; let chars = 0
-    for (const row of rows) { if (result.length && chars + row.content.length > budget * 4) break; result.push(row); chars += row.content.length }
+    for (const row of rows) { if (row.id === excludeMessageId) continue; if (result.length && chars + row.content.length > budget * 4) break; result.push(row); chars += row.content.length }
     return result.reverse()
   },
   listProjects() { return this.db.prepare('SELECT id,name,root_path AS rootPath,identity,created_at AS createdAt FROM projects ORDER BY created_at DESC,id').all().map(project=>({...project,name:String(project.name||'').trim()||path.basename(project.rootPath)||project.rootPath,pinned:Boolean(this.getSetting('project-pinned:'+project.id)),folders:this.projectFolders(project.id)})).sort((a,b)=>Number(b.pinned)-Number(a.pinned)) },

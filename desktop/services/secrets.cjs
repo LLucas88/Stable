@@ -29,7 +29,7 @@ class SecretStore {
 
   get(key) {
     if (this.invalid.has(key)) {
-      throw new Error('已保存的 API Key 无法解密，已安全清除。请在“设置”中重新填写。')
+      throw new Error('已保存的凭据无法解密，原加密数据已保留。请使用原 Windows 用户重启 Stable，或在“设置”中重新登录/填写。')
     }
     const encoded = this.readAll()[key]
     if (!encoded) return ''
@@ -37,9 +37,8 @@ class SecretStore {
     try {
       return this.safeStorage.decryptString(Buffer.from(encoded, 'base64'))
     } catch {
-      this.remove(key)
       this.invalid.add(key)
-      throw new Error('已保存的 API Key 无法解密，已安全清除。请在“设置”中重新填写。')
+      throw new Error('已保存的凭据无法解密，原加密数据已保留。请使用原 Windows 用户重启 Stable，或在“设置”中重新登录/填写。')
     }
   }
 

@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const http = require('node:http')
-const { ClaudeMessagesBridge, translateMessages, translateTools, estimatedTokens } = require('../desktop/services/claude-messages-bridge.cjs')
+const { ClaudeMessagesBridge, translateMessages, translateTools } = require('../desktop/services/claude-messages-bridge.cjs')
 const { readSSE } = require('../desktop/services/model-provider.cjs')
 const { WAIT_MARKER } = require('../desktop/services/clarification.cjs')
 
@@ -14,6 +14,113 @@ const model = { id: 'test', providerId: 'test', model: 'actual-provider-model', 
 const completion = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] })
 const tool = { name: 'Read', description: 'Read a file', input_schema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } }
 const request = (overrides = {}) => ({ model: 'claude-compatibility-name', max_tokens: 4000, stream: true, messages: [{ role: 'user', content: 'hello' }], ...overrides })
+
+test('real route identity replaces SDK-only identity while user quotes, tools and history survive', async () => {
+  const bodies = []
+  const reminder = '<system-reminder>\nYou are powered by the model named Sonnet 4.6 (1M context). The exact model ID is claude-sonnet-4-6[1m]. Assistant knowledge cutoff is August 2025.\n</system-reminder>'
+  const original = request({ system: [
+    { type: 'text', text: "You are a Claude agent, built on Anthropic's Claude Agent SDK." },
+    { type: 'text', text: '用户规则：分析 Claude 和 DeepSeek 的差异。' },
+  ], messages: [
+    { role: 'assistant', content: '旧回答：我是 Sonnet 4.6。' },
+    { role: 'user', content: [{ type: 'text', text: '你是什么模型？' }, { type: 'text', text: reminder }, { type: 'text', text: '请解释这段引用：' + reminder }] },
+  ] })
+  const saved = JSON.stringify(original)
+  const bridge = new ClaudeMessagesBridge({ model: { ...model, model: 'deepseek-flash', displayName: 'DeepSeek Flash' }, apiKey: 'fixture', fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(init.body)); return upstream([completion({ content: 'DeepSeek' }, 'stop')])
+  } })
+  await bridge.start()
+  try {
+    await events(bridge, original)
+    const body = bodies[0]
+    assert.equal(body.model, 'deepseek-flash')
+    assert.match(body.messages[0].content, /DeepSeek Flash/)
+    assert.doesNotMatch(body.messages[0].content, /You are a Claude agent/)
+    assert.match(body.messages[0].content, /用户规则：分析 Claude 和 DeepSeek 的差异/)
+    assert.equal(body.messages[1].content, '旧回答：我是 Sonnet 4.6。')
+    assert.match(body.messages[2].content, /<system-reminder>\nStable 当前实际模型配置/)
+    assert.ok(body.messages[2].content.includes('请解释这段引用：' + reminder))
+    assert.equal(JSON.stringify(original), saved)
+    bridge.model = { ...model, model: 'glm-5', displayName: 'GLM-5' }
+    await events(bridge, original)
+    assert.match(bodies[1].messages[0].content, /GLM-5/)
+    assert.doesNotMatch(bodies[1].messages[0].content, /DeepSeek Flash/)
+  } finally { await bridge.close() }
+})
+
+test('context rejections permit bounded native recovery without hiding the original error', async () => {
+  let fatal
+  const detail = '请求内容与最大输出长度超过模型上下文限制。'
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'fixture', onFatalError: value => { fatal = value }, fetchImpl: async () => Response.json({ error: { message: detail } }, { status: 400 }) })
+  await bridge.start()
+  try {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const response = await fetch(bridge.baseURL + '/v1/messages', { method: 'POST', headers: { 'x-api-key': bridge.token }, body: JSON.stringify(request({ stream: false })) })
+      const result = await response.json()
+      assert.equal(response.status, 400)
+      assert.equal(result.error.type, 'invalid_request_error')
+      assert.equal(result.error.message.startsWith('prompt is too long:'), attempt <= 3)
+      assert.equal(Boolean(fatal), attempt === 4)
+      assert.match(bridge.lastProviderError.message, /请求内容与最大输出长度超过模型上下文限制/)
+    }
+    assert.match(fatal, /HTTP 400/)
+  } finally { await bridge.close() }
+})
+
+test('definitive provider rejections stop with a redacted real error while transient errors can recover', async t => {
+  for (const status of [400, 401, 402, 403, 404, 413, 422, 429, 503]) {
+    let fatal, calls = 0
+    const bridge = new ClaudeMessagesBridge({ model, apiKey: 'private-token', onFatalError: value => { fatal = value }, fetchImpl: async () => {
+      calls++
+      return calls === 1 ? Response.json({ error: { message: 'image rejected private-token' } }, { status }) : upstream([completion({ content: 'recovered' }, 'stop')])
+    } })
+    await bridge.start()
+    try {
+      const send = () => fetch(bridge.baseURL + '/v1/messages', { method: 'POST', headers: { 'x-api-key': bridge.token }, body: JSON.stringify(request({ stream: false })) })
+      const response = await send()
+      assert.equal(response.status, status)
+      assert.match((await response.json()).error.message, /image rejected \[redacted\]/)
+      assert.equal(Boolean(fatal), ![429, 503].includes(status))
+      assert.equal(bridge.lastProviderError.status, status)
+      assert.equal(calls, 1)
+      assert.equal((await send()).status, 200)
+      assert.equal(bridge.lastProviderError, null)
+    } finally { await bridge.close() }
+  }
+})
+
+test('an unauthenticated local request cannot cancel an active model run', async () => {
+  let fatal = false
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'private', onFatalError: () => { fatal = true } })
+  await bridge.start()
+  try {
+    const response = await fetch(bridge.baseURL + '/v1/messages', { method: 'POST', body: '{}' })
+    assert.equal(response.status, 401)
+    assert.equal(fatal, false)
+  } finally { await bridge.close() }
+})
+
+test('text-only repeated 502 stops after one retry, while a success resets the failure streak', async () => {
+ let fatal, calls=0;const statuses=[502,200,502,502];
+ const bridge=new ClaudeMessagesBridge({model,apiKey:'private-token',textOnly:true,onFatalError:message=>{fatal=message},fetchImpl:async()=>{
+  const status=statuses[calls++];return status===200?upstream([completion({content:'ready'},'stop')]):Response.json({error:{message:'upstream private-token unavailable'}},{status});
+ }});
+ await bridge.start();try{
+  const send=async()=>{const response=await fetch(bridge.baseURL+'/v1/messages',{method:'POST',headers:{'x-api-key':bridge.token},body:JSON.stringify(request({stream:false}))});await response.text();return response.status};
+  assert.equal(await send(),502);assert.equal(fatal,undefined);
+  assert.equal(await send(),200);assert.equal(bridge.lastProviderError,null);
+  assert.equal(await send(),502);assert.equal(fatal,undefined);
+  assert.equal(await send(),502);assert.match(fatal,/HTTP 502/);assert.doesNotMatch(fatal,/private-token/);assert.equal(calls,4);
+ }finally{await bridge.close()}
+});
+
+test('permanent supplier failures wrapped by a gateway in 502 stop immediately',async()=>{
+ let fatal;const bridge=new ClaudeMessagesBridge({model,apiKey:'private',onFatalError:message=>{fatal=message},fetchImpl:async()=>Response.json({error:{code:'upstream_authentication_failed',message:'模型供应商凭据或权限异常（上游 HTTP 401）。'}},{status:502})});
+ await bridge.start();try{
+  const response=await fetch(bridge.baseURL+'/v1/messages',{method:'POST',headers:{'x-api-key':bridge.token},body:JSON.stringify(request({stream:false}))});await response.text();
+  assert.match(fatal,/上游 HTTP 401/);assert.equal(bridge.transientFailures,0);
+ }finally{await bridge.close()}
+});
 
 test('provider gets deduplicated tool evidence while SDK history and compacted replay keep originals', async () => {
   const bodies = []
@@ -108,8 +215,8 @@ test('request budget guidance is refreshed for corrective generation without acc
   try {
     await events(bridge, request({ system: 'BASE_RULES', tools: [tool] }))
     assert.equal(bodies.length, 2)
-    assert.equal(bodies[0].messages[0].content, 'BASE_RULES')
-    assert.equal(bodies[1].messages[0].content, 'BASE_RULES')
+    assert.match(bodies[0].messages[0].content, /^BASE_RULES\n\nStable 当前实际模型配置/)
+    assert.equal(bodies[1].messages[0].content, bodies[0].messages[0].content)
     assert.match(bodies[0].messages.at(-1).content, /BUDGET_1/)
     assert.match(bodies[1].messages.at(-1).content, /BUDGET_2/)
     assert.doesNotMatch(JSON.stringify(bodies[1]), /BUDGET_1/)
@@ -217,9 +324,9 @@ test('private provider thinking survives tool replay after bridge restart withou
       { role: 'assistant', content: [{ type: 'tool_use', id: 'persistent-call', name: 'Read', input: { file_path: 'a' } }] },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'persistent-call', content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }] }] },
     ] }))
-    assert.equal(body.messages[1].reasoning_content, 'PRIVATE_CHAIN_OF_THOUGHT')
-    assert.equal(body.messages[2].content, 'first\n\nsecond')
-    assert.equal(body.messages[2].tool_call_id, 'persistent-call')
+    assert.equal(body.messages.find(message => message.role === 'assistant').reasoning_content, 'PRIVATE_CHAIN_OF_THOUGHT')
+    assert.equal(body.messages.find(message => message.role === 'tool').content, 'first\n\nsecond')
+    assert.equal(body.messages.find(message => message.role === 'tool').tool_call_id, 'persistent-call')
   } finally { await second.close(); fs.rmSync(directory, { recursive: true, force: true }) }
 })
 
@@ -247,8 +354,8 @@ test('text documents and real image bytes survive conversion including tool imag
       { type: 'text', text: 'inspect' }, image,
       { type: 'document', title: 'notes', source: { type: 'text', media_type: 'text/plain', data: 'document text' } },
     ] }] }))
-    assert.equal(body.messages[0].content[1].image_url.url, 'data:image/png;base64,cGl4ZWw=')
-    assert.ok(body.messages[0].content.some(part => part.text === 'document text'))
+    assert.equal(body.messages.find(message => message.role === 'user').content[1].image_url.url, 'data:image/png;base64,cGl4ZWw=')
+    assert.ok(body.messages.find(message => message.role === 'user').content.some(part => part.text === 'document text'))
     const translated = translateMessages({ messages: [{ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'id', content: [image, { type: 'text', text: 'image explanation' }] }] }] })
     assert.equal(translated[0].content[0].image_url.url, 'data:image/png;base64,cGl4ZWw=')
   } finally { await bridge.close() }
@@ -447,10 +554,10 @@ test('local count_tokens is conservative, excludes binary image bytes and uses n
   try {
     const input = request({ tools: [tool] })
     const response = await send(bridge, input, { route: '/v1/messages/count_tokens' })
-    assert.equal(response.status, 200); assert.equal((await response.json()).input_tokens, estimatedTokens(input))
-    assert.ok(estimatedTokens(input) > input.messages[0].content.length)
+    assert.equal(response.status, 200); assert.equal((await response.json()).input_tokens, bridge.tokenCounter.estimate(bridge.countBody(input)).tokens)
+    assert.ok(bridge.tokenCounter.estimate(bridge.countBody(input)).tokens > input.messages[0].content.length)
     const imageInput = request({ messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'a'.repeat(1_000_000) } }] }] })
-    assert.ok(estimatedTokens(imageInput) < 10_000)
+    assert.ok(bridge.tokenCounter.estimate(bridge.countBody(imageInput)).tokens < 10_000)
   } finally { await bridge.close() }
 })
 

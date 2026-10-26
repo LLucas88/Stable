@@ -23,6 +23,15 @@ function fixture(t, options = {}) {
   }
 }
 const decision = value => value.hookSpecificOutput.permissionDecision
+test('successful writes report content changes, but no-op and failed writes do not',async t=>{
+ const x=fixture(t),file=path.join(x.workspace,'analyze.py');fs.writeFileSync(file,'old')
+ for(const [id,content,success] of [['changed','new',true],['noop','new',true],['failed','newer',false]]){
+  assert.equal(decision(await x.pre('Write',{file_path:file,content},id)),'allow')
+  if(success){fs.writeFileSync(file,content);await x.guard.postToolUse({tool_use_id:id,tool_response:{success:true}})}
+  else await x.guard.postToolUseFailure({tool_use_id:id,error:'write failed'})
+  assert.equal(x.events.at(-1).changedFile,id==='changed'?fs.realpathSync(file):undefined)
+ }
+})
 const reason = value => value.hookSpecificOutput.permissionDecisionReason
 const linkDir = (target, link) => fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
 function unlinkDirectoryLink(link) { assert.equal(fs.lstatSync(link).isSymbolicLink(), true); fs.unlinkSync(link) }

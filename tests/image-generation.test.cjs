@@ -17,6 +17,24 @@ function fixture(t, options = {}) {
   const args = { prompt: '蓝色小鸟插画', output: 'bird.png' }
   return { workspace, args, calls, downloads, invoke: (args, signal) => generate({workspace,args,signal}) }
 }
+
+test('Design selected dimensions reach provider and count cap also applies to parallel calls', async t => {
+  const { validateDesignRequest } = require('../desktop/services/design-request.cjs')
+  const policy = validateDesignRequest({model:'glm-image',mode:'generate',ratio:'9:16',resolution:'2k',count:2,text:''})
+  const x = fixture(t,{policy})
+  const results = await Promise.allSettled([1,2,3].map(i=>x.invoke({...x.args,output:`option-${i}.png`,size:'1280x1280'})))
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,2)
+  assert.equal(x.calls.length,2)
+  assert(x.calls.every(call=>JSON.parse(call.options.body).size==='1152x2048'))
+  assert.equal((await x.invoke({...x.args,output:'option-1.png'})).reused,true)
+  assert.equal(x.calls.length,2)
+})
+test('custom Design size reaches the actual image request instead of the model supplied size', async t => {
+  const policy=require('../desktop/services/design-request.cjs').validateDesignRequest({model:'glm-image',mode:'generate',ratio:'custom',resolution:'standard',width:992,height:768,count:1,text:''})
+  const x=fixture(t,{policy});await x.invoke({...x.args,size:'1280x1280'})
+  assert.equal(JSON.parse(x.calls[0].options.body).size,'992x768')
+})
+
 test('official credential selection prefers current profile, then default, and excludes proxy/Coding Plan', () => {
   const profile = (id, baseURL = 'https://open.bigmodel.cn/api/paas/v4') => ({ id, baseURL })
   const catalog = { defaultModelId: 'b', legacyModelId: 'old', items: [profile('proxy','https://proxy.test/glm'),profile('plan','https://open.bigmodel.cn/api/coding/paas/v4'),profile('a'),profile('b'),profile('old')] }

@@ -37,7 +37,6 @@ class CloudAccountService {
 
   token() {
     try { return this.secrets.get(DEVICE_TOKEN_KEY) } catch (error) {
-      this.secrets.remove(DEVICE_TOKEN_KEY)
       throw new Error(`Stable Cloud 登录凭据无法读取：${error.message}`)
     }
   }

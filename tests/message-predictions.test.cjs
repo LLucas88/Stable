@@ -8,6 +8,17 @@ const snapshot = () => ({ conversation: {}, modelKey: 'model-a', originalGoal: '
   { id: 'answer', role: 'assistant', content: '已修复，需要验证。', trace: [{ id: 'complete', status: 'completed' }] },
 ] })
 
+test('simple chat produces no paid next-message prediction', async () => {
+  for (const content of ['你是什么模型','你好','你能做什么？','谢谢','用一句话解释什么是缓存','1+1等于几？']) {
+    const value = snapshot(); value.messages[0].content = content
+    const service = new MessagePredictions({ snapshot: () => value, generate: () => { throw Error('unexpected model call') } })
+    assert.equal(predictionSource(value), null)
+    assert.equal(await service.request('a', 'answer', 'r'), null)
+  }
+  const value = snapshot(); value.messages[0].content = '你好'; value.messages[0].attachments = [{ name: 'report.pdf' }]
+  assert.equal(predictionSource(value).id, 'answer')
+})
+
 test('only a committed completed answer can be a prediction source', () => {
   assert.equal(predictionSource(snapshot()).id, 'answer')
   for (const change of [s => { s.busy = true }, s => { s.conversation.archivedAt = 'now' }, s => { s.conversation.deletionState = 'pending' },

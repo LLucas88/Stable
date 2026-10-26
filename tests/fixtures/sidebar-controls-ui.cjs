@@ -25,7 +25,7 @@ async function main() {
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
-    conversations.push({...conversations[0],id:'pc',title:'根据上传的数据源做一个经营情况的数据分析报告，交付 HTML 格式并核对数据',projectId:'p1'});const initial={update:{status:'available',currentVersion:'1.1.0',availableVersion:'1.1.1'},appVersion:'1.1.0',projects:[{id:'p1',name:'项目一',rootPath:'D:/mock/project-one'},{id:'p2',name:'项目二',rootPath:'D:/mock/project-two'}],activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
+    conversations.push({...conversations[0],id:'pc',title:'根据上传的数据源做一个经营情况的数据分析报告，交付 HTML 格式并核对数据',projectId:'p1'});const initial={cloud:{status:'authenticated',enabled:true},update:{status:'available',currentVersion:'1.1.0',availableVersion:'1.1.1'},appVersion:'1.1.0',projects:[{id:'p1',name:'项目一',rootPath:'D:/mock/project-one'},{id:'p2',name:'项目二',rootPath:'D:/mock/project-two'}],activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?messages:[],catchAttachments:id==='b'?[draft]:[]});
     window.stable={projects:{
@@ -109,7 +109,7 @@ async function main() {
   const typography=await win.webContents.executeJavaScript('(()=>{ const style=selector=>getComputedStyle(document.querySelector(selector)); const answer=style(".assistant-answer .markdown-body"),input=style("#agent-prompt"); return {bodyWeight:style("body").fontWeight,answerColor:answer.color,answerSize:answer.fontSize,answerFamily:answer.fontFamily,inputMinHeight:input.minHeight,inputOverflow:input.overflowY,headerBorder:style(".conversation-topbar").borderBottomWidth}; })()')
   require('node:assert/strict').equal(typography.answerColor,'rgb(26, 28, 31)')
   require('node:assert/strict').equal(typography.bodyWeight,'400')
-  require('node:assert/strict').equal(typography.answerSize,'15px')
+  require('node:assert/strict').equal(typography.answerSize,'14px')
   require('node:assert/strict').equal(typography.inputOverflow,'auto')
   require('node:assert/strict').equal(typography.headerBorder,'0px')
   fs.writeFileSync(path.join(output,'design-typography.json'),JSON.stringify(typography,null,2))

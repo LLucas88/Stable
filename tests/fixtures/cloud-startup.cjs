@@ -8,7 +8,11 @@ const repo = process.env.STABLE_TEST_APP_ROOT || source
 fs.mkdirSync(path.resolve(__dirname, '../../.local'), { recursive: true })
 const root = fs.mkdtempSync(path.join(source, '.local/cloud-startup-'))
 process.env.STABLE_QA_USER_DATA = root
-process.env.STABLE_CLOUD_ENABLED = '1'
+if (process.argv.includes('--packaged-default')) {
+  Object.defineProperty(app, 'isPackaged', { value: true })
+  delete process.env.STABLE_CLOUD_ENABLED
+  require('electron-updater').autoUpdater.checkForUpdates = async () => null
+} else process.env.STABLE_CLOUD_ENABLED = '1'
 delete process.env.STABLE_QA_CAPTURE
 delete process.env.STABLE_QA_CLOUD_AUTHENTICATED
 app.getAppPath = () => repo
@@ -24,6 +28,8 @@ CloudAccountService.prototype.restore = async function () {
   if (process.argv.includes('--failure') && restoreCalls === 1) throw Error('fixture connection closed')
   this.snapshot = { ...this.snapshot, status: 'signed_out', error: '' }
 }
+// Keep renderer-triggered model discovery local to this startup fixture.
+CloudAccountService.prototype.refresh = async function () { return this.publicState() }
 CloudAccountService.prototype.login = async function(username, password) {
   assert.equal(username, 'fixture-user')
   if (password !== 'fixture-password') throw Error('fixture invalid credentials')

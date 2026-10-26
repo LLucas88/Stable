@@ -1,8 +1,8 @@
 # 本地直连与设备配置
 
 默认链路：Stable → Claude Agent SDK → 本机 Messages Bridge → 供应商 HTTPS Chat Completions API。接入细节见 [CLAUDE_AGENT_SDK.md](CLAUDE_AGENT_SDK.md)。
-默认启动不创建 Cloud Proxy、不要求 Stable Cloud 登录；问鼎等业务登录独立保留。
-仅显式设置 `STABLE_CLOUD_ENABLED=1` 才使用原云端模式。
+开发版默认启动不创建 Cloud Proxy、不要求 Stable Cloud 登录；问鼎等业务登录独立保留。
+从 1.11.0 起，正式安装版默认连接原 Stable Cloud 网关，使用原用户数据目录恢复账号和历史。设置 `STABLE_CLOUD_ENABLED=0` 可显式切回本地直连；开发版设置 `STABLE_CLOUD_ENABLED=1` 可启用云端模式。
 
 ## 管理员电脑
 

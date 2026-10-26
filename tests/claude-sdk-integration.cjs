@@ -14,6 +14,145 @@ const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
 const credential = 'local-native-fixture-key'
 
+test('real SDK resumes private reasoning on text-only answers without exposing it', { timeout: 120000 }, async t => {
+  let failure
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    try { if (number > 1) {
+      const previous = body.messages.filter(m => m.role === 'assistant')
+      assert(previous.length >= number - 1)
+      for (const [index, message] of previous.entries()) assert.equal(message.reasoning_content, 'private-native-replay-' + (index + 1))
+    } } catch (error) { failure = error }
+    return upstream({ text: 'REPLAY_OK', reasoning: 'private-native-replay-' + number })
+  })
+  for (const prompt of ['Say hello', 'Continue', 'Continue again']) {
+    const events = []
+    const answer = await runner.run(prompt, model, credential, 35000, e => events.push(e), 'read-only', [], { key: 'text-reasoning', cwd: workspace })
+    assert.ifError(failure)
+    assert.equal(answer, 'REPLAY_OK')
+    assert.doesNotMatch(JSON.stringify(events), /private-native-replay/)
+  }
+  assert.equal(requests.length, 3)
+})
+
+test('real SDK identity reminders follow the actual route on fresh and resumed turns', { timeout: 45000 }, async t => {
+  let failure
+  const { workspace, runner, requests } = fixture(t, body => {
+    try {
+      assert.equal(body.model, 'deepseek-flash')
+      const messages = JSON.stringify(body.messages)
+      assert.match(messages, /DeepSeek Flash/)
+      assert.doesNotMatch(messages, /You are powered by the model named Sonnet|Assistant knowledge cutoff is August|You are a Claude agent, built on/)
+    } catch (error) { failure = error }
+    return upstream({ text: '我是 DeepSeek Flash，模型 ID 是 deepseek-flash。' })
+  }, { expectedModel: 'deepseek-flash' })
+  const selected = { ...model, model: 'deepseek-flash', displayName: 'DeepSeek Flash', contextWindow: 1000000 }
+  for (const prompt of ['你是什么模型', '你现在是哪个模型？']) {
+    const count = requests.length
+    const ready = await require('../desktop/services/clarification.cjs').clarifyBeforeExecution({ payload: { prompt }, messages: [], ask: () => { throw Error('unexpected preflight') } })
+    assert.equal(ready.status, 'ready')
+    assert.match(await runner.run(prompt, selected, credential, 20000, undefined, 'read-only', [], { key: 'identity', cwd: workspace }), /DeepSeek/)
+    assert.equal(requests.length - count, 1)
+    assert.ifError(failure)
+  }
+})
+
+test('upgraded Codex conversation continues with bundled Git Bash and no system Git on PATH', { timeout: 60000 }, async t => {
+  let failure
+  const { root, workspace, runner } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) {
+        assert.match(JSON.stringify(body.messages), /ORIGINAL_REQUIREMENT/)
+        return upstream({ calls: [{ id: 'read-legacy', name: 'Read', input: { file_path: historyFile, offset: 200, limit: 20 } }] })
+      }
+      if (number === 2) {
+        assert.match(toolResult(body, 'read-legacy'), /history 209/)
+        return upstream({ calls: [{ id: 'bundled-bash', name: 'Bash', input: { command: "git --version; printf '<html><body>UPGRADE_OK</body></html>' > upgrade.html; cat upgrade.html", timeout: 10000 } }] })
+      }
+      assert.match(toolResult(body, 'bundled-bash'), /git version 2\.56\.0\.windows\.3/)
+      assert.match(toolResult(body, 'bundled-bash'), /UPGRADE_OK/)
+      return upstream({ text: 'UPGRADE_DELIVERED: upgrade.html' })
+    } catch (error) { failure = error; return upstream({ text: 'FAILED' }) }
+  }, { environment: { SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, PATH: path.join(process.env.SystemRoot, 'System32') } })
+  const { StableStore } = require('../desktop/services/store.cjs'), store = new StableStore(root)
+  const id = store.activeConversationId()
+  store.addMessage(id, 'user', 'ORIGINAL_REQUIREMENT: produce an HTML report')
+  for (let i=0;i<210;i++) store.addMessage(id, 'assistant', 'history ' + i)
+  store.saveRuntimeSession(id, { home: path.join(root, 'codex/sessions/old'), threadId: 'codex-old' })
+  const context = require('../desktop/services/legacy-conversation.cjs').legacyConversationContext(store, root, id)
+  const historyFile = path.join(context.readableRoot, 'visible-history.jsonl')
+  store.close()
+  const answer = await runner.run('Continue the previous report', model, credential, 45000, event => {
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { key: id, initialPrompt: context.instruction, cwd: workspace, readableRoots: [context.readableRoot], networkAccess: true })
+  assert.ifError(failure)
+  assert.equal(answer, 'UPGRADE_DELIVERED: upgrade.html')
+  assert.match(fs.readFileSync(path.join(workspace, 'upgrade.html'), 'utf8'), /UPGRADE_OK/)
+})
+
+test('real SDK recovers from a gateway context rejection by compacting instead of aborting', { timeout: 60000 }, async t => {
+  let seeded = false, rejected = false, summaries = 0
+  const events = []
+  const { workspace, runner, requests } = fixture(t, body => {
+    const text = JSON.stringify(body.messages)
+    if (/summariz|summary of (?:the |this )?conversation|summary.*conversation so far/i.test(text)) {
+      summaries++
+      return upstream({ text: 'COMPACTED_CONTEXT: Keep existing svgcharts.py edits. Continue checking the report.', inputTokens: 2000 })
+    }
+    if (!seeded) { seeded = true; return upstream({ text: 'Saved svgcharts.py. ' + 'historical report detail '.repeat(15000), inputTokens: 20000 }) }
+    if (!rejected) { rejected = true; return Response.json({ error: { message: '请求内容与最大输出长度超过模型上下文限制。' } }, { status: 400 }) }
+    assert(summaries > 0)
+    assert.match(text, /COMPACTED_CONTEXT/)
+    return upstream({ text: 'CONTEXT_RECOVERED', inputTokens: 2500 })
+  })
+  const profile = { ...model, contextWindow: 1000000 }
+  const session = { key: 'context-rejection', cwd: workspace }
+  await runner.run('Save report progress', profile, credential, 25000, e => events.push(e), 'read-only', [], session)
+  assert.equal(await runner.run('Continue checking the report', profile, credential, 30000, e => events.push(e), 'read-only', [], session), 'CONTEXT_RECOVERED')
+  assert.equal(summaries, 1)
+  assert(events.some(e => e.title === '上下文已自动压缩'))
+  assert(events.some(e => e.title === '网关拒绝上下文长度，正在自动压缩'))
+  assert.equal(requests.length, 4)
+})
+
+test('real SDK screenshot crosses the Cloud boundary as user image evidence', { timeout: 45000 }, async t => {
+  const { CloudGatewayProxy } = require('../desktop/services/cloud-gateway-proxy.cjs')
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='
+  let failure, calls = 0
+  const proxy = new CloudGatewayProxy({ account: { baseURL: 'https://strict-cloud.invalid', token: () => 'cloud-fixture' }, fetchImpl: async (_url, init) => {
+    const body = JSON.parse(init.body); calls++
+    try {
+      assert(!body.messages.some(m => m.role !== 'user' && Array.isArray(m.content) && m.content.some(p => p.type === 'image_url')))
+      if (calls === 1) return upstream({ calls: [{ id: 'discover', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_browser', max_results: 1 } }] })
+      if (calls === 2) return upstream({ calls: [{ id: 'shot', name: 'mcp__stable__stable_browser', input: { action: 'screenshot', tabId: 'fixture' } }] })
+      if (calls === 4) return upstream({ text: 'CLOUD_SCREENSHOT_OK' })
+      assert.equal(calls, 3)
+      assert.equal(typeof toolResult(body, 'shot'), 'string')
+      const evidence = body.messages.find(m => m.role === 'user' && Array.isArray(m.content) && m.content.some(p => p.type === 'image_url'))
+      assert(evidence)
+      assert.match(evidence.content[0].text, /tool_call_id=shot/)
+      assert.equal(evidence.content.find(p => p.type === 'image_url').image_url.url, image)
+      const record = toolResult(body, 'shot').split('\n\n').flatMap(text => { try { return [JSON.parse(text)] } catch { return [] } }).find(value => value.reviewNotebook)
+      assert(record)
+      return upstream({ calls: [{ id: 'review', name: 'mcp__stable__stable_browser', input: { action: 'review', tabId: 'fixture', reviewUpdates: record.reviewNotebook.evidence.map(item => ({ check: 'screenshot', status: 'passed', evidenceId: item.id, note: 'fixture image transport verified' })) } }] })
+    } catch (error) { failure = error; return upstream({ text: 'FIXTURE_FAILED' }) }
+  } })
+  await proxy.start(); t.after(() => proxy.stop())
+  const { workspace, runner } = fixture(t, body => fetch(proxy.baseURL + '/chat/completions', {
+    method: 'POST', headers: { authorization: 'Bearer ' + proxy.secret }, body: JSON.stringify(body),
+  }), { builtinTools: () => ({ execute: async () => ({ tabId: 'fixture', image }), cancel() {}, dispose() {} }) })
+  const answer = await runner.run('Inspect the screenshot', model, credential, 30000, undefined, 'workspace-write', [], { cwd: workspace })
+  assert.ifError(failure); assert.equal(answer, 'CLOUD_SCREENSHOT_OK'); assert.equal(calls, 4)
+})
+
+test('real SDK exposes a definitive gateway rejection and does not retry it', { timeout: 45000 }, async t => {
+  const events = []
+  const { workspace, runner, requests } = fixture(t, () => Response.json({ error: { message: '图片消息格式无效：只支持用户消息中的图片' } }, { status: 400 }))
+  await assert.rejects(runner.run('Inspect screenshot', model, credential, 30000, event => events.push(event), 'workspace-write', [], { cwd: workspace }), /HTTP 400.*图片消息格式无效/)
+  assert.equal(requests.length, 1)
+  assert.equal(events.findLast(event => event.id === 'run-progress').status, 'failed')
+  assert.match(events.findLast(event => event.id === 'run-progress').detail, /图片消息格式无效/)
+})
+
 test('real SDK discovers image generation, uses approval, and receives a durable artifact', { timeout: 45000 }, async t => {
   let failure, generated = 0
   const { workspace, runner, requests } = fixture(t, (body, number) => {
@@ -168,6 +307,25 @@ test('real SDK browser evidence survives MCP and can be read by the native image
   assert.equal(answer, 'EVIDENCE_REVIEW_FINISHED')
   assert.equal(captures, 1)
   assert(fs.existsSync(evidencePath), 'file must remain available after the SDK run ends')
+})
+
+test('real SDK repairs a failing script and continues beyond the old three-failure limit', { timeout: 60000 }, async t => {
+  const events=[];let requests=0
+  const {workspace,runner}=fixture(t,(body,number)=>{
+    requests++
+    const call=(id,name,input)=>upstream({calls:[{id,name,input}]})
+    if(number===1)return call('read-script','Read',{file_path:path.join(workspace,'analyze.sh')})
+    if(number===2||number===3||number===5||number===7)return call('run-'+number,'Bash',{command:'bash analyze.sh',timeout:10000})
+    if(number===4)return call('repair-one','Edit',{file_path:path.join(workspace,'analyze.sh'),old_string:'exit 1',new_string:'printf SECOND_ERROR >&2; exit 2'})
+    if(number===6){assert.match(toolResult(body,'run-5'),/SECOND_ERROR/);return call('repair-two','Edit',{file_path:path.join(workspace,'analyze.sh'),old_string:'printf SECOND_ERROR >&2; exit 2',new_string:'printf REPAIRED'})}
+    assert.match(toolResult(body,'run-7'),/REPAIRED/)
+    return upstream({text:'REPAIR_VERIFIED'})
+  })
+  fs.writeFileSync(path.join(workspace,'analyze.sh'),'exit 1\n')
+  const result=await runner.run('Repair the script and verify it',model,credential,50000,event=>{events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.equal(result,'REPAIR_VERIFIED');assert.equal(requests,8)
+  assert.equal(new Set(events.filter(event=>event.toolName==='Bash'&&event.status==='failed').map(event=>event.id)).size,3)
+  assert.equal(fs.readFileSync(path.join(workspace,'analyze.sh'),'utf8'),'printf REPAIRED\n')
 })
 
 test('real SDK returns timed-out command output to the model and completes a smaller step in the same run', { timeout: 45000 }, async t => {
@@ -538,7 +696,7 @@ function fixture(t, responder, options = {}) {
       assert.equal(url, 'https://provider.invalid/v1/chat/completions')
       assert.equal(request.headers.authorization, 'Bearer ' + credential)
       const body = JSON.parse(request.body); requests.push(body)
-      assert.equal(body.model, model.model)
+      assert.equal(body.model, options.expectedModel || model.model)
       return responder(body, requests.length, request)
     },
   })
@@ -605,7 +763,7 @@ test('real SDK request budget preserves failure reason, files and shared resume 
   const budget = requestBudget(2), events = []
   const { workspace, runner, requests } = fixture(t, (body, number) => {
     if (number === 1) return upstream({ text: 'CHECKPOINT_SAVED' })
-    assert.match(body.messages.find(message => message.role === 'system').content, /2\/2.*还可请求 0 次/)
+    assert.match(body.messages.filter(message => message.role === 'user').map(message => message.content).join('\n'), /2\/2.*还可请求 0 次/)
     return upstream({ calls: [{ id: 'budget-write', name: 'Write', input: { file_path: path.join(workspace, 'partial.txt'), content: 'PRESERVED' } }] })
   }, { onModelRequest: () => budget.onRequest() })
   const capture = event => {

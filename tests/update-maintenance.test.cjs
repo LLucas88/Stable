@@ -37,10 +37,10 @@ test('Electron update cleanup preserves runtime behind nested and top-level junc
     encoding: 'utf8', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   })
   assert.equal(result.status, 0, result.stderr || result.stdout)
-  assert.deepEqual(JSON.parse(result.stdout), { runtime: true, unrelated: true, previous: false })
+  assert.deepEqual(JSON.parse(result.stdout), { runtime: true, unrelated: true, previous: true })
 })
 
-test('successful startup removes only versioned update staging siblings', () => {
+test('successful startup retains program rollback and failed upgrade siblings', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-update-cleanup-'))
   const install = path.join(root, 'Stable')
   const previous = path.join(root, 'Stable.__stable_previous_0.9.31')
@@ -52,10 +52,10 @@ test('successful startup removes only versioned update staging siblings', () => 
   mkdirSync(unrelated)
   try {
     const execPath = path.join(install, 'Stable.exe')
-    assert.deepEqual(new Set(staleInstallPaths(execPath)), new Set([previous, failed]))
-    assert.deepEqual(new Set(cleanupStaleInstalls(execPath)), new Set([previous, failed]))
-    assert.equal(existsSync(previous), false)
-    assert.equal(existsSync(failed), false)
+    assert.deepEqual(new Set(staleInstallPaths(execPath)), new Set())
+    assert.deepEqual(new Set(cleanupStaleInstalls(execPath)), new Set())
+    assert.equal(existsSync(previous), true)
+    assert.equal(existsSync(failed), true)
     assert.equal(existsSync(unrelated), true)
   } finally {
     rmSync(root, { recursive: true, force: true })

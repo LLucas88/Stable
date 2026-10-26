@@ -78,7 +78,7 @@ test('conversation task list exposes persistent pinning and a guarded action men
   assert.match(app, /aria-label="任务清单"/)
   assert.match(app, /aria-label="置顶任务"/)
   assert.match(app, /className="conversation-pin-action"/)
-  assert.match(app, /openConversation=\{\(\) => \{ setSettingsModule\(null\); setMode\('work'\); setPage\('agent'\) \}\}/)
+  assert.match(app, /openConversation=\{\(\) => \{ setSettingsModule\(null\); setPage\('agent'\) \}\}/)
   assert.match(app, /function selectConversation\(item: ConversationItem\)/)
   assert.match(main, /STABLE_QA_OPEN_CONVERSATION_FROM_TAB/)
   assert.match(menu, /className="conversation-action-menu sidebar-action-menu" role="menu"/)

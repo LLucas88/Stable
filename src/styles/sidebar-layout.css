@@ -117,7 +117,7 @@ html[data-theme="dark"] #root .rail-task-pane { --task-row-base: #24272d; --task
 #root .conversation-list-item[data-active="true"] { --task-row-surface: var(--task-row-selected, var(--color-paper-4)); }
 #root .conversation-list-item .conversation-activity,
 #root .conversation-list-item .conversation-item-actions {
-  z-index: 2; inset-inline-end: 4px; width: 28px; height: 28px;
+  z-index: 2; inset-inline-end: 0; width: 28px; height: 28px;
   border: 0; border-radius: 0 8px 8px 0; box-shadow: none;
   background: var(--task-row-surface) !important;
 }
@@ -131,6 +131,7 @@ html[data-theme="dark"] #root .rail-task-pane { --task-row-base: #24272d; --task
   border: 0 !important; border-radius: 6px; background: transparent !important; box-shadow: none !important;
 }
 #root .conversation-item-actions > button:hover { color: var(--color-ink); }
+#root .conversation-list-item:is(:hover, :has(:focus-visible), :has(button[aria-expanded="true"])) .conversation-select { padding-inline-end: 28px; }
 .conversation-spinner {
   display: block; width: 14px; height: 14px; border-radius: 50%;
   background: conic-gradient(from 30deg, transparent, currentColor 300deg, transparent);

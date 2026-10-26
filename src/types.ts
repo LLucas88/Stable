@@ -211,6 +211,8 @@ export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'in
 export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
 
 export interface ConversationItem {
+  design?: DesignRequest
+  lastMessagePreview?: string
   waitingForInput?: boolean
   networkAccess?: boolean
   projectId?: string | null
@@ -230,6 +232,18 @@ export interface ConversationItem {
   sourceDeviceName?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface DesignRequest {
+  model: 'glm-image'
+  mode: 'generate' | 'preserve'
+  ratio: '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom'
+  width?: number
+  height?: number
+  aspectLocked?: boolean
+  resolution: 'standard' | '2k'
+  count: number
+  text: string
 }
 
 export interface ConversationSearchResult {
@@ -304,6 +318,7 @@ export interface ClarificationResponse {
 }
 export interface ClarificationTimer { id: string; deadline: number | null; interacted: boolean }
 export interface AgentTraceItem {
+  designRequest?: DesignRequest
   continuationOf?: string
   clarificationReply?: MessageItem
   clarification?: ClarificationQuestion
@@ -686,7 +701,8 @@ export interface StableBridge {
     saveImageAs(path: string): Promise<{ canceled: boolean; path?: string }>
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
-    create(): Promise<AgentState>
+    create(design?: DesignRequest): Promise<AgentState>
+    configureDesign(id: string, design: DesignRequest): Promise<AgentState>
     forkAnswer(id: string, messageId: string): Promise<AgentState>
     chapters(id: string): Promise<AnswerChapter[]>
     setChapter(id: string, messageId: string, title: string | null): Promise<AnswerChapter[]>
@@ -703,7 +719,7 @@ export interface StableBridge {
     configurePermission(id: string, permissionMode: AgentPermissionMode): Promise<AgentState>
     configureModel(id: string, modelId: string): Promise<AgentState>
     clarificationTimer(conversationId: string, id: string, action: 'start' | 'interact'): Promise<ClarificationTimer>
-    run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[], clientRequestId?: string, clarificationResponse?: ClarificationResponse): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
+    run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[], clientRequestId?: string, clarificationResponse?: ClarificationResponse, design?: DesignRequest): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
     steer(conversationId: string, requestId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState>
     answerApproval(conversationId: string, requestId: string, decision: boolean | 'deny' | 'once' | 'conversation'): Promise<boolean>

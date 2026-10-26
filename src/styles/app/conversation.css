@@ -185,6 +185,12 @@ html[data-theme="dark"] .conversation-start-animation { filter: invert(1) hue-ro
 .markdown-body a,
 .markdown-preview-link { color: var(--color-focus); text-decoration: underline; text-decoration-color: var(--color-rule); text-underline-offset: 0.16em; }
 .markdown-preview-link { display: inline; padding: 0; border: 0; background: transparent; font: inherit; text-align: inherit; }
+.markdown-body .markdown-file-link { display: inline-flex; max-width: 100%; align-items: baseline; gap: 4px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--color-accent-hover); font: inherit; font-weight: 600; text-align: start; vertical-align: baseline; cursor: pointer; }
+.markdown-file-link > svg { flex: 0 0 auto; align-self: center; }
+.markdown-file-link > span { min-width: 0; overflow-wrap: anywhere; }
+.markdown-file-link:hover > span { text-decoration: underline; text-underline-offset: 3px; }
+.markdown-file-link:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.markdown-body .markdown-file-link:disabled { color: var(--color-muted); cursor: default; }
 .markdown-body blockquote { margin-inline: 0; padding-inline-start: var(--space-md); border-inline-start: 2px solid var(--color-accent); color: var(--color-muted); }
 .markdown-table-shell { position: relative; max-width: 100%; }
 .markdown-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--color-rule-soft); border-radius: var(--radius-md); scrollbar-width: thin; scrollbar-color: var(--color-rule) transparent; }

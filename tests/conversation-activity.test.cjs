@@ -14,7 +14,7 @@ test('conversation tab creates tasks, preserving its icon/label and guarding pen
   const navigate = app.slice(app.indexOf('function navigate('), app.indexOf('function selectRepositoryTab('))
   assert.match(navigate, /if \(id === 'agent'\)/)
   assert.match(navigate, /if \(creatingConversationRef.current\) return/)
-  assert.match(navigate, /await window.stable.agent.create\(\)/)
+  assert.match(navigate, /await window.stable.agent.create\(design\)/)
   assert.match(navigate, /finally \{ creatingConversationRef.current = false \}/)
 })
 

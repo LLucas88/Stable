@@ -63,6 +63,7 @@ function clarificationTurn(messages, prompt, deliveryId, time = Date.now()) {
 
 function cleanPayload(payload) {
   return {
+    ...(payload.design ? {design: require('./design-request.cjs').validateDesignRequest(payload.design)} : {}),
     prompt: String(payload.prompt || ''),
     attachments: (Array.isArray(payload.attachments) ? payload.attachments : []).slice(0, 24).map(item => ({ name: String(item?.name || ''), path: String(item?.path || ''), type: String(item?.type || ''), size: Number(item?.size) || 0 })),
     references: (Array.isArray(payload.references) ? payload.references : []).slice(0, 100).map(item => ({ kind: String(item?.kind || ''), id: String(item?.id || ''), name: String(item?.name || '') })),
@@ -72,6 +73,7 @@ function cleanPayload(payload) {
 function mergePayload(original, reply) {
   const unique = (items, key) => [...new Map(items.map(item => [key(item), item])).values()]
   return {
+    ...(reply.design || original.design ? {design: reply.design || original.design} : {}),
     prompt: `${original.prompt}\n\n用户补充（以最新要求为准）：\n${reply.prompt}`,
     attachments: unique([...original.attachments, ...reply.attachments], item => item.path),
     references: unique([...original.references, ...reply.references], item => `${item.kind}:${item.id}`),
@@ -89,6 +91,32 @@ function clarificationTrace(payload, answer, runId = 'clarification', card) {
   return { id: 'clarification', runId, kind: 'status', title: '等待你补充信息', detail: '需要用户回答，提交后继续。', status: 'completed', time: Date.now(), clarification: { ...details, id: randomUUID(), status: 'waiting', payload: cleanPayload(payload) } }
 }
 
+function isSimpleChat(payload) {
+  if (payload.attachments?.length || payload.references?.length) return false
+  const text = String(payload.prompt || '').trim()
+  if (!text) return false
+  if (isKnowledgeQuestion(text)) return true
+  // Whole-message matching prevents a greeting/identity prefix from skipping
+  // assessment for an appended file task, approval or other requirement.
+  const parts = text.split(/[，,。？！?!；;\n]+/).map(value => value.trim()).filter(Boolean)
+  return parts.length > 0 && parts.every(part => /^(?:(?:你好|您好|嗨)\s*)?(?:(?:请问)?你(?:现在|当前|到底)?(?:是(?:什么|哪个|哪种)模型|用的(?:是)?(?:什么|哪个|哪种)模型|叫什么(?:名字)?|是谁|能(?:帮我)?(?:做哪些事|做什么|做些什么)|有什么功能)|(?:请)?介绍(?:一下)?你自己)?(?:呀|啊|呢|吗)?$/.test(part)
+    || /^(?:谢谢(?:你)?|多谢|感谢|早上好|晚上好|hello|hi)$/i.test(part))
+}
+
+// A conservative whole-message route, not a general intent classifier. It only
+// removes the extra assessor/predictor; the execution model and tool approvals
+// still apply. Mixed requests, resources and context-dependent questions stay out.
+function isKnowledgeQuestion(text) {
+  if (text.length > 160 || /[\n；;。](?!\s*$)/.test(text)) return false
+  if (/\b(?:then|also|delete|modify|execute|upload|download|send|purchase|latest|today)\b|\band\s+(?:run|write|create|save|open|search)\b/i.test(text)) return false
+  if (/(?:然后|顺便|并且|再帮|帮我|文件|附件|截图|报告|这份|这个|上述|刚才|它|删除|写入|修改|执行|运行|发送|购买|支付|上传|下载|联网|搜索|查一下|今天|最新|实时|账户|账号)/i.test(text)) return false
+  const clean = text.replace(/[。？?！!]\s*$/, '').trim()
+  if (/^(?:请)?(?:计算)?\s*-?\d+(?:\.\d+)?\s*[+\-*/×÷]\s*-?\d+(?:\.\d+)?\s*(?:等于(?:多少|几)|是多少|=\s*)$/.test(clean)) return true
+  const term = '[\\p{L}\\p{N} _+.#/-]{1,48}'
+  return new RegExp(`^(?:请(?:问)?\\s*)?(?:(?:用一句话|简单|简要|通俗地)\\s*)?(?:(?:解释|介绍|说明)(?:一下)?(?:什么是)?${term}|什么是${term}|${term}是什么(?:意思)?|${term}和${term}(?:有)?什么区别)$`, 'u').test(clean)
+    || /^(?:please\s+)?(?:briefly\s+)?(?:what is|define|explain) [a-z0-9 +.#/-]{1,60}\??$/i.test(text)
+}
+
 async function clarifyBeforeExecution({ payload, messages, ask }) {
   const reply = cleanPayload(payload)
   const pending = pendingClarification(messages)
@@ -99,6 +127,16 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
   // still checks evidence and handles any genuinely new gaps in context.
   if (payload.clarificationResolved) return { status: 'ready', payload: effective }
   const latest = (messages || []).at(-1)
+  // An executed conversation already has task/resource context. Let the same
+  // execution model inspect it and ask inline if needed, rather than launching
+  // another tool-less SDK run for every follow-up edit. This never answers a
+  // pending question or grants tool approval.
+  const executedFollowup = !resuming && !/^(?:新任务|换个任务|换一个任务)[：:]/.test(reply.prompt.trim())
+    && latest?.role === 'assistant' && !waitingAnswer(latest.content)
+    && (messages || []).some(message => message.role === 'user' && String(message.content || '').trim())
+    && latest.trace?.some(item => item.kind === 'tool')
+    && !latest.trace?.some(item => item.kind === 'approval' && ['running', 'pending'].includes(item.status))
+  if (executedFollowup) return { status: 'ready', payload: effective }
   const continuation = /^(?:请)?(?:继续(?:执行|处理|完成)?|接着做|接着执行|接着处理)(?:吧)?[。！!\s]*$/.test(reply.prompt.trim())
   // Resume the existing task; the execution runner still enforces approvals.
   if (continuation && !pending && !effective.attachments.length && !effective.references.length
@@ -107,7 +145,8 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
     && !latest.trace?.some(item => item.kind === 'approval' && ['running', 'pending'].includes(item.status))) {
     return { status: 'ready', payload: effective }
   }
-  const simple = !resuming && !effective.attachments.length && !effective.references.length && /^(?:(?:你好|您好|嗨)[，,！!。\s]*)?(?:(?:你叫什么(?:名字)?|你是谁|介绍(?:一下)?你自己)[，,。？?\s]*)?(?:(?:你能(?:帮我)?(?:做哪些事|做什么|做些什么)|你有什么功能)[。？?！!\s]*)?$/.test(reply.prompt.trim())
+  const awaitingApproval = latest?.trace?.some(item => item.kind === 'approval' && ['running', 'pending'].includes(item.status))
+  const simple = !resuming && !awaitingApproval && isSimpleChat(effective)
   if (simple || /(?:^|[。！!，,；;\n])\s*(?:本次)?(?:不用|不要|无需)(?:先)?(?:提问|问我|确认)/.test(reply.prompt.trim())) return { status: 'ready', payload: effective }
   const prompt = [
     '执行前的信息充分性判断。本阶段没有执行工具。遵循当前 90% 策略，覆盖旧的“每次先问”要求。',
@@ -134,4 +173,4 @@ async function formatClarification(answer, ask, task = '') {
   if (card) return card
   return normalizeCard(parseObject(await ask('将执行中发现的信息缺口整理为提问卡片。只返回 JSON：{"question":"具体问题","hint":"缺口说明与自由回答提示","options":[{"label":"推荐路线","description":"效果与取舍"},{"label":"另一条路线","description":"效果与取舍"}]}。两条路线须互斥，问题和选项名称须简短具体，第一条是推荐答案，只有用户提交回答后才可继续，不假设缺失文件/事实存在，不绕过权限审批。原任务：\n' + task + '\n原问题：\n' + answer)))
 }
-module.exports = { clarificationTurn, clarificationStream, WAIT_MARKER, CLARIFICATION_GUIDANCE, waitingAnswer, waitingCard, normalizeCard, pendingClarification, cleanPayload, clarificationTrace, clarifyBeforeExecution, formatClarification }
+module.exports = { isSimpleChat, clarificationTurn, clarificationStream, WAIT_MARKER, CLARIFICATION_GUIDANCE, waitingAnswer, waitingCard, normalizeCard, pendingClarification, cleanPayload, clarificationTrace, clarifyBeforeExecution, formatClarification }

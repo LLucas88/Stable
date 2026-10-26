@@ -33,7 +33,7 @@ const { CloudAccountService } = require('./services/cloud-account.cjs')
 const { CloudGatewayProxy } = require('./services/cloud-gateway-proxy.cjs')
 const { createCloudFetch } = require('./services/cloud-transport.cjs')
 const { normalizeReasoning, reasoningOptions } = require('./services/model-reasoning.cjs')
-const { composeAgentPrompt } = require('./services/prompts.cjs')
+const { composeAgentPrompt, composeAgentContext, composeAgentTurn } = require('./services/prompts.cjs')
 const { deliveryRequest, revisedDelivery, runWithDeliveryChecks } = require('./services/delivery.cjs')
 const { timerState, resolveResponse } = require('./services/clarification-interaction.cjs')
 const { clarificationTurn, clarifyBeforeExecution, clarificationTrace, formatClarification, pendingClarification } = require('./services/clarification.cjs')
@@ -151,6 +151,7 @@ const collaborationModelRoutes = new Map()
 const pendingCollaborationChecks = new Map()
 const featureFlags={compatibilityReviewer:process.env.STABLE_COMPATIBILITY_REVIEWER!=='0',sharedBrowser:process.env.STABLE_SHARED_BROWSER!=='0',historyRecovery:process.env.STABLE_HISTORY_RECOVERY!=='0'}
 const updateHealthcheck = process.argv.includes('--stable-update-healthcheck')
+const upgradeMaintenance = process.argv.includes('--stable-upgrade-backup') || process.argv.includes('--stable-restore-upgrade')
 if (process.env.STABLE_STARTUP_PROBE) require('./services/startup-probe.cjs').installStartupProbe(require('electron'), () => store)
 
 function pendingApproval(conversationId, requestId) {
@@ -226,7 +227,7 @@ const userDataPath = process.env.STABLE_QA_USER_DATA || userDataArgument?.slice(
 if (userDataPath) app.setPath('userData', path.resolve(userDataPath))
 
 if (!process.env.STABLE_QA_CAPTURE && !process.env.STABLE_QA_USER_DATA && !updateHealthcheck) {
-  if (!app.requestSingleInstanceLock()) app.quit()
+  if (!app.requestSingleInstanceLock({ stableMaintenance: upgradeMaintenance })) { if (upgradeMaintenance) app.exit(24); else app.quit() }
   else app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
     if (additionalData?.stableMaintenance) return
     if (!mainWindow) return
@@ -242,20 +243,21 @@ function resourcePath(...segments) {
 function createHarnessRunner(conversationId) {
   messagePredictions.interrupt()
   const cli = wendingCli?.forConversation(conversationId)
+  const environment = cli ? cli.environment(process.env) : process.env
   return new HarnessRunner({
     chatgpt: chatgptAccount,
     userData: paths.userData,
     workspace: paths.workspace,
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
-    environment: cli ? cli.environment(process.env) : process.env,
-    trustedCli: cli ? { root: cli.root(), environment: cli.environment(process.env) } : undefined,
+    environment,
+    trustedCli: cli ? { root: cli.root(), environment: { ...environment } } : undefined,
     hasConversationApproval: (id, key) => store.hasConversationApproval(id, key),
     grantConversationApproval: (id, key, label) => store.grantConversationApproval(id, key, label),
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ resolveImageApiKey: () => modelRegistry.resolveImageApiKey(store.conversation(context.conversationId)?.modelId), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageApiKey: () => modelRegistry.resolveImageApiKey(store.conversation(context.conversationId)?.modelId), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -1565,7 +1567,7 @@ async function prepareAgentMessage(payload, conversationId, modelRoute, displayP
 }
 
 function commitAgentMessage(conversationId, query, prepared, isSteer = false) {
-  const messageId = store.addMessage(conversationId, 'user', query, undefined, prepared.messageAttachments)
+  const messageId = store.addMessage(conversationId, 'user', query, require('./services/design-request.cjs').designMessageTrace(prepared.design), prepared.messageAttachments)
   const deliveryId=agentRunners.get(conversationId)?.deliveryId
   if(deliveryId&&!isSteer)conversationLifecycle.status(deliveryId,'saved',{userMessageId:messageId})
   if (store.getSetting(`conversation-skills:${conversationId}`) === undefined) store.setSetting(`conversation-skills:${conversationId}`, skillReferences(store, conversationId).map(item => item.id))
@@ -1584,7 +1586,7 @@ function modelRouteForConversation(conversationId) {
   return modelRegistry.resolve(conversation?.modelId)
 }
 
-async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride, modelRouteOverride) {
+async function runAgent(query, conversationId, attachments = [], historyOverride, selectedContextOverride, broadcast = true, installedSkills = [], executionRunner = runner, permissionModeOverride, modelRouteOverride, currentMessageId) {
   if (store.conversation(conversationId)?.sourceType === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
   messagePredictions.interrupt()
   const paths = conversationId ? conversationPaths(conversationId, true) : conversationPaths(store.activeConversationId())
@@ -1747,7 +1749,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       throw error
     }
   }
-  const history = historyOverride || store.recentContext(conversationId)
+  const legacyContext = !historyOverride ? require('./services/legacy-conversation.cjs').legacyConversationContext(store, paths.userData, conversationId) : null
+  const history = historyOverride || store.recentContext(conversationId, undefined, currentMessageId)
   const explicitContext = selectedContextOverride || {}
   const selectedData = []
   const data = selectedData
@@ -1781,10 +1784,10 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const [originalQuery, ...clarificationReplies] = query.split('\n\n用户补充（以最新要求为准）：\n')
   const delivery = clarificationReplies.reduce(revisedDelivery, deliveryRequest(originalQuery))
   const promptOptions = { identity: store.getSetting('identity'), globalInstructions: readGlobalInstructions().content, query: effectiveQuery, history, data, knowledge, skills, automaticSkills, scripts, attachments, delivery, workspace: paths.workspace }
-  const initialPrompt = composeAgentPrompt(promptOptions)
+  const initialPrompt = composeAgentPrompt(promptOptions) + (legacyContext ? '\n\n' + legacyContext.instruction : '')
   const persistentSession = executionRunner.supportsPersistentSessions && conversationId && !historyOverride
-    ? { key: conversationId, initialPrompt, contextPolicy: 'uploaded-materials-v1' } : undefined
-  const prompt = persistentSession ? composeAgentPrompt({ ...promptOptions, history: [] }) : initialPrompt
+    ? { key: conversationId, initialPrompt, promptContext: composeAgentContext(promptOptions), contextPolicy: 'uploaded-materials-v1' } : undefined
+  const prompt = persistentSession ? composeAgentTurn({ ...promptOptions, history: [] }) : initialPrompt
   const imageAttachments = attachmentImages(attachments)
   const activeControl = agentRunners.get(conversationId)
   const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
@@ -1799,7 +1802,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, selectedSkills: skills, automaticSkills, userQuery: effectiveQuery, cwd: paths.workspace, writableRoots: paths.writableRoots, readableRoots: [...(paths.readableRoots || []), ...selectedSkillReadRoots([...skills, ...automaticSkills])], networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, selectedSkills: skills, automaticSkills, userQuery: effectiveQuery, cwd: paths.workspace, writableRoots: paths.writableRoots, readableRoots: [...(paths.readableRoots || []), ...(legacyContext ? [legacyContext.readableRoot] : []), ...selectedSkillReadRoots([...skills, ...automaticSkills])], networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
@@ -2181,8 +2184,23 @@ function registerIpc() {
   ipcMain.handle('stable:agent:forkAnswer', (_event, payload) => agentState(store.forkAnswer(requireText(payload?.id, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100))))
   ipcMain.handle('stable:agent:chapters', (_event, payload) => store.chapters(requireText(payload?.id, '对话 ID', 100)))
   ipcMain.handle('stable:agent:setChapter', (_event, payload) => store.setChapter(requireText(payload?.id, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100), payload?.title))
-  ipcMain.handle('stable:agent:create', () => {
+  ipcMain.handle('stable:agent:design', (_event, payload) => {
+    const id = requireText(payload?.id, '对话 ID', 100)
+    if (!store.conversation(id)?.design) throw Error('此对话不是 Design 会话。')
+    const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
+    if (!design) throw Error('请选择生图参数。')
+    store.setSetting(`design:${id}`, design)
+    return agentState(id)
+  })
+  ipcMain.handle('stable:agent:create', (_event, payload) => {
+    const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
+    const catalog = design ? modelRegistry.publicCatalog() : null
+    const designModel = catalog ? require('./services/design-request.cjs').designChatModel(catalog) : null
     const id = store.createConversation()
+    if (design) {
+      store.setSetting(`design:${id}`, design)
+      if (designModel) store.updateConversationModel(id, designModel.id, catalog.items.map(item => item.id))
+    }
     return agentState(id)
   })
   ipcMain.handle('stable:agent:state', (_event, payload) => {
@@ -2326,7 +2344,16 @@ function registerIpc() {
     // Never trust a renderer-supplied bypass flag.
     payload = { ...payload, prompt: resolvedPrompt ?? payload?.prompt, clarificationResolved: resolvedPrompt !== null }
     const query = requireText(payload?.prompt, '消息')
-    const modelRoute = modelRegistry.resolve(conversation.modelId)
+    const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
+    const isDesignImage = item => /\.(png|jpe?g|webp)$/i.test(item?.path || item?.name || '')
+    if (design?.mode === 'preserve' && !(payload.attachments || []).some(isDesignImage) && !store.listMessages(conversationId).some(item => item.attachments?.some(isDesignImage))) throw Error('保留原图合成需要先添加原始图片。')
+    const designCatalog = conversation.design ? modelRegistry.publicCatalog() : null
+    const designModel = designCatalog ? require('./services/design-request.cjs').designChatModel(designCatalog) : null
+    const modelRoute = modelRegistry.resolve(designModel?.id || conversation.modelId)
+    if (designModel && conversation.modelId !== designModel.id) {
+      store.revokeConversationGrants(conversationId)
+      store.updateConversationModel(conversationId, designModel.id, designCatalog.items.map(item => item.id))
+    }
     const taskCli = wendingCli.forConversation(conversationId)
     if (taskCli.login.pending || ['code_sent', 'choose_account', 'choose_brand'].includes(taskCli.login.snapshot().phase)) throw new Error('请先完成或关闭此任务的问鼎登录表单。')
     const executionRunner = createHarnessRunner(conversationId)
@@ -2334,7 +2361,7 @@ function registerIpc() {
     const delivery=conversationLifecycle.begin(deliveryId,conversationId,{query,attachments:payload.attachments||[],references:payload.references||[]})
     if(delivery.duplicate){if(delivery.state==='completed')return {...agentState(conversationId),answer:''};throw Error('此条消息已有发送记录（'+delivery.state+'），请先核实历史，不会重复发送。')}
     const taskTurn = clarificationTurn(store.listMessages(conversationId), query, deliveryId)
-    const control = { taskTurn, deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
+    const control = { design, taskTurn, deliveryId, runner: executionRunner, reviewers: new Set(), modelRoute, phase: 'preparing', cancelled: false, steerRequests: new Map(), directions: [], steerInputs: [] }
     agentRunners.set(conversationId, control)
     taskAlerts.start(conversationId)
     try {
@@ -2360,7 +2387,7 @@ function registerIpc() {
       if (clarification.status !== 'ready') {
         store.db.exec('BEGIN IMMEDIATE')
         try {
-          const userMessage = store.addMessage(conversationId, 'user', query, undefined, payload.attachments)
+          const userMessage = store.addMessage(conversationId, 'user', query, require('./services/design-request.cjs').designMessageTrace(design), payload.attachments)
           conversationLifecycle.status(deliveryId, 'saved', { userMessageId: userMessage })
           const message = store.addMessage(conversationId, 'assistant', clarification.answer, [taskTurn, ...(clarification.trace || []), ...(clarification.status === 'cancelled' ? [{ id: 'runtime', runId: deliveryId, kind: 'status', title: '本轮已停止', status: 'cancelled', time: Date.now() }] : [])])
           conversationLifecycle.status(deliveryId, 'completed', { assistantMessageId: message })
@@ -2374,13 +2401,15 @@ function registerIpc() {
         return { answer: clarification.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
       }
       const executionPayload = clarification.payload
+      control.design = require('./services/design-request.cjs').validateDesignRequest(executionPayload.design)
       const taskQuery = executionPayload.prompt
       control.phase = 'preparing'
       const prepared = await prepareAgentMessage(executionPayload, conversationId, modelRoute, payload)
+      prepared.design = design
       const { attachments, selectedReferences, extractedAttachments, selectedData, selectedKnowledge, selectedSkills, selectedScripts } = prepared
       if (control.cancelled) throw new Error('任务已停止。')
       store.updateConversationContext(conversationId, conversation.capability, [])
-      commitAgentMessage(conversationId, query, prepared)
+      const currentMessage = commitAgentMessage(conversationId, query, prepared)
       conversationLifecycle.checkpoint(deliveryId, [taskTurn])
       if (automationIntent(taskQuery) && !attachments.length && !selectedReferences.length) {
         control.phase = 'proposal'
@@ -2400,7 +2429,10 @@ function registerIpc() {
       }
       if (control.cancelled) throw new Error('任务已停止。')
       control.phase = 'agent'
-      const result = await runAgent(taskQuery, conversationId, attachments, undefined, { manualSkillInvocation: true, data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute)
+      const designQuery = taskQuery + (control.design
+        ? require('./services/design-request.cjs').designInstruction(control.design)
+        : conversation.design ? '\n\n本轮为对话模式，不携带生图参数。此前生图参数仅适用于对应请求，不自动沿用；根据本轮用户消息处理。' : '')
+      const result = await runAgent(designQuery, conversationId, attachments, undefined, { manualSkillInvocation: true, data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute, currentMessage.id)
       if (result.status === 'waiting') {
         const card = result.clarification || await formatClarification(result.answer, askClarification, taskQuery)
         if (control.cancelled) throw new Error('任务已停止。')
@@ -2876,6 +2908,13 @@ function createWindow() {
 
 async function boot() {
   paths = { userData: app.getPath('userData'), workspace: path.join(app.getPath('userData'), 'workspace') }
+  let upgradeBackup
+  try {
+    if (app.isPackaged) upgradeBackup = require('./services/upgrade-backup.cjs').prepareUpgrade(paths.userData, app.getVersion())
+  } catch (error) {
+    dialog.showErrorBox('升级备份未完成', error.message + '\n原数据库尚未升级，请保留数据目录并检查磁盘空间。')
+    app.quit(); return
+  }
   mkdirSync(paths.workspace, { recursive: true })
   ensureGlobalInstructions(paths.userData)
   wendingCli = new WendingCliService({
@@ -2893,9 +2932,14 @@ async function boot() {
     historyStage = 'verify-recovery'
     finishLocalHistoryRecovery(historyRecovery, store)
     dataImport()
+    if (app.isPackaged) require('./services/upgrade-backup.cjs').commitUpgrade(paths.userData, app.getVersion(), upgradeBackup)
   } catch (error) {
     try { store?.close() } catch {}
     store = undefined
+    if (upgradeBackup) {
+      try { require('./services/upgrade-backup.cjs').restoreBackup(upgradeBackup, paths.userData); error.message += '\n升级前的数据已恢复。备份：' + upgradeBackup }
+      catch (restoreError) { error.message += '\n' + restoreError.message }
+    }
     const diagnostic = require('./services/database-diagnostics.cjs').recordDatabaseStartupFailure(paths.userData, error, historyStage)
     dialog.showErrorBox('历史记录加载失败', `${error instanceof Error ? error.message : '数据库无法加载。'}\n已停止启动，数据库和恢复包未被清空。数据库目录：\n${paths.userData}\n诊断记录：${diagnostic || '写入失败，请保留当前目录'}`)
     app.quit()
@@ -2966,7 +3010,7 @@ async function boot() {
     store.createAutomation({ title: '每周资料检查', prompt: '检查工作区资料是否完整，列出缺失和需要更新的内容。', schedule: { type: 'weekly', time: '09:00', weekdays: [1] } }, 'chat')
   }
   secrets = new SecretStore(paths.userData, safeStorage)
-  const cloudEnabled = process.env.STABLE_CLOUD_ENABLED === '1'
+  const cloudEnabled = require('./services/cloud-mode.cjs').isCloudEnabled({ isPackaged: app.isPackaged })
   if (cloudEnabled) {
     const cloudFetch = createCloudFetch({
       session: session.fromPartition('stable-cloud-network', { cache: false }),
@@ -3034,6 +3078,11 @@ async function boot() {
     catch { teamConnection = 'offline'; publishTeam() }
   })
   await mainWindow.loadFile(resourcePath('dist', 'index.html'), { query: process.env.STABLE_QA_PAGE ? { page: process.env.STABLE_QA_PAGE } : undefined })
+  const runtimePreloader = new (require('./services/claude-runtime-loader.cjs').ClaudeRuntimePreloader)({
+    executable: require('./services/claude-harness.cjs').runtimePath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+  })
+  runtimePreloader.schedule(() => Boolean(agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size))
+  app.once('before-quit', () => runtimePreloader.close())
   if (app.isPackaged) setTimeout(() => cleanupStaleInstalls(process.execPath), 5_000)
   updateController.start()
   automationTimer = setInterval(checkDueAutomations, 15_000)
@@ -3305,9 +3354,18 @@ async function boot() {
   }
 }
 
-if (updateHealthcheck) {
+if (upgradeMaintenance) {
   app.whenReady().then(() => {
+    require('./services/upgrade-maintenance.cjs').maintain({ args: process.argv, userData: app.getPath('userData'), version: app.getVersion() })
+    app.exit(0)
+  }).catch(error => {
+    require('./services/database-diagnostics.cjs').recordDatabaseStartupFailure(app.getPath('userData'), error, 'upgrade-maintenance')
+    app.exit(25)
+  })
+} else if (updateHealthcheck) {
+  app.whenReady().then(async () => {
     if (process.env.STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE === '1') return app.exit(4)
+    if (process.platform === 'win32') await require('./services/upgrade-maintenance.cjs').verifyRuntime({ packaged: app.isPackaged, resourcesPath: process.resourcesPath })
     const userData = app.getPath('userData')
     const healthRunner = new HarnessRunner({ userData, workspace: path.join(userData, 'workspace'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
     app.exit(existsSync(app.getAppPath()) && healthRunner.ready() ? 0 : 2)

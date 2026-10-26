@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.1.0",
+  "version": "1.11.0",
   "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
@@ -28,7 +28,8 @@
     "python:install": "uv pip install --target vendor/wending-cli/python/Lib/site-packages -r scripts/python-requirements.txt",
     "python:verify": "node scripts/verify-python-tools.cjs",
     "sandbox:setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-wsl-sandbox.ps1",
-    "test:wsl-integration": "node --test tests/wsl-sandbox-integration.cjs"
+    "test:wsl-integration": "node --test tests/wsl-sandbox-integration.cjs",
+    "runtime:git": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-git-runtime.ps1"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.308",
@@ -103,7 +104,8 @@
         "to": "runtime",
         "filter": [
           "node/**/*",
-          "powershell/**/*"
+          "powershell/**/*",
+          "git/**/*"
         ]
       },
       {
@@ -135,11 +137,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.1.0"
+      "output": "release-1.11.0"
     },
     "win": {
-      "icon": "build/stable_app_icon.png",
-      "artifactName": "Stable-Setup-1.1.0-${arch}.${ext}",
+      "icon": "build/stable_app_icon.ico",
+      "artifactName": "Stable-Setup-1.11.0-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -170,5 +172,5 @@
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.1.0"
+  "releaseVersion": "1.11.0"
 }

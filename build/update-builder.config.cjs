@@ -8,6 +8,7 @@ module.exports = {
   extraResources: [
     ...(pkg.build.extraResources || []).filter((item) => item?.to !== 'runtime'),
     { from: 'runtime/powershell', to: 'runtime/powershell', filter: ['**/*'] },
+    { from: 'runtime/git', to: 'runtime/git', filter: ['**/*'] },
   ],
   nsis: {
     ...pkg.build.nsis,

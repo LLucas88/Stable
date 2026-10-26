@@ -173,7 +173,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
       aborted(activeSignal)
       return checked.args
     }
-    entry = { name, signature, cwd: executionCwd, args: checked.args, input: { ...input }, snapshot: checked.snapshot }
+    entry = { name, signature, cwd: executionCwd, args: checked.args, input: { ...input }, snapshot: checked.snapshot, target: checked.target }
     calls.set(id, entry)
     onToolEvent({ id, name, args: checked.args, status: 'running' })
     entry.promise = (async () => {
@@ -212,7 +212,14 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     if (entry) {
       const timedOut = entry.name === 'Bash' && !signal?.aborted && input.tool_response?.interrupted === true
       calls.delete(id)
-      onToolEvent({ id, name: entry.name, args: entry.args, status: timedOut ? 'failed' : entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response })
+      let changedFile
+      if(WRITES.has(entry.name) && input.tool_response?.success!==false) {
+        try {
+          const before=JSON.parse(entry.snapshot),after=JSON.parse(await writeSnapshot(entry.target,entry.target,signal))
+          if(after.file && before.file?.at(-1)!==after.file.at(-1)) changedFile=entry.target
+        } catch { /* Unverifiable writes must not renew a retry budget. */ }
+      }
+      onToolEvent({ id, name: entry.name, args: entry.args, status: timedOut ? 'failed' : entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response, ...(changedFile?{changedFile}:{}) })
       if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: TIMEOUT_RECOVERY } }
     }
     return {}
