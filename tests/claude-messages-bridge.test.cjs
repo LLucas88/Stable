@@ -83,8 +83,16 @@ test('definitive provider rejections stop with a redacted real error while trans
       assert.equal(Boolean(fatal), ![429, 503].includes(status))
       assert.equal(bridge.lastProviderError.status, status)
       assert.equal(calls, 1)
-      assert.equal((await send()).status, 200)
-      assert.equal(bridge.lastProviderError, null)
+      const next = await send()
+      if ([429, 503].includes(status)) {
+        assert.equal(next.status, 200)
+        assert.equal(bridge.lastProviderError, null)
+        assert.equal(calls, 2)
+      } else {
+        assert.equal(next.status, status)
+        assert.match((await next.json()).error.message, /image rejected \[redacted\]/)
+        assert.equal(calls, 1)
+      }
     } finally { await bridge.close() }
   }
 })
@@ -469,6 +477,9 @@ test('second invalid tool response stops with a diagnostic instead of unlimited 
     assert.equal(values.at(-1).error.type, 'invalid_request_error')
     assert.match(fatal, /finish_reason=tool_calls.*arguments_bytes=4/)
     assert(!values.some(value => value.content_block?.type === 'tool_use'))
+    const retry = await fetch(bridge.baseURL + '/v1/messages', { method: 'POST', headers: { 'x-api-key': bridge.token }, body: JSON.stringify(request({ tools: [tool] })) })
+    assert.equal((await retry.json()).error.message, fatal)
+    assert.equal(requests, 2)
   } finally { await bridge.close() }
 })
 

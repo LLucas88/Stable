@@ -291,6 +291,13 @@ class ClaudeMessagesBridge {
       if (req.method !== 'POST' || !['/v1/messages', '/v1/messages/count_tokens'].includes(route)) throw Object.assign(new Error('不支持的模型接口。'), { status: 404 })
       const input = await readJSON(req)
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Claude 请求内容无效。'), { status: 400 })
+      // Native process cancellation is asynchronous. Reject requests arriving
+      // after a definitive failure locally, before they can reach the provider.
+      if (this.terminalError) {
+        res.writeHead(this.terminalError.status || 400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: this.terminalError.message } }))
+        return
+      }
       if (route === '/v1/messages/count_tokens') {
         // Validate content even here: unsupported blocks must never disappear.
         const estimate = this.tokenCounter.estimate(this.countBody(input))
@@ -321,6 +328,7 @@ class ClaudeMessagesBridge {
       if (input.output_config?.format?.type === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'result', schema: input.output_config.format.schema, strict: true } }
       let measuredRequest
       const fetchResponse = async feedback => {
+        if (this.terminalError) throw Object.assign(new Error(this.terminalError.message), { status: this.terminalError.status, requestRejected: true })
         const requestBody = { ...body, messages: feedback ? [...body.messages, { role: 'user', content: feedback }] : [...body.messages] }
         // A local request guard is definitive; never retry it as a provider 502.
         let guidance
@@ -367,12 +375,14 @@ class ClaudeMessagesBridge {
       const recoverContext = error.contextExceeded && ++this.contextRecoveries <= 3
       if (error.contextExceeded) this.onDiagnostic?.({ reasonCode: 'context_window_exceeded', attempt: this.contextRecoveries, recovering: Boolean(recoverContext), message })
       const fatal = exhausted || error.permanentProviderFailure || error.outputFailure || error.requestRejected || (error.providerRejected && !recoverContext && [400, 401, 402, 403, 404, 413, 422].includes(error.status))
+      const firstFatal = fatal && !this.terminalError
+      if (firstFatal) this.terminalError = { message, status: error.status }
       // The native SDK recognizes this Anthropic error and compacts retained
       // history. Keep the original provider error for UI/terminal failures.
       const payload = { type: 'error', error: { type: fatal || recoverContext ? 'invalid_request_error' : error.name === 'AbortError' ? 'api_error' : 'stable_provider_error', message: recoverContext ? `prompt is too long: ${message}` : message } }
       if (res.headersSent) { if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify(payload)}\n\n`); res.end() } }
       else if (!res.destroyed) { res.writeHead(error.status || 502, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)) }
-      if (fatal) this.onFatalError?.(message)
+      if (firstFatal) this.onFatalError?.(message)
     } finally { this.controllers.delete(controller) }
   }
   async respond(upstream, res, catalog, input, regenerate, outputBudget, countedRequest) {
