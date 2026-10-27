@@ -190,6 +190,9 @@ SectionEnd
     await lockDone
     assert.equal(result.error, undefined, result.error?.message)
     assert.equal(result.status, scenario.code, `${scenario.name}: ${result.stderr}`)
+    const progressFile = path.join(home, 'progress.log')
+    const progress = fs.existsSync(progressFile) ? fs.readFileSync(progressFile, 'utf8').trim().split(/\r?\n/).map(line => Number(line.split('|')[0])) : []
+    assert(progress.every((value, index) => index === 0 || value >= progress[index - 1]), `${scenario.name}: progress must not go backwards`)
     assert.equal(fs.existsSync(path.join(home, 'legacy-uninstall-called')), Boolean(scenario.fresh), `${scenario.name}: installer dispatch`)
     assert.equal(fs.readFileSync(sentinel, 'utf8'), 'preserve-user-data')
     if (scenario.fresh) {

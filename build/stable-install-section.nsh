@@ -146,7 +146,7 @@ stableStageDirReady:
     !insertmacro stableStopUpdate 10 "更新包校验失败，安装未完成。"
   ${endif}
 
-  !insertmacro stableReportProgress "72" "backup" "running" "0"
+  !insertmacro stableReportProgress "58" "backup" "running" "0"
   ClearErrors
   ExecWait '"$stableStageDir\${APP_EXECUTABLE_FILENAME}" --stable-upgrade-backup "--stable-upgrade-install=$INSTDIR" "--stable-upgrade-previous=$stablePreviousDir"' $R0
   ${if} ${Errors}

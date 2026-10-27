@@ -6,9 +6,16 @@ const argument = (args, name) => args.find(value => value.startsWith(name + '=')
 async function verifyRuntime(options) {
   require('./git-bash-runtime.cjs').verifyGitBash(options)
   const root = options.packaged ? options.resourcesPath : path.resolve(__dirname, '../..')
+  let node = path.join(root, 'runtime/node/node.exe')
+  // Lightweight updates retain Node in the persistent directory populated by
+  // the installer. Full installations still prefer their bundled runtime.
+  if (options.packaged && !fs.existsSync(node)) {
+    const persistent = process.env.STABLE_RUNTIME_HOME || (process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'stable-desktop/runtime-v1'))
+    if (persistent) node = path.join(persistent, 'node/node.exe')
+  }
   const { spawnSync } = require('node:child_process')
   const checks = [
-    [path.join(root, 'runtime/node/node.exe'), ['-e', "require('node:sqlite'); process.stdout.write('ok')"]],
+    [node, ['-e', "require('node:sqlite'); process.stdout.write('ok')"]],
     [path.join(root, 'runtime/powershell/pwsh.exe'), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', "$PSVersionTable.PSVersion.ToString()"]],
     [require('./claude-harness.cjs').runtimePath(options), ['--version']],
   ]

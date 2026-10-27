@@ -3391,7 +3391,12 @@ if (upgradeMaintenance) {
     const userData = app.getPath('userData')
     const healthRunner = new HarnessRunner({ userData, workspace: path.join(userData, 'workspace'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
     app.exit(existsSync(app.getAppPath()) && healthRunner.ready() ? 0 : 2)
-  }).catch(() => app.exit(3))
+  }).catch(error => {
+    if (process.env.STABLE_UPDATE_PROGRESS_FILE) {
+      try { writeFileSync(process.env.STABLE_UPDATE_PROGRESS_FILE + '.healthcheck.json', JSON.stringify({ status: 'failed', message: String(error.message || error) })) } catch {}
+    }
+    app.exit(3)
+  })
 } else {
   app.whenReady().then(boot)
   app.on('activate', () => { if (!mainWindow) void boot() })

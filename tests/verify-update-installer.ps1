@@ -386,6 +386,9 @@ function Wait-ForVisibleTerminal($context, [string]$progressFile, [string]$expec
       Write-Host "Observed visible terminal UI: $lastProgress."
       return $context
     }
+    if ($lastProgress -match '\|failed(?:_rolled_back)?\|') {
+      throw "The visible installer reached unexpected failure '$lastProgress'; expected '$expectedTerminal'."
+    }
     $processExitCode = Get-QaProcessExitCode $context.Process
     if ($null -ne $processExitCode) {
       throw "The visible installer exited before terminal progress; exitCode='$processExitCode', lastProgress='$lastProgress'."
