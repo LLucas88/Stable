@@ -5,7 +5,7 @@ const pkg=require('../package.json')
 test('public release tag and filenames may retain leading zero while updater compares canonical semver',async()=>{
   const requests=[]
   const tag='v'+pkg.releaseVersion, filename=`Stable-Update-${pkg.releaseVersion}-x64.exe`
-  const provider=new GitHubProvider(pkg.build.publish[0],{allowPrerelease:false,currentVersion:new semver.SemVer('0.91.7'),fullChangelog:false},{platform:'win32',executor:{request:async options=>{
+  const provider=new GitHubProvider({provider: 'github', owner: 'LLucas88', repo: 'Stable'},{allowPrerelease:false,currentVersion:new semver.SemVer('0.91.7'),fullChangelog:false},{platform:'win32',executor:{request:async options=>{
     const url=options.path;requests.push(url)
     if(url.endsWith('.atom'))return `<feed><entry><title>Stable ${tag}</title><link href="https://github.com/LLucas88/Stable/releases/tag/${tag}"/><content>Release notes</content></entry></feed>`
     if(url.endsWith('/latest'))return JSON.stringify({tag_name:tag})

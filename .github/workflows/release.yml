@@ -110,13 +110,15 @@ jobs:
           }
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --notes-file "docs/releases/$tag.md" --target $env:GITHUB_SHA
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --title "Stable $tag" --notes-file "docs/releases/$tag.md" --target $env:GITHUB_SHA --draft
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release $tag." }
           }
-          gh release upload $tag $assets --repo $env:GITHUB_REPOSITORY --clobber
+          gh release upload $tag $assets --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload one or more GitHub Release assets for $tag." }
           $uploaded = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name'
           if ($LASTEXITCODE -ne 0) { throw "Failed to inspect GitHub Release assets for $tag." }
           foreach ($asset in $assets) {
             if ($uploaded -notcontains (Split-Path -Leaf $asset)) { throw "Release asset was not uploaded: $asset" }
           }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish complete release.' }
