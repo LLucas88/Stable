@@ -1,4 +1,8 @@
 $ErrorActionPreference = 'Stop'
+# pwsh may pass its module paths into Windows PowerShell through npm.
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
+}
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $gitRoot = Join-Path $projectRoot 'runtime\git'
 $version = '2.56.0.3'
