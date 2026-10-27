@@ -42,9 +42,17 @@ async function verify(filename, asset) {
   if (asset.sha512 && await hashFile(filename, 'sha512', 'base64') !== asset.sha512) throw Error(`SHA512 mismatch: ${asset.name}`)
 }
 async function request(url) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'Stable-Cloud-Update-Sync' }, signal: AbortSignal.timeout(30 * 60 * 1000) })
-  if (!response.ok) throw Error(`Download HTTP ${response.status}`)
-  return response
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const controller = new AbortController()
+    const headerTimer = setTimeout(() => controller.abort(Error('Connection timed out')), 20_000)
+    try {
+      const response = await fetch(url, { headers: { 'User-Agent': 'Stable-Cloud-Update-Sync' }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30 * 60 * 1000)]) })
+      if (!response.ok) { await response.body?.cancel(); throw Error(`Download HTTP ${response.status}`) }
+      return response
+    } catch (error) {
+      if (attempt === 2) throw error
+    } finally { clearTimeout(headerTimer) }
+  }
 }
 async function sync(root) {
   const publicDir = path.join(root, 'public')
@@ -72,12 +80,19 @@ async function sync(root) {
       try { await verify(destination, asset); continue } catch (error) { if (error.code !== 'ENOENT') throw error }
       const staging = path.join(root, `${asset.name}.partial`)
       let bytes = 0
-      const limiter = new Transform({ transform(chunk, encoding, callback) { bytes += chunk.length; callback(bytes > asset.size ? Error('Download exceeded expected size') : null, chunk) } })
+      const controller = new AbortController()
+      let idleTimer
+      const touch = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => controller.abort(Error('Download stalled')), 45_000) }
+      const limiter = new Transform({ transform(chunk, encoding, callback) { touch(); bytes += chunk.length; callback(bytes > asset.size ? Error('Download exceeded expected size') : null, chunk) } })
       try {
-        await pipeline(Readable.fromWeb((await request(asset.browser_download_url)).body), limiter, createWriteStream(staging))
+        console.log(`Downloading ${asset.name} (${asset.size} bytes)`)
+        const response = await request(asset.browser_download_url)
+        touch()
+        await pipeline(Readable.fromWeb(response.body), limiter, createWriteStream(staging), { signal: controller.signal })
         await verify(staging, asset)
         await fs.rename(staging, destination)
-      } finally { await fs.rm(staging, { force: true }) }
+        console.log(`Verified ${asset.name}`)
+      } finally { clearTimeout(idleTimer); await fs.rm(staging, { force: true }) }
     }
     // Same-volume rename keeps the old manifest available until every artifact is ready.
     const pending = path.join(root, 'latest.pending')

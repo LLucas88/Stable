@@ -23,7 +23,7 @@ test('scheduled tasks replace overview and support manual, template and chat-con
   assert.match(preload, /stable:automations:proposal/)
 })
 
-test('GitHub Releases updater is configured for the Stable repository', () => {
+test('Cloud updater is configured for the Stable download service', () => {
   const app = readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const updater = readFileSync(path.join(__dirname, '..', 'desktop', 'services', 'updater.cjs'), 'utf8')
   const installer = readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8')
@@ -32,7 +32,7 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   // Electron 43 lazily downloads on require(); initialize once before parallel tests.
   assert.equal(pkg.scripts.pretest, 'node node_modules/electron/install.js')
-  assert.deepEqual(pkg.build.publish[0], { provider: 'github', owner: 'LLucas88', repo: 'Stable', releaseType: 'release' })
+  assert.deepEqual(pkg.build.publish[0], { provider: 'generic', url: 'https://116.62.83.85/updates/', useMultipleRangeRequest: false })
   assert.equal(pkg.build.directories.output, `release-${pkg.version}`)
   assert.equal(pkg.build.compression, 'normal')
   assert.equal(pkg.build.nsis.oneClick, false)
@@ -70,8 +70,9 @@ test('GitHub Releases updater is configured for the Stable repository', () => {
   assert.match(workflow, /workflow_dispatch/)
   assert.match(workflow, /stable-update-installer-evidence/)
   assert.match(workflow, /if: success\(\) && github\.event_name == 'push' && github\.ref_type == 'tag'/)
-  assert.match(workflow, /gh release upload \$tag \$assets .*--clobber/)
-  assert.match(workflow, /gh release upload \$tag \$assets .*--clobber[\s\S]+Failed to upload one or more GitHub Release assets/)
+  assert.doesNotMatch(workflow, /--clobber/)
+  assert.match(workflow, /gh release upload \$tag \$assets --repo/)
+  assert.match(workflow, /gh release upload \$tag \$assets --repo[\s\S]+Failed to upload one or more GitHub Release assets/)
   assert.match(workflow, /Stable-Update-\$releaseVersion-x64\.exe\.blockmap/)
   assert.match(workflow, /"\$updateOutput\/latest\.yml"/)
   assert.match(installerQa, /RUNNER_ENVIRONMENT -ne 'github-hosted'/)
