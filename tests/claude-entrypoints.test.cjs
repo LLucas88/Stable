@@ -118,7 +118,7 @@ function fixture(t) {
   }
   const cli = { environment: () => ({ SystemRoot: process.env.SystemRoot, PATH: process.env.PATH }), root: () => workspace, login: { pending: false, snapshot: () => ({}) } }
   const context = vm.createContext({
-    messagePredictions: { interrupt() {} }, chatgptAccount: undefined,
+    messagePredictions: { interrupt() {} }, conversationTitles: undefined, chatgptAccount: undefined,
     process, Buffer, randomUUID, path, mkdirSync: fs.mkdirSync, require: mainRequire,
     app: { isPackaged: false }, paths: { userData: root, workspace }, store, modelRegistry, HarnessRunner,
     wendingCli: { forConversation: () => cli }, agentRunners: new Map(), mainWindow: undefined,
@@ -139,6 +139,7 @@ function fixture(t) {
     isWendingCliPrompt: () => false, writeWorkflowOutput, activeWorkflowRun: undefined,
   })
   vm.runInContext([
+    sourceBetween('function scheduleConversationTitle(', '\nconst messagePredictions'),
     sourceBetween('function createHarnessRunner(', '\nfunction cleanFilename('),
     sourceBetween('function cleanFilename(', '\nfunction normalizeTheme('),
     sourceBetween('function requireText(', '\nasync function runStoredScript('),
@@ -196,20 +197,18 @@ test('unattended shared task entry receives only the automatic catalog without m
   assert.doesNotMatch(capture.first.message.content[0].text, /AUTO_ENTRYPOINT_BODY/)
 })
 
-test('real chat IPC preflight and task use default Claude SDK and existing local provider without Cloud', async t => {
+test('real simple chat IPC skips redundant preflight and uses the existing local provider without Cloud', async t => {
   const env = fixture(t)
   const id = env.store.createConversation({ modelId: env.profile.id, permissionMode: 'request' })
   const result = await env.handlers.get('stable:agent:run')(null, { conversationId: id, clientRequestId: 'vm-chat', prompt: '请解释 JavaScript 闭包并给一个简短示例' })
   assert.equal(result.answer, 'CHAT_VM_OK：本机聊天结果')
-  assert.equal(env.captures.length, 2)
-  await assertTextOnly(env.captures[0])
-  const execution = env.captures[1].options
+  assert.equal(env.captures.length, 1)
+  const execution = env.captures[0].options
   assert(execution.tools.includes('Read')); assert(execution.tools.includes('Agent')); assert(!execution.tools.includes('PowerShell'))
   assert.equal(execution.mcpServers.stable.name, 'stable')
   assert.equal(execution.persistSession, true)
   assert.equal(execution.resume, undefined)
-  assert.equal(env.upstream.length, 2)
-  assert.equal(env.upstream[0].tools, undefined)
+  assert.equal(env.upstream.length, 1)
   assert.equal(env.modelRegistry.cloudGateway, undefined)
   assert.equal(env.modelRegistry.resolve(env.profile.id).model.providerId, 'local-fixture')
   assert.equal(env.store.listMessages(id).at(-1).content, result.answer)

@@ -1,7 +1,7 @@
-export interface OutboxEntry<T> { id: string; payload: T; status: 'queued' | 'steering'; error?: string }
+export interface OutboxEntry<T> { id: string; payload: T; status: 'queued' | 'steering'; error?: string; uncertain?: boolean }
 export interface OutboxResult { accepted: boolean; continue: boolean; cancelled?: boolean; error?: string }
 
-// The composer owns this session-only outbox; switching conversations never changes its owner.
+// Restored queues always pause; in-flight submissions must never auto-replay.
 export class MessageOutbox<T> {
   private states = new Map<string, { items: OutboxEntry<T>[]; active?: OutboxEntry<T>; paused: boolean; steering: number }>()
   private callbacks: {
@@ -10,6 +10,20 @@ export class MessageOutbox<T> {
     changed: () => void
   }
   constructor(callbacks: MessageOutbox<T>['callbacks']) { this.callbacks = callbacks }
+  serialize() {
+    return Object.fromEntries([...this.states].map(([id, state]) => [id, {
+      items: [...(state.active ? [{ ...state.active, uncertain: true }] : []), ...state.items.map(item => ({ ...item, uncertain: item.uncertain || item.status === 'steering' }))],
+    }]))
+  }
+  restore(value: Record<string, { items: OutboxEntry<T>[] }>, allowedIds: string[]) {
+    for (const id of allowedIds) {
+      const items = value?.[id]?.items
+      if (!Array.isArray(items)) continue
+      this.states.set(id, { paused: true, steering: 0, items: items.slice(0, 21).filter(item => item && typeof item.id === 'string' && item.payload).map(item => ({
+        ...item, status: 'queued', ...(item.uncertain ? { error: '上次发送结果未知。请先核对会话，再编辑或删除此项；不会自动重发。' } : {}),
+      })) })
+    }
+  }
   private state(id: string) {
     if (!this.states.has(id)) this.states.set(id, { items: [], paused: false, steering: 0 })
     return this.states.get(id)!
@@ -46,7 +60,7 @@ export class MessageOutbox<T> {
   edit(id: string, entryId: string, payload: T) {
     const entry = this.state(id).items.find((item) => item.id === entryId)
     if (!entry || entry.status !== 'queued') return false
-    entry.id = crypto.randomUUID(); entry.payload = payload; entry.error = undefined
+    entry.id = crypto.randomUUID(); entry.payload = payload; entry.error = undefined; entry.uncertain = false
     this.callbacks.changed()
     return true
   }
@@ -63,7 +77,7 @@ export class MessageOutbox<T> {
   async steer(id: string, entryId: string) {
     const state = this.state(id)
     const entry = state.items.find((item) => item.id === entryId)
-    if (!entry || entry.status !== 'queued' || state.steering) return
+    if (!entry || entry.status !== 'queued' || state.steering || entry.uncertain) return
     if (!state.active) {
       state.items = [entry, ...state.items.filter((item) => item !== entry)]
       this.resume(id)
@@ -87,6 +101,7 @@ export class MessageOutbox<T> {
   private async drain(id: string) {
     const state = this.state(id)
     if (state.active || state.paused || state.steering || !state.items.length) return
+    if (state.items[0].uncertain) { state.paused = true; this.callbacks.changed(); return }
     const entry = state.items.shift()!
     state.active = entry
     this.callbacks.changed()

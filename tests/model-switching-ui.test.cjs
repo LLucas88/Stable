@@ -47,10 +47,16 @@ test('main process snapshots the selected route before asynchronous message prep
   const sendHandler = main.slice(main.indexOf("ipcMain.handle('stable:agent:run'"), main.indexOf("ipcMain.handle('stable:agent:cancel'"))
   const runAgent = main.slice(main.indexOf('async function runAgent'), main.indexOf('async function runWorkflow'))
 
-  assert.ok(sendHandler.indexOf('modelRegistry.resolve(conversation.modelId)') >= 0)
-  assert.ok(sendHandler.indexOf('modelRegistry.resolve(conversation.modelId)') < sendHandler.indexOf('await prepareAgentMessage'))
+  const route = sendHandler.match(/const modelRoute = modelRegistry\.resolve\(([^\n]+)\)/)
+  assert.ok(route)
+  assert.ok(route.index < sendHandler.indexOf('await prepareAgentMessage'))
+  // Execute the selected route expression, including Design's fixed override.
+  const resolve = new Function('designModel', 'conversation', 'modelRegistry', `return modelRegistry.resolve(${route[1]})`)
+  const registry = { resolve: id => ({ model: { id }, apiKey: 'fixture' }) }
+  assert.equal(resolve(null, { modelId: 'selected' }, registry).model.id, 'selected')
+  assert.equal(resolve({ id: 'design' }, { modelId: 'old' }, registry).model.id, 'design')
   assert.match(sendHandler, /executionRunner\.run\(proposalPrompt\(taskQuery\), modelRoute\.model, modelRoute\.apiKey/)
-  assert.match(sendHandler, /runAgent\([\s\S]*executionRunner, undefined, modelRoute\)/)
+  assert.match(sendHandler, /runAgent\([\s\S]*executionRunner, undefined, modelRoute, currentMessage.id\)/)
   assert.match(runAgent, /const modelRoute = modelRouteOverride \|\| modelRegistry\.resolve\(conversation\?\.modelId\)/)
   assert.match(runAgent, /reasoningSelection: normalizeReasoning/)
   assert.match(runAgent, /reviewer\.run\(ledger\.prompt\(request\), model, apiKey/)

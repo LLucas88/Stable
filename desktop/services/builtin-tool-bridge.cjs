@@ -6,7 +6,7 @@ const { HTML_PREVIEW_GUIDANCE } = require('./browser-command-route.cjs')
 const TOOL_SPECS = [
   {
     name: 'stable_image_generate',
-    description: '使用 GLM-Image 按文字描述生成一张新图片，自动复用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；不是截图、看图、数据绘图或原图编辑工具。无需切换聊天模型。输出保存为工作区 PNG；父目录须存在，不覆盖文件。同一轮相同参数复用结果，下载失败可用相同参数重试下载。生成按次收费，不要重复生成已经满足要求的图片。',
+    description: '使用 GLM-Image 按文字描述生成一张新图片，云端模式使用 Stable 账号，直连模式使用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；不是截图、看图、数据绘图或原图编辑工具。无需切换聊天模型。输出保存为工作区 PNG；父目录须存在，不覆盖文件。相同参数和输出路径可跨轮恢复结果，下载失败可重试下载；结果未知时停止重复生成。生成按次收费，不要重复生成已经满足要求的图片。',
     parameters: {
       prompt: { type: 'string', required: true, minLength: 1, maxLength: 1000, description: '图片内容、风格、构图和需要包含的文字，不超过1000字符' },
       output: { type: 'string', required: true, description: '工作区内新的 .png 文件路径，父目录必须已存在' },
@@ -74,7 +74,7 @@ function installBuiltinBridge(specs, defineTool, publish) {
         isConcurrencySafe: () => false,
         async execute(args, exec) {
           exec.signal.throwIfAborted()
-          const needsApproval = spec.name === 'stable_image_generate' || spec.name === 'stable_browser' && ['open', 'click', 'fill', 'select', 'key', 'drag'].includes(args.action)
+          const needsApproval = require('./builtin-tool-policy.cjs').requiresApproval(spec.name, args)
           if (needsApproval) {
             const approval = agent.ctx.get('approval')
             if (!approval) throw new Error('缺少浏览器操作审批服务。')

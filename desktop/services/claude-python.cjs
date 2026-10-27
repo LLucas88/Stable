@@ -10,6 +10,7 @@ function bundledPython(options = {}, platform = process.platform) {
 function pythonGuidance(file) {
   return file ? `本机内置 Python：${file.replaceAll('\\', '/')}。Bash 中使用带引号的完整路径并加 -I -X utf8；环境变量 STABLE_BUNDLED_PYTHON 指向同一解释器。不要猜测其他软件的 Python 安装位置或使用 WindowsApps 的 python/python3 占位程序。先读取真实表头；模块不可用时如实报告，并使用已提供且适用的 stable_excel 等工具，不自行安装依赖。
 -I 不自动把脚本目录加入模块搜索路径。同一任务确需拆分自己的模块时，在主脚本的本地 import 之前加入以下代码；仅导入自己创建或已确认的同目录模块，不添加整个工作区、当前 shell 目录或未知目录。不把本地模块导入失败误判成缺第三方包，也不要反复安装或更换解释器。
+脚本使用兼容 Python 3.11 的语法；f-string 内复杂或带转义的表达式先计算到变量。读写数据以 Path(__file__).resolve().parent 为基准，有依赖的生成、读取和校验顺序执行，不假设前一条 Bash 的工作目录会保留。完整读取表头并核验行宽、重复列、必需字段和 None；缺失值不等于 0。报告对比先统一统计周期与单位，校验实际绑定数据和渲染值，不用整份 HTML 源码中的 NaN/undefined 关键词代替输出检查。
 \`\`\`python
 import sys
 from pathlib import Path

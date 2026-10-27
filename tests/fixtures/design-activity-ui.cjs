@@ -66,9 +66,10 @@ async function main() {
     function Test(){const [value,setValue]=useState(initial); window.changeState=setValue;window.fixtureState=state;window.draft=draft;
       return <>{createPortal(<AccountDock state={value} onSelect={module=>{window.selectedSettingsModule=module}}/>,document.getElementById('settings'))}<AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/></>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<App/>);
+    window.remount=async()=>{reactRoot.render(null);await new Promise(r=>setTimeout(r,100));reactRoot.render(<App/>)};
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>'))
+  const fixtureHtml=path.join(app.getPath('userData'),'composer.html');fs.writeFileSync(fixtureHtml,'<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>');await win.loadFile(fixtureHtml)
   for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css','sidebar-layout.css','design-activity.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
@@ -147,6 +148,18 @@ async function main() {
   `)
   fs.writeFileSync(path.join(output,'design-dark.png'),(await win.webContents.capturePage()).toPNG())
   await run(`click('.rail-new-chat');await tick();expect(document.querySelector('[data-design="true"]'),'Design new chat lost mode');click('[aria-label="工作"]');await tick();click('.rail-new-chat');await tick();expect(!document.querySelector('[data-design="true"]'),'Ordinary new chat inherited Design')`)
+  await run(`
+    const pending=[];window.stable.agent.inspectAttachments=paths=>new Promise(resolve=>pending.push(()=>resolve(paths.map(path=>({name:path.split('/').at(-1),path,type:'png',size:100})))));
+    for(const name of ['first.png','second.png']){const data=new DataTransfer();data.items.add(new File(['fixture'],name,{type:'image/png'}));document.querySelector('.composer-drop-target').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:data}))}
+    await tick();expect(pending.length===2,'Both uploads must be pending');const sent=window.sent.length;
+    input('#agent-prompt','附件没有完成前不能发送');await tick();click('.composer-send');await tick();expect(window.sent.length===sent,'Sent while attachments still loading');
+    pending[0]();await tick();pending[1]();await tick();
+    expect(document.querySelector('[aria-label="预览图片 first.png"]')&&document.querySelector('[aria-label="预览图片 second.png"]'),'Concurrent upload lost one batch');
+    input('#agent-prompt','需要恢复的未发送草稿');await tick();
+  `)
+  await win.webContents.executeJavaScript('window.remount()');await new Promise(r=>setTimeout(r,3000))
+  await run(`expect(document.querySelector('#agent-prompt').value==='需要恢复的未发送草稿','Draft lost after remount');expect(document.querySelector('[aria-label="预览图片 first.png"]')&&document.querySelector('[aria-label="预览图片 second.png"]'),'Draft attachments lost');`)
+  fs.writeFileSync(path.join(output,'draft-recovered.png'),(await win.webContents.capturePage()).toPNG())
   console.log('DESIGN_ACTIVITY_UI_PASSED');win.destroy();app.exit(0)
 }
 main().catch(error=>{console.error('DESIGN_ACTIVITY_UI_FAILED',error.stack);win?.destroy();app.exit(1)})

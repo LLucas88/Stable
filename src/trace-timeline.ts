@@ -72,6 +72,7 @@ function toolCategory(item: AgentTraceItem): string {
   if (/^(read|read_file)$/.test(name)) return '读取文件'
   if (/^(glob|grep|toolsearch|stable_search)$/.test(name)) return '搜索'
   if (name === 'stable_browser') return '浏览器'
+  if (name === 'stable_fetch') return '网页抓取'
   if (/^(edit|edit_file|apply_patch|notebookedit)$/.test(name)) return '编辑文件'
   if (/^(write|write_file|create_file)$/.test(name)) return '写入文件'
   if (/^(move_file|rename_file)$/.test(name)) return '移动文件'
@@ -114,6 +115,7 @@ export function traceGroupLabel(items: AgentTraceItem[], runStatus: AgentTraceSt
   const phrases: Record<string, [string, string, string]> = {
     '读取文件': [`正在查看${target}`, `已查看${target}`, '查看文件'],
     '搜索': ['正在查找相关内容', '已查找相关内容', '查找内容'],
+    '网页抓取': ['正在读取网页正文', '已读取网页正文', '读取网页正文'],
     '编辑文件': [`正在修改${target}`, `已修改${target}`, '修改文件'],
     '写入文件': [`正在保存${target}`, `已保存${target}`, '保存文件'],
     '移动文件': ['正在调整文件位置', '文件位置已调整', '移动文件'],
@@ -144,7 +146,7 @@ export function traceToolInput(item: AgentTraceItem): string {
   return item.inputDetail || traceCommand(item)
 }
 export function traceToolIcon(item: AgentTraceItem): 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser' | 'tool' {
-  return ({'编辑文件':'edit','写入文件':'write','移动文件':'move','删除文件':'delete','运行命令':'terminal','修改表格':'table','读取文件':'read','搜索':'search','浏览器':'browser'} as Record<string, 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser'>)[toolCategory(item)] || 'tool'
+  return ({'编辑文件':'edit','写入文件':'write','移动文件':'move','删除文件':'delete','运行命令':'terminal','修改表格':'table','读取文件':'read','搜索':'search','浏览器':'browser','网页抓取':'browser'} as Record<string, 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser'>)[toolCategory(item)] || 'tool'
 }
 export function latestTraceTool(items: AgentTraceItem[]): AgentTraceItem | undefined {
   return items.filter(item => item.kind === 'tool').reduce<AgentTraceItem | undefined>((latest,item) => !latest || (item.startedAt ?? item.time) >= (latest.startedAt ?? latest.time) ? item : latest, undefined)

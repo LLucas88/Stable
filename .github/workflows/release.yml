@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified version after all checks pass
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -77,7 +82,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Preserve verified release installers
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@v4
         with:
           name: stable-verified-installers
@@ -90,7 +95,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Publish GitHub Release assets
-        if: success() && github.event_name == 'push' && github.ref_type == 'tag'
+        if: success() && ((github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish))
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -98,7 +103,7 @@ jobs:
           $version = node -p "require('./package.json').version"
           $releaseVersion = node -p "require('./package.json').releaseVersion || require('./package.json').version"
           $tag = "v$releaseVersion"
-          if ($env:GITHUB_EVENT_NAME -ne 'push' -or $env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag) {
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag)) {
             throw "Release tag $env:GITHUB_REF_NAME does not match package version $tag."
           }
           $output = "release-$version"
@@ -126,3 +131,23 @@ jobs:
           }
           gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Failed to publish complete release.' }
+      - name: Publish verified manual release to Stable Cloud
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: pwsh
+        env:
+          STABLE_UPDATE_PUBLISH_TOKEN: ${{ secrets.STABLE_UPDATE_PUBLISH_TOKEN }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $releaseVersion = node -p "require('./package.json').releaseVersion || require('./package.json').version"
+          $destination = New-Item -ItemType Directory -Path "cloud-release-assets"
+          $assets = @(
+            "release-$version/Stable-Setup-$releaseVersion-x64.exe",
+            "release-$version-update/Stable-Update-$releaseVersion-x64.exe",
+            "release-$version-update/Stable-Update-$releaseVersion-x64.exe.blockmap",
+            "release-$version-update/latest.yml"
+          )
+          foreach ($asset in $assets) {
+            New-Item -ItemType HardLink -Path (Join-Path $destination.FullName (Split-Path -Leaf $asset)) -Target (Resolve-Path $asset).Path | Out-Null
+          }
+          node scripts/publish-cloud-updates.cjs $destination.FullName "v$releaseVersion"
+          if ($LASTEXITCODE -ne 0) { throw 'Cloud publication failed; retry the standalone cloud publishing workflow for this release.' }

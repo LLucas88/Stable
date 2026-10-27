@@ -13,6 +13,19 @@ function setup() {
 }
 const success = { accepted: true, continue: true }
 
+test('restored outbox pauses pending work and never replays an unknown active delivery', async () => {
+  const original = setup(); original.queue.enqueue('a', 'active'); original.queue.enqueue('a', 'next')
+  const saved = JSON.parse(JSON.stringify(original.queue.serialize()))
+  const restored = setup(); restored.queue.restore(saved, ['a']); await tick()
+  assert.equal(restored.calls.length, 0); assert.equal(restored.queue.snapshot('a').paused, true)
+  restored.queue.resume('a'); await tick(); assert.equal(restored.calls.length, 0)
+  const first = restored.queue.snapshot('a').items[0]
+  assert.equal(first.uncertain, true); await restored.queue.steer('a', first.id); assert.equal(restored.calls.length, 0)
+  restored.queue.remove('a', first.id); restored.queue.resume('a')
+  assert.deepEqual(restored.calls, [['a', 'next']])
+  const other = setup(); other.queue.restore(saved, ['different']); assert.equal(other.queue.snapshot('a').items.length, 0)
+})
+
 test('stopping before acceptance removes only the cancelled dispatch and never resends it', async () => {
   const { queue, calls, runs } = setup()
   queue.enqueue('a', { text: 'cancel me', attachments: ['report.html'] })

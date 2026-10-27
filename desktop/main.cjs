@@ -108,6 +108,26 @@ let cloudStartup = Promise.resolve()
 let cloudGateway
 let runner
 const agentRunners = new Map()
+let conversationTitles
+function scheduleConversationTitle(id, route) {
+  if (!conversationTitles) {
+    const { ConversationTitles } = require('./services/conversation-titles.cjs')
+    conversationTitles = new ConversationTitles({ store, changed: publishAgentState, generate: async (prompt, route, signal) => {
+      if (signal.aborted) return null
+      const titleRunner = new HarnessRunner({ chatgpt: chatgptAccount, userData: paths.userData, workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })
+      if (!titleRunner.supportsTextOnly) return null
+      const cancel = () => titleRunner.cancel()
+      signal.addEventListener('abort', cancel, { once: true })
+      try {
+        const { model, apiKey } = route
+        const options = reasoningOptions(model).map(item => item.id)
+        return await titleRunner.run(prompt, { ...model, reasoningSelection: options.includes('none') ? 'none' : options.includes('low') ? 'low' : 'auto' }, apiKey, 15_000, () => {}, 'read-only', [], { cwd: paths.workspace, purpose: 'conversation-title', textOnly: true })
+      } finally { signal.removeEventListener('abort', cancel) }
+    } })
+  }
+  // Never await optional metadata on the task completion path.
+  void conversationTitles.request(id, route).catch(() => {})
+}
 const messagePredictions = new MessagePredictions({
   enabled: () => Boolean(store) && store.getSetting('messagePredictionsEnabled') !== false,
   snapshot: id => {
@@ -257,7 +277,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageApiKey: () => modelRegistry.resolveImageApiKey(store.conversation(context.conversationId)?.modelId), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageRoute: () => modelRegistry.resolveImageRoute(store.conversation(context.conversationId)?.modelId), imageJobStore: new (require('./services/image-job-store.cjs').ImageJobStore)(path.join(paths.userData, 'image-jobs', require('node:crypto').createHash('sha256').update(context.conversationId || 'standalone').digest('hex'))), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -2335,6 +2355,7 @@ function registerIpc() {
   ipcMain.handle('stable:agent:run', async (_event, payload) => {
     const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
     messagePredictions.interrupt()
+    conversationTitles?.interrupt()
     const conversation = store.conversation(conversationId)
     if (!conversation) throw new Error('找不到这个对话。')
     if (conversation.sourceType === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
@@ -2449,6 +2470,7 @@ function registerIpc() {
       try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, [taskTurn, ...result.trace.filter(item => item.id !== 'task-continuity')]);conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
       if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       publishAgentState(conversationId)
+      if (!result.status || result.status === 'completed') scheduleConversationTitle(conversationId, modelRoute)
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
       const journal=store.db.prepare('SELECT state FROM message_deliveries WHERE id=?').get(deliveryId)
@@ -3378,5 +3400,6 @@ app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => chatgptAccount?.dispose())
 app.on('before-quit', () => wendingCli?.dispose())
 app.on('before-quit', () => messagePredictions.invalidate())
+app.on('before-quit', () => conversationTitles?.close())
 let editorsFlushedForQuit=false,editorQuitPending=false
 app.on('before-quit', (event) => { if(!editorsFlushedForQuit&&htmlEditors.sessions.size){event.preventDefault();if(editorQuitPending)return;editorQuitPending=true;void htmlEditors.flushAll().then(()=>{editorsFlushedForQuit=true;editorQuitPending=false;app.quit()}).catch(async error=>{editorQuitPending=false;await dialog.showMessageBox({type:'error',message:'编辑内容尚未保存，已取消退出。',detail:error.message});mainWindow?.show()});return} browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })

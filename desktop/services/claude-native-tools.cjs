@@ -6,6 +6,7 @@ const { createHash } = require('node:crypto')
 const { resolveBoundPath } = require('./claude-tools.cjs')
 const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
 const { TOOL_WATCHDOG_MS } = require('./run-progress.cjs')
+const { toolFailureRecovery } = require('./tool-failure-recovery.cjs')
 // Leave time for native process cleanup and the SDK result before the run guard.
 const BASH_TIMEOUT_MS = TOOL_WATCHDOG_MS - 60_000
 const TIMEOUT_RECOVERY = '本次命令超时，整轮任务仍可继续。根据已返回的输出检查已完成步骤和文件；超时不代表已有写入已回滚。请缩小范围、拆分为可恢复步骤或改用其他可用方法继续，不要原样重复长命令；仍须遵守用户停止、审批和费用上限。'
@@ -232,6 +233,10 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
       onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, status: input.is_interrupt && !timedOut ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
       if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: TIMEOUT_RECOVERY } }
       if (entry.name === 'Bash' && !signal?.aborted && !input.is_interrupt && /bad substitution|unexpected EOF|syntax error near unexpected token/i.test(String(input.error || ''))) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: QUOTING_RECOVERY } }
+      if (!signal?.aborted && !input.is_interrupt) {
+        const guidance = toolFailureRecovery(entry.name, input.error)
+        if (guidance) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: guidance } }
+      }
     }
     return {}
   }

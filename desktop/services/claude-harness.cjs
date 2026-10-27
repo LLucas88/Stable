@@ -16,7 +16,7 @@ const { prepareClaudeMemory } = require('./claude-memory.cjs')
 const { loadClaudeExtensions } = require('./claude-extensions.cjs')
 const { createExtensionRuntime } = require('./claude-extension-runtime.cjs')
 const SDK_VERSION = '0.3.308'
-const TOOL_POLICY = 'native-bash-v19'
+const TOOL_POLICY = 'native-bash-v20'
 
 function runtimePath(options = {}) {
   if (options.executable) return options.executable
@@ -102,7 +102,9 @@ class ClaudeHarnessRunner {
       this.lastTimings = { ...timings }
       try { this.options.onTiming?.(name, timings[name]) } catch { /* Diagnostics cannot interrupt a task. */ }
     }
-    const prediction = session.purpose === 'message-prediction'
+    const titleGeneration = session.purpose === 'conversation-title'
+    const prediction = session.purpose === 'message-prediction' || titleGeneration
+    const metadataOutputTokens = titleGeneration ? 512 : 2048
     if (prediction) { session = { cwd: session.cwd, textOnly: true, purpose: session.purpose }; sandboxMode = 'read-only'; imageAttachments = [] }
     if (this.busy) throw new Error('已有任务正在运行。')
     if (!apiKey) throw new Error('请先配置模型服务。')
@@ -217,8 +219,8 @@ class ClaudeHarnessRunner {
       bridge = new (require('./claude-messages-bridge.cjs').ClaudeMessagesBridge)({ model, apiKey, fetchImpl: this.options.fetchImpl, chatgpt: this.options.chatgpt, onRequest: (...args) => {
         mark('firstRequest')
         if (prediction) {
-          if (++predictionRequests > 1) throw new Error('消息预测请求预算已耗尽。')
-          args[0].max_tokens = Math.min(args[0].max_tokens, 2048)
+          if (++predictionRequests > 1) throw new Error('后台元数据请求预算已耗尽。')
+          args[0].max_tokens = Math.min(args[0].max_tokens, metadataOutputTokens)
         }
         acceptTurn(); progress.touch(); return this.options.onModelRequest?.(...args)
       }, search: this.options.search,
@@ -246,7 +248,7 @@ class ClaudeHarnessRunner {
       const env = claudeEnvironment(baseEnvironment, home, bridge, memory.enabled, !session.textOnly)
       const python = !session.textOnly && networkAccess && sandboxMode !== 'read-only' ? require('./claude-python.cjs').bundledPython(this.options) : null
       if (python) env.STABLE_BUNDLED_PYTHON = python
-      if (prediction) env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '2048'
+      if (prediction) env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = String(metadataOutputTokens)
       this.builtins = session.textOnly ? null : this.options.builtinTools?.({ workspace, writableRoots, conversationId: session.key, networkAccess })
       const onToolEvent = event => {
         if (event.status === 'running') progress.start(event.id, event.args?.command || event.name)
@@ -275,16 +277,19 @@ class ClaudeHarnessRunner {
       const review = {}
       const server = session.textOnly ? null : require('./claude-tools.cjs').createClaudeTools({ sdk, workspace, writableRoots, readableRoots, sandboxMode, networkAccess, review,
         builtinTools: this.builtins, trustedCli: this.options.trustedCli, signal: this.abortController.signal, requestApproval: this.requestApproval,
-        search: (args, signal) => bridge.runSearch(args, signal), onToolEvent })
-      const instructions = prediction ? require('./message-predictions.cjs').PREDICTION_INSTRUCTIONS : [
+        search: (args, signal) => bridge.runSearch(args, signal), webFetch: (args, signal) => bridge.runFetch(args, signal), onToolEvent })
+      const instructions = titleGeneration ? require('./conversation-titles.cjs').TITLE_INSTRUCTIONS : prediction ? require('./message-predictions.cjs').PREDICTION_INSTRUCTIONS : [
         '已启用原生 ToolSearch。需要的工具不在当前列表时，先用 ToolSearch 查询工具名称或用途；获得工具定义后再调用。搜索工具不会授予调用权限，命令和写入仍需审批。',
         '你在 Stable 中执行用户任务。优先使用 Claude Agent SDK 原生工具：Bash 执行终端命令，Read 读取文件，Write 新建或写入，Edit 精确编辑，Glob 查找文件，Grep 搜索内容，NotebookEdit 编辑笔记本，Agent 委派子任务。原生文件工具遵守目录边界；Bash 遵守审批，但本机命令不受目录隔离。仅用 Stable 工具补充原生工具缺少或当前环境无法提供的能力。模型服务由 Stable 用户选择，不要假设你连接的是 Anthropic 模型。',
         session.globalInstructions, CLARIFICATION_GUIDANCE, EXECUTION_GUIDANCE, MANUAL_SKILL_POLICY, skillOptions.instruction, memory.instruction, HTML_PREVIEW_GUIDANCE,
         !session.textOnly && networkAccess && sandboxMode !== 'read-only' ? require('./claude-python.cjs').pythonGuidance(python) : '',
         '生成脚本、HTML、CSS 或包含模板变量的长文本优先用原生 Write / Edit，再用 Bash 执行脚本文件。避免多层引号的 node -e、echo 或大段 shell 拼接；Bash 会展开双引号中的 $、${...} 和反引号。命令失败后先检查已有文件，避免重复追加；所有写入和后续命令仍遵守审批。',
+        'Edit 必须使用含足够上下文的唯一 old_string，不能只匹配重复的函数结尾；不要为了消除匹配歧义盲目使用 replace_all。',
         require('./claude-browser-evidence.cjs').REVIEW_GUIDANCE,
+        !session.textOnly && networkAccess ? require('./deepseek-web.cjs').WEB_GUIDANCE : '',
         !session.textOnly && networkAccess && sandboxMode !== 'read-only' && this.builtins ? require('./image-generation.cjs').IMAGE_GUIDANCE : '',
         '浏览器截图的 screenshotPath 是已保存的真实文件，可直接用 Read 回看；SDK 自动标注的 tool-results/mcp-stable-blob 名称不保证对应磁盘文件，不要猜路径。历史截图可能改为文件索引，先读取索引提供的实际路径，不为找回旧画面重新截图。截图显示后如已能判断问题，不再用命令读取同一张图片。源码修改并重新打开后使用新回包的 ref；失效引用先 read 刷新再定位，不重复旧 ref。',
+        '浏览器 read、scroll、resize、click、select 等返回 controls 的操作都会更新引用；后续动作只用最近一次 controls 中的 ref，不能复用滚动前的 ref。同一标签页的读取和交互顺序执行。截图和 audit 不更新 ref。',
         '执行效率：展示检查先打开页面，用 imageInventory 获取浏览器已解码的图片尺寸（含隐藏画廊图片），不先用命令解析内嵌图片或逐个探测运行时。先结合桌面/窄屏 audit 和必要截图定位共因，发现同根因后集中修复，不先为每个状态重复拍摄修改前画面；修复后再覆盖受影响的短图、长图、画廊状态和交互；不要把同一容器的问题只修到当前选中图片。图片容器留白候选须复核到底，优先消除容器多余高度，不用模糊背景、重复图片、装饰填充、缩字或裁图掩盖问题。已明确且不依赖中间判断的步骤用 stable_browser action=batch 合并（最多12步、4张截图），例如 resize→click已观察的唯一label→scroll→screenshot→audit。批量回包按 batchStep 逐项检查，更新 reviewUpdates；不重复未变化的已通过项。源码只集中读取相关结构/样式/交互并排除内嵌图片数据，一次完成同类修复。所有用户要求核对完再收尾。',
         this.options.trustedCli ? require('./wending-cli.cjs').wendingCliAgentInstruction() + '\n本分支通过 stable_wending 的 args 数组调用上述 CLI，优先使用该结构化工具调用业务 CLI。' : '',
         '命令通过 SDK 原生 Bash 在本机执行；Windows 下使用 Git Bash 语法和 /c/...、/d/... 路径，原生文件工具使用 Windows 路径。Bash 不提供 WSL2 隔离，审批通过后可能访问工作区以外的文件和网络。使用 timeout 参数（毫秒），不使用 stable_exec、cwd 或 timeoutMs 参数。禁止后台运行；任务停止前等待命令完成。当前模型服务的联网搜索使用 stable_search；共享浏览器交互使用 stable_browser；文档任务优先使用当前授权且适用的 Skill，stable_excel 等工具保留备用。只可读取当前手动选择或自动授权目录中的技能；禁止通过 shell 安装 Skill。',

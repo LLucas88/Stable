@@ -3,7 +3,7 @@
 const http = require('node:http')
 const fs = require('node:fs')
 const { randomUUID, createHash } = require('node:crypto')
-const { runProviderSearch, readSSE, chatURL } = require('./model-provider.cjs')
+const { runProviderSearch, runProviderFetch, readSSE, chatURL } = require('./model-provider.cjs')
 const { modelLimits } = require('./model-limits.cjs')
 const { reasoningParameters } = require('./model-reasoning.cjs')
 const { WAIT_MARKER } = require('./clarification.cjs')
@@ -276,6 +276,10 @@ class ClaudeMessagesBridge {
   async runSearch(request, signal) {
     if (this.textOnly) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
     return runProviderSearch.call(this, request, signal)
+  }
+  async runFetch(request, signal) {
+    if (this.textOnly) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
+    return runProviderFetch.call(this, request, signal)
   }
   async handle(req, res) {
     const controller = new AbortController(); this.controllers.add(controller)

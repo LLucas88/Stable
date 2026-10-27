@@ -6,6 +6,7 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { normalizeWorkflowGraph } = require('./workflow-graph.cjs')
 const { computeNextRun, normalizeAutomationInput } = require('./automation.cjs')
+const { localTitle, needsTitleModel } = require('./conversation-titles.cjs')
 
 const DEFAULT_IDENTITY = 'Stable 是你的本地智能工作助理，擅长数据分析、知识管理、Skills 调用和自动化工作流。它优先保护本地数据，执行涉及文件修改、脚本运行或外部请求的操作前会明确说明，并保留可追溯的运行记录。'
 const LEGACY_MODEL_PROFILE_ID = 'legacy-default-model'
@@ -149,6 +150,8 @@ class StableStore {
       );
     `)
     const conversationColumns = this.db.prepare('PRAGMA table_info(conversations)').all()
+    // Existing/imported titles are preserved; only explicitly new conversations opt in.
+    if (!conversationColumns.some((column) => column.name === 'auto_title_state')) this.db.exec("ALTER TABLE conversations ADD COLUMN auto_title_state TEXT NOT NULL DEFAULT 'preserved'")
     if (!conversationColumns.some((column) => column.name === 'collaboration')) this.db.exec('ALTER TABLE conversations ADD COLUMN collaboration INTEGER NOT NULL DEFAULT 0')
     if (!conversationColumns.some((column) => column.name === 'permission_mode')) this.db.exec("ALTER TABLE conversations ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'request'")
     if (!conversationColumns.some((column) => column.name === 'model_id')) this.db.exec("ALTER TABLE conversations ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
@@ -247,6 +250,7 @@ class StableStore {
       const hasMessages = Boolean(this.db.prepare('SELECT id FROM messages LIMIT 1').get())
       this.db.prepare('INSERT INTO conversations(id,title,capability,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?)')
         .run(id, hasMessages ? '历史对话 1' : '新对话', hasMessages ? 'auto' : (this.getSetting('defaultReasoning') || 'high'), '[]', now, now)
+      if (!hasMessages) this.db.prepare("UPDATE conversations SET auto_title_state='pending' WHERE id=?").run(id)
       first = { id }
     }
     this.db.prepare("UPDATE messages SET conversation_id=? WHERE conversation_id IS NULL OR conversation_id=''").run(first.id)
@@ -299,6 +303,7 @@ class StableStore {
     const modelId = this.modelProfile(requestedModelId)?.id || this.modelCatalog().defaultModelId
     this.db.prepare('INSERT INTO conversations(id,title,capability,permission_mode,model_id,data_ids_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
       .run(id, title, this.getSetting('defaultReasoning') || 'auto', permissionMode, modelId, '[]', now, now)
+    this.db.prepare('UPDATE conversations SET auto_title_state=? WHERE id=?').run(options.title ? 'manual' : 'pending', id)
     if (options.select !== false) this.setSetting('activeConversationId', id)
     return id
   }
@@ -310,8 +315,27 @@ class StableStore {
   }
 
   renameConversation(id, title) {
-    this.db.prepare('UPDATE conversations SET title=?,updated_at=? WHERE id=?').run(title, new Date().toISOString(), id)
+    this.db.prepare("UPDATE conversations SET title=?,auto_title_state='manual',updated_at=? WHERE id=?").run(title, new Date().toISOString(), id)
   }
+
+  claimAutomaticTitle(id) {
+    const row = this.db.prepare("SELECT title,model_id FROM conversations WHERE id=? AND auto_title_state='pending'").get(id)
+    if (!row || this.conversationContext(id).deletionState === 'pending') return null
+    const source = this.db.prepare("SELECT id,content,attachments_json FROM messages WHERE conversation_id=? AND role='user' ORDER BY rowid LIMIT 1").get(id)
+    if (!source) return null
+    if (!needsTitleModel(source.content, JSON.parse(source.attachments_json || '[]'))) { this.db.prepare("UPDATE conversations SET auto_title_state='local' WHERE id=? AND auto_title_state='pending'").run(id); return null }
+    const result = this.db.prepare("UPDATE conversations SET auto_title_state='generating' WHERE id=? AND auto_title_state='pending'").run(id)
+    return result.changes ? { ...source, expectedTitle: row.title, modelId: row.model_id } : null
+  }
+
+  completeAutomaticTitle(id, source, title) {
+    if (!this.conversation(id) || this.conversationContext(id).deletionState === 'pending') return false
+    // A same-text manual rename must also win. Do not reorder the conversation for metadata.
+    return Boolean(this.db.prepare("UPDATE conversations SET title=?,auto_title_state='generated' WHERE id=? AND title=? AND model_id=? AND auto_title_state='generating' AND EXISTS(SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND content=?)")
+      .run(title, id, source.expectedTitle, source.modelId, source.id, id, source.content).changes)
+  }
+
+  finishAutomaticTitle(id) { this.db.prepare("UPDATE conversations SET auto_title_state='local' WHERE id=? AND auto_title_state='generating'").run(id) }
 
   setConversationPinned(id, pinned) {
     if (!this.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)) throw new Error('找不到这个对话。')
@@ -713,8 +737,8 @@ class StableStore {
       .run(item.id, conversationId, role, content, trace?.length ? JSON.stringify(trace) : null, messageAttachments.length ? JSON.stringify(messageAttachments) : null, proposal ? JSON.stringify(proposal) : null, item.createdAt)
     const conversation = this.conversation(conversationId)
     const priorUserMessages = role === 'user' ? Number(this.db.prepare("SELECT COUNT(*) AS total FROM messages WHERE conversation_id=? AND role='user' AND id<>?").get(conversationId, item.id)?.total || 0) : 1
-    const generatedTitle = role === 'user' && priorUserMessages === 0
-      ? String(content).replace(/\s+/g, ' ').trim().slice(0, 32) || '新对话'
+    const generatedTitle = role === 'user' && priorUserMessages === 0 && this.db.prepare('SELECT auto_title_state FROM conversations WHERE id=?').get(conversationId)?.auto_title_state === 'pending'
+      ? localTitle(content, messageAttachments)
       : conversation?.title
     this.db.prepare('UPDATE conversations SET title=?,updated_at=? WHERE id=?').run(generatedTitle || '新对话', item.createdAt, conversationId)
     return item

@@ -70,7 +70,7 @@ test('Cloud updater is configured for the Stable download service', () => {
   assert.match(workflow, /GITHUB_EVENT_NAME[\s\S]+GITHUB_REF_TYPE[\s\S]+GITHUB_REF_NAME[\s\S]+does not match package version/)
   assert.match(workflow, /workflow_dispatch/)
   assert.match(workflow, /stable-update-installer-evidence/)
-  assert.match(workflow, /if: success\(\) && github\.event_name == 'push' && github\.ref_type == 'tag'/)
+  assert.match(workflow, /if: success\(\) && \(\(github\.event_name == 'push' && github\.ref_type == 'tag'\) \|\| \(github\.event_name == 'workflow_dispatch' && inputs\.publish\)\)/)
   assert.doesNotMatch(workflow, /--clobber/)
   assert.match(workflow, /gh release upload \$tag \$assets --repo/)
   assert.match(workflow, /gh release upload \$tag \$assets --repo[\s\S]+Failed to upload one or more GitHub Release assets/)

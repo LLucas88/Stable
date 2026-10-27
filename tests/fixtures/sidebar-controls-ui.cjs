@@ -94,16 +94,21 @@ async function main() {
   const { root: dom } = await win.webContents.debugger.sendCommand('DOM.getDocument')
   const { nodeId: heading } = await win.webContents.debugger.sendCommand('DOM.querySelector', { nodeId: dom.nodeId, selector: '.sidebar-project-heading' })
   const actions = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('#tasks .sidebar-project-heading')).map(row => Array.from(row.querySelectorAll('.sidebar-project-more,.sidebar-project-new')).map(el => getComputedStyle(el).opacity))`)
+  async function waitActions(expected, label) {
+    const deadline = Date.now() + 4000
+    let last
+    do {
+      last = await actions()
+      if (expected(last)) return last
+      await new Promise(resolve => setTimeout(resolve, 50))
+    } while (Date.now() < deadline)
+    throw Error(label + ': ' + JSON.stringify(last))
+  }
   if ((await actions()).flat().some(value => value !== '0')) throw Error('Idle project actions visible')
   await win.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: heading, forcedPseudoClasses: ['hover'] })
-  await new Promise(resolve => setTimeout(resolve, 220))
-  await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
-  const hovered = await actions()
-  if (hovered[0].some(value => value !== '1') || hovered[1].some(value => value !== '0')) throw Error('Hover is not scoped to one project row: ' + JSON.stringify(hovered))
+  await waitActions(rows => rows[0].every(value => value === '1') && rows[1].every(value => value === '0'), 'Hover is not scoped to one project row')
   await win.webContents.debugger.sendCommand('CSS.forcePseudoState', { nodeId: heading, forcedPseudoClasses: [] })
-  await new Promise(resolve => setTimeout(resolve, 220))
-  await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
-  if ((await actions()).flat().some(value => value !== '0')) throw Error('Actions remain after hover')
+  await waitActions(rows => rows.flat().every(value => value === '0'), 'Actions remain after hover')
   win.webContents.debugger.detach()
   await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   const typography=await win.webContents.executeJavaScript('(()=>{ const style=selector=>getComputedStyle(document.querySelector(selector)); const answer=style(".assistant-answer .markdown-body"),input=style("#agent-prompt"); return {bodyWeight:style("body").fontWeight,answerColor:answer.color,answerSize:answer.fontSize,answerFamily:answer.fontFamily,inputMinHeight:input.minHeight,inputOverflow:input.overflowY,headerBorder:style(".conversation-topbar").borderBottomWidth}; })()')

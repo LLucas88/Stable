@@ -6,6 +6,7 @@ const { ModelRegistry } = require('../desktop/services/model-registry.cjs')
 const { BuiltinTools } = require('../desktop/services/builtin-tools.cjs')
 const { createClaudeTools } = require('../desktop/services/claude-tools.cjs')
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64')
+const { ImageJobStore } = require('../desktop/services/image-job-store.cjs')
 const nativeImage = { createFromBuffer: bytes => ({ isEmpty: () => !bytes.equals(png), getSize: () => ({ width: 1, height: 1 }), toPNG: () => png }) }
 function fixture(t, options = {}) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-image-'))
@@ -123,4 +124,44 @@ test('Claude tool uses existing approvals; read-only and offline tasks do not ad
   await assert.rejects(builtins.execute({requestId:'1',name:'stable_image_generate',args:x.args,approved:true},'workspace-write'),/网络/)
   await assert.rejects(builtins.execute({requestId:'2',name:'stable_image_generate',args:x.args,approved:true},'read-only'),/只读/)
   builtins.dispose()
+})
+
+test('successful generation survives a new runner and retries only download', async t => {
+  const x = fixture(t); const directory = path.join(x.workspace, 'receipts'); let requests = 0, fail = true
+  const options = { nativeImage, resolveApiKey: () => 'fixture', fetchImpl: async () => { requests++; return Response.json({ data: [{ url: 'https://cdn.example/image' }] }) }, download: async () => { if (fail) throw Error('offline'); return png } }
+  const run = () => createImageGenerator({ ...options, jobStore: new ImageJobStore(directory) })({ workspace: x.workspace, args: x.args })
+  await assert.rejects(run(), /只重试下载/); fail = false
+  assert.equal((await run()).mimeType, 'image/png'); assert.equal(requests, 1)
+  assert.equal((await run()).reused, true); assert.equal(requests, 1)
+  fs.writeFileSync(path.join(x.workspace, 'bird.png'), 'changed')
+  await assert.rejects(run(), /发生变化/); assert.equal(requests, 1)
+})
+
+test('unknown direct submission and damaged receipts fail closed across runners', async t => {
+  const x = fixture(t); const directory = path.join(x.workspace, 'receipts'); let requests = 0
+  const options = { nativeImage, resolveApiKey: () => 'fixture', fetchImpl: async () => { requests++; throw Error('network') } }
+  const run = () => createImageGenerator({ ...options, jobStore: new ImageJobStore(directory) })({ workspace: x.workspace, args: x.args })
+  await assert.rejects(run(), /结果未确认/); await assert.rejects(run(), /结果未知/); assert.equal(requests, 1)
+  fs.writeFileSync(path.join(directory, fs.readdirSync(directory)[0]), '{broken')
+  await assert.rejects(run(), /恢复记录/); assert.equal(requests, 1)
+})
+
+test('protected image destinations reject canonical junction targets before generation', async t => {
+  const x = fixture(t); fs.mkdirSync(path.join(x.workspace, '.git'))
+  fs.symlinkSync(path.join(x.workspace, '.git'), path.join(x.workspace, 'alias'), process.platform === 'win32' ? 'junction' : 'dir')
+  await assert.rejects(x.invoke({ ...x.args, output: 'alias/image.png' }), /配置目录/)
+  assert.equal(x.calls.length, 0); assert.equal(fs.existsSync(path.join(x.workspace, '.git/image.png')), false)
+})
+
+test('fresh cloud profile sends only Stable credentials to cloud image route', async t => {
+  const x = fixture(t), calls = []
+  const { CloudGatewayProxy } = require('../desktop/services/cloud-gateway-proxy.cjs')
+  const gateway = new CloudGatewayProxy({ account: { baseURL: 'https://gateway.example', token: () => 'device-test', publicState: () => ({ status: 'authenticated', account: { id: 'account-a' }, models: [{ id: 'glm-5.3-flashx' }, { id: 'glm-image' }] }) }, fetchImpl: async (url, options) => { calls.push({ url, options }); return Response.json({ data: [{ url: 'https://cdn.example/image' }] }) } })
+  const registry = new ModelRegistry({ getSetting: () => null, modelCatalog: () => ({ items: [] }) }, { get: () => { throw Error('must not read local keys') } }, gateway)
+  const run = createImageGenerator({ resolveRoute: () => registry.resolveImageRoute(), nativeImage, download: async () => png })
+  await run({ workspace: x.workspace, args: x.args })
+  assert.equal(calls[0].url, 'https://gateway.example/v1/images/generations')
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer device-test')
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^image-[a-f0-9]{64}$/)
+  assert(!registry.publicCatalog().items.some(item => item.id === 'glm-image'))
 })

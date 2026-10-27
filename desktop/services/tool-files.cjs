@@ -25,6 +25,8 @@ function toolFile(workspace, value, { output = false } = {}) {
   if (output) {
     const parent = fs.realpathSync(path.dirname(target))
     if (parent !== root && !inside(root, parent)) throw new Error('输出目录链接指向工作区外。')
+    const protectedNames = new Set(['.git', '.codex', '.claude', '.agents'])
+    if ([relative, path.relative(root, path.join(parent, path.basename(target)))].some(value => value.split(/[\\/]/).some(part => protectedNames.has(part.toLowerCase())))) throw new Error('不能向配置目录写入文件。')
     try { fs.lstatSync(target); throw new Error('输出文件已存在，请另存新文件，原件不会被覆盖。') }
     catch (error) { if (error.code !== 'ENOENT') throw error }
     return path.join(parent, path.basename(target))

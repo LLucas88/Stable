@@ -78,7 +78,7 @@ async function run() {
     if (event.kind === 'approval' && event.status === 'running') { approvals++; runner.answerApproval(event.requestId, true) } // fixture only
   }, 'workspace-write')
   assert.equal(answer, 'BUILTIN_AGENT_OK')
-  assert.equal(step, 8); assert.equal(approvals, 3)
+    assert.equal(step, 8); assert.equal(approvals, 4)
   assert.ok(events.some(e => e.title === '使用工具 stable_excel'))
   assert.ok(events.some(e => e.title === '使用工具 stable_browser'))
   assert.equal(electron.BrowserWindow.getAllWindows().length, 0, 'run completion must close its hidden browser')
@@ -111,7 +111,7 @@ async function run() {
   const stage = path.join(root, 'stage'), resources = path.join(root, 'resources')
   fs.mkdirSync(path.join(stage, 'desktop/services'), { recursive: true })
   fs.mkdirSync(resources)
-  for (const filename of ['builtin-tools.cjs', 'image-generation.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs', 'local-html-preview.cjs', 'markdown-pages.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
+  for (const filename of ['builtin-tools.cjs', 'builtin-tool-policy.cjs', 'image-generation.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs', 'local-html-preview.cjs', 'markdown-pages.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
   fs.cpSync(path.join(__dirname, '../../vendor/agent-tools'), path.join(resources, 'agent-tools'), { recursive: true })
   const archive = path.join(resources, 'app.asar')
   await asar.createPackage(stage, archive)
@@ -119,7 +119,7 @@ async function run() {
   const packaged = new PackagedTools({ workspace: root, electron, packaged: true, resourcesPath: resources })
   try {
     assert.equal(packaged.dependencyRoot, path.join(resources, 'agent-tools'))
-    const created = await packaged.execute({ requestId: 'package-xlsx', name: 'stable_excel', args: { action: 'create', output: '安装布局.xlsx', sheets: [{ name: '验证', rows: [['安装布局', 1]] }] } }, 'workspace-write')
+    const created = await packaged.execute({ requestId: 'package-xlsx', name: 'stable_excel', approved: true, args: { action: 'create', output: '安装布局.xlsx', sheets: [{ name: '验证', rows: [['安装布局', 1]] }] } }, 'workspace-write')
     assert.equal(created.verified, true)
     await assert.rejects(packaged.execute({ requestId: 'package-unapproved', name: 'stable_browser', args: { action: 'open', url: `${origin}/page` } }, 'workspace-write'), /单次审批/)
     const page = await packaged.execute({ requestId: 'package-browser', name: 'stable_browser', approved: true, args: { action: 'open', url: `${origin}/page` } }, 'workspace-write')

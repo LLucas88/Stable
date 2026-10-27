@@ -17,7 +17,11 @@ async function main(){
  const firstRef=snap.controls.find(c=>c.tag==='select'&&c.label.includes('类别')).ref
  // Read intentionally revokes the old snapshot. Do not repair stale refs by guessing selectors.
  snap=await service.execute('filters',{action:'read'})
- await assert.rejects(service.execute('filters',{action:'select',ref:firstRef,value:'drink'}),/失效/)
+ await assert.rejects(service.execute('filters',{action:'select',ref:firstRef,value:'drink'}),/最近一次 controls/)
+ assert.equal(await tab.view.webContents.executeJavaScript('document.querySelector("#category").value'),'all','stale ref must not perform the selection')
+ const beforeScroll=snap.controls.find(c=>c.tag==='select'&&c.label.includes('类别')).ref
+ snap=await service.execute('filters',{action:'scroll',value:'50'})
+ await assert.rejects(service.execute('filters',{action:'select',ref:beforeScroll,value:'drink'}),/最近一次 controls/)
  await assert.rejects(service.execute('filters',{action:'select',ref:'#category',value:'drink'}),/失效/)
  const category=snap.controls.find(c=>c.tag==='select'&&c.label.includes('类别')).ref
  const located=await service.execute('filters',{action:'locate',value:'类别'});assert(located.refs.includes(category),'locate must use the visible control label')

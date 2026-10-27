@@ -98,31 +98,15 @@ async function* readSSE(body) {
 
 async function runProviderSearch(request, signal) {
     if (this.search) return this.search(request, signal)
-    if (this.model.providerId === 'stable-cloud') throw new Error('当前云端模型尚未配置联网搜索服务。')
+    if (this.model.providerId === 'stable-cloud' || isDeepSeekModel(this.model)) return require('./deepseek-web.cjs').runWebTool(this, 'search', request, signal)
     if (isZhipuModel(this.model)) {
       const provider = createZhipuSearchProvider({ apiKey: this.apiKey, WebError: Error, fetchImpl: this.fetch })
       return provider.search(request, signal)
     }
-    if (isDeepSeekModel(this.model)) {
-      const query = String(request.query || '').trim().slice(0, 1000)
-      if (!query) throw new Error('搜索关键词不能为空。')
-      const response = await this.fetch('https://api.deepseek.com/anthropic/v1/messages', {
-        method: 'POST', redirect: 'error', signal,
-        headers: { authorization: `Bearer ${this.apiKey}`, 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'deepseek-flash', max_tokens: 4096, messages: [{ role: 'user', content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }] }], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }] }),
-      })
-      if (!response.ok) throw new Error(`DeepSeek 联网搜索失败（HTTP ${response.status}）。`)
-      const payload = await response.json(); const blocks = payload.content || []
-      const results = blocks.filter((block) => block.type === 'web_search_tool_result')
-      if (!results.length) throw new Error('DeepSeek 未返回联网搜索结果。')
-      const snippets = new Map(blocks.filter((block) => block.type === 'text').flatMap((block) => block.citations || []).map((citation) => [citation.url, citation.cited_text]))
-      const unique = new Map()
-      for (const block of results) for (const item of Array.isArray(block.content) ? block.content : []) {
-        if (item.type === 'web_search_result' && /^https?:\/\//.test(item.url)) unique.set(item.url, { url: item.url, title: item.title || '', snippet: snippets.get(item.url) || '', publishedAt: item.page_age || '' })
-      }
-      const limit = Math.max(1, Math.min(50, Number(request.maxResults) || 10))
-      return { sources: [...unique.values()].slice(0, limit), truncated: unique.size > limit }
-    }
     throw new Error('当前模型未配置联网搜索，请使用可用的网页读取工具。')
   }
-module.exports = { ZHIPU_SEARCH_ENDPOINT, ZHIPU_SEARCH_PROVIDER_ID, chatURL, readSSE, runProviderSearch, createZhipuSearchProvider, mapZhipuSearchResponse }
+async function runProviderFetch(request, signal) {
+  if (this.model.providerId === 'stable-cloud' || isDeepSeekModel(this.model)) return require('./deepseek-web.cjs').runWebTool(this, 'fetch', request, signal)
+  throw Error('当前直连模型未配置 DeepSeek 网页抓取，请使用 stable_browser 读取网页。')
+}
+module.exports = { ZHIPU_SEARCH_ENDPOINT, ZHIPU_SEARCH_PROVIDER_ID, chatURL, readSSE, runProviderSearch, runProviderFetch, createZhipuSearchProvider, mapZhipuSearchResponse }

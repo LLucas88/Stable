@@ -83,13 +83,15 @@ async function main() {
     const panel=document.querySelector('.tool-trace-dialog');
     expect(panel.open,'Trace did not open');
     expect(panel.querySelectorAll('.tool-trace-row').length===13,'Trace must include read and search calls');
-    expect(panel.textContent.includes('1 次失败'),'Trace failure count missing');
+    expect(panel.textContent.includes('1 次工具失败')&&panel.textContent.includes('任务已完成'),'Trace must distinguish tool failures from the completed run');
+    expect(panel.textContent.includes('不代表每个失败步骤都已恢复'),'Trace must not invent recovery');
     const failed=panel.querySelector('[data-status="failed"]');failed.querySelector('summary').click();await tick();
     expect(failed.open&&failed.querySelector('pre').getBoundingClientRect().height>0,'Trace result did not expand');
     expect(failed.textContent.includes('1.3 秒')&&failed.textContent.includes('文件不存在'),'Trace duration or error result missing');
     const written=[...panel.querySelectorAll('.tool-trace-row')].find(row=>row.textContent.includes('Write'));written.querySelector('summary').click();await tick();
-    expect(written.querySelector('pre').textContent==='文件已写入','Trace result is not tool output');
-    expect(!panel.textContent.includes('完整文件内容'),'Trace unexpectedly includes input parameters');
+    expect(written.querySelector('pre:last-child').textContent==='文件已写入','Trace result is not tool output');
+    expect(written.textContent.includes('调用输入')&&written.textContent.includes('执行结果'),'Trace must expose input as well as output');
+    expect(written.querySelector('pre').textContent.includes('完整文件内容'),'Trace input parameters missing');
   })()`)
   fs.writeFileSync(path.join(output,'tool-trace-results.png'),(await win.webContents.capturePage()).toPNG())
   await win.webContents.executeJavaScript(`document.querySelector('[aria-label="关闭 Trace"]').click()`)

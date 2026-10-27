@@ -60,7 +60,7 @@ class ModelRegistry {
     const state = this.cloudGateway?.account?.publicState()
     if (!this.cloudGateway) return null
     if (state?.status !== 'authenticated') return { items: [], defaultModelId: '' }
-    const items = state.models.map((item) => ({
+    const items = state.models.filter(item => item.id !== 'glm-image').map((item) => ({
       ...cloudReasoningProfile(item), id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
@@ -154,6 +154,12 @@ class ModelRegistry {
     const apiKey = this.secrets.get(secretKey) || (id === catalog.legacyModelId ? this.secrets.get('apiKey') : '')
     if (!apiKey) throw new Error(`模型“${model.displayName}”尚未配置 API Key。`)
     return { model: { ...model }, apiKey }
+  }
+
+  resolveImageRoute(preferredModelId) {
+    if (this.cloudGateway) return this.cloudGateway.imageRoute()
+    const apiKey = this.resolveImageApiKey(preferredModelId)
+    return { endpoint: require('./image-generation.cjs').ENDPOINT, apiKey, scope: 'direct:' + require('node:crypto').createHash('sha256').update(apiKey).digest('hex'), replay: false }
   }
 
   resolveImageApiKey(preferredModelId) {

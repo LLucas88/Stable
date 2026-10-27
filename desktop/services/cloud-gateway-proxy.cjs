@@ -79,6 +79,13 @@ class CloudGatewayProxy {
     }
   }
 
+  imageRoute() {
+    const state = this.account.publicState()
+    const token = this.account.token()
+    if (state.status !== 'authenticated' || !token || !state.account?.id) throw Error('请先在设置 → 账号中登录 Stable Cloud，再生成图片。')
+    return { endpoint: `${this.account.baseURL}/v1/images/generations`, apiKey: token, scope: `cloud:${this.account.baseURL}:${state.account.id}`, replay: true, fetch: this.fetch }
+  }
+
   async handle(request, response) {
     const controller = new AbortController(); this.controllers.add(controller)
     request.once('aborted', () => controller.abort())
@@ -86,8 +93,8 @@ class CloudGatewayProxy {
     try {
       if (request.headers.authorization !== `Bearer ${this.secret}`) throw Object.assign(new Error('本机网关凭据无效。'), { status: 401 })
       const pathname = new URL(request.url, 'http://127.0.0.1').pathname
-      if (!['/v1/chat/completions', '/v1/models'].includes(pathname)) throw Object.assign(new Error('本机网关路径无效。'), { status: 404 })
-      if (pathname === '/v1/chat/completions' && request.method !== 'POST') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
+      if (!['/v1/chat/completions', '/v1/models', '/v1/tools/search', '/v1/tools/fetch'].includes(pathname)) throw Object.assign(new Error('本机网关路径无效。'), { status: 404 })
+      if (pathname !== '/v1/models' && request.method !== 'POST') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
       if (pathname === '/v1/models' && request.method !== 'GET') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
       const token = this.account.token()
       if (!token) throw Object.assign(new Error('请先登录 Stable Cloud。'), { status: 401 })
@@ -96,7 +103,7 @@ class CloudGatewayProxy {
         let payload
         try { payload = JSON.parse(body.toString('utf8')) } catch { throw Object.assign(new Error('模型请求不是有效 JSON。'), { status: 400 }) }
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw Object.assign(new Error('模型请求必须是 JSON 对象。'), { status: 400 })
-        if (Array.isArray(payload.messages)) payload.messages = cloudCompatibleMessages(payload.messages)
+        if (pathname === '/v1/chat/completions' && Array.isArray(payload.messages)) payload.messages = cloudCompatibleMessages(payload.messages)
         body = Buffer.from(JSON.stringify(payload))
         if (body.length > MAX_BODY_BYTES) throw Object.assign(new Error('请求内容过大。'), { status: 413 })
       }
@@ -104,6 +111,7 @@ class CloudGatewayProxy {
       if (body) {
         headers['content-type'] = request.headers['content-type'] || 'application/json'
         headers['idempotency-key'] = `stable-${randomUUID()}`
+        if (pathname.startsWith('/v1/tools/') && typeof request.headers['idempotency-key'] === 'string' && /^[A-Za-z0-9._:-]{8,128}$/.test(request.headers['idempotency-key'])) headers['idempotency-key'] = request.headers['idempotency-key']
       }
       const upstream = await this.fetch(`${this.account.baseURL}${pathname}`, { method: request.method, headers, body, redirect: 'error', signal: controller.signal })
       if (!['json', 'event-stream'].includes(responseType(upstream))) {

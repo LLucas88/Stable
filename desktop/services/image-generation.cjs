@@ -77,16 +77,21 @@ async function responseJSON(response) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-function createImageGenerator({ policy, resolveApiKey, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage }) {
-  // Per-run cache also retains successful generation URLs when download fails.
-  // Repeating the same call then retries download, not a paid generation.
+const activeJobs = new Map()
+function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage }) {
+  // Durable receipts retain successful URLs across runs and app restarts.
+  // Repeating the same call retries download, not a paid generation.
   const jobs = new Map()
   return async ({ workspace, args, signal }) => {
     signal?.throwIfAborted()
     const input = validateArgs(policy ? { ...args, size: policy.size } : args)
     const root = Array.isArray(workspace) ? workspace[0] : workspace
     const requested = path.resolve(root, input.output)
-    const key = JSON.stringify([requested, input.prompt, input.size])
+    const route = resolveRoute ? await resolveRoute() : { endpoint: ENDPOINT, apiKey: await resolveApiKey?.(), scope: 'direct', replay: false }
+    if (!route.apiKey) throw Error('请在设置 → 模型连接中配置智谱标准 API Key，再生成图片。')
+    const key = createHash('sha256').update(JSON.stringify([route.scope, requested, input.prompt, input.size])).digest('hex')
+    const saved = jobStore?.read(key)
+    if (!jobs.has(key) && saved) jobs.set(key, { output: requested, record: saved, result: saved.result, hash: saved.hash })
     const existing = jobs.get(key)
     if (existing?.result && fs.existsSync(existing.result.path)) {
       const file = toolFile(workspace, requested)
@@ -97,8 +102,6 @@ function createImageGenerator({ policy, resolveApiKey, nativeImage, fetchImpl = 
     const relative = path.relative(root, requested)
     if (relative.split(/[\\/]/).some(part => ['.git', '.codex', '.claude', '.agents'].includes(part.toLowerCase()))) throw Error('不能向配置目录写入生成图片。')
     if (!nativeImage) throw Error('当前运行环境未提供图片解码器。')
-    const apiKey = await resolveApiKey?.()
-    if (!apiKey) throw Error('请在设置 → 模型连接中配置智谱标准 API Key，再生成图片。')
     signal?.throwIfAborted()
     const timeout = AbortSignal.timeout(180_000)
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
@@ -109,26 +112,41 @@ function createImageGenerator({ policy, resolveApiKey, nativeImage, fetchImpl = 
       if ([...jobs.values()].some(item => item.output === requested)) throw Error('此输出路径已有生图请求，请复用原参数或另选新文件。')
       if (jobs.size >= (policy?.count || 32)) throw Error('已达到本轮选择的生图张数，请先检查已有产物。')
       job = { output: requested }; jobs.set(key, job)
-      job.generated = (async () => {
+    }
+    const lockKey = jobStore ? jobStore.directory + ':' + key : null
+    if (lockKey && activeJobs.has(lockKey)) return activeJobs.get(lockKey)
+    const persist = record => { jobStore?.write(key, record); job.record = record }
+    if (!job.generated) job.generated = (async () => {
+      if (job.record?.url) return job.record.url
+      if (job.record?.status === 'failed') throw Error(job.record.error)
+      if (job.record?.status === 'submitted' && !route.replay) throw Error('此前生图提交结果未知，已停止重复生成。请先核对供应商记录。')
+      persist({ status: 'submitted' })
         try {
-          const response = await fetchImpl(ENDPOINT, { method: 'POST', redirect: 'error', signal: combined,
-            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          const response = await (route.fetch || fetchImpl)(route.endpoint, { method: 'POST', redirect: 'error', signal: combined,
+            headers: { Authorization: `Bearer ${route.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `image-${key}` },
             body: JSON.stringify({ model: 'glm-image', prompt: input.prompt, size: input.size, quality: 'hd' }) })
           if (!response.ok) {
-            await response.body?.cancel()
+            let cloudError
+            if (route.replay) {
+              let payload
+              try { payload = await responseJSON(response) } catch { /* Non-JSON error pages must not reach the model. */ }
+              cloudError = require('./cloud-transport.cjs').cloudResponseError(response, payload)
+            } else await response.body?.cancel()
             const hint = [401,403].includes(response.status) ? '请检查智谱标准 API Key 和生图权限。' : [402,429].includes(response.status) ? '请检查余额或额度/限流，不要连续重试。' : '请稍后检查服务状态。'
-            throw Error(`GLM-Image 请求失败（HTTP ${response.status}）。${hint}`)
+            const message = route.replay && response.status === 404 ? 'GLM-Image 云端生图服务尚未部署或配置，请联系网关管理员。' : `GLM-Image 请求失败（HTTP ${response.status}）。${cloudError?.message || hint}`
+            if ([400,401,402,403,404,422,429].includes(response.status)) persist({ status: 'failed', error: message })
+            throw Error(message)
           }
           const data = await responseJSON(response)
           if (typeof data?.data?.[0]?.url !== 'string') throw Error('GLM-Image 未返回图片，可能被内容审核拦截。')
+          persist({ status: 'generated', url: data.data[0].url })
           return data.data[0].url
         } catch (error) {
           // Never expose upstream response text, request headers or raw network errors.
           if (/^GLM-Image /.test(error.message)) throw error
-          throw Error('GLM-Image 请求中断或超时，结果未确认；本轮不会重复提交同一生图请求。')
+          throw Error('GLM-Image 请求中断或超时，结果未确认；恢复时不会另行重复提交生图请求。')
         }
       })()
-    }
     if (!job.saving) job.saving = (async () => {
       const url = await job.generated
       let bytes
@@ -150,8 +168,10 @@ function createImageGenerator({ policy, resolveApiKey, nativeImage, fetchImpl = 
       fs.closeSync(fd)
       job.hash = createHash('sha256').update(png).digest('hex')
       job.result = { path: target, model: 'glm-image', mimeType: 'image/png', ...dimensions, bytes: png.length }
+      persist({ ...job.record, status: 'completed', hash: job.hash, result: job.result })
       return job.result
-    })().finally(() => { job.saving = null })
+    })().finally(() => { job.saving = null; if (lockKey) activeJobs.delete(lockKey) })
+    if (lockKey) activeJobs.set(lockKey, job.saving)
     return job.saving
   }
 }

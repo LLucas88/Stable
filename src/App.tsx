@@ -43,6 +43,7 @@ import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
 import { buildTraceTimeline, groupTraceTimeline, traceGroupLabel, savedTraceStatus, traceCommand, traceItemStatus, traceToolInput, traceToolIcon, latestTraceTool } from './trace-timeline'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
+import { readComposerValue, writeComposerValue, useComposerValue } from './composer-storage'
 import { taskErrorMessage } from './task-feedback'
 import { ClarificationCard } from './ClarificationCard'
 import { clarificationDisplay, clarificationPendingContent, isClarificationQuestion } from './clarification-display'
@@ -804,15 +805,19 @@ interface ImageViewerTarget {
 }
 
 function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget, activityView = false, onActivityCount }: { activityView?: boolean; onActivityCount?: (count: number) => void; onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
-  const [promptMap, setPromptMap] = useState<Record<string, string>>({})
+  const composerKey = `stable-composer-v1:${state.paths.userData}`
+  const [promptMap, setPromptMap, promptSaveError] = useComposerValue<Record<string, string>>(composerKey + ':prompts', {})
   const prompt = promptMap[state.activeConversationId] || ''
   function setPrompt(next: string | ((current: string) => string)) {
     const id = state.activeConversationId
     setPromptMap(current => ({ ...current, [id]: typeof next === 'function' ? next(current[id] || '') : next }))
   }
   const [pendingMap, setPendingMap] = useState<Record<string, { content: string; attachments: NonNullable<MessageItem['attachments']>; design?: DesignRequest } | undefined>>({})
-  const [attachmentMap, setAttachmentMap] = useState<Record<string, AgentAttachment[]>>({})
-  const [referenceMap, setReferenceMap] = useState<Record<string, AgentReference[]>>({})
+  const [attachmentMap, setAttachmentMap, attachmentSaveError] = useComposerValue<Record<string, AgentAttachment[]>>(composerKey + ':attachments', {})
+  const attachmentMapRef = useRef(attachmentMap)
+  attachmentMapRef.current = attachmentMap
+  const uploadsPending = useRef<Record<string, number>>({})
+  const [referenceMap, setReferenceMap, referenceSaveError] = useComposerValue<Record<string, AgentReference[]>>(composerKey + ':references', {})
   const referenceMapRef = useRef(referenceMap)
   referenceMapRef.current = referenceMap
   const skillSaves = useRef<Record<string, Promise<unknown>>>({})
@@ -886,7 +891,14 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }, [completedUnreadCount])
   const [, refreshOutbox] = useState(0)
   const outboxRef = useRef<MessageOutbox<ComposerMessage>>()
-  if (!outboxRef.current) outboxRef.current = new MessageOutbox({ run: runQueuedMessage, steer: steerQueuedMessage, changed: () => refreshOutbox((value) => value + 1) })
+  const [queueSaveError, setQueueSaveError] = useState('')
+  if (!outboxRef.current) {
+    outboxRef.current = new MessageOutbox({ run: runQueuedMessage, steer: steerQueuedMessage, changed: () => {
+      setQueueSaveError(writeComposerValue(composerKey + ':outbox', outboxRef.current!.serialize()))
+      refreshOutbox((value) => value + 1)
+    } })
+    outboxRef.current.restore(readComposerValue(composerKey + ':outbox', {}), state.conversations.map(item => item.id))
+  }
   const outbox = outboxRef.current
   const queue = outbox.snapshot(state.activeConversationId)
   const [queueEdit, setQueueEdit] = useState<{ conversationId: string; id: string; text: string }>()
@@ -951,7 +963,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const selectedReferences = (referenceMap[state.activeConversationId] || []).filter(item => item.kind !== 'data' && item.kind !== 'knowledge')
   const hasComposerContent = Boolean(prompt.trim() || attachments.length || selectedReferences.length)
   const showComposerStop = Boolean(pendingQuestion) || (running && !hasComposerContent)
-  const composerError = composerErrorMap[state.activeConversationId] || ''
+  const composerError = composerErrorMap[state.activeConversationId] || promptSaveError || attachmentSaveError || referenceSaveError || queueSaveError || ''
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
   const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
   const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || (activeConversation?.modelId?.startsWith('chatgpt:') ? { id: activeConversation.modelId, providerId: 'chatgpt', displayName: 'ChatGPT（请重新登录）', model: activeConversation.modelId.split(':').at(-1) || '', baseURL: 'https://api.openai.com/v1', hasApiKey: false, reasoningOptions: [] } : defaultModel)
@@ -1002,10 +1014,19 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   useEffect(()=>{setConversationMenuId('');setProjectMenuId('')},[state.activeConversationId,active])
 
   function setAttachments(next: AgentAttachment[] | ((current: AgentAttachment[]) => AgentAttachment[])) {
-    setAttachmentMap((current) => {
-      const currentItems = current[state.activeConversationId] || []
-      return { ...current, [state.activeConversationId]: typeof next === 'function' ? next(currentItems) : next }
-    })
+    const id = state.activeConversationId
+    const current = attachmentMapRef.current
+    attachmentMapRef.current = { ...current, [id]: typeof next === 'function' ? next(current[id] || []) : next }
+    setAttachmentMap(attachmentMapRef.current)
+  }
+
+  function mergeAttachments(inspected: AgentAttachment[]) {
+    const merged = [...(attachmentMapRef.current[state.activeConversationId] || [])]
+    for (const item of attachments.filter(item => item.type === 'catch')) if (!merged.some(existing => existing.path === item.path)) merged.push(item)
+    for (const item of inspected) if (!merged.some(existing => existing.path === item.path)) merged.push(item)
+    if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
+    if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
+    setAttachments(merged)
   }
 
   function setAttachmentStatus(value: string) {
@@ -1156,18 +1177,20 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
 
   function addAttachments(paths: string[]) {
     if (!paths.length) return
+    const id = state.activeConversationId
+    uploadsPending.current[id] = (uploadsPending.current[id] || 0) + 1
     void action('正在读取临时附件', async () => {
-      const inspected = await window.stable.agent.inspectAttachments(paths)
-      const merged = [...attachments]
-      for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
-      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
-      if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
-      setAttachments(merged)
-      setAttachmentStatus(`已添加 ${inspected.length} 个附件。`)
+      try {
+        const inspected = await window.stable.agent.inspectAttachments(paths)
+        mergeAttachments(inspected)
+        setAttachmentStatus(`已添加 ${inspected.length} 个附件。`)
+      } finally { uploadsPending.current[id] -= 1 }
     })
   }
 
   async function addPastedAttachments(files: File[]) {
+    const id = state.activeConversationId
+    uploadsPending.current[id] = (uploadsPending.current[id] || 0) + 1
     const saved: AgentAttachment[] = []
     setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: '' }))
     setAttachmentStatus('正在读取剪贴板附件。')
@@ -1184,17 +1207,13 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
         const name = file.name && !/^image\.(?:png|jpe?g|webp)$/i.test(file.name) ? file.name : `粘贴截图-${Date.now()}-${index + 1}.${extension}`
         saved.push(await window.stable.agent.savePastedImage(state.activeConversationId, name, file.type, new Uint8Array(await file.arrayBuffer())))
       }
-      const merged = [...attachments]
-      for (const item of [...inspected, ...saved]) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
-      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
-      if (merged.filter(attachmentIsImage).reduce((sum, item) => sum + item.size, 0) > 10 * 1024 * 1024) throw new Error('本次图片总大小不能超过 10 MB。')
-      setAttachments(merged)
-      setAttachmentStatus(`已从剪贴板添加 ${merged.length - attachments.length} 个附件。`)
+      mergeAttachments([...inspected, ...saved])
+      setAttachmentStatus(`已从剪贴板添加 ${inspected.length + saved.length} 个附件。`)
     } catch (error) {
       for (const item of saved) void window.stable.agent.discardDraftImage(item.path).catch(() => {})
       setComposerErrorMap((current) => ({ ...current, [state.activeConversationId]: errorMessage(error) }))
       setAttachmentStatus('剪贴板附件未添加。')
-    }
+    } finally { uploadsPending.current[id] -= 1 }
   }
 
   function handlePromptPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
@@ -1228,13 +1247,14 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }
 
   function addSkillFolder() {
+    const id = state.activeConversationId
+    uploadsPending.current[id] = (uploadsPending.current[id] || 0) + 1
     void action('正在读取 Skill 文件夹', async () => {
-      const inspected = await window.stable.agent.selectSkillFolder()
-      if (!inspected.length) return
-      const merged = [...attachments]
-      for (const item of inspected) if (!merged.some((existing) => existing.path === item.path)) merged.push(item)
-      if (merged.length > 8) throw new Error('一次最多添加 8 个临时附件。')
-      setAttachments(merged)
+      try {
+        const inspected = await window.stable.agent.selectSkillFolder()
+        if (!inspected.length) return
+        mergeAttachments(inspected)
+      } finally { uploadsPending.current[id] -= 1 }
     })
   }
 
@@ -1375,6 +1395,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   }
 
   function send() {
+    if (uploadsPending.current[state.activeConversationId]) { setComposerErrorMap(current => ({ ...current, [state.activeConversationId]: '附件仍在读取，请完成后再发送。' })); return }
     if (cloudAccessHint(state.cloud.status) && activeModel?.providerId !== 'chatgpt') { onOpenAccount(); return }
     if (pendingQuestion && !prompt.trim()) return
     if (!prompt.trim() && !attachments.length && !selectedReferences.length) return

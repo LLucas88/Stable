@@ -33,7 +33,7 @@ export function ModelConnectionSettings({ state, replaceState }: { state: Bootst
     } catch (err) { setError(err instanceof Error ? err.message : '保存失败，请重试。') }
     finally { setBusy(false) }
   }
-  if (state.cloud.status !== 'disabled') return <><ChatGPTConnectionSettings onChanged={replaceState} /><p>当前启用了 Stable Cloud。退出并取消 STABLE_CLOUD_ENABLED 后可配置本机 API Key。</p></>
+  if (state.cloud.status !== 'disabled') return <><ChatGPTConnectionSettings onChanged={replaceState} /><p>当前使用 Stable Cloud，模型和生图连接由网关管理员配置，无需填写本机 API Key。服务不可用时，请联系管理员检查对应模型的配置与额度。</p></>
   return <><ChatGPTConnectionSettings onChanged={replaceState} /><form className="model-connection-settings" aria-busy={busy} onSubmit={event => { event.preventDefault(); void save() }}>
     <p>输入一次 API Key，保存在当前 Windows 用户的加密存储中。下次打开 Stable 无需重新填写。</p>
     <fieldset disabled={busy}><legend>模型连接</legend>

@@ -16,3 +16,4 @@
 .tool-trace-row pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--color-paper-3); border-radius: 8px; }
 .tool-trace-chevron { flex-shrink: 0; color: var(--color-muted); }
 .tool-trace-row[open] .tool-trace-chevron { transform: rotate(90deg); }
+.tool-trace-note { color: var(--color-muted); font-size: 12px; line-height: 1.6; }

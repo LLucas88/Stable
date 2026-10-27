@@ -144,7 +144,8 @@ function pageAction(action, ref, value, snapshotId) {
   }
   if (['click', 'fill', 'select'].includes(action)) {
     const element = globalThis.__stableElements?.get(ref)
-    if (!element?.isConnected || !visible(element) || element.disabled) throw new Error('元素已失效或不可用，请重新 read 获取 ref。')
+    if (!element) throw new Error('元素引用已失效：read、scroll 等返回新 controls 后，旧 ref 不再可用。请使用最近一次 controls 中的 ref；不确定时重新 read。本次操作未执行。')
+    if (!element.isConnected || !visible(element) || element.disabled) throw new Error('目标元素已失效或不可用：已移除、隐藏或禁用，请重新 read 核对页面状态。本次操作未执行。')
     const type = (element.getAttribute('type') || '').toLowerCase()
     const hint = `${element.name || ''} ${element.autocomplete || ''} ${element.id || ''} ${element.getAttribute('aria-label') || ''}`
     if (['password', 'file', 'hidden'].includes(type) || /password|passwd|token|secret|one-time-code|credit.?card|cc-number|验证码|密码/i.test(hint)) throw new Error('敏感输入不能交给模型填写，请使用专门登录流程。')

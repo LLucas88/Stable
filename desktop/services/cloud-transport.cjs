@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto')
 
 const MAX_LOG_BYTES = 256 * 1024
 const responseDiagnostics = new WeakMap()
-const ROUTES = new Set(['/api/auth/login', '/api/auth/change-password', '/api/auth/logout', '/api/account', '/api/usage/summary', '/v1/models', '/v1/chat/completions'])
+const ROUTES = new Set(['/api/auth/login', '/api/auth/change-password', '/api/auth/logout', '/api/account', '/api/usage/summary', '/v1/models', '/v1/chat/completions', '/v1/tools/search', '/v1/tools/fetch'])
 const NETWORK_CODES = ['ERR_PROXY_CONNECTION_FAILED', 'ERR_TUNNEL_CONNECTION_FAILED', 'ERR_NO_SUPPORTED_PROXIES', 'ERR_PROXY_AUTH_UNSUPPORTED', 'ERR_CERT_AUTHORITY_INVALID', 'ERR_CERT_COMMON_NAME_INVALID', 'ERR_CERT_DATE_INVALID', 'ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_RESET', 'ERR_CONNECTION_REFUSED', 'ERR_INTERNET_DISCONNECTED', 'ERR_TIMED_OUT', 'ERR_ABORTED']
 
 function responseType(response) {

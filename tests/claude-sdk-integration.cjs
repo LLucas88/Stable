@@ -612,8 +612,8 @@ test('native ToolSearch discovers a deferred tool before it is called', { timeou
     nativeTool(body, 'mcp__stable__stable_search')
     return upstream({ text: 'NATIVE_DISCOVERY_RESUMED' })
   }, { search: async () => 'SEARCH_DISCOVERED_OK' })
-  assert.equal(await runner.run('discover then search', model, credential, 45_000, undefined, 'workspace-write', [], { key: 'discover', cwd: workspace }), 'NATIVE_DISCOVERY_OK')
-  assert.equal(await runner.run('continue after discovery', model, credential, 30_000, undefined, 'workspace-write', [], { key: 'discover', cwd: workspace }), 'NATIVE_DISCOVERY_RESUMED')
+  assert.equal(await runner.run('discover then search', model, credential, 45_000, undefined, 'workspace-write', [], { key: 'discover', cwd: workspace, networkAccess: true }), 'NATIVE_DISCOVERY_OK')
+  assert.equal(await runner.run('continue after discovery', model, credential, 30_000, undefined, 'workspace-write', [], { key: 'discover', cwd: workspace, networkAccess: true }), 'NATIVE_DISCOVERY_RESUMED')
 })
 
 test('native ToolSearch cannot discover a disabled host shell', { timeout: 45_000 }, async t => {
@@ -693,6 +693,7 @@ function fixture(t, responder, options = {}) {
     userData: root, workspace,
     ...options,
     fetchImpl: async (url, request) => {
+      if (options.webResponder && /^https:\/\/provider\.invalid\/v1\/tools\/(search|fetch)$/.test(url)) return options.webResponder(url, request)
       assert.equal(url, 'https://provider.invalid/v1/chat/completions')
       assert.equal(request.headers.authorization, 'Bearer ' + credential)
       const body = JSON.parse(request.body); requests.push(body)
@@ -786,12 +787,12 @@ function nativeTool(body, name) {
   assert(value, 'native tool must be advertised: ' + name)
   return value.function
 }
-function nativeCatalog(body) {
+function nativeCatalog(body, networkAccess = false) {
   for (const name of ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'ToolSearch']) nativeTool(body, name)
   const names = body.tools.map(tool => tool.function.name)
   assert.equal(new Set(names).size, names.length, 'native/MCP tools must not be registered twice')
   assert.equal(names.some(name => /(?:^|__)stable_file$/.test(name)), false, 'native file tools replace stable_file')
-  assert.equal(names.some(name => ['Bash', 'PowerShell', 'Shell', 'Execute'].includes(name)), false, 'offline runs must not expose a host shell')
+  if (!networkAccess) assert.equal(names.some(name => ['Bash', 'PowerShell', 'Shell', 'Execute'].includes(name)), false, 'offline runs must not expose a host shell')
   assert(!names.includes('mcp__stable__stable_exec'))
   assert(!names.includes('DeferredToolPlaceholder'))
 }
@@ -812,6 +813,16 @@ test('real SDK message prediction uses one bounded tool-free request and removes
   assert.equal(requests.length, 1); assert.equal(requests[0].tools, undefined)
   assert.equal(requests[0].max_tokens, 2048)
   assert.deepEqual(fs.readdirSync(path.join(root, 'claude', 'runs')), [])
+})
+
+test('real SDK task title is a single bounded tool-free request', { timeout: 45_000 }, async t => {
+  const { root, workspace, runner, requests } = fixture(t, () => upstream({ text: '{"title":"生成经营分析报告"}' }))
+  const result = await runner.run('{"userRequest":"根据上传的数据做经营分析报告"}', model, credential, 20000, undefined, 'read-only', [], { purpose: 'conversation-title', cwd: workspace })
+  assert.equal(result, '{"title":"生成经营分析报告"}')
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].max_tokens, 512)
+  assert(!requests[0].tools?.length)
+  assert(JSON.stringify(requests[0].messages).includes('主要动作和具体对象'))
 })
 
 test('real SDK prediction cannot retry upstream after a provider failure', { timeout: 45_000 }, async t => {
@@ -1027,13 +1038,36 @@ test('real SDK native Glob and Grep reject an external directory junction withou
 test('real SDK provider search keeps the Stable MCP transport alongside native files without duplicate tools', { timeout: 45_000 }, async t => {
   let searches = 0
   const { workspace, runner } = fixture(t, (body, number) => {
-    if (number === 1) { nativeCatalog(body); return upstream({ calls: [{ id: 'provider-discover', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_search', max_results: 1 } }] }) }
+    if (number === 1) { nativeCatalog(body, true); return upstream({ calls: [{ id: 'provider-discover', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_search', max_results: 1 } }] }) }
     if (number === 2) { nativeTool(body, 'mcp__stable__stable_search'); return upstream({ calls: [{ id: 'provider-search', name: 'mcp__stable__stable_search', input: { query: 'native fixture query' } }] }) }
     assert.match(toolResult(body, 'provider-search') || '', /https:\/\/source\.example\/fixture/)
     return upstream({ text: 'NATIVE_PROVIDER_SEARCH_OK' })
   }, { search: async (args, signal) => { searches++; assert.equal(args.query, 'native fixture query'); assert.equal(signal.aborted, false); return { sources: [{ url: 'https://source.example/fixture', title: 'Fixture source', snippet: 'Fixture evidence' }] } } })
-  const result = await runner.run('search the fixture provider', model, credential, 30_000, undefined, 'read-only', [], { cwd: workspace })
+  const result = await runner.run('search the fixture provider', model, credential, 30_000, undefined, 'workspace-write', [], { cwd: workspace, networkAccess: true })
   assert.equal(result, 'NATIVE_PROVIDER_SEARCH_OK'); assert.equal(searches, 1)
+})
+
+test('real SDK discovers cloud search and fetch, then answers with fetched source evidence', { timeout: 60000 }, async t => {
+  let failure
+  const webCalls = [], events = []
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [{ id: 'find-search', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_search', max_results: 1 } }] })
+      if (number === 2) { nativeTool(body, 'mcp__stable__stable_search'); return upstream({ calls: [{ id: 'search-web', name: 'mcp__stable__stable_search', input: { query: 'site:example.org release', maxResults: 2 } }] }) }
+      if (number === 3) { assert.match(toolResult(body, 'search-web'), /https:\/\/example.org\/release/); return upstream({ calls: [{ id: 'find-fetch', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_fetch', max_results: 1 } }] }) }
+      if (number === 4) { nativeTool(body, 'mcp__stable__stable_fetch'); return upstream({ calls: [{ id: 'fetch-web', name: 'mcp__stable__stable_fetch', input: { url: 'https://example.org/release' } }] }) }
+      assert.equal(number, 5); assert.match(toolResult(body, 'fetch-web'), /VERIFIED_WEB_EVIDENCE/)
+      return upstream({ text: '已核对 VERIFIED_WEB_EVIDENCE。[来源](https://example.org/release)' })
+    } catch (error) { failure = error; return upstream({ text: 'FAILED' }) }
+  }, { expectedModel: 'glm-5.3-flashx', webResponder: async (url, request) => {
+    webCalls.push([url, JSON.parse(request.body)])
+    assert.equal(request.headers.authorization, 'Bearer ' + credential)
+    return Response.json(url.endsWith('/search') ? { results: [{ title: 'Source', url: 'https://example.org/release', snippet: 'short', summary: 'evidence', content: '' }] } : { title: 'Source', content: '# VERIFIED_WEB_EVIDENCE' })
+  } })
+  const answer = await runner.run('Search the fixture web service, fetch the matching source and cite it. Only read the approved fixture sources.', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 45000, e => events.push(e), 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.ifError(failure); assert.match(answer, /VERIFIED_WEB_EVIDENCE.*https:\/\/example.org\/release/)
+  assert.equal(requests.length, 5); assert.equal(webCalls.length, 2)
+  assert(events.some(e => JSON.stringify(e).includes('stable_fetch')))
 })
 
 test('real SDK steering receipt is delivered and the provider processes the extra prompt', { timeout: 45_000 }, async t => {

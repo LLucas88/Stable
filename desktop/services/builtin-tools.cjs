@@ -4,9 +4,9 @@ const { BrowserTool } = require('./browser-tool.cjs')
 const { executeExcel } = require('./excel-tool.cjs')
 
 class BuiltinTools {
-  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, imagePolicy, networkAccess = true }) {
+  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, resolveImageRoute, imageJobStore, imagePolicy, networkAccess = true }) {
     this.networkAccess = networkAccess
-    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, resolveApiKey: resolveImageApiKey, nativeImage: electron?.nativeImage })
+    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, resolveApiKey: resolveImageApiKey, resolveRoute: resolveImageRoute, jobStore: imageJobStore, nativeImage: electron?.nativeImage })
     this.installSkill = installSkill
     this.workspace = writableRoots?.length ? writableRoots : workspace
     this.localHtml = new (require('./local-html-preview.cjs').LocalHtmlPreview)(this.workspace)
@@ -27,6 +27,7 @@ class BuiltinTools {
     if (name === 'stable_skill_install' && approved !== true) throw Error('安装 Skill 需要审批。')
     if (mutatesBrowser && approved !== true) throw new Error('网页交互需要单次审批。')
     if (name === 'stable_image_generate' && (!this.networkAccess || approved !== true)) throw Error('生图需要网络访问和本轮操作授权。')
+    if (require('./builtin-tool-policy.cjs').requiresApproval(name, args) && approved !== true) throw Error('此工具操作需要审批。')
     const controller = new AbortController(); this.controllers.set(requestId, controller)
     try {
       if (name === 'stable_image_generate') return await this.generateImage({ workspace: this.workspace, args, signal: controller.signal })
