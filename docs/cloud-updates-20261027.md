@@ -34,4 +34,24 @@
 - 未发布构建 v1.0.04： https://github.com/LLucas88/Stable/actions/runs/40468124037
 - 过渡版 v1.0.05： https://github.com/LLucas88/Stable/actions/runs/40469378613
 
-云端整包和最终发布验证待本次执行完成后补充。
+## 最终发布结果
+
+2026-10-27 16:38（北京时间）云端正式清单已切换到 1.0.5。自动上传工作流 [40472874120](https://github.com/LLucas88/Stable/actions/runs/40472874120) 成功，三个安装相关文件上传后均校验通过。
+
+客户端 CI：499 项通过、3 项跳过、0 失败；真实隔离安装升级到 1.0.5，成功终态为 100|complete|success|0。可见和静默故障注入均回滚到 0.9.31，退出码 12，测试用户数据保留、运行时可用，未自动重启应用。证据保存于本机 .local/cloud-update-deploy/installer-evidence/。
+
+服务器对正式文件独立重算 SHA-256，全部与 GitHub 资产摘要一致：
+
+| 文件 | 字节 | SHA-256 |
+| --- | ---: | --- |
+| latest.yml | 353 | 3c3722584189888b929755c3f1784ab018ff38f126c7d467fe58db1de8d8a3f3 |
+| Stable-Update-1.0.05-x64.exe | 424552298 | 3f59174eb46971f2e0085113a2c1be159db1d96e444c561372c40cd5d4e16ef5 |
+| Stable-Update-1.0.05-x64.exe.blockmap | 443702 | 7f18807c0853bbed6d23b7159aedb4149abf7c7f771c9fd2ccdee3a6359f7694 |
+| Stable-Setup-1.0.05-x64.exe | 593079235 | 54a601380023fade0c7d271d1c4512913c74c150f0c39135fa2e19e8a0a0aeca |
+
+公网验收：latest.yml 返回 200 且 no-store，与 GitHub 清单一致；真实 GenericProvider 读取版本 1.0.5 并解析到云端更新包 URL；三个文件 HEAD 的长度正确，Range 返回 206 和正确 Content-Range；blockmap 完整下载 SHA-256 一致。原网关 /api/health 返回 200 / status=ok。
+
+GitHub 官方 API 的 latest 指向公开非预发布 v1.0.05。旧 GitHubProvider 的解析和版本比较测试通过，但本机对 github.com 的实际 feed 请求出现连接超时，未声称本机旧客户端的实时网络链路已完整通过。旧客户端仍必须能访问 GitHub 完成首次过渡；无法访问时，使用云端完整安装包手动升级一次，之后走云端。这不会绕过安装确认，也不代表已替用户在本机安装。
+
+下载地址： https://116.62.83.85/updates/Stable-Setup-1.0.05-x64.exe 。本次没有发布本机未提交的 v1.11.0 功能，已安装的更高版本不会降级到 1.0.5。
+
