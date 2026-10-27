@@ -2,7 +2,7 @@
 
 function publicError(error) {
   const message = String(error?.message || error || '更新服务暂不可用。')
-  return message.replace(/https?:\/\/[^\s]+/g, 'GitHub Releases').slice(0, 300)
+  return message.replace(/https?:\/\/[^\s]+/g, 'Stable 云端更新服务').slice(0, 300)
 }
 
 function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
@@ -45,7 +45,7 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
   }
 
   async function check(manual = false) {
-    if (!isPackaged || !autoUpdater) return emit({ status: 'development', error: manual ? '开发版不连接远程更新；安装版会从 GitHub Releases 自动检查。' : undefined })
+    if (!isPackaged || !autoUpdater) return emit({ status: 'development', error: manual ? '开发版不连接远程更新；安装版会从 Stable 云端更新服务 自动检查。' : undefined })
     if (['checking', 'downloading', 'downloaded', 'installing'].includes(state.status)) return { ...state }
     emit({ status: 'checking', error: undefined })
     try { await autoUpdater.checkForUpdates(); return { ...state } }

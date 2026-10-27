@@ -164,10 +164,9 @@
     },
     "publish": [
       {
-        "provider": "github",
-        "owner": "LLucas88",
-        "repo": "Stable",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://116.62.83.85/updates/",
+        "useMultipleRangeRequest": false
       }
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"

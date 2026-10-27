@@ -1,0 +1,39 @@
+name: Publish verified release to Stable Cloud
+on:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: [Release Stable]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing verified public release tag
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: stable-cloud-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --prefix .cloud-publisher --ignore-scripts --no-audit --no-fund yaml@2.7.0 semver@7.7.2
+      - name: Download existing release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || github.event.workflow_run.head_branch }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir cloud-assets --pattern 'Stable-*-x64.exe*' --pattern latest.yml
+      - name: Upload, verify and publish cloud channel
+        env:
+          NODE_PATH: ${{ github.workspace }}/.cloud-publisher/node_modules
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || github.event.workflow_run.head_branch }}
+          STABLE_UPDATE_PUBLISH_TOKEN: ${{ secrets.STABLE_UPDATE_PUBLISH_TOKEN }}
+        run: node scripts/publish-cloud-updates.cjs cloud-assets "$RELEASE_TAG"
