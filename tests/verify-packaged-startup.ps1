@@ -7,6 +7,9 @@ New-Item -ItemType Directory -Path $qa | Out-Null
 # directory, no NODE_PATH, and the real packaged executable instead of Electron.
 & robocopy.exe $PackageDirectory $qa /E /XD resources /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
 if ($LASTEXITCODE -gt 7) { throw 'Failed to copy packaged executable' }
+# Robocopy reports successful copies with codes 1-7. GitHub's PowerShell
+# wrapper propagates LASTEXITCODE, so normalize the accepted copy result.
+$global:LASTEXITCODE = 0
 New-Item -ItemType Directory -Path (Join-Path $qa 'resources') | Out-Null
 Copy-Item -LiteralPath (Join-Path $PackageDirectory 'resources\app.asar') -Destination (Join-Path $qa 'resources\app.asar')
 $unpacked = Join-Path $PackageDirectory 'resources\app.asar.unpacked'
