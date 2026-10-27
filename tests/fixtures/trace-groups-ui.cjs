@@ -1,4 +1,5 @@
 'use strict'
+const prepareVisualFixture = require('../helpers/visual-fixture.cjs')
 const { readSource } = require('./../helpers/read-source.cjs')
 const { app, BrowserWindow, session } = require('electron')
 const { build } = require('esbuild')
@@ -31,6 +32,7 @@ async function main() {
     createRoot(document.getElementById('root')).render(<Test/>);
   `,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.svg':'dataurl','.png':'dataurl','.mp4':'dataurl','.css':'empty'},define:{'process.env.NODE_ENV':'"production"','import.meta.env.BASE_URL':'"/"'},plugins:[{name:'export-trace',setup(b){b.onLoad({filter:/[\\/]src[\\/]App\.tsx$/},()=>({contents:source,loader:'tsx',resolveDir:path.join(root,'src')}))}}]})).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html data-theme="light"><div id="root" style="max-width:900px;padding:30px;margin:auto"></div></html>'))
+  await prepareVisualFixture(win)
   await win.webContents.insertCSS(readSource(path.join(root,'src/styles/tokens.css'),'utf8')+readSource(path.join(root,'src/styles/app.css'),'utf8')+readSource(path.join(root,'src/styles/tool-trace.css'),'utf8'))
   await win.webContents.executeJavaScript(bundle)
   await win.webContents.executeJavaScript(`

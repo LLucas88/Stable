@@ -57,7 +57,7 @@ test('Cloud updater is configured for the Stable download service', () => {
   assert.match(readSource(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8'), /STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE/)
   const workflow = readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8')
   const installerQa = readFileSync(path.join(__dirname, 'verify-update-installer.ps1'), 'utf8')
-  assert.match(workflow, /gh release download runtime-v1/)
+  assert.match(workflow, /prepare-node-runtime\.ps1/)
   assert.match(workflow, /electron-builder --win --x64 --publish never/)
   assert.match(workflow, /npm run dist:update/)
   assert.match(workflow, /electron-builder --win --x64 --publish never[\s\S]+Full installer build failed/)

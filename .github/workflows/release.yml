@@ -21,17 +21,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24.14.0'
           cache: npm
       - name: Restore bundled Windows Node runtime
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download runtime-v1 --repo $env:GITHUB_REPOSITORY --pattern stable-runtime-win-x64.zip --output stable-runtime-win-x64.zip
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the bundled Harness runtime.' }
-          Expand-Archive -LiteralPath stable-runtime-win-x64.zip -DestinationPath runtime
-          if (-not (Test-Path -LiteralPath runtime/node/node.exe)) { throw 'Runtime archive is incomplete.' }
+        run: ./scripts/prepare-node-runtime.ps1
       - run: npm ci
       - run: npm run tools:install
       - run: npm run runtime:git

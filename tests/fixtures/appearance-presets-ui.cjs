@@ -1,4 +1,5 @@
 'use strict'
+const prepareVisualFixture = require('../helpers/visual-fixture.cjs')
 const { readSource } = require('./../helpers/read-source.cjs')
 // Isolated renderer, fixture keys and blocked network; no user's app or data.
 const { app, BrowserWindow, session } = require('electron')
@@ -27,6 +28,7 @@ async function main() {
     body{background:var(--color-paper)}#root{display:flex;padding:20px;gap:20px}.rail-task-pane{width:190px;flex:none;padding:20px}.main-frame{flex:1;padding:20px}.conversation{display:block}.message-scroll{padding:10px!important}.conversation-empty{min-height:0}.composer-box{height:80px;padding:16px}.model-connection-settings{max-width:550px;margin-top:15px}.conversation-start-animation{width:56px;height:56px}
   </style></head><body><div id="root"><aside class="rail-task-pane">项目任务栏</aside><main class="main-frame"><div class="conversation" data-empty="true"><div class="message-scroll"><div class="conversation-empty"><video class="conversation-start-animation" src="${video}" muted preload="auto"></video><h2>准备好了，随时开始</h2></div></div><div class="composer-box">输入框</div></div><div id="settings"></div></main></div></body></html>`
   const file=path.join(output,'fixture.html');fs.writeFileSync(file,html);await win.loadFile(file)
+  await prepareVisualFixture(win)
   await win.webContents.executeJavaScript(bundle.outputFiles[0].text)
   const js=code=>win.webContents.executeJavaScript(code)
   await js(`new Promise(resolve=>setTimeout(resolve,100))`)

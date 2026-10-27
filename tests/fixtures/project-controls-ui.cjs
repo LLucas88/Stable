@@ -1,4 +1,5 @@
 'use strict'
+const prepareVisualFixture = require('../helpers/visual-fixture.cjs')
 const { readSource } = require('./../helpers/read-source.cjs')
 // Render the real AgentPage in a hidden window with mock IPC. Never touch the
 // user's running app, account, workspace or network.
@@ -48,6 +49,7 @@ async function main() {
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.svg': 'dataurl', '.mp4': 'dataurl', '.css': 'css' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })
   const bundle=built.outputFiles.find(file=>file.path.endsWith('.js')).text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
+  await prepareVisualFixture(win)
   for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   for(const file of built.outputFiles.filter(file=>file.path.endsWith('.css'))) await win.webContents.insertCSS(file.text)
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
@@ -57,7 +59,7 @@ async function main() {
     const projects=Array.from({length:30},(_,i)=>({id:'preview-'+i,name:i===0?'经营分析与复盘报告项目':'项目 '+(i+1),rootPath:'D:/mock/project-'+i}));
     window.changeState({...window.fixtureState('a'),projects});await tick();document.querySelector('.project-trigger').click();await tick();
     const menu=document.querySelector('.project-picker'),rect=menu.getBoundingClientRect();
-    if(menu.parentElement!==document.body||rect.top<12||rect.bottom>innerHeight-12||rect.width!==270)throw Error('Picker positioning or size incorrect');
+    if(menu.parentElement!==document.body||rect.top<12||rect.bottom>innerHeight-12||Math.abs(rect.width-270)>.5)throw Error('Picker positioning or size incorrect: '+JSON.stringify({rect:rect.toJSON(),width:innerWidth,height:innerHeight,portal:menu.parentElement===document.body}));
     const list=menu.querySelector('.project-options');if(list.scrollHeight<=list.clientHeight)throw Error('Long list does not scroll');
     list.scrollTop=list.scrollHeight;await tick();
     for(const selector of ['.project-search','.project-create-action','.project-none-action']){

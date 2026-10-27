@@ -1,4 +1,5 @@
 'use strict'
+const prepareVisualFixture = require('../helpers/visual-fixture.cjs')
 const { readSource } = require('./../helpers/read-source.cjs')
 // Isolated, hidden component test. No live client, network, or Explorer access.
 const { app, BrowserWindow, session } = require('electron')
@@ -16,6 +17,7 @@ async function run() {
   await app.whenReady()
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: /^https?:/.test(details.url) }))
   window = new BrowserWindow({ show: false, width:1280, height:800, webPreferences: { backgroundThrottling: false, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false } })
+  window.webContents.on('console-message', event => console.error(event.message))
   const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')
   const card = source.slice(source.indexOf('function ConversationFileCard('), source.indexOf('function useAttachmentImageSource('))
   const images = source.slice(source.indexOf('function useAttachmentImageSource('), source.indexOf('function ImageLightbox('))
@@ -48,6 +50,7 @@ async function run() {
     createRoot(document.getElementById('root')).render(<Test/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } }).outputFiles[0].text
   await window.loadURL('data:text/html,<html data-theme="light"><div id="root"></div></html>')
+  await prepareVisualFixture(window)
   await window.webContents.insertCSS(readSource(path.join(root,'src/styles/tokens.css'),'utf8')+readSource(path.join(root,'src/styles/app.css'),'utf8')+readSource(path.join(root,'src/styles/sidebar-layout.css'),'utf8'))
   await window.webContents.executeJavaScript(bundle)
   await window.webContents.executeJavaScript(`(async () => {
@@ -86,7 +89,7 @@ async function run() {
     document.querySelectorAll('.markdown-file-link')[1].click();
     expect(window.opened.at(-1)===window.expected.replace(/xlsx$/,'md'),'Line suffix leaked into filesystem path');
   })()`)
-  window.webContents.debugger.attach('1.3')
+  if (!window.webContents.debugger.isAttached()) window.webContents.debugger.attach('1.3')
   await window.webContents.debugger.sendCommand('DOM.enable')
   await window.webContents.debugger.sendCommand('CSS.enable')
   const { root: dom } = await window.webContents.debugger.sendCommand('DOM.getDocument')
