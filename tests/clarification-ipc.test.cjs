@@ -13,7 +13,7 @@ function setup(){
  let lastTask;
  vm.runInNewContext(source,{
   require: name=>require(path.resolve(__dirname,'../desktop',name)),
-  messagePredictions:{interrupt(){}},
+  messagePredictions:{interrupt(){}}, conversationTitles: { interrupt() {} }, scheduleConversationTitle() {},
   taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{publicCatalog:()=>({items:[{id:"glm-chat",model:"glm-5.3-flashx",hasApiKey:true}]}),resolve:id=>{routes.push(id);return {model:{model:id},apiKey:'test-only'}}},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
   prepareAgentMessage:async(payload,_id,_route,displayPayload=payload)=>{prepared++;lastTask=payload;return {messageAttachments:displayPayload.attachments||[],attachments:payload.attachments,selectedReferences:payload.references,extractedAttachments:{installedSkills:[]},selectedData:[],selectedKnowledge:[],selectedSkills:[],selectedScripts:[]}},
   commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,require('../desktop/services/design-request.cjs').designMessageTrace(prepared.design),prepared.messageAttachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,

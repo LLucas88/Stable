@@ -34,6 +34,7 @@ jobs:
           if (-not (Test-Path -LiteralPath runtime/node/node.exe)) { throw 'Runtime archive is incomplete.' }
       - run: npm ci
       - run: npm run tools:install
+      - run: npm run runtime:git
       - run: npm run runtime:powershell
       - run: npm run python:verify
       - run: npm run typecheck

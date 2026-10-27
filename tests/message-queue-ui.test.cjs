@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { readFileSync } = require('node:fs')
+const { readSource: readFileSync } = require('./helpers/read-source.cjs')
 const path = require('node:path')
 const source = (file) => readFileSync(path.join(__dirname, '..', file), 'utf8')
 
@@ -21,10 +21,10 @@ test('composer stop is a black circle with white square and send has no blue bac
 test('one composer action stops only when running without content and otherwise shows send', () => {
   const app = source('src/App.tsx')
   assert.match(app, /const hasComposerContent = Boolean\(prompt.trim\(\) \|\| attachments.length \|\| selectedReferences.length\)/)
-  assert.match(app, /const showComposerStop = running && !hasComposerContent/)
+  assert.match(app, /const showComposerStop = Boolean\(pendingQuestion\) \|\| \(running && !hasComposerContent\)/)
   assert.match(app, /className=\{showComposerStop \? 'composer-stop' : 'composer-send'\}/)
   assert.match(app, /onClick=\{showComposerStop \? stopConversation : send\}/)
-  assert.match(app, /disabled=\{!hasComposerContent && !running\}/)
+  assert.match(app, /disabled=\{!hasComposerContent && !running && !pendingQuestion\}/)
   assert.doesNotMatch(app, /className="composer-send"|className="composer-stop"/)
   assert.match(app, /请输入内容或添加附件后发送/)
 })

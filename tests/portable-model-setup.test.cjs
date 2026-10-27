@@ -8,11 +8,12 @@ test('standalone EXE generator stages DPAPI configuration and Electron imports i
   fs.writeFileSync(source, JSON.stringify(config))
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   function run(exe, args) { const result = spawnSync(exe, args, { env, cwd: repo, windowsHide: true, encoding: 'utf8', timeout: 20000 }); assert.equal(result.status, 0, result.stdout + result.stderr); return result }
-  run(path.join(repo, 'deliverables/model-setup-20260927/Stable-Config-Builder.exe'), ['--build', source, receiver])
+  run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'scripts/build-model-setup.ps1'), '-OutputDirectory', path.relative(repo, root)])
+  run(path.join(root, 'Stable-Config-Builder.exe'), ['--build', source, receiver])
   run(receiver, ['--stage-only', profile])
   assert.ok(!fs.readFileSync(path.join(profile, 'model-setup.pending.json'), 'utf8').includes(config.apiKey))
   assert.match(run(require('electron'), [path.join(__dirname, 'fixtures/portable-model-setup.cjs'), profile]).stdout, /PORTABLE_MODEL_SETUP_PASS/)
   config.profile.baseURL = 'http://remote.invalid'; fs.writeFileSync(source, JSON.stringify(config))
-  const failed = spawnSync(path.join(repo, 'deliverables/model-setup-20260927/Stable-Config-Builder.exe'), ['--build', source, path.join(root, 'bad.exe')], { env, windowsHide: true, timeout: 10000 })
+  const failed = spawnSync(path.join(root, 'Stable-Config-Builder.exe'), ['--build', source, path.join(root, 'bad.exe')], { env, windowsHide: true, timeout: 10000 })
   assert.equal(failed.status, 1); assert.equal(fs.existsSync(path.join(root, 'bad.exe')), false)
 })

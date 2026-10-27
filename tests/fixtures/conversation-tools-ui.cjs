@@ -25,7 +25,7 @@ async function main() {
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
     const draft={name:'Catch · 来源对话.md',type:'catch',size:30000,path:'D:/mock/workspace/.stable/catches/example.md'};
-    const initial={activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
+    const initial={cloud:{status:'disabled',enabled:false},activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
     const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'glm-Flash-'+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
@@ -34,7 +34,7 @@ async function main() {
       setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
       forkAnswer:async(id,messageId)=>{window.forked={id,messageId};return {...state('b'),messages:messages.map(item=>({...item,id:'fork-'+item.id})),catchAttachments:[]}},
       configureModel:async(id,modelId)=>{window.selectedModel=modelId;return {...state(id),models:discovered,conversations:conversations.map(c=>c.id===id?{...c,modelId}:c)}},
-      contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[],skills:[]}),
+      contextUsage:async id=>({model:'mock',maxTokens:1000000,usedTokens:id==='a'?286200:null,percentage:id==='a'?28.62:null,updatedAt:Date.now(),estimated:true,categories:id==='a'?[{name:'Messages',tokens:180400},{name:'System tools',tokens:48700},{name:'MCP tools',tokens:46700},{name:'System prompt',tokens:7600},{name:'Skills',tokens:2700},{name:'Memory files',tokens:100}]:[],mcpTools:[{name:'stable / stable_excel',tokens:46700}],memoryFiles:[{name:'MEMORY.md',tokens:100}],systemTools:[{name:'Bash',tokens:48700}],skills:[]}),
       viewState:async(id,value)=>{if(value)window.views[id]=value;return window.views[id]||{}},rename:async(id,title)=>{window.renamed={id,title};return state(id)},onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>state(id),
       catchReply:async(id,message)=>{window.caught.push({id,message});return state('b')},
       discardCatch:async id=>({...state(id),catchAttachments:[]}),
@@ -55,7 +55,8 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
+  const fixtureHtml = '<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>';
+  const fixturePath=path.join(output,'fixture.html');fs.writeFileSync(fixturePath,fixtureHtml);await win.loadFile(fixturePath)
   for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
@@ -210,7 +211,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(permission.querySelectorAll('.permission-option').length===3,'Permission modes were removed');
     document.querySelector('.permission-menu > summary').click();await tick();
     const conversation=document.querySelector('.conversation'),width=conversation.getBoundingClientRect().width;
-    const expectedGutter=Math.max(Math.min(64,Math.max(24,innerWidth*.04)),(width-896)/2);
+    const expectedGutter=Math.max(Math.min(128,Math.max(16,(width-500)*.2)),(width-1024)/2);
     expect(Math.abs(parseFloat(getComputedStyle(document.querySelector('.message-scroll')).paddingLeft)-expectedGutter)<2,'Conversation gutter differs from current layout');
     document.querySelector('.conversation-select').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await tick();
     const rename=document.querySelector('.rename-dialog'),name=rename.querySelector('input');expect(rename.open,'Rename dialog did not open on double click');expect(name.selectionEnd-name.selectionStart===name.value.length,'Rename title not selected');
@@ -226,8 +227,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(scroller.scrollTop<10,'New output stole history scroll');
     window.event('completed');window.resolveRun();await tick();window.sent=[];
     expect(document.querySelector('.conversation-bottom svg'),'Completion did not restore arrow');
-    const catchButton=document.querySelector('.catch-button'),header=catchButton.closest('.trace-header');
-    expect(Math.abs(catchButton.getBoundingClientRect().right-header.getBoundingClientRect().right)<2,'Catch is not at far right');
+    expect(document.querySelector('.answer-toolbar'),'Answer actions missing');
     document.querySelector('.conversation-bottom').click();await tick();
     expect(scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-3,'Return to bottom failed');
     scroller.scrollTop+=document.querySelector('[data-message-id="m"]').getBoundingClientRect().top-scroller.getBoundingClientRect().top+20;scroller.dispatchEvent(new Event('scroll'));await tick();await tick();await tick();const savedAnchor=window.views.a;expect(savedAnchor.anchor==='m'&&!savedAnchor.following,'Message anchor not persisted');window.changeState(window.fixtureState('b'));await tick();window.changeState(window.fixtureState('a'));await tick();await tick();await tick();await tick();await tick();scroller=document.querySelector('.message-scroll');const anchor=document.querySelector('[data-message-id="m"]');expect(Math.abs(anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-savedAnchor.offset)<3,'Message anchor did not restore '+JSON.stringify({savedAnchor,top:scroller.scrollTop,actualOffset:anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top,stored:window.views.a}));
@@ -242,7 +242,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(input.value==='草插入','Answer copy changed draft');
     document.querySelector('.answer-toolbar [aria-label="固定为章节"]').click();await tick();
     expect(document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Pin state missing');
-    document.querySelector('[aria-label="章节目录"]').click();await tick();
+    document.querySelector('.conversation-tools-trigger').click();await tick();Array.from(document.querySelectorAll('.conversation-tools-panel [role=menuitem]')).find(el=>el.textContent.startsWith('章节')).click();await tick();
     expect(document.querySelector('.chapter-jump'),'Pinned chapter missing from directory');
     document.querySelector('[aria-label^="重命名章节"]').click();await tick();
     const chapterInput=document.querySelector('[aria-label="章节名称"]');
@@ -260,8 +260,8 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Pin lost on conversation switch');
     document.querySelector('.answer-toolbar [aria-label="取消固定章节"]').click();await tick();
     expect(!document.querySelector('.answer-toolbar [aria-pressed="true"]'),'Unpin failed');
-    document.querySelector('.catch-button').click();await tick();
-    expect(window.caught.length===1&&window.caught[0].message==='m','Catch did not capture selected answer');
+    // Catch creation was replaced by answer forking; persisted Catch drafts must still work.
+    window.changeState(window.fixtureState('b'));await tick();
     expect(window.sent.length===0,'Catch auto-sent task');
     expect(document.querySelector('.composer-selections .conversation-file-card').textContent.includes('Catch'),'Catch attachment is not visible');
     expect(!document.querySelector('.assistant-turn'),'Catch did not switch new task');
@@ -292,8 +292,8 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     window.stable.agent.messages=async(id,cursor)=>{window.pageRequest={id,cursor};return {messages:[{id:'early-user',seq:1,role:'user',content:'早期提问',createdAt:'2020-01-01T00:00:00Z'},{id:'early-answer',seq:2,role:'assistant',content:'早期回答',createdAt:'2020-01-01T00:01:00Z'}],beforeCursor:null}};
     window.changeState({...window.fixtureState('a'),activeConversationId:'c',conversations:[...window.fixtureState('a').conversations,{...window.fixtureState('a').conversations[0],id:'c',title:'长对话'}],beforeCursor:201,messages:[{...window.fixtureState('a').messages[1],id:'recent-answer',seq:201}]});await tick();await tick();
     expect(!document.querySelector('[data-message-id="early-answer"]'),'Early page must start unloaded');
-    expect(document.querySelectorAll('.chapter-directory').length===1,'Duplicate chapter directory after switching');
-    document.querySelector('.chapter-trigger').click();await tick();
+    expect(document.querySelectorAll('.conversation-tools-trigger').length===1,'Duplicate conversation tools after switching');
+    document.querySelector('.conversation-tools-trigger').click();await tick();Array.from(document.querySelectorAll('.conversation-tools-panel [role=menuitem]')).find(el=>el.textContent.startsWith('章节')).click();await tick();
     const panelRect=document.querySelector('.chapter-panel').getBoundingClientRect();
     expect(panelRect.left>=0&&panelRect.right<=innerWidth&&panelRect.bottom<=innerHeight,'Chapter panel clipped');
     document.querySelector('.chapter-jump').click();await tick();await tick();await tick();
@@ -301,8 +301,8 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     const early=document.querySelector('[data-message-id="early-answer"]'),scroll=document.querySelector('.message-scroll');
     expect(early&&document.activeElement===early,'Early chapter not focused');
     expect(Math.abs(early.getBoundingClientRect().top-scroll.getBoundingClientRect().top-16)<4,'Early chapter not scrolled into view');
-    document.querySelector('.chapter-trigger').click();await tick();
-    document.querySelector('.chapter-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
+    document.querySelector('.conversation-tools-trigger').click();await tick();Array.from(document.querySelectorAll('.conversation-tools-panel [role=menuitem]')).find(el=>el.textContent.startsWith('章节')).click();await tick();
+    document.querySelector('.conversation-tools-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
     expect(!document.querySelector('.chapter-panel'),'Escape failed to close chapter directory');
     window.splash();await tick();
     expect(getComputedStyle(document.querySelector('.launch-splash')).backgroundColor==='rgb(255, 255, 255)','Splash is not white');
@@ -311,7 +311,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     const canvas=document.createElement('canvas');canvas.width=canvas.height=1254;const ctx=canvas.getContext('2d');ctx.drawImage(logo,0,0);
     const pixels=ctx.getImageData(0,0,1254,1254).data;let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>128&&pixels[i]<100)ink++;
     expect(ink>1000,'Logo has no visible black pixels');
-    return {catchCreatesUnsentTask:true,attachmentSentAndRemoved:true,scrollStatesAndPosition:true,historyPasteAndSelect:true,whiteSplashOriginalLogo:true};
+    return {legacyCatchDraftSupported:true,attachmentSentAndRemoved:true,scrollStatesAndPosition:true,historyPasteAndSelect:true,whiteSplashOriginalLogo:true};
   })().catch(error=>{throw new Error(error.stack)})`)
   console.log('CONVERSATION_TOOLS_UI_PASSED', JSON.stringify(result))
   win.destroy();app.exit(0)

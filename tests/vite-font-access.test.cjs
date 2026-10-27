@@ -32,7 +32,14 @@ test('Vite serves linked dependency fonts while denying unrelated paths and envi
   })
   await server.listen()
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`
-  const request = file => fetch(`${origin}/@fs/${encodeURI(file.replace(/\\/g, '/'))}`, { signal: AbortSignal.timeout(5000) })
+  // Use a fresh loopback connection so Node's global fetch pool cannot stall this server test.
+  const request = file => new Promise((resolve, reject) => {
+    const req = require('node:http').get(`${origin}/@fs/${encodeURI(file.replace(/\\/g, '/'))}`, { agent: false }, response => {
+      const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('error', reject);
+      response.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers: response.headers })));
+    });
+    req.setTimeout(5000, () => req.destroy(new Error('Vite loopback request timed out'))); req.on('error', reject);
+  })
   for (const [family, filename] of [
     ['ibm-plex-sans', 'ibm-plex-sans-latin-wght-normal.woff2'],
     ['space-grotesk', 'space-grotesk-latin-wght-normal.woff2'],

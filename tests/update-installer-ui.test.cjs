@@ -71,7 +71,7 @@ test('failed update paths distinguish successful rollback from rollback failure'
   assert.match(installSection, /healthcheck_rollback" "failed_rolled_back" "12"/)
   assert.match(installSection, /rollback_failed" "failed" "1[5-9]"/)
   assert.match(installSection, /stableRuntimeRestoreBeforeSwapFailed:/)
-  assert.match(installSection, /stableSwapRollback:[\s\S]+Rename "\$stableRuntimeDir"[\s\S]+IfErrors stableSwapRuntimeRestoreFailed/)
+  assert.match(installSection, /stableSwapRollback:[\s\S]+!insertmacro stableRenameWithRetry "\$stableRuntimeDir"[\s\S]+IfErrors stableSwapRuntimeRestoreFailed/)
   assert.match(installSection, /stableSwapRuntimeRestoreFailed:[\s\S]+"20"/)
   assert.match(installer, /旧版本已恢复/)
   assert.match(installer, /\$stableProgressStatus == "failed_rolled_back"[\s\S]+Abort "\$stableProgressPercent% · 更新未完成，旧版本已恢复（错误码 \$stableProgressCode）"/)

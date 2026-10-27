@@ -705,7 +705,7 @@ function fixture(t, responder, options = {}) {
     runner.cancel()
     if (runner.busy) await until(() => !runner.busy)
     assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()))
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+    await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   })
   return { root, workspace, runner, requests }
 }

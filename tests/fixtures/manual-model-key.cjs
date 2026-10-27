@@ -3,13 +3,14 @@ const { app, BrowserWindow, safeStorage } = require('electron')
 const path = require('node:path'), assert = require('node:assert/strict'), fs = require('node:fs')
 const repo = path.resolve(__dirname, '../..'), root = process.env.STABLE_KEY_TEST_ROOT
 process.env.STABLE_QA_USER_DATA = root
-delete process.env.STABLE_CLOUD_ENABLED; delete process.env.STABLE_QA_CAPTURE
+process.env.STABLE_CLOUD_ENABLED = '0'; delete process.env.STABLE_QA_CAPTURE
 app.getAppPath = () => repo
 for (const method of ['show', 'showInactive', 'focus']) BrowserWindow.prototype[method] = function () {}
 const timer = setTimeout(() => app.exit(1), 20000)
 app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', async () => {
-    const js = code => window.webContents.executeJavaScript(code)
+    const js = async code => { try { return await window.webContents.executeJavaScript(code) } catch(error) { throw new Error(code+' : '+error.message) } }
+    window.webContents.on('console-message', event => console.error('renderer:', event.message))
     try {
       for (let i = 0; i < 50; i++) { if (await js("Boolean(document.querySelector('.rail-account-trigger'))")) break; await new Promise(resolve => setTimeout(resolve, 100)) }
       await js("document.querySelector('.rail-account-trigger').click()")
@@ -21,8 +22,8 @@ app.on('browser-window-created', (_event, window) => {
       if (process.argv.includes('--save')) {
         await js(`(() => { const input=document.querySelector('input[name="api-key"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'fixture-user-entered-key'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`)
         await new Promise(resolve => setTimeout(resolve, 100))
-        await js("document.querySelector('.model-connection-settings').requestSubmit()")
-        for (let i = 0; i < 50; i++) { if (await js("Boolean(document.querySelector('.model-connection-settings [role=status]'))")) break; await new Promise(resolve => setTimeout(resolve, 100)) }
+        await js("document.querySelector('form.model-connection-settings').requestSubmit()")
+        for (let i = 0; i < 50; i++) { if (await js("Boolean(document.querySelector('form.model-connection-settings [role=status]'))")) break; await new Promise(resolve => setTimeout(resolve, 100)) }
         assert.ok(await js("document.body.innerText.includes('已在本机加密保存')"))
       } else assert.ok(await js("document.body.innerText.includes('已加密保存')"))
       assert.equal(await js("document.querySelector('input[name=\"api-key\"]').value"), '')

@@ -43,7 +43,7 @@ export function ConversationTools({ conversationId, running, active, autoOpenWen
         <button type="button" role="menuitem" disabled={running} title={running ? '停止此任务后可修改登录绑定' : '登录状态全局共用，品牌按对话保存'} onClick={() => { setView(null); setLoginRequest(value => value + 1) }}><Wrench size={16} aria-hidden="true" /><span>问鼎</span></button>
       </> : <>
         <button type="button" className="conversation-tools-back" aria-label="返回对话功能" onClick={() => setView('menu')}><ArrowLeft size={15} aria-hidden="true" /><span>返回</span></button>
-        <ChapterDirectory embedded onDismiss={close} chapters={chapters} error={chapterError} onChange={onChange} onJump={onJump} />
+        <ChapterDirectory embedded onDismiss={() => setView(null)} chapters={chapters} error={chapterError} onChange={onChange} onJump={onJump} />
       </>}
     </div>}
     <ConversationWending conversationId={conversationId} running={running} active={active} autoOpen={autoOpenWending} hideTrigger openRequest={loginRequest} onClose={restoreFocus} />

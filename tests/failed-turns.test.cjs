@@ -90,7 +90,8 @@ test('the real run IPC failure path saves the terminal message and clears its ac
   const agentRunners = new Map()
   let handler, broadcasts = 0
   require('node:vm').runInNewContext(handlerSource, {
-    messagePredictions: { interrupt() {} },
+    require: name => require(path.resolve(__dirname, '../desktop', name)),
+    messagePredictions: { interrupt() {} }, conversationTitles: { interrupt() {} }, scheduleConversationTitle() {},
     ipcMain: { handle: (_name, value) => { handler = value } },
     store, conversationLifecycle: life, agentRunners,
     requireText: value => value, randomUUID: () => 'request',
@@ -101,7 +102,7 @@ test('the real run IPC failure path saves the terminal message and clears its ac
     clarificationTurn: require('../desktop/services/clarification.cjs').clarificationTurn,
     clarifyBeforeExecution: async ({ payload }) => ({ status: 'ready', payload }),
     prepareAgentMessage: async () => ({ attachments: [], selectedReferences: [], extractedAttachments: { installedSkills: [] }, selectedData: [], selectedKnowledge: [], selectedSkills: [], selectedScripts: [] }),
-    commitAgentMessage: (_id, query) => { life.status('request', 'saved', { userMessageId: store.addMessage(id, 'user', query) }) },
+    commitAgentMessage: (_id, query) => { const messageId = store.addMessage(id, 'user', query); life.status('request', 'saved', { userMessageId: messageId }); return { id: messageId } },
     automationIntent: () => false,
     runAgent: async () => {
       life.status('request', 'running', { threadId: 'thread', turnId: 'turn' })

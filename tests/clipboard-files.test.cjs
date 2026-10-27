@@ -7,12 +7,14 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { transformSync } = require('esbuild')
 const source = readSource(path.join(__dirname, '../src/App.tsx'), 'utf8')
-const code = transformSync(source.slice(source.indexOf('  async function addPastedAttachments('), source.indexOf('  function removeAttachment(')), { loader: 'tsx' }).code
+const mergeCode = source.slice(source.indexOf('  function mergeAttachments('), source.indexOf('  function setAttachmentStatus('))
+const code = transformSync(mergeCode + source.slice(source.indexOf('  async function addPastedAttachments('), source.indexOf('  function removeAttachment(')), { loader: 'tsx' }).code
 
 function setup(existing = []) {
   const calls = { inspected: [], saved: [], discarded: [], attachments: existing, prompt: '原文字', error: '' }
   const context = {
     state: { activeConversationId: 'conversation' }, attachments: existing,
+    uploadsPending: { current: {} }, attachmentMapRef: { current: { conversation: existing } },
     window: { stable: {
       files: { path: file => file.diskPath || '' },
       agent: {

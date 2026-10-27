@@ -51,7 +51,7 @@ async function main() {
       if (material === 'opaque') {
         assert.equal(metrics.root[3], 255); assert.equal(metrics.composer[3], 255); assert.equal(metrics.popover[3], 255); assert.equal(metrics.blur, 'none')
       } else {
-        assert.equal(metrics.root[3], 0); assert.equal(metrics.shell[3], 0, 'Application-menu shell must expose native Mica without white wash'); assert.ok(Math.abs(metrics.popover[3]-245)<=1); assert.equal(metrics.blur, 'blur(16px)')
+        assert.equal(metrics.root[3], 0); assert.equal(metrics.shell[3], 0, 'Application-menu shell must expose native Mica without white wash'); assert.ok(Math.abs(metrics.popover[3]-245)<=1); assert.equal(metrics.blur, theme === 'dark' ? 'none' : 'blur(16px)')
         if(theme==='light') assert.ok(Math.abs(metrics.composer[3]-220)<=1)
       }
       result.push(metrics)
