@@ -204,7 +204,7 @@ export interface AgentReference {
   type: string
 }
 
-export type AgentCapability = 'auto' | 'none' | 'enabled' | 'low' | 'high' | 'max'
+export type AgentCapability = 'auto' | 'none' | 'enabled' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type AgentPermissionMode = 'request' | 'auto' | 'full'
 
 export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert' | 'plugin'; pluginSkills?: { id: string; name: string; description: string }[]; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
@@ -235,7 +235,10 @@ export interface ConversationItem {
 }
 
 export interface DesignRequest {
-  model: 'glm-image'
+  outputPreset?: 'avatar' | 'shop-sign' | 'poster' | 'popup' | 'showcase' | 'dish'
+  model: 'glm-image' | 'gpt-image-2.5-sunburst' | 'gpt-image-2.5-flare'
+  quality?: 'hd' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto'
+  background?: 'opaque' | 'transparent' | 'auto'
   mode: 'generate' | 'preserve'
   ratio: '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom'
   width?: number
@@ -806,6 +809,7 @@ export interface StableBridge {
     openPath(path: string): Promise<boolean>
     showItemInFolder(path: string): Promise<boolean>
     openExternalHtml(path: string): Promise<boolean>
+    fileAction(path: string, action: 'openWith' | 'browser' | 'saveAs' | 'copyPath' | 'copyContent' | 'reveal'): Promise<boolean>
   }
   files: {
     path(file: File): string

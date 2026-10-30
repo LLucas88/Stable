@@ -476,7 +476,7 @@ const DIRECT_HTML_EXTENSIONS = new Set(['.html', '.htm'])
 const IMAGE_PREVIEW_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
 const EXTRACTED_TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.json', '.yaml', '.yml', '.log', '.xml', '.docx', '.pdf', '.pptx', '.xlsx', '.xls'])
 
-const attachmentPreviews = new (require('./services/attachment-previews.cjs').AttachmentPreviews)()
+const attachmentPreviews = new (require('./services/attachment-previews.cjs').AttachmentPreviews)({ importedRoots: (id, file) => dataImport().previewRoots(id, file) })
 
 async function openFilePreview(value, bounds) {
   const paths=conversationPaths(store.activeConversationId())
@@ -1515,7 +1515,7 @@ function createScriptAutoResponder({ control, node, item, input, publish, script
   }
 }
 
-const AGENT_CAPABILITIES = new Set(['auto', 'none', 'enabled', 'low', 'high', 'max'])
+const AGENT_CAPABILITIES = new Set(['auto', 'none', 'enabled', 'low', 'medium', 'high', 'xhigh', 'max'])
 
 function conversationPaths(conversationId, validate = false) {
   const context = validate ? store.resolveRunContext(conversationId, paths.workspace) : store.conversationContext(conversationId)
@@ -2833,6 +2833,10 @@ function registerIpc() {
     }
     event.sender.send('stable:appearance:launchStart')
   })
+  const fileActions = require('./services/file-actions.cjs').registerFileActions({
+    ipcMain, trusted: trustedLoginSender, shell, clipboard, dialog, getWindow: () => mainWindow,
+    roots: requested => { const paths = conversationPaths(store.activeConversationId()); return attachmentPreviews.roots(store.activeConversationId(), requested, paths.readableRoots || paths.writableRoots || [paths.workspace]) },
+  })
   ipcMain.handle('stable:system:openPath', async (_event, payload) => {
     const paths=conversationPaths(store.activeConversationId())
     const requested = requireText(payload?.path, '路径', 1000)
@@ -2855,13 +2859,12 @@ function registerIpc() {
     return true
   })
   ipcMain.handle('stable:system:openExternalHtml', async (_event, payload) => {
+    if (!trustedLoginSender(_event)) throw Error('此页面无权操作本地文件。')
     const paths=conversationPaths(store.activeConversationId())
     const requested = requireText(payload?.path, '路径', 1000)
     const resolved = resolveWorkspaceEntry(requested, paths.readableRoots || paths.writableRoots || paths.workspace, { fileOnly: true })
     if (!DIRECT_HTML_EXTENSIONS.has(resolved.extension)) throw new Error('只有 HTML 文件可以使用外部浏览器打开。')
-    const openError = await shell.openPath(resolved.path)
-    if (openError) throw new Error(`无法使用默认浏览器打开 HTML：${openError}`)
-    return true
+    return fileActions('browser', resolved.path)
   })
 }
 

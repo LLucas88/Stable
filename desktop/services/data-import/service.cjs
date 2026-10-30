@@ -350,6 +350,29 @@ class DataImportService {
     } catch (error) { if (transaction) this.store.db.exec('ROLLBACK'); removeOwned(this.outputRoot, directory); throw error }
   }
 
+  previewRoots(conversationId, requested) {
+    const context = this.store.getSetting(`workbuddy-context:${conversationId}`)
+    if (!context || typeof requested !== 'string') return []
+    try {
+      const file = regularPath(requested)
+      if ((context.files || []).some(item => path.resolve(item.path) === file) && inside(this.outputRoot, file)) return [path.dirname(file)]
+      const record = this.store.db.prepare("SELECT * FROM workbuddy_imports WHERE kind='session' AND target_id=?").get(context.sourceConversationId || conversationId)
+      if (!record || !inside(this.outputRoot, record.path)) return []
+      const metadata = JSON.parse(record.metadata_json)
+      if (!metadata.originalPath || !inside(path.resolve(metadata.originalPath), file)) return []
+      if (!/\.(?:html?|xlsx?|xlsm|csv|docx?|pptx?|pdf|png|jpe?g|webp|svg)$/i.test(file)) return []
+      const archive = readFile(path.join(record.path, 'original.jsonl'), 100 * 1024 * 1024)
+      if (digest(archive) !== record.fingerprint) return []
+      const target = file.replace(/\\/g, '/')
+      const referenced = parseSession(archive, {qaOnly:true}).messages.some(message => {
+        const text = String(message.content || '').replace(/\\+/g, '/')
+        const at = text.indexOf(target)
+        return at >= 0 && !/[\p{L}\p{N}_.\-/]/u.test(text[at + target.length] || '')
+      })
+      return referenced ? [path.dirname(file)] : []
+    } catch { return [] }
+  }
+
   context(conversationId, workspace) {
     const context = this.store.getSetting(`workbuddy-context:${conversationId}`)
     if (!context) return ''

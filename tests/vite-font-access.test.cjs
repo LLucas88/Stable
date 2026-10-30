@@ -4,7 +4,7 @@ const { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } = requi
 const path = require('node:path')
 const os = require('node:os')
 
-test('Vite serves linked dependency fonts while denying unrelated paths and environment files', { timeout: 30_000 }, async t => {
+test('Vite serves linked dependency fonts while denying unrelated paths and environment files', { timeout: 120_000 }, async t => {
   const { createServer } = await import('vite')
   const root = realpathSync(path.join(__dirname, '..'))
   const dependencies = realpathSync(path.join(root, 'node_modules'))
@@ -32,13 +32,15 @@ test('Vite serves linked dependency fonts while denying unrelated paths and envi
   })
   await server.listen()
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`
-  // Use a fresh loopback connection so Node's global fetch pool cannot stall this server test.
+  // Keep connections isolated and bound each request. On Windows this integration
+  // check can exceed five seconds while streaming; it verifies access and bytes,
+  // not a latency SLA, so allow the same 30-second budget as other server checks.
   const request = file => new Promise((resolve, reject) => {
     const req = require('node:http').get(`${origin}/@fs/${encodeURI(file.replace(/\\/g, '/'))}`, { agent: false }, response => {
       const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('error', reject);
       response.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers: response.headers })));
     });
-    req.setTimeout(5000, () => req.destroy(new Error('Vite loopback request timed out'))); req.on('error', reject);
+    req.setTimeout(30_000, () => req.destroy(new Error('Vite loopback request timed out'))); req.on('error', reject);
   })
   for (const [family, filename] of [
     ['ibm-plex-sans', 'ibm-plex-sans-latin-wght-normal.woff2'],

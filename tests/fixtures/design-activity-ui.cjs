@@ -78,6 +78,14 @@ async function main() {
   const run = script => win.webContents.executeJavaScript(`(async()=>{const tick=()=>new Promise(r=>setTimeout(r,150));const expect=(ok,msg)=>{if(!ok)throw Error(msg)};const click=s=>{const e=document.querySelector(s);expect(e,'Missing '+s);e.click()};const input=(s,v)=>{const e=document.querySelector(s);e.focus();Object.getOwnPropertyDescriptor(e.tagName==='INPUT'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype,'value').set.call(e,v);e.dispatchEvent(new Event('input',{bubbles:true}))};${script}})()`)
   await run(`
     expect(document.querySelector('.rail-new-chat').getBoundingClientRect().height>=40,'New chat too small');
+    expect(!document.querySelector('.rail-task-search'),'Redundant sidebar search remains');
+    const pane=document.querySelector('.rail-task-pane'),frame=document.querySelector('.main-frame'),shell=document.querySelector('.app-shell');
+    expect(Math.abs(pane.getBoundingClientRect().top-frame.getBoundingClientRect().top)<1,'Panel tops misaligned');
+    expect(getComputedStyle(frame).borderTopRightRadius==='16px'&&getComputedStyle(pane).borderBottomLeftRadius==='16px','Outer corners missing');
+    expect(getComputedStyle(shell).paddingRight==='1px'&&getComputedStyle(shell).paddingBottom==='1px','One-pixel shell gap missing');
+    expect(['hidden','clip'].includes(getComputedStyle(pane).overflowY),'Task contents can cover rounded corners');
+    for(const selector of ['.window-titlebar','.app-shell','.side-rail']) expect(getComputedStyle(document.querySelector(selector)).backgroundColor==='rgba(0, 0, 0, 0)','Window material covered by '+selector);
+    expect(Math.abs(document.querySelector('.rail-task-header').getBoundingClientRect().height-document.querySelector('.conversation-topbar').getBoundingClientRect().height)<1,'Header heights misaligned');
     const work=document.querySelector('[aria-label="工作"]'),design=document.querySelector('[aria-label="Design"]'),chat=document.querySelector('.rail-nav');
     expect(work.getBoundingClientRect().top<design.getBoundingClientRect().top&&design.getBoundingClientRect().top<chat.getBoundingClientRect().top,'Workspace rail order');
     click('[aria-label="查看活动"]');await tick();expect(document.querySelector('.activity-row'),'Activity feed missing');
@@ -87,6 +95,21 @@ async function main() {
     click('[aria-label="Design"]');await tick();expect(document.querySelector('[data-design="true"]'),'Design composer missing');
     expect(document.querySelector('.design-mode').textContent.includes('图片生成'),'Image mode missing');
     expect(!document.querySelector('.model-effort-control'),'Design model picker still present');
+    const modelMenu=Array.from(document.querySelectorAll('.design-controls details')).find(d=>d.querySelector('strong')?.textContent==='图像模型');
+    expect(modelMenu.querySelector('summary').textContent.includes('Sunburst'),'New Design must default to Sunburst');
+    modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent.includes('Flare')).click();await tick();
+    modelMenu.open=true;
+    expect(!modelMenu.querySelector('p'),'Model implementation description remains');
+    expect(getComputedStyle(modelMenu.querySelector('.composer-popover')).boxShadow!=='none','Design popup shadow missing');
+    expect(getComputedStyle(modelMenu.querySelector('[aria-pressed=true]')).boxShadow!=='none','Selected model shadow missing');
+    modelMenu.open=false;
+    expect(modelMenu.querySelector('summary').textContent.includes('Flare'),'Flare selection failed');
+    const quality=Array.from(document.querySelectorAll('.design-controls details')).find(d=>d.querySelector('summary')?.textContent.startsWith('质量'));
+    quality.open=true;expect(quality.querySelectorAll('button').length===6,'Official image quality choices missing');
+    const bg=quality.querySelector('select');bg.value='transparent';bg.dispatchEvent(new Event('change',{bubbles:true}));await tick();expect(bg.value==='transparent','Transparent background not selected');quality.open=false;
+    modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent==='GLM-image').click();await tick();
+    expect(!Array.from(document.querySelectorAll('.design-controls summary')).some(s=>s.textContent.startsWith('质量')),'GPT options leaked into GLM');
+    modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent.includes('Sunburst')).click();await tick();
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
     expect(document.querySelector('[data-design-chat="true"]')&&!document.querySelector('[aria-label="图片尺寸"]'),'Chat mode kept image controls');
     expect(getComputedStyle(document.querySelector('.composer-tools')).display!=='none','Normal chat tools hidden');
@@ -101,11 +124,19 @@ async function main() {
     input('#agent-prompt','按 @');await tick();expect(document.querySelector('.design-inline-references'),'Typing @ did not open references');click('.design-inline-references button');await tick();expect(document.querySelector('#agent-prompt').value.includes('@图1'),'Reference mention missing');
   `)
   fs.writeFileSync(path.join(output,'design-light.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`const menu=Array.from(document.querySelectorAll('.design-controls details')).find(d=>d.querySelector('strong')?.textContent==='图像模型');menu.open=true;await tick();`)
+  fs.writeFileSync(path.join(output,'design-model-menu-light.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`document.documentElement.dataset.theme='dark';await tick();const selected=document.querySelector('.design-controls [aria-pressed=true]');expect(getComputedStyle(selected).boxShadow!=='none','Dark selected shadow missing');`)
+  fs.writeFileSync(path.join(output,'design-model-menu-dark.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`document.documentElement.dataset.theme='light';document.querySelectorAll('.design-controls details').forEach(d=>d.open=false);await tick();`)
   await run(`
     const size=document.querySelector('.design-size-popover');size.closest('details').open=true;
-    Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='9:16').click();await tick();
+    Array.from(size.querySelectorAll('button')).find(b=>b.textContent.startsWith('弹窗')).click();await tick();
     Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='2K').click();await tick();
-    expect(document.querySelector('[aria-label="图片宽度"]').value==='1152'&&document.querySelector('[aria-label="图片高度"]').value==='2048','Preset dimensions missing');
+    expect(size.querySelector('.design-output-limit').textContent.includes('小于 2 MB')&&size.querySelector('.design-output-limit').textContent.includes('600 × 750'),'Delivery specification missing');
+    expect(!document.querySelector('[aria-label="图片宽度"]'),'Business preset should not expose provider dimensions as output size');
+    Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='自定义').click();await tick();
+    expect(document.querySelector('[aria-label="图片宽度"]').value==='1632'&&document.querySelector('[aria-label="图片高度"]').value==='2048','Custom generation dimensions missing');
     click('[aria-label="锁定宽高比例"]');await tick();
     // Offscreen windows never have native focus and Chromium suppresses blur
     // events there. Dispatch the same bubbling focusout React uses explicitly.
@@ -119,12 +150,28 @@ async function main() {
   `)
   fs.writeFileSync(path.join(output,'design-custom-size.png'),(await win.webContents.capturePage()).toPNG())
   await run(`
+    const row=document.querySelector('.design-dimensions'),labels=[...row.querySelectorAll('label')].map(e=>e.getBoundingClientRect()),lock=row.querySelector('button').getBoundingClientRect(),unit=row.querySelector('.design-pixel-unit').getBoundingClientRect();
+    expect(Math.abs(labels[0].width-labels[1].width)<1,'Dimension fields have unequal widths');
+    const centre=r=>r.top+r.height/2;
+    expect([labels[1],lock,unit].every(r=>Math.abs(centre(r)-centre(labels[0]))<1),'Dimension controls are not vertically aligned: '+JSON.stringify([labels[0],labels[1],lock,unit].map(r=>({y:r.y,h:r.height}))));
+    expect(Math.abs((lock.left-labels[0].right)-(labels[1].left-lock.right))<1,'Aspect lock spacing is asymmetric');
+    expect(unit.right<=row.getBoundingClientRect().right+1,'Pixel unit overflows');
+    document.documentElement.dataset.windowMaterial='mica';document.documentElement.style.backgroundColor='#edf9e3';await tick();
+    for(const selector of ['.window-shell','.window-titlebar','.app-shell','.side-rail']) expect(getComputedStyle(document.querySelector(selector)).backgroundColor==='rgba(0, 0, 0, 0)','Mica surface covered by '+selector);
+  `)
+  fs.writeFileSync(path.join(output,'design-chrome-material.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`delete document.documentElement.dataset.windowMaterial;document.documentElement.style.removeProperty('background-color');await tick();`)
+  await run(`const size=document.querySelector('.design-size-popover');Array.from(size.querySelectorAll('button')).find(b=>b.textContent.startsWith('店铺头像')).click();await tick();expect(size.querySelector('.design-output-limit').textContent.includes('小于 5 MB'),'Avatar limit not linked');`)
+  fs.writeFileSync(path.join(output,'design-business-size.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`const size=document.querySelector('.design-size-popover');Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='自定义').click();await tick();click('[aria-label="锁定宽高比例"]');await tick();input('[aria-label="图片宽度"]','1312');await tick();document.querySelector('[aria-label="图片宽度"]').dispatchEvent(new FocusEvent('focusout',{bubbles:true}));await tick();input('[aria-label="图片高度"]','1024');await tick();document.querySelector('[aria-label="图片高度"]').dispatchEvent(new FocusEvent('focusout',{bubbles:true}));await tick();`)
+  await run(`
     document.querySelector('.design-size-popover').closest('details').open=false;
     const controls=document.querySelector('.design-controls');const count=Array.from(controls.querySelectorAll('summary')).find(s=>s.textContent.includes('1 张'));count.click();await tick();
     Array.from(count.parentElement.querySelectorAll('button')).find(b=>b.textContent==='2 张').click();await tick();
     const text=document.querySelector('[aria-label="图中文字内容"]');text.closest('details').open=true;input('[aria-label="图中文字内容"]','仅限今日 23.8');await tick();text.closest('details').open=false;
     input('#agent-prompt','生成一份早餐海报');await tick();click('.composer-send');await tick();
     expect(window.sent.length===1,'One submit should dispatch once');
+    expect(window.sent[0].design.model==='gpt-image-2.5-sunburst'&&window.sent[0].design.quality==='medium'&&window.sent[0].design.background==='opaque','GPT model settings lost on send');
     expect(window.sent[0].attachments[0].name==='reference.png','Reference missing from send');
     expect(window.sent[0].design.count===2&&window.sent[0].design.ratio==='custom'&&window.sent[0].design.width===1312&&window.sent[0].design.height===1024&&window.sent[0].design.text==='仅限今日 23.8','Design parameters lost');
     expect(!window.sent[0].prompt.includes('stable_design_request'),'System parameters leaked into user message');
@@ -144,6 +191,7 @@ async function main() {
     window.finish();await tick();
     document.documentElement.dataset.theme='dark';await tick();
     expect(getComputedStyle(document.documentElement).getPropertyValue('--color-paper').trim()==='#282a36','Dark theme failed');
+    for(const selector of ['.window-titlebar','.app-shell','.side-rail']) expect(getComputedStyle(document.querySelector(selector)).backgroundColor==='rgba(0, 0, 0, 0)','Dark window material covered by '+selector);
     expect(document.querySelector('.composer-send').getBoundingClientRect().bottom<innerHeight,'Send button clipped');
   `)
   fs.writeFileSync(path.join(output,'design-dark.png'),(await win.webContents.capturePage()).toPNG())

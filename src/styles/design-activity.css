@@ -13,6 +13,33 @@
 .rail-task-activity[aria-pressed=true] { color: #438dce; background: #8cbff52b; }
 .rail-task-activity i { position: absolute; right: 5px; top: 5px; width: 5px; height: 5px; border-radius: 50%; background: #e77baf; }
 .rail-task-search { flex-shrink: 0; }
+
+/* Match the regular model picker, including selected and open states. */
+#root .design-controls .composer-popover {
+  background: var(--surface-floating, var(--color-paper));
+  border: 1px solid var(--color-rule-soft) !important;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float) !important;
+}
+#root .design-controls :is(.composer-option, .design-options button, .design-ratio-options button, .design-resolution-options button):is([aria-pressed="true"], [aria-checked="true"]) {
+  background: var(--surface-selected, var(--color-paper-3));
+  box-shadow: var(--shadow-soft) !important;
+}
+#root .design-controls .composer-option:not(:disabled):hover {
+  background: var(--surface-hover, var(--color-paper-3));
+}
+#root .rail-new-chat { flex: 1 1 auto; width: auto; }
+#root .rail-new-chat:is(:hover, [data-active="true"]) { background: var(--surface-selected, var(--color-paper-3)); }
+#root .rail-task-activity { margin-left: auto; }
+@media (min-width: 60.001rem) {
+  /* Let both rails share the titlebar's window material; tint only the edge gap. */
+  #root .app-shell { padding-right: 1px; padding-bottom: 1px; background: transparent; box-shadow: inset -1px -1px 0 var(--color-paper-3); }
+  #root .rail-task-pane { border-radius: 16px 0 0 16px; overflow: clip; }
+  #root .main-frame { border-top: 1px solid var(--color-rule-2); border-radius: 0 16px 16px 0; }
+  #root .app-shell[data-rail-collapsed] .main-frame { border-radius: 16px; }
+  #root .rail-task-header, #root .conversation-topbar { height: 60px; min-height: 60px; max-height: 60px; flex-shrink: 0; }
+  #root .rail-task-header { padding-block: 8px; }
+}
 .conversation-activity-feed { padding: 0 0 20px; }
 .activity-heading { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; color: var(--color-muted); font-size: 12px; }
 .activity-heading details { position: relative; }
@@ -56,17 +83,23 @@
 .design-ratio-options { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 10px 0 18px; padding: 4px; border-radius: 12px; background: var(--color-paper-3); }
 .design-ratio-options button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 70px; border: 0; border-radius: 9px; background: transparent; color: var(--color-ink); }
 .design-ratio-options .design-ratio-shape { display: block; flex: 0 0 auto; }
+.design-business-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.design-business-options button { min-height: 54px; gap: 4px; }
+.design-business-options button:last-child { grid-column: 1 / -1; min-height: 32px; }
+.design-business-options small { color: var(--color-muted); font-size: 11px; }
+.design-output-limit { display: flex; flex-direction: column; gap: 6px; padding: 12px; margin-bottom: 14px; border-radius: 10px; background: var(--color-paper-3); }
+.design-output-limit span { color: var(--color-muted); }
 .design-ratio-options button[aria-pressed=true], .design-resolution-options button[aria-pressed=true] { background: var(--color-paper-4); }
 .design-resolution-options { display: flex; gap: 4px; margin: 10px 0 18px; padding: 4px; border-radius: 10px; background: var(--color-paper-3); }
 .design-resolution-options button { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--color-ink); }
-.design-dimensions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.design-dimension-part { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.design-dimension-part:nth-child(2) { flex: 1.25; }
-.design-dimensions label { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px; border-radius: 9px; background: var(--color-paper-3); }
+.design-dimensions { display: grid; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 10px; }
+.design-dimension-part { display: contents; }
+.design-dimensions label { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 42px; margin: 0; padding: 0 12px; border-radius: 9px; background: var(--color-paper-3); }
 .design-dimensions label span, .design-pixel-unit { color: var(--color-muted); }
-.design-dimensions input { width: 100%; min-width: 0; text-align: right; border: 0; outline-offset: 3px; background: transparent; color: var(--color-ink); font-size: 13px; appearance: textfield; }
+.design-pixel-unit { font-size: 11px; line-height: 1; }
+.design-dimensions input { width: 100%; min-width: 0; text-align: right; border: 0; padding: 0; outline-offset: 3px; background: transparent; color: var(--color-ink); font-size: 13px; font-variant-numeric: tabular-nums; appearance: textfield; }
 .design-dimensions input::-webkit-inner-spin-button, .design-dimensions input::-webkit-outer-spin-button { appearance: none; margin: 0; }
-.design-aspect-lock { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); }
+.design-aspect-lock { display: grid; place-items: center; width: 32px; height: 42px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--color-muted); }
 .design-aspect-lock[aria-pressed=true] { color: #419fdc; }
 .design-aspect-lock:hover { background: var(--surface-hover); }
 .design-controls .design-size-notice { min-height: 36px; font-size: 11px; }

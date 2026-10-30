@@ -6,29 +6,36 @@ const root=path.resolve(__dirname,'../..'),source=path.resolve(process.argv[2]||
 const overlay=path.join(__dirname,'overlay'),out=path.join(root,'.local/cloud-image-verification')
 async function main(){
  fs.mkdirSync(out,{recursive:true})
- const entry=`export { POST } from '${path.join(overlay,'app/v1/images/generations/route.ts').replace(/\\/g,'/')}';export {hashSessionToken} from '${path.join(source,'lib/server/crypto.ts').replace(/\\/g,'/')}';`
+ const entry=`export {recoverStaleRequests} from '${path.join(source,'lib/server/quota.ts').replace(/\\/g,'/')}';export { POST } from '${path.join(overlay,'app/v1/images/generations/route.ts').replace(/\\/g,'/')}';export {hashSessionToken} from '${path.join(source,'lib/server/crypto.ts').replace(/\\/g,'/')}';`
  await require('esbuild').build({stdin:{contents:entry,resolveDir:root,loader:'ts'},outfile:path.join(out,'gateway.cjs'),bundle:true,platform:'node',format:'cjs',plugins:[{name:'fixture-env',setup(build){
   build.onResolve({filter:/^cloudflare:workers$/},()=>({path:'fixture',namespace:'env'}))
   build.onLoad({filter:/.*/,namespace:'env'},()=>({contents:'export const env = globalThis.__imageFixtureEnv',loader:'js'}))
+  build.onLoad({filter:/[\\/]quota\.ts$/},args=>({contents:require('./quota-patch.cjs').patchImageRecovery(fs.readFileSync(args.path,'utf8')),loader:'ts'}))
   build.onResolve({filter:/^@\//},args=>{const candidate=path.join(overlay,args.path.slice(2))+'.ts';return {path:fs.existsSync(candidate)?candidate:path.join(source,args.path.slice(2))+'.ts'}})
   build.onResolve({filter:/^\.\.?\//},args=>{if(!args.resolveDir.startsWith(overlay))return;const base=path.resolve(args.resolveDir,args.path);for(const ext of ['', '.ts', '.js']){if(fs.existsSync(base+ext))return {path:base+ext};const fallback=path.join(source,path.relative(overlay,base))+ext;if(fs.existsSync(fallback))return {path:fallback}}})
  }}]})
  const {SqliteD1}=await import(pathToFileURL(path.join(source,'runtime/sqlite-d1.mjs')))
  const db=new SqliteD1(':memory:');const sql=db.database
- for(const file of fs.readdirSync(path.join(source,'drizzle')).filter(f=>/^\d{4}.*\.sql$/.test(f)&&f!=='0010_image_gateway.sql').sort())sql.exec(fs.readFileSync(path.join(source,'drizzle',file),'utf8'))
- sql.exec(fs.readFileSync(path.join(overlay,'drizzle/0010_image_gateway.sql'),'utf8'))
+ for(const file of fs.readdirSync(path.join(source,'drizzle')).filter(f=>/^\d{4}.*\.sql$/.test(f)&&!['0010_image_gateway.sql','0012_image_jobs.sql'].includes(f)).sort())sql.exec(fs.readFileSync(path.join(source,'drizzle',file),'utf8'))
+ for(const file of ['0010_image_gateway.sql','0012_image_jobs.sql']) sql.exec(fs.readFileSync(path.join(overlay,'drizzle',file),'utf8'))
  globalThis.__imageFixtureEnv={DB:db,SESSION_TOKEN_PEPPER:'synthetic-test-pepper',ALLOWED_UPSTREAM_ORIGINS:'https://open.bigmodel.cn',GLM_IMAGE_API_KEY:'synthetic-provider-key'}
- const {POST,hashSessionToken}=require(path.join(out,'gateway.cjs'))
+ const {POST,hashSessionToken,recoverStaleRequests}=require(path.join(out,'gateway.cjs'))
  const token='synthetic-device-token-for-image-verification',hash=await hashSessionToken(token,'synthetic-test-pepper')
  sql.exec(`INSERT INTO accounts(id,username,display_name,role,status,password_algorithm,password_hash,password_salt,password_iterations,must_change_password,auth_version,created_at,updated_at) VALUES('test','tester','Tester','member','active','pbkdf2-sha256','hash','salt',100000,0,1,1,1);
  INSERT INTO quota_buckets(id,account_id,currency,limit_micros,spent_micros,reserved_micros,period_start,period_end,status,created_at,updated_at) VALUES('quota','test','CNY',100,0,0,0,9999999999999,'active',1,1);
  INSERT INTO models(id,display_name,provider,upstream_model,upstream_base_url,secret_name,context_window,max_output_tokens,status,created_at,updated_at) VALUES('glm-image','GLM-image','zhipu','glm-image','https://open.bigmodel.cn/api/paas/v4','GLM_IMAGE_API_KEY',1000,1,'active',1,1);
  INSERT INTO model_prices(id,model_id,currency,input_micros_per_million,output_micros_per_million,effective_at,created_at) VALUES('image-price','glm-image','CNY',0,0,0,1);`)
  sql.prepare("INSERT INTO sessions(id,account_id,token_hash,auth_version,device_id,device_name,platform,app_version,expires_at,last_seen_at,created_at) VALUES('session','test',?,1,'device','Fixture','win32','test',9999999999999,1,1)").run(hash)
- let calls=0, mode='success',gate
+ let calls=0, mode='success',gate,submitted=0,polled=0,pollMode='processing'
  const originalFetch=globalThis.fetch
- globalThis.fetch=async(url,options)=>{calls++;assert.equal(String(url),'https://open.bigmodel.cn/api/paas/v4/images/generations');assert.equal(options.headers.authorization,'Bearer synthetic-provider-key');assert.equal(JSON.parse(options.body).model,'glm-image');if(mode==='balance')return new Response('private',{status:402});if(mode==='network')throw Error('unknown');if(mode==='wait')await new Promise(r=>gate=r);return Response.json({data:[{url:'https://cdn.example/generated.png'}]})}
- const call=async(key,prompt='fixture',authorization=token)=>{const r=await POST(new Request('https://gateway.test/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+authorization,'idempotency-key':key,'content-type':'application/json'},body:JSON.stringify({model:'glm-image',prompt,size:'512x512',quality:'hd'})}));return {status:r.status,body:await r.json()}}
+ globalThis.fetch=async(url,options)=>{
+  calls++;const address=String(url);assert.equal(options.headers.authorization,'Bearer synthetic-provider-key')
+  if(address.includes('/async-result/')){polled++;if(pollMode==='network')throw Error('private');if(pollMode==='invalid')return Response.json({task_status:'SUCCESS',image_result:[]});return Response.json(pollMode==='success'?{task_status:'SUCCESS',image_result:[{url:'https://cdn.example/generated.png'}]}:{task_status:pollMode==='fail'?'FAIL':'PROCESSING'})}
+  assert(['https://open.bigmodel.cn/api/paas/v4/images/generations','https://open.bigmodel.cn/api/paas/v4/async/images/generations'].includes(address));assert.equal(JSON.parse(options.body).model,'glm-image');if(mode==='balance')return new Response('private',{status:402});if(mode==='network')throw Error('unknown');if(mode==='wait')await new Promise(r=>gate=r);
+  if(address.includes('/async/images/')){submitted++;return Response.json({id:'task-'+submitted,task_status:'PROCESSING'})}
+  return Response.json({data:[{url:'https://cdn.example/generated.png'}]})
+ }
+ const call=async(key,prompt='fixture',authorization=token,async=false)=>{const r=await POST(new Request('https://gateway.test/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+authorization,'idempotency-key':key,'content-type':'application/json',...(async?{prefer:'respond-async'}:{})},body:JSON.stringify({model:'glm-image',prompt,size:'512x512',quality:'hd'})}));return {status:r.status,body:await r.json()}}
  const checks=[];const check=(name,ok)=>{assert.ok(ok,name);checks.push(name)}
  try{
  check('invalid login rejected before provider',(await call('image-auth-invalid','fixture','invalid')).status===401&&calls===0)
@@ -43,7 +50,75 @@ async function main(){
  mode='network';const unknown=await call('image-network-001');const before=calls;check('unknown result never silently replays',unknown.status===502&&(await call('image-network-001')).status===409&&calls===before)
  sql.exec('UPDATE quota_buckets SET limit_micros=spent_micros+reserved_micros');mode='success';check('Stable quota shortage rejects before provider',(await call('image-quota-001')).status===429&&calls===before)
  sql.exec("UPDATE accounts SET status='disabled' WHERE id='test'");check('disabled account cannot retrieve old result',(await call('image-success-001')).status===403)
- fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({checks,providerCalls:calls,paidCalls:0},null,2));console.log(JSON.stringify({checks,providerCalls:calls,paidCalls:0},null,2))
+ sql.exec("UPDATE accounts SET status='active' WHERE id='test'; UPDATE quota_buckets SET limit_micros=1000")
+ mode='success'
+ const asyncCall=(key,authorization=token)=>call(key,'fixture',authorization,true)
+ const spent=()=>sql.prepare('SELECT spent_micros FROM quota_buckets').get().spent_micros
+ const reserved=()=>sql.prepare('SELECT reserved_micros FROM quota_buckets').get().reserved_micros
+ const initialSpent=spent()
+ check('async submit persists task before returning 202',(await asyncCall('image-async-001')).status===202&&submitted===1&&sql.prepare('SELECT COUNT(*) AS n FROM gateway_image_jobs').get().n===1&&spent()===initialSpent&&reserved()===10)
+ for(let i=0;i<70;i++)assert.equal((await asyncCall('image-async-001')).status,202)
+ check('slow processing polls do not resubmit or settle',submitted===1&&polled===70&&spent()===initialSpent&&reserved()===10)
+ const swept=await recoverStaleRequests({reservedBefore:Date.now()+1,inflightBefore:Date.now()+1});check('stale recovery leaves known async provider jobs recoverable',swept.uncertain===0&&reserved()===10)
+ const pollsBefore=polled
+ check('poll authorization enforced',(await asyncCall('image-async-001','invalid')).status===401&&polled===pollsBefore)
+ pollMode='network';check('transient query failure retains task and reservation',(await asyncCall('image-async-001')).status===503&&reserved()===10&&submitted===1)
+ pollMode='invalid';check('malformed result never creates a replacement or settles',(await asyncCall('image-async-001')).status===503&&reserved()===10)
+ pollMode='success'
+ const completions=await Promise.all([asyncCall('image-async-001'),asyncCall('image-async-001')])
+ check('concurrent completion pollers settle exactly once',completions.every(r=>r.status===200)&&spent()===initialSpent+10&&reserved()===0&&submitted===1)
+ const settledCalls=calls
+ check('completed async receipt replay avoids provider',(await asyncCall('image-async-001')).status===200&&calls===settledCalls)
+ pollMode='processing';assert.equal((await asyncCall('image-async-fail')).status,202);pollMode='fail'
+ check('confirmed async failure releases reservation',(await asyncCall('image-async-fail')).status===422&&reserved()===0&&spent()===initialSpent+10)
+ const failedCalls=calls
+ check('failed async receipt cannot trigger another paid request',(await asyncCall('image-async-fail')).status===422&&calls===failedCalls)
+ // A new module instance has no task memory; persisted ID and billing suffice.
+ pollMode='processing';assert.equal((await asyncCall('image-async-restart')).status,202)
+ delete require.cache[require.resolve(path.join(out,'gateway.cjs'))]
+ const restarted=require(path.join(out,'gateway.cjs')).POST
+ pollMode='success'
+ const restartResponse=await restarted(new Request('https://gateway.test/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+token,'idempotency-key':'image-async-restart','content-type':'application/json',prefer:'respond-async'},body:JSON.stringify({model:'glm-image',prompt:'fixture',size:'512x512',quality:'hd'})}))
+ check('gateway restart resumes persisted provider task without resubmission',restartResponse.status===200&&submitted===3&&spent()===initialSpent+20&&reserved()===0)
+ // Full local client -> gateway -> provider-task protocol -> download pipeline.
+ // Time advances virtually: each task takes 180 seconds, no paid/network call.
+ const {createImageGenerator}=require('../../desktop/services/image-generation.cjs')
+ const {ImageJobStore}=require('../../desktop/services/image-job-store.cjs')
+ const workspace=fs.mkdtempSync(path.join(out,'pipeline-'))
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=','base64')
+ let clock=0,live=0,peak=0,starts=0,httpActive=0
+ const tasks=new Map(),sleepers=[]
+ let scheduled=false
+ const pump=()=>{
+  if(scheduled||!sleepers.length)return
+  scheduled=true;setImmediate(()=>{
+   scheduled=false
+   // Do not advance virtual time while another request is still doing real
+   // async auth/hash work, or before every unfinished task is waiting.
+   if(httpActive||sleepers.length<live){pump();return}
+   clock=Math.min(...sleepers.map(s=>s.at))
+   for(let i=sleepers.length-1;i>=0;i--)if(sleepers[i].at<=clock)sleepers.splice(i,1)[0].resolve()
+  })
+ }
+ const sleep=ms=>new Promise(resolve=>{sleepers.push({at:clock+ms,resolve});pump()})
+ globalThis.fetch=async(url,options)=>{
+  calls++
+  if(String(url).endsWith('/async/images/generations')){const id='pipeline-'+(++starts);tasks.set(id,clock+180000);live++;peak=Math.max(peak,live);return Response.json({id,task_status:'PROCESSING'})}
+  const id=String(url).split('/').at(-1);assert(tasks.has(id))
+  if(clock<tasks.get(id))return Response.json({task_status:'PROCESSING'})
+  tasks.delete(id);live--;return Response.json({task_status:'SUCCESS',image_result:[{url:'https://cdn.example/'+id+'.png'}]})
+ }
+ const pipeline=createImageGenerator({policy:{count:3,size:'1536x2048'},jobStore:new ImageJobStore(path.join(workspace,'receipts')),sleep,
+  nativeImage:{createFromBuffer:bytes=>({isEmpty:()=>!bytes.equals(png),getSize:()=>({width:1,height:1}),toPNG:()=>png})},download:async()=>png,
+  resolveRoute:()=>({endpoint:'https://gateway.test/v1/images/generations',apiKey:token,scope:'fixture',replay:true,fetch:async(url,options)=>{httpActive++;try{return await POST(new Request(url,options))}finally{httpActive--;pump()}}})})
+ const pipelineSpent=spent()
+ const pair=await pipeline({workspace,args:{prompt:'first',output:'first.png',additionalImages:[{prompt:'second',output:'second.png'}]}})
+ const third=await pipeline({workspace,args:{prompt:'third',output:'third.png'}})
+ check('client gateway pipeline produces three files with at most two concurrent tasks',pair.ok&&pair.images.length===2&&fs.existsSync(third.path)&&peak===2&&starts===3&&spent()===pipelineSpent+30&&reserved()===0)
+ check('virtual three-image duration is two 180-second waves instead of three',clock===360000)
+ console.log(JSON.stringify({simulation:{serialMs:540000,parallelMs:clock,maximumConcurrency:peak,paidCalls:0}}))
+ const result={checks,providerCalls:calls,paidCalls:0,simulation:{serialMs:540000,parallelMs:clock,maximumConcurrency:peak}}
+ fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
  } finally {globalThis.fetch=originalFetch;db.close()}
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

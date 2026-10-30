@@ -7,11 +7,13 @@ async function main(){
  win=new BrowserWindow({show:false,width:1280,height:900,webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false,offscreen:true}})
  win.webContents.on('console-message',(_event,level,message)=>{if(level>=2)console.log('RENDERER',message)});
  const source= fs.readFileSync(path.join(root,'src/App.tsx'),'utf8').replace('function AgentPage(','export function AgentPage(')
+ const parsedCard = require('../../desktop/services/clarification.cjs').waitingCard('已收到源表，读者决定报告内容深度。\n\n[[STABLE_WAITING_FOR_INPUT]]\n' + JSON.stringify({question:'这份报告主要面向谁？',hint:'受众影响内容深度。可补充报告用途和页数。',options:[{label:'管理层决策摘要',description:'突出结论和建议。'},{label:'专业团队详细分析',description:'展开方法和数据细节。'}]}))
+ assert.ok(parsedCard)
  const bundle=(await build({stdin:{contents:`
  import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {AgentPage} from './src/App';
  window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
  const taskStart=Date.now()-90000;
- const q={id:'question-1',status:'waiting',question:'这份报告主要面向谁？',hint:'受众影响内容深度。可补充报告用途和页数。',options:[{label:'管理层决策摘要',description:'突出结论和建议。'},{label:'专业团队详细分析',description:'展开方法和数据细节。'}]};
+ const q={...${JSON.stringify(parsedCard)},id:'question-1',status:'waiting'};
  let messages=[{id:'u',role:'user',content:'请生成一份 Word 报告',createdAt:new Date().toISOString()},{id:'a',role:'assistant',content:q.question,trace:[{id:'task-continuity',runId:'initial',kind:'status',status:'completed',time:taskStart,startedAt:taskStart},{id:'explanation',runId:'c',kind:'reasoning',eventType:'agent/answer',status:'completed',content:'已收到源表，读者决定报告内容深度。',time:Date.now()},{id:'clarification',runId:'c',kind:'status',status:'completed',title:'等待补充信息',time:Date.now(),clarification:q}],createdAt:new Date().toISOString()}];
  const initial={cloud:{status:'disabled',enabled:false},activeConversationId:'a',conversations:[{id:'a',title:'报告生成',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2,waitingForInput:true}],messages,projects:[],data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'E:/mock'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
  const state=()=>({...initial,messages,conversations:initial.conversations.map(c=>({...c,waitingForInput:messages.at(-1)?.id==='a'}))});let listener;window.sent=[];window.errors=[];window.timer={id:q.id,deadline:Date.now()+20000,interacted:false};

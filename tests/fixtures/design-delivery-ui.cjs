@@ -1,0 +1,18 @@
+const {app,BrowserWindow}=require('electron'),{buildSync}=require('esbuild'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict')
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'stable-quick-skills-'));app.setPath('userData',temp);app.disableHardwareAcceleration()
+app.whenReady().then(async()=>{
+ const source=fs.readFileSync(path.resolve(__dirname,'../../src/App.tsx'),'utf8')
+ const functions=source.slice(source.indexOf('function localArtifactPaths('),source.indexOf('function UserTurn('))+source.slice(source.indexOf('function useAttachmentImageSource('),source.indexOf('function ImageLightbox('))+source.slice(source.indexOf('function DesignDeliveryImage('))
+ const bundle=buildSync({stdin:{contents: `import React,{useState,useEffect}from'react';import{createRoot}from'react-dom/client';import{MarkdownContent}from'./src/components/MarkdownContent';import{useFileContextMenu}from'./src/components/FileContextMenu';import{ImageIcon}from'lucide-react';${functions};window.stable={agent:{imagePreview:async()=> 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"/>')},preview:{existingFiles:async(id,paths)=>paths}};const content='[海报](C:/work/a.png) [海报2](C:/work/b.png) [表格](C:/work/data.xlsx)';createRoot(document.getElementById('root')).render(<><section id="normal"><ArtifactLinks content={content} workspace="C:/work" conversationId="a" onPreview={()=>{}}/></section><section id="design"><ArtifactLinks designMode content={content} workspace="C:/work" conversationId="b" onPreview={()=>{}} onPreviewImages={()=>window.opened=true}/></section></>);`,resolveDir:path.resolve(__dirname,'../..'),loader:'tsx'},bundle:true,write:false,loader:{'.css':'empty'},format:'iife'}).outputFiles[0].text
+ const file=path.join(temp,'test.html');fs.writeFileSync(file,`<div id="root"></div><script>${bundle}</script>`)
+ const win=new BrowserWindow({show:false,webPreferences:{backgroundThrottling:false,contextIsolation:true,sandbox:true}});await win.loadFile(file)
+ const run=code=>win.webContents.executeJavaScript(code),tick=()=>new Promise(r=>setTimeout(r,60))
+ await new Promise(r=>setTimeout(r,500))
+ assert.equal(await run("document.querySelectorAll('#normal .markdown-file-link').length"),3)
+ assert.equal(await run("document.querySelectorAll('#normal img').length"),0)
+ assert.equal(await run("document.querySelectorAll('#design .markdown-file-link').length"),1)
+ assert.equal(await run("document.querySelectorAll('#design img').length"),2)
+ await run("document.querySelector('#design .design-delivery-image button').click()")
+ assert.equal(await run('window.opened'),true)
+ console.log('DESIGN_DELIVERY_UI_PASSED');win.destroy();app.quit()
+}).catch(e=>{console.error(e);app.exit(1)})

@@ -2,19 +2,25 @@ import { createContext, Fragment, useContext, useState, type ReactNode } from 'r
 import { Check, Copy, FileText, FileCode2, Braces, FileSpreadsheet, Image, FileArchive, Presentation } from 'lucide-react'
 import type { ConversationPreviewTarget } from '../shared/conversation-preview'
 import { parseFileReference } from '../shared/file-reference'
+import { useFileContextMenu } from './FileContextMenu'
 
+const HideImageFiles = createContext<ReadonlySet<string> | undefined>(undefined)
 const FileAvailability = createContext<ReadonlyMap<string, boolean> | undefined>(undefined)
 
 function FileLink({ reference, onPreview }: { reference: NonNullable<ReturnType<typeof parseFileReference>>; onPreview?: PreviewOpener }) {
+  const hideImageFiles = useContext(HideImageFiles)
   const available = useContext(FileAvailability)
   const disabled = !onPreview || available?.get(reference.key) === false
+  const onOpen = () => onPreview?.({ kind: 'file', value: reference.path, title: reference.name })
+  const fileMenu = useFileContextMenu({ path: reference.path, name: reference.name, onOpen, disabled })
   const Icon = /^(html?|jsx?|tsx?|py|css|sh|cjs|mjs)$/.test(reference.extension) ? FileCode2
     : /^(json|ya?ml|toml)$/.test(reference.extension) ? Braces
     : /^(xlsx?|csv|ods)$/.test(reference.extension) ? FileSpreadsheet
     : /^(png|jpe?g|gif|svg|webp)$/.test(reference.extension) ? Image
     : /^(pptx?|odp)$/.test(reference.extension) ? Presentation
     : /^(zip|rar|7z|tar|gz)$/.test(reference.extension) ? FileArchive : FileText
-  return <button className="markdown-file-link" type="button" disabled={disabled} title={`${reference.reference}${disabled ? '（文件不可用）' : ''}`} onClick={() => onPreview?.({ kind: 'file', value: reference.path, title: reference.name })}><Icon size={15} aria-hidden="true" /><span>{reference.label}</span></button>
+  if(hideImageFiles?.has(reference.key))return null
+  return <><button className="markdown-file-link" type="button" disabled={disabled} title={`${reference.reference}${disabled ? '（文件不可用）' : ''}`} onClick={onOpen} {...fileMenu.handlers}><Icon size={15} aria-hidden="true" /><span>{reference.label}</span></button>{fileMenu.menu}{fileMenu.error}</>
 }
 function markdownTableCells(line: string) {
   return line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'))
@@ -47,7 +53,7 @@ function MarkdownTable({ headers, separators, alignments, rows, tableIndex, onPr
   </div>
 }
 
-export function MarkdownContent({ content, onPreview, fileAvailability }: { content: string; onPreview?: PreviewOpener; fileAvailability?: ReadonlyMap<string, boolean> }) {
+export function MarkdownContent({ content, onPreview, fileAvailability, hideImageFiles }: { hideImageFiles?:ReadonlySet<string>; content: string; onPreview?: PreviewOpener; fileAvailability?: ReadonlyMap<string, boolean> }) {
   const lines = content.replace(/\r/g, '').split('\n')
   const blocks: ReactNode[] = []
   let index = 0
@@ -104,7 +110,7 @@ export function MarkdownContent({ content, onPreview, fileAvailability }: { cont
     while (index < lines.length && lines[index].trim() && !isMarkdownTableStart(lines, index) && !/^(#{1,3})\s+|^\s*([-*]|\d+\.)\s+|^\s*>\s+|^\s*```/.test(lines[index])) { paragraph.push(lines[index].trim()); index += 1 }
     blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(' '), `p-${index}`, onPreview)}</p>)
   }
-  return <FileAvailability.Provider value={fileAvailability}><div className="markdown-body">{blocks}</div></FileAvailability.Provider>
+  return <HideImageFiles.Provider value={hideImageFiles}><FileAvailability.Provider value={fileAvailability}><div className="markdown-body">{blocks}</div></FileAvailability.Provider></HideImageFiles.Provider>
 }
 
 export function renderInline(text: string, keyPrefix: string, onPreview?: PreviewOpener): ReactNode[] {

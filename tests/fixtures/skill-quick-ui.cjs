@@ -1,0 +1,17 @@
+const {app,BrowserWindow}=require('electron'),{buildSync}=require('esbuild'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict')
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'stable-quick-skills-'));app.setPath('userData',temp);app.disableHardwareAcceleration()
+app.whenReady().then(async()=>{
+ const bundle=buildSync({stdin:{contents:`import React,{useRef,useState} from 'react';import{createRoot}from'react-dom/client';import{SkillQuickPicker}from'./src/components/SkillQuickPicker';function App(){const ref=useRef(null),[text,setText]=useState(''),[scope,setScope]=useState('a'),[selected,select]=useState([]);return <><button id="switch" onClick={()=>setScope('b')}>switch</button><SkillQuickPicker input={ref} prompt={text} scope={scope} skills={[{id:'one',name:'report',description:'复盘报告'},{id:'two',name:'excel',description:'表格'}]} selected={selected} onPrompt={setText} onSelect={s=>select([...selected,s.id])}/><textarea ref={ref} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')window.sent=(window.sent||0)+1}}/><output>{selected.join(',')}</output></>};createRoot(document.getElementById('root')).render(<App/>);`,resolveDir:path.resolve(__dirname,'../..'),loader:'tsx'},bundle:true,write:false,loader:{'.css':'empty'},format:'iife'}).outputFiles[0].text
+ const file=path.join(temp,'test.html');fs.writeFileSync(file,`<div id="root"></div><script>${bundle}</script>`)
+ const win=new BrowserWindow({show:false,webPreferences:{backgroundThrottling:false,contextIsolation:true,sandbox:true}});await win.loadFile(file)
+ const run=code=>win.webContents.executeJavaScript(code),tick=()=>new Promise(r=>setTimeout(r,60))
+ await tick()
+ async function type(value){await run(`{const e=document.querySelector('textarea');e.focus();Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.setSelectionRange(e.value.length,e.value.length);e.dispatchEvent(new Event('input',{bubbles:true}));}`);await tick()}
+ async function key(key,extra={}){await run(`document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},bubbles:true,cancelable:true,...${JSON.stringify(extra)}}))`);await tick()}
+ await type('/复盘');assert.equal(await run(`document.querySelectorAll('[role=option]').length`),1);await key('Enter');assert.equal(await run(`document.querySelector('output').textContent`),'one');assert.equal(await run(`window.sent||0`),0);assert.equal(await run(`document.querySelector('textarea').value`),'')
+ await type('/');await key('ArrowDown');await key('Enter');assert.equal(await run(`document.querySelector('output').textContent`),'one,two')
+ await type('/missing');await key('Enter');assert.equal(await run(`window.sent||0`),0);await key('Escape');assert.equal(await run(`!!document.querySelector('[role=listbox]')`),false)
+ await type('/');await key('Enter',{isComposing:true});assert.equal(await run(`document.querySelector('output').textContent`),'one,two');await run(`document.querySelector('#switch').click()`);await tick();assert.equal(await run(`!!document.querySelector('[role=listbox]')`),false)
+ await type('https://example');assert.equal(await run(`!!document.querySelector('[role=listbox]')`),false)
+ console.log('SKILL_QUICK_UI_PASSED');win.destroy();app.quit()
+}).catch(e=>{console.error(e);app.exit(1)})

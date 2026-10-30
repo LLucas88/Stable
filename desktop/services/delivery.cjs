@@ -126,7 +126,7 @@ async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onC
     const reused = !reason ? referencedExistingArtifacts(answer, before, after) : []
     const artifacts = [...new Set([...created, ...reused])]
     const question = waitingAnswer(answer)
-    if (question && (String(answer).trim().startsWith(WAIT_MARKER) || !artifacts.length)) {
+    if (question && (waitingCard(answer) || String(answer).trim().startsWith(WAIT_MARKER) || !artifacts.length)) {
       return { answer: question, clarification: waitingCard(answer), artifacts: [], reused: [], status: 'waiting', reason: '等待用户补充信息。' }
     }
     if (delivery.type !== 'artifact' || artifacts.length) {

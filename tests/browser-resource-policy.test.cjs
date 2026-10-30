@@ -1,0 +1,47 @@
+'use strict'
+const test=require('node:test'),assert=require('node:assert/strict')
+const {createPublicResourcePolicy,publicAddress}=require('../desktop/services/browser-resource-policy.cjs')
+const resource=(overrides={})=>({url:'https://cdn.example.org/image.png',method:'GET',resourceType:'image',...overrides})
+test('public static resources load without granting API or navigation access',async()=>{
+ const policy=createPublicResourcePolicy({resolve:async()=>[{address:'8.8.8.8'}]})
+ for(const resourceType of ['image','stylesheet','font','script','media']) assert.equal(await policy(resource({resourceType})),true,resourceType)
+ for(const resourceType of ['mainFrame','subFrame','xhr','webSocket','other','ping']) assert.equal(await policy(resource({resourceType})),false,resourceType)
+ for(const method of ['POST','PUT','DELETE','OPTIONS'])assert.equal(await policy(resource({method})),false,method)
+ for(const url of ['file:///C:/secret.png','http://localhost/a','http://router/a','http://printer.local/a','http://a.internal/a','https://user:pass@cdn.example.org/a','https://cdn.example.org:8080/a'])assert.equal(await policy(resource({url})),false,url)
+})
+test('private, reserved, mixed DNS and IPv4 embedded IPv6 do not auto load',async()=>{
+ for(const ip of ['127.0.0.1','10.0.0.1','172.16.0.1','192.168.1.1','169.254.169.254','100.64.0.1','0.0.0.0','198.18.0.1','224.1.1.1','::1','::ffff:127.0.0.1','::ffff:8.8.8.8','fc00::1','fe80::1','2002:7f00:1::1'])assert.equal(publicAddress(ip),false,ip)
+ assert.equal(publicAddress('2606:4700:4700::1111'),true)
+ for(const records of [[],[{address:'10.1.1.1'}],[{address:'8.8.8.8'},{address:'::1'}]])assert.equal(await createPublicResourcePolicy({resolve:async()=>records})(resource()),false)
+ const policy=createPublicResourcePolicy({resolve:async()=>{throw Error('DNS failure')}})
+ assert.equal(await policy(resource()),false)
+ assert.equal(await policy(resource({url:'http://0x7f000001/a'})),false)
+ assert.equal(await policy(resource({url:'http://[::1]/a'})),false)
+})
+test('DNS cache shares concurrent lookups, expires and times out closed',async()=>{
+ let calls=0,time=0
+ const policy=createPublicResourcePolicy({resolve:async()=>{calls++;return [{address:calls===1?'8.8.8.8':'10.0.0.1'}]},now:()=>time})
+ assert.deepEqual(await Promise.all([policy(resource()),policy(resource())]),[true,true]);assert.equal(calls,1)
+ time=30_001;assert.equal(await policy(resource()),false);assert.equal(calls,2)
+ assert.equal(await createPublicResourcePolicy({resolve:()=>new Promise(()=>{}),timeout:10})(resource()),false)
+})
+test('browser request hook inherits only static access and keeps approval boundaries',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),{createRequire}=require('node:module')
+ const file=path.resolve(__dirname,'../desktop/services/browser-session.cjs'),localRequire=createRequire(file),module={exports:{}}
+ const requestPolicy=createPublicResourcePolicy({resolve:async host=>[{address:host.startsWith('private.')?'10.0.0.2':'8.8.8.8'}]})
+ vm.runInNewContext(fs.readFileSync(file,'utf8'),{module,URL,require:id=>id==='./browser-resource-policy.cjs'?{createPublicResourcePolicy:()=>requestPolicy}:localRequire(id)})
+ let beforeRequest;const data=new Map([['browser-sites:a',['https://news.example.org']]])
+ const profile={setPermissionRequestHandler(){},setPermissionCheckHandler(){},on(){},webRequest:{onBeforeRequest:fn=>beforeRequest=fn}}
+ const service=new module.exports.BrowserSessionService({electron:{session:{fromPartition:()=>profile}},store:{getSetting:k=>data.get(k),setSetting:(k,v)=>data.set(k,v)}})
+ const tab={id:'tab',conversationId:'a',url:'https://news.example.org',blockedSites:new Set(),view:{webContents:{id:42,getURL:()=>tab.url}}};service.tabs.set(tab.id,tab)
+ const request=overrides=>new Promise(resolve=>beforeRequest({...resource(),webContentsId:42,...overrides},resolve))
+ assert.equal((await request()).cancel,false);assert.equal(tab.blockedSites.size,0)
+ assert.equal(service.allowed(tab,'https://cdn.example.org'),false,'Subresource load must not persist origin approval')
+ assert.equal((await request({resourceType:'xhr'})).cancel,true);assert.equal(tab.blockedSites.size,1)
+ assert.equal((await request({resourceType:'subFrame'})).cancel,true);assert.equal(tab.blockedSites.size,1,'Duplicate origins must be grouped')
+ assert.equal((await request({url:'https://private.example.org/image.png'})).cancel,true)
+ assert.equal((await request({url:'http://127.0.0.1/image.png'})).cancel,true)
+ assert.equal((await request({url:'https://other.example.org/image.png',method:'POST'})).cancel,true)
+ service.permit('a','https://private.example.org');assert.equal((await request({url:'https://private.example.org/image.png'})).cancel,false)
+ tab.url='https://unapproved.example.org';assert.equal((await request()).cancel,true,'Unapproved parent cannot inherit public resources')
+})

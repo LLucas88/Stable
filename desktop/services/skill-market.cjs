@@ -9,7 +9,7 @@ class SkillMarket {
   constructor(store, root) { this.store = store; this.root = root }
   entries() {
     const meta = this.store.getSetting('skillMarketMeta') || {}
-    return [...plugins.entries(), ...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills().filter(item => item.id !== 'wending-market-reference' && !plugins.findSkill(item.id) && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: true, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
+    return [...plugins.entries(), ...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills({includeCatalog:true}).filter(item => item.id !== 'wending-market-reference' && !plugins.findSkill(item.id) && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: !meta[item.id]?.catalogOnly, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
   }
   detail(id) {
     const entry=this.entries().find(item=>item.id===id)
@@ -61,7 +61,12 @@ class SkillMarket {
       return conversationId
     })
     if (plugins.entries().some(item => item.id === id)) throw Error('请选择插件中的一个技能。')
-    const item=this.detail(id)
+    let item=this.detail(id)
+    const metadata=this.store.getSetting('skillMarketMeta')||{}
+    if(metadata[id]?.catalogOnly){
+      setSkillEnabled(this.store,id,true)
+      item=this.detail(id)
+    }
     if(!item || !item.installed || !item.enabled)throw new Error('请先添加并启用此技能。')
     let skillId=id
     if(id === WENDING.id){skillId='wending-market-reference';this.store.upsertSkill({id:skillId,name:'问鼎 CLI',description:'问鼎账号与品牌数据查询',path:'builtin:wending',content:'用户本次选择调用问鼎 CLI。请使用已安装的 crm-brand-cli，遵循当前对话绑定的品牌与全局登录状态。'})}

@@ -1,4 +1,15 @@
 import type { DesignRequest } from '../types'
+import presets from '../../desktop/services/design-presets.json'
+export const DESIGN_PRESETS = presets
+export function businessDesign(value: DesignRequest, outputPreset: keyof typeof presets): DesignRequest {
+  const preset = presets[outputPreset]
+  const limit = value.model === 'glm-image' ? 4 : 3
+  const ratio = Math.max(1 / limit, Math.min(limit, preset.width / preset.height))
+  const longSide = Math.min(2048, Math.max(value.resolution === '2k' ? 2048 : 1280, 512 * Math.max(ratio, 1 / ratio)))
+  const width = snap(ratio >= 1 ? longSide : longSide * ratio), height = snap(ratio >= 1 ? longSide / ratio : longSide)
+  const next = resizeDesign({ ...value, ratio: 'custom', width, height, aspectLocked: false }, 'width', width)
+  return { ...next, outputPreset, aspectLocked: value.aspectLocked !== false }
+}
 
 export const DESIGN_SIZES = {
   '1:1': [[1280, 1280], [2048, 2048]],
@@ -17,7 +28,7 @@ export function designDimensions(value: DesignRequest): [number, number] {
 
 export function presetDesign(value: DesignRequest, ratio: DesignRatio, resolution = value.resolution): DesignRequest {
   const [width, height] = DESIGN_SIZES[ratio][resolution === '2k' ? 1 : 0]
-  return { ...value, ratio, resolution, width, height }
+  return { ...value, outputPreset: undefined, ratio, resolution, width, height }
 }
 
 const snap = (value: number) => Math.min(2048, Math.max(512, Math.round(value / 32) * 32))
@@ -37,5 +48,10 @@ export function resizeDesign(value: DesignRequest, axis: 'width' | 'height', raw
       width = snap(height * ratio)
     }
   }
-  return { ...value, ratio: 'custom', width, height }
+  if (value.model !== 'glm-image') {
+    if(width>height*3)height=snap(Math.ceil(width/3/32)*32)
+    if(height>width*3)width=snap(Math.ceil(height/3/32)*32)
+    while(width*height<655360) {if(width<=height)width+=32;else height+=32}
+  }
+  return { ...value, outputPreset: undefined, ratio: 'custom', width, height }
 }

@@ -57,8 +57,8 @@ test('custom dimensions survive normalization and malformed dimensions cannot re
 })
 
 test('size editor snaps bounds, preserves linked dimensions and sends backend-valid results',()=>{
-  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path')
-  const js=require('esbuild').transformSync(fs.readFileSync(path.join(__dirname,'../src/shared/design-size.ts'),'utf8'),{loader:'ts',format:'cjs'}).code
+  const vm=require('node:vm'),path=require('node:path')
+  const js=require('esbuild').buildSync({entryPoints:[path.join(__dirname,'../src/shared/design-size.ts')],bundle:true,write:false,platform:'node',format:'cjs'}).outputFiles[0].text
   const module={exports:{}};vm.runInNewContext(js,{module,exports:module.exports});const {resizeDesign,presetDesign}=module.exports
   const unlocked={...base,aspectLocked:false}
   const w=resizeDesign(unlocked,'width',1001);assert.equal(w.width,992);assert.equal(w.height,1280)

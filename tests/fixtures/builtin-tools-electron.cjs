@@ -111,7 +111,9 @@ async function run() {
   const stage = path.join(root, 'stage'), resources = path.join(root, 'resources')
   fs.mkdirSync(path.join(stage, 'desktop/services'), { recursive: true })
   fs.mkdirSync(resources)
-  for (const filename of ['builtin-tools.cjs', 'builtin-tool-policy.cjs', 'image-generation.cjs', 'browser-tool.cjs', 'excel-tool.cjs', 'excel-tool-worker.cjs', 'tool-files.cjs', 'preview.cjs', 'spreadsheet-preview.cjs', 'local-html-preview.cjs', 'markdown-pages.cjs']) fs.copyFileSync(path.join(__dirname, '../../desktop/services', filename), path.join(stage, 'desktop/services', filename))
+  // Match the production desktop/services/** packaging rule; a hand-maintained
+  // subset silently loses transitive dependencies when a built-in tool grows.
+  fs.cpSync(path.join(__dirname, '../../desktop/services'), path.join(stage, 'desktop/services'), { recursive: true })
   fs.cpSync(path.join(__dirname, '../../vendor/agent-tools'), path.join(resources, 'agent-tools'), { recursive: true })
   const archive = path.join(resources, 'app.asar')
   await asar.createPackage(stage, archive)

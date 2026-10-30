@@ -1,4 +1,6 @@
 .answer-toolbar { display: flex; align-items: center; gap: 3px; margin-top: 10px; min-height: 30px; color: var(--color-muted); opacity: 0; pointer-events: none; }
+/* Halve the combined turn gap + toolbar margin; keep the trace spacing intact. */
+.assistant-turn > .assistant-answer + .answer-toolbar { margin-top: calc(5px - var(--space-md) / 2); }
 .assistant-turn:hover .answer-toolbar, .answer-toolbar:focus-within { opacity: 1; pointer-events: auto; }
 .answer-toolbar button, .chapter-directory button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 0; background: transparent; color: inherit; border-radius: 6px; padding: 6px; cursor: pointer; font: inherit; }
 .answer-toolbar button:hover, .chapter-directory button:hover { background: var(--color-paper-3); color: var(--color-ink); }

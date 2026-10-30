@@ -5,11 +5,12 @@ const root = path.resolve(__dirname, '../..'), out = path.join(root, 'qa-artifac
 fs.mkdirSync(out, { recursive: true }); app.setPath('userData', fs.mkdtempSync(path.join(out, 'profile-'))); app.disableHardwareAcceleration()
 async function main() {
   await app.whenReady()
-  const win = new BrowserWindow({ show:false, width:1440, height:900, webPreferences:{sandbox:true,offscreen:true} })
+  const win = new BrowserWindow({ show:false, width:1440, height:900, webPreferences:{sandbox:true,offscreen:true,backgroundThrottling:false} })
   const bundle = (await build({stdin:{contents:`
     import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{BrowserPanel}from'./src/BrowserPanel';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);window.calls=[];window.openedFiles=[];window.shown='';let listener=()=>{},previewListener=()=>{},counter=0;
     const editors={};window.editRequests=[];
+    window.blockSites=()=>{const s=session('a');s.tabs[0].blockedSites=Array.from({length:12},(_,i)=>'https://cdn'+i+'.example.org');listener();};
     const sessions={};const session=id=>sessions[id]||=( {tabs:[],downloads:[]} );
     window.stable={preview:{close:async()=>{window.shown='';window.rejectPreview?.(Error('Preview closed'));window.rejectPreview=undefined;return true},openFile:async(path,bounds)=>{window.openedFiles.push({path,bounds});window.shown=path;if(window.holdPreview)await new Promise((resolve,reject)=>{window.rejectPreview=reject});return{url:path,title:path,loading:false,canGoBack:false,canGoForward:false}},setBounds:async bounds=>{window.latestBounds=bounds;return true},navigate:async()=>true,onEvent:fn=>{previewListener=fn;return()=>{previewListener=()=>{}}}},browser:{onChanged:fn=>{listener=fn;return()=>{listener=()=>{}}},command:async p=>{
       window.calls.push(p);const s=session(p.conversationId);
@@ -23,6 +24,7 @@ async function main() {
       if(p.action==='close'){s.tabs=s.tabs.filter(t=>t.id!==p.tabId);s.activeTabId=s.tabs.at(-1)?.id;}
       if(p.action==='show'){window.shown=p.tabId;s.activeTabId=p.tabId;}
       if(p.action==='hide')window.shown='';
+      if(p.action==='permitSite'){s.tabs.find(t=>t.id===s.activeTabId).blockedSites=s.tabs.find(t=>t.id===s.activeTabId).blockedSites.filter(o=>o!==p.origin);}
       if(p.action==='navigate'){s.tabs.find(t=>t.id===p.tabId).url=p.url||'https://example.com/back';}
       return structuredClone(s);
     }}};
@@ -40,8 +42,16 @@ async function main() {
     await tick();expect(document.querySelector('.browser-empty'),'Empty state missing');
     click('新标签页');await tick();expect(tabs().length===1,'New tab failed');
     const input=document.querySelector('[aria-label="网页地址"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'example.com');input.dispatchEvent(new Event('input',{bubbles:true}));await tick();document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();await tick();expect(window.shown==='web1','Blank tab did not become visible web page');
+    window.blockSites();await tick();await tick();
+    const permissions=document.querySelector('.browser-permissions');expect(permissions&&!permissions.open,'Requests must start collapsed');
+    expect(permissions.getBoundingClientRect().height<55,'Collapsed requests take too much height');
+    permissions.querySelector('summary').click();await tick();
+    expect(permissions.getBoundingClientRect().height<240,'Expanded requests hide page');
+    expect(document.querySelectorAll('.browser-permission-item').length===12,'Missing blocked requests');
+    permissions.querySelector('button').click();await tick();expect(document.querySelectorAll('.browser-permission-item').length===11,'Site approval not updated');
+    permissions.querySelector('summary').click();await tick();
     window.openTarget({kind:'file',value:'D:/mock/report.md',title:'经营报告.md',requestId:1});await tick();await tick();
-    expect(tabs().length===2,'Document replaced web tab');expect(window.shown==='D:/mock/report.md','Document not displayed');
+    expect(!document.querySelector('.browser-permissions'),'Web permissions leaked into file tab');expect(tabs().length===2,'Document replaced web tab');expect(window.shown==='D:/mock/report.md','Document not displayed');
     window.openTarget({kind:'file',value:'D:/mock/report.md',title:'经营报告.md',requestId:2});await tick();expect(tabs().length===2,'Duplicate document tab');
     window.openTarget({kind:'file',value:'D:/mock/data.xlsx',title:'会员数据.xlsx',requestId:3});await tick();await tick();expect(tabs().length===3,'Excel tab missing');
     tabs()[0].click();await tick();await tick();expect(window.shown==='web1','Switching back to web failed');
@@ -67,6 +77,10 @@ async function main() {
     expect(document.documentElement.scrollWidth<=innerWidth,'Horizontal overflow');
   })()`)
   fs.writeFileSync(path.join(out,'panel.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`document.querySelector('[role=tab]').click();window.blockSites();new Promise(resolve=>setTimeout(resolve,150))`)
+  fs.writeFileSync(path.join(out,'permissions-collapsed.png'),(await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`document.querySelector('.browser-permissions').open=true;new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+  fs.writeFileSync(path.join(out,'permissions-expanded.png'),(await win.webContents.capturePage()).toPNG())
   win.setSize(640,800);await new Promise(r=>setTimeout(r,200))
   await win.webContents.executeJavaScript(`if(document.documentElement.scrollWidth>innerWidth)throw Error('Narrow layout overflow');true`)
   win.destroy();console.log('BROWSER_PANEL_UI_PASSED');app.exit(0)

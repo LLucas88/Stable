@@ -117,7 +117,7 @@ function installBundle(store, root, { applyPolicy = false } = {}) {
   // Validate everything before touching the database. Restart never resurrects
   // removed skills or overwrites locally edited content/enabled preferences.
   const bundle = inspectBundle(root)
-  const existing = new Map(store.listSkills().map(item => [item.id, item]))
+  const existing = new Map(store.listSkills({includeCatalog:true}).map(item => [item.id, item]))
   const meta = store.getSetting('skillMarketMeta') || {}
   const result = { bundle: BUNDLE_ID, root: bundle.root, checkedFiles: bundle.checkedFiles, registered: 0, skippedRemoved: 0, excludedFeishu: 0, excludedUnavailable: 0, enabled: 0, disabled: 0, skills: [] }
   store.db.exec('BEGIN IMMEDIATE')
@@ -134,6 +134,14 @@ function installBundle(store, root, { applyPolicy = false } = {}) {
         result[feishu ? 'excludedFeishu' : 'excludedUnavailable']++; continue
       }
       if (meta[id]?.removed && !old) { result.skippedRemoved++; continue }
+      // Only untouched rows with no stored usage evidence are eligible. Keep
+      // the row/content as a reversible catalog entry rather than deleting it.
+      const originalRow = old && store.db.prepare('SELECT created_at,updated_at FROM skills WHERE id=?').get(id)
+      const unusedAutomatic = old && !meta[id]?.usedAt && meta[id]?.catalogOnly === undefined &&
+        old.content === registeredContent(skill, bundle.root) && old.name === meta[id]?.managedName &&
+        originalRow.created_at === originalRow.updated_at &&
+        !store.db.prepare("SELECT 1 FROM settings WHERE key != 'skillMarketMeta' AND value_json LIKE ? LIMIT 1").get('%'+id+'%') &&
+        !store.db.prepare('SELECT 1 FROM messages WHERE content LIKE ? OR content LIKE ? OR attachments_json LIKE ? LIMIT 1').get('%'+id+'%','%'+old.name+'%','%'+id+'%')
       if (!old || (old.content === registeredContent(skill, bundle.root) && (old.name === meta[id]?.managedName || old.name === ((skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName) + ' · ' + skill.platform))) store.upsertSkill({ id,
         name: `${(skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName} · ${skill.platform}`,
         description: `${skill.category}；${skill.id}；${skill.reason}`,
@@ -141,12 +149,14 @@ function installBundle(store, root, { applyPolicy = false } = {}) {
       })
       if (!old || applyPolicy || skill.compatibility.status === 'feishu-paused') store.setSkillEnabled(id, skill.compatibility.enabled)
       meta[id] = { ...meta[id], bundle: BUNDLE_ID, kind: 'skill', group: skill.category,
+        catalogOnly: old ? Boolean(meta[id]?.catalogOnly || unusedAutomatic) : true,
         version: '2026.09.06', managedName: ((skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName) + ' · ' + skill.platform, source: skill.platform, originalId: skill.id,
         sourcePackage: skill.sourcePackage, score: skill.score, skillPath: skill.file,
         compatibility: skill.compatibility.status, compatibilityReason: skill.compatibility.reason,
         policyPaused: skill.compatibility.status === 'feishu-paused',
       }
-      const enabled = (!old || applyPolicy || meta[id].policyPaused) ? skill.compatibility.enabled : old.enabled
+      if (meta[id].catalogOnly) store.setSkillEnabled(id, false)
+      const enabled = !meta[id].catalogOnly && ((!old || applyPolicy || meta[id].policyPaused) ? skill.compatibility.enabled : old.enabled)
       result[enabled ? 'enabled' : 'disabled']++
       result.registered++
       result.skills.push({ uid: skill.uid, id, category: skill.category, name: (skill.sourcePackage === 'market' ? labels[skill.id] : null) || skill.displayName, ...skill.compatibility, enabled })
@@ -167,6 +177,7 @@ function setSkillEnabled(store, id, enabled) {
     if (conflict) throw new Error('请先停用同名版本：' + conflict.name)
   }
   store.setSkillEnabled(id, enabled)
+  if (enabled && item?.catalogOnly) store.setSetting('skillMarketMeta', {...meta,[id]:{...item,catalogOnly:false,usedAt:new Date().toISOString()}})
 }
 
 function removeSkill(store, id) {

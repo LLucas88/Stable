@@ -34,7 +34,9 @@ function fixture(t) {
 
 test('registers distinct versions and resources; only compatible non-Feishu workflows reach the prompt', t => {
   const { bundle, store } = fixture(t), result = installBundle(store, bundle)
-  assert.equal(result.registered, 1); assert.equal(result.excludedFeishu, 2); assert.equal(result.excludedUnavailable, 1); assert.equal(result.enabled, 1)
+  assert.equal(result.registered, 1); assert.equal(result.excludedFeishu, 2); assert.equal(result.excludedUnavailable, 1); assert.equal(result.enabled, 0)
+  assert.equal(store.listSkills().length,0)
+  new SkillMarket(store,path.dirname(bundle)).use('ops-market-startup-metrics-framework')
   assert.equal(new Set(store.listSkills().map(s => s.name)).size, 1)
   const selected = [store.skillContent('ops-market-startup-metrics-framework')]
   assert.equal(selected.length, 1)
@@ -54,6 +56,7 @@ test('registers distinct versions and resources; only compatible non-Feishu work
 test('restart preserves disabled choices and edited content, and never resurrects removed entries', t => {
   const { bundle, store } = fixture(t)
   installBundle(store, bundle)
+  new SkillMarket(store,path.dirname(bundle)).use('ops-market-startup-metrics-framework')
   const item = store.listSkills().find(s => s.enabled)
   store.upsertSkill({ ...item, content: '用户修改的正文' })
   setSkillEnabled(store, item.id, false)
@@ -126,10 +129,23 @@ test('removes blocked imports while retaining manually disabled and custom skill
   assert.equal(first.excludedUnavailable,1)
   assert(!store.listSkills().some(item=>item.id===id))
   assert.equal(store.getSetting('skillMarketMeta')[id].removalReason,'unavailable-excluded')
+  setSkillEnabled(store,'ops-market-startup-metrics-framework',true)
   setSkillEnabled(store,'ops-market-startup-metrics-framework',false)
   installBundle(store,bundle)
   assert(!store.listSkills().some(item=>item.id===id))
   assert.equal(store.listSkills().find(item=>item.id==='ops-market-startup-metrics-framework').enabled,false)
   assert.equal(store.listSkills().find(item=>item.id==='my-skill').content,'保留自建内容')
   assert.throws(()=>setSkillEnabled(store,id,true),/音频/)
+})
+
+test('legacy cleanup only hides untouched unused automatic rows and retains their content',t=>{
+ const {bundle,store}=fixture(t);installBundle(store,bundle)
+ const id='ops-market-startup-metrics-framework';let meta=store.getSetting('skillMarketMeta');delete meta[id].catalogOnly;store.setSetting('skillMarketMeta',meta)
+ store.db.prepare('UPDATE skills SET updated_at=created_at WHERE id=?').run(id)
+ installBundle(store,bundle)
+ assert.equal(store.listSkills().some(s=>s.id===id),false)
+ assert.equal(store.listSkills({includeCatalog:true}).some(s=>s.id===id),true)
+ new SkillMarket(store,path.dirname(bundle)).use(id)
+ installBundle(store,bundle)
+ assert.equal(store.listSkills().some(s=>s.id===id),true)
 })

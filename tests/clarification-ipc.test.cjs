@@ -30,6 +30,22 @@ test('Design dispatch pins FlashX for an old chat while retaining GLM-image gene
  assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/glm-image/);
 })
 
+test('Design count conflict blocks actual IPC dispatch and applies only the explicitly selected count', async()=>{
+ for (const [option,count] of [[0,4],[1,1]]) {
+  const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};
+  env.store.conversation=()=>({modelId:'glm-chat',design});
+  await env.send({prompt:'为咖啡活动制作海报。先生成1张。',design});
+  assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);
+  assert.equal(env.messages[0].trace[0].designRequest.count,4);
+  const card=helpers.pendingClarification(env.messages);
+  await env.send({clarificationResponse:{id:card.id,source:'choice',option}});
+  assert.equal(env.runs.length,0);assert.equal(env.stats().executed,1);
+  assert.equal(env.stats().lastTask.design.count,count);
+  assert.match(env.stats().lastTask.query,new RegExp('最多 '+count+' 张'));
+  assert.equal(design.count,4);assert.equal(env.messages[0].trace[0].designRequest.count,4);
+ }
+})
+
 test('Design send keeps user history clean but delivers validated settings to the execution model', async()=>{
  const env=setup();const design={model:'glm-image',mode:'preserve',ratio:'9:16',resolution:'2k',count:2,text:'仅限今日'};
  await env.send({prompt:'生成早餐海报',attachments:[{path:'original.png',name:'original.png'}],design});

@@ -74,7 +74,7 @@ class CloudGatewayProxy {
     if (!item) throw new Error('所选云端模型已不可用，请重新选择。')
     if (!this.baseURL) throw new Error('Stable Cloud 本机网关尚未就绪。')
     return {
-      model: { ...cloudReasoningProfile(item), id: item.id, providerId: 'stable-cloud', displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id, contextWindow: item.context_window, maxOutputTokens: item.max_output_tokens },
+      model: { ...cloudReasoningProfile(item), id: item.id, providerId: 'stable-cloud', accountId: this.account.publicState().account?.id, cloudBaseURL: this.account.baseURL, displayName: item.display_name || item.id, baseURL: this.baseURL, model: item.id, contextWindow: item.context_window, maxOutputTokens: item.max_output_tokens },
       apiKey: this.secret,
     }
   }
@@ -93,7 +93,7 @@ class CloudGatewayProxy {
     try {
       if (request.headers.authorization !== `Bearer ${this.secret}`) throw Object.assign(new Error('本机网关凭据无效。'), { status: 401 })
       const pathname = new URL(request.url, 'http://127.0.0.1').pathname
-      if (!['/v1/chat/completions', '/v1/models', '/v1/tools/search', '/v1/tools/fetch'].includes(pathname)) throw Object.assign(new Error('本机网关路径无效。'), { status: 404 })
+      if (!['/v1/chat/completions', '/v1/responses', '/v1/models', '/v1/tools/search', '/v1/tools/fetch'].includes(pathname)) throw Object.assign(new Error('本机网关路径无效。'), { status: 404 })
       if (pathname !== '/v1/models' && request.method !== 'POST') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
       if (pathname === '/v1/models' && request.method !== 'GET') throw Object.assign(new Error('请求方法不受支持。'), { status: 405 })
       const token = this.account.token()

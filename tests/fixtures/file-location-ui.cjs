@@ -31,6 +31,8 @@ async function run() {
     import React, {useState, useEffect, useRef} from 'react';
     import {createRoot} from 'react-dom/client';
     import {MarkdownContent} from './src/components/MarkdownContent';
+    import {AnswerToolbar} from './src/AnswerTools';
+    import {useFileContextMenu} from './src/components/FileContextMenu';
     import {FileText, FileSpreadsheet, ImageIcon, X, ChevronRight, FolderOpen, ExternalLink, Pin, PinOff, MoreHorizontal} from 'lucide-react';
     const errorMessage = reason => reason instanceof Error ? reason.message : String(reason);
     const conversationMenuId='',menuMobile=false,approvalUnread=new Set(),runningMap={},unread=new Set(),active=true,activeConversation={id:'row'};
@@ -42,16 +44,16 @@ async function run() {
     ${artifacts}
     window.expected = ${JSON.stringify(file)}; window.calls = []; window.failOpen = true;
     window.fileExists = true; window.opened = []; window.imageCalls = []; window.changeContent = null;
-    window.stable = { agent: { imagePreview: async value => { window.imageCalls.push(value); return 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="100"><rect width="180" height="100" fill="orange"/></svg>') } }, preview: { existingFiles: async (_id, paths) => window.fileExists ? paths : [] }, system: { showItemInFolder: async value => {
+    window.stable = { agent: { imagePreview: async value => { window.imageCalls.push(value); return 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="100"><rect width="180" height="100" fill="orange"/></svg>') } }, preview: { existingFiles: async (_id, paths) => window.fileExists ? paths : [] }, system: { fileAction: async (value, action) => {
       window.calls.push(value); if (window.failOpen) throw new Error('无法打开文件所在文件夹：fixture access denied'); return true;
     } } };
     function Test(){const [content,setContent]=useState(${JSON.stringify('完整路径：`' + file + '`')});window.changeContent=setContent;
-      return <><div className="rail-task-pane" style={{width:260,marginBottom:24}}><ConversationRow item={{id:"row",title:"根据上传的数据源做一个经营情况的数据分析报告，交付HTML格式"}} mobile={false}/></div><header className="conversation-topbar"><div><strong>任务标题</strong></div></header><section className="upload-reference"><ConversationFileCard compact item={{name:window.expected.split('\\\\').pop(),path:window.expected,detail:'XLSX'}} onOpen={()=>{}} onRemove={()=>{}}/></section><ArtifactLinks conversationId="fixture" content={content} workspace={${JSON.stringify(workspace)}} onPreview={target=>window.opened.push(target.value)}/></>}
+      return <><div className="rail-task-pane" style={{width:260,marginBottom:24}}><ConversationRow item={{id:"row",title:"根据上传的数据源做一个经营情况的数据分析报告，交付HTML格式"}} mobile={false}/></div><header className="conversation-topbar"><div><strong>任务标题</strong></div></header><section className="upload-reference"><ConversationFileCard compact item={{name:window.expected.split('\\\\').pop(),path:window.expected,detail:'XLSX'}} onOpen={()=>{}} onRemove={()=>{}}/></section><article className="assistant-turn"><div className="fixture-trace">执行记录</div><div className="assistant-answer"><div className="answer-content"><ArtifactLinks conversationId="fixture" content={content} workspace={${JSON.stringify(workspace)}} onPreview={target=>window.opened.push(target.value)}/></div></div><AnswerToolbar message={{id:"answer",role:"assistant",content,createdAt:new Date().toISOString(),trace:[]}} onFork={async()=>{}} onPin={async()=>{}}/></article></>}
     createRoot(document.getElementById('root')).render(<Test/>);
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } }).outputFiles[0].text
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, loader:{'.css':'empty'}, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } }).outputFiles[0].text
   await window.loadURL('data:text/html,<html data-theme="light"><div id="root"></div></html>')
   await prepareVisualFixture(window)
-  await window.webContents.insertCSS(readSource(path.join(root,'src/styles/tokens.css'),'utf8')+readSource(path.join(root,'src/styles/app.css'),'utf8')+readSource(path.join(root,'src/styles/sidebar-layout.css'),'utf8'))
+  await window.webContents.insertCSS(readSource(path.join(root,'src/styles/tokens.css'),'utf8')+readSource(path.join(root,'src/styles/app.css'),'utf8')+readSource(path.join(root,'src/styles/sidebar-layout.css'),'utf8')+readSource(path.join(root,'src/styles/answer-tools.css'),'utf8'))
   await window.webContents.executeJavaScript(bundle)
   await window.webContents.executeJavaScript(`(async () => {
     const wait = async predicate => { for(let i=0;i<150;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}throw Error('UI condition timed out'); };
@@ -59,10 +61,17 @@ async function run() {
     const reveal = async () => {
       document.querySelector('.upload-reference .conversation-file-card').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:100,clientY:100}));
       await wait(()=>document.querySelector('[role=menuitem]'));
-      const item = document.querySelector('[role=menuitem]'); expect(item.textContent.includes('打开文件所在位置'),'Wrong menu item'); item.click();
+      const item = [...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent.includes('在资源管理器中打开')); expect(item,'Missing reveal action'); item.click();
     };
     await wait(()=>document.querySelector('.markdown-file-link:not(:disabled)'));
     const link=document.querySelector('.markdown-file-link');
+    const answer=document.querySelector('.assistant-answer'),toolbar=document.querySelector('.answer-toolbar'),trace=document.querySelector('.fixture-trace');
+    const gap=()=>toolbar.getBoundingClientRect().top-answer.getBoundingClientRect().bottom;
+    const traceGap=answer.getBoundingClientRect().top-trace.getBoundingClientRect().bottom;
+    const after=gap();toolbar.style.marginTop='10px';const before=gap();toolbar.style.removeProperty('margin-top');
+    expect(Math.abs(after*2-before)<.5,'Answer toolbar spacing was not halved');
+    expect(Math.abs(answer.getBoundingClientRect().top-trace.getBoundingClientRect().bottom-traceGap)<.5,'Trace spacing changed');
+    console.log('ANSWER_GAP',JSON.stringify({before,after,traceGap}));
     expect(link.title===window.expected,'Link corrupted the path');
     expect(link.textContent===window.expected.split('\\\\').pop(),'Full path still visible');
     expect(link.querySelector('svg'),'File type icon missing');
@@ -73,6 +82,19 @@ async function run() {
     expect(window.calls[0]===window.expected,'Menu corrupted the Windows path');
     window.failOpen=false; await reveal(); await wait(()=>window.calls.length===2&&!document.querySelector('[role=alert]'));
     expect(window.calls[1]===window.expected,'Retry corrupted the path');
+    link.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:innerWidth-2,clientY:innerHeight-2}));
+    await wait(()=>document.querySelector('[role=menu]'));
+    expect(document.querySelectorAll('[role=menuitem]').length===7,'Incomplete file menu');
+    const menu=document.querySelector('[role=menu]'),box=menu.getBoundingClientRect();
+    expect(box.right<=innerWidth&&box.bottom<=innerHeight,'Menu overflows viewport');
+    expect([...menu.querySelectorAll('button')].find(b=>b.textContent==='复制文件内容').disabled,'Binary content should not copy');
+    menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    await wait(()=>!document.querySelector('[role=menu]'));
+    expect(document.activeElement===link,'Escape lost focus');
+    link.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true}));
+    await wait(()=>document.querySelector('[role=menu]'));
+    [...document.querySelectorAll('[role=menuitem]')].find(b=>b.textContent==='复制路径').click();
+    await wait(()=>window.calls.length===3);expect(window.calls[2]===window.expected,'Link menu lost canonical path');
     window.fileExists=false;window.dispatchEvent(new Event('focus'));
     await wait(()=>document.querySelector('.markdown-file-link:disabled'));
     window.fileExists=true;window.dispatchEvent(new Event('focus'));
@@ -107,6 +129,8 @@ async function run() {
   console.log('ROW_GEOMETRY',JSON.stringify(geometry))
   await window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   const output=path.join(root,'qa-artifacts/trace-groups');fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'reply-attachments.png'),(await window.webContents.capturePage()).toPNG())
+  await window.webContents.executeJavaScript(`document.querySelector('.markdown-file-link').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:240}));new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+  fs.writeFileSync(path.join(output,'file-context-menu.png'),(await window.webContents.capturePage()).toPNG())
   console.log('FILE_LOCATION_UI_PASSED')
   window.destroy(); app.exit(0)
 }

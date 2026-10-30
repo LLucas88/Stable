@@ -1,3 +1,4 @@
+import { useFileContextMenu } from './components/FileContextMenu'
 import { ConversationActivity } from './ConversationActivity'
 import { DesignControls, DesignMessageParameters, DEFAULT_DESIGN } from './DesignControls'
 import type { DesignRequest } from './types'
@@ -10,6 +11,7 @@ import { MarkdownContent, renderInline } from './components/MarkdownContent'
 import { DataPage } from './pages/DataPage'
 import { KnowledgePage } from './pages/KnowledgePage'
 import { SkillsPage } from './pages/SkillsPage'
+import { SkillQuickPicker } from './components/SkillQuickPicker'
 import { AutomationsPage } from './pages/AutomationsPage'
 import './styles/sidebar-layout.css'
 import { ContextUsageButton } from './ContextUsageButton'
@@ -407,9 +409,8 @@ export function App() {
         {settingsModule && <SettingsNavigation activeModule={settingsModule} onSelect={setSettingsModule} />}
         <section className="rail-task-pane" aria-label="项目与任务" hidden={Boolean(settingsModule)}>
           <header className="rail-task-header">
-            <button type="button" className="rail-new-chat" disabled={busy === '正在新建对话'} onClick={() => navigate('agent', mode === 'design' ? DEFAULT_DESIGN : undefined)}><SquarePen size={18} aria-hidden="true" /><span>新聊天</span></button>
+            <button type="button" className="rail-new-chat" data-active={page === 'agent' && state.conversations.some(item => item.id === state.activeConversationId && item.messageCount === 0) || undefined} disabled={busy === '正在新建对话'} onClick={() => navigate('agent', mode === 'design' ? DEFAULT_DESIGN : undefined)}><SquarePen size={18} aria-hidden="true" /><span>新聊天</span></button>
             <button type="button" className="rail-task-activity" aria-label="查看活动" title="查看活动" aria-pressed={activityView} onClick={() => setActivityView(value=>!value)}><Bell size={18}/>{activityCount > 0 && <i aria-label={`${activityCount} 条未读活动`}/>}</button>
-            <button type="button" className="rail-task-search" onClick={openConversationSearch} aria-label="搜索对话" title="搜索对话"><Search size={18} aria-hidden="true" /></button>
           </header>
           <div className="rail-conversation-tasks-slot" ref={setConversationTasksTarget} aria-label="对话任务" />
         </section>
@@ -981,7 +982,9 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const attachmentStatus = attachmentStatusMap[state.activeConversationId] || ''
   const conversationIsEmpty = visibleMessages.length === 0 && !pendingPrompt && !liveTrace
   const reduceConversationMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const [skillSearch,setSkillSearch] = useState('')
   const enabledSkills = state.skills.filter((item) => item.enabled)
+  const searchedSkills = enabledSkills.filter(item=>`${item.name} ${item.description||''}`.toLocaleLowerCase().includes(skillSearch.trim().toLocaleLowerCase()))
   const scripts = state.library.filter((item) => item.kind === 'script')
   const draftIds = state.conversations.filter(item => promptMap[item.id]?.trim() || attachmentMap[item.id]?.length).map(item => item.id)
   const draftIdsKey = JSON.stringify(draftIds)
@@ -1551,7 +1554,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
             try { const page = await window.stable.agent.messages(id, beforeCursor); setOlderPages(current => ({ ...current, [id]: { messages: [...page.messages, ...(current[id]?.messages || [])], beforeCursor: page.beforeCursor } })); window.requestAnimationFrame(() => { if (element && activeConversationIdRef.current === id) element.scrollTop = top + element.scrollHeight - height }) }
             finally { setLoadingOlder(false) }
           })}>{loadingOlder ? '读取中…' : '加载更早的消息'}</button>}
-          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : conversationTurns.map((turn) => { const message = [...turn.messages].reverse().find(item => item.role === 'assistant') || turn.messages.at(-1); return message ? <MessageTurn onCopyReply={copyUserMessage} turnMessages={turn.messages} live={turn.live} waiting={turn.waiting} conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} answerActions={message.role === 'assistant' ? <AnswerToolbar message={message} chapter={chapters.find(item => item.messageId === message.id)} onFork={() => forkAnswer(message)} onPin={() => changeChapter(message.id, chapters.some(item => item.messageId === message.id) ? null : message.content.replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名章节')} /> : undefined} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={turn.key} /> : <RunTrace key={turn.key} items={turn.live!.items} status={turn.live!.status} startedAt={turn.live!.startedAt} endedAt={turn.live!.endedAt} streaming={turn.live!.streaming} /> })}
+          {conversationIsEmpty ? <div className="conversation-empty"><video className="conversation-start-animation" src={conversationStartAnimationUrl} autoPlay={!reduceConversationMotion} loop muted playsInline preload="auto" aria-hidden="true" /><h2>准备好了，随时开始</h2></div> : conversationTurns.map((turn) => { const message = [...turn.messages].reverse().find(item => item.role === 'assistant') || turn.messages.at(-1); return message ? <MessageTurn designMode={designMode} onCopyReply={copyUserMessage} turnMessages={turn.messages} live={turn.live} waiting={turn.waiting} conversationId={state.activeConversationId} artifactRefreshKey={String(visibleMessages.length) + ":" + String(running)} message={message} answerActions={message.role === 'assistant' ? <AnswerToolbar message={message} chapter={chapters.find(item => item.messageId === message.id)} onFork={() => forkAnswer(message)} onPin={() => changeChapter(message.id, chapters.some(item => item.messageId === message.id) ? null : message.content.replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名章节')} /> : undefined} workspace={state.paths.workspace} onCopy={message.role === 'user' ? () => void copyUserMessage(message) : undefined} onAutomationDecision={message.automationProposal?.status === 'pending' ? (accepted) => void action(accepted ? '正在创建定时任务' : '正在忽略定时任务', async () => { const result = await window.stable.automations.decideProposal(state.activeConversationId, message.id, accepted); updateAgent(result.agent); updateAutomations(result.automations) }) : undefined} onPreviewAttachment={previewMessageAttachment} onPreviewImages={openImageViewer} onPreviewLink={openConversationPreview} key={turn.key} /> : <RunTrace key={turn.key} items={turn.live!.items} status={turn.live!.status} startedAt={turn.live!.startedAt} endedAt={turn.live!.endedAt} streaming={turn.live!.streaming} /> })}
 
         </div>
       </div>
@@ -1626,6 +1629,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
             <span className="sr-only" role="status" aria-live="polite">{attachmentStatus}</span>
             <label className="sr-only" htmlFor="agent-prompt">给 Stable 一个任务</label>
             <div className="composer-prediction-field" data-prediction={Boolean(prediction.text) || undefined} title={prediction.text || undefined}>
+            <SkillQuickPicker input={promptRef} prompt={prompt} scope={state.activeConversationId} skills={enabledSkills} selected={selectedReferences.filter(item=>item.kind==='skill').map(item=>item.id)} onPrompt={setPrompt} onSelect={skill=>{if(!selectedReferences.some(item=>item.kind==='skill'&&item.id===skill.id))toggleReference({id:skill.id,kind:'skill',name:skill.name,type:'skill',size:0})}}/>
             {imageMode && /@$/.test(prompt) && <div className="design-inline-references" role="listbox" aria-label="参考图引用">{imageAttachments.length ? imageAttachments.map((item,index)=><button type="button" role="option" aria-selected="false" key={item.path} onClick={()=>insertDesignReference(index)}>图{index+1} · {item.name}</button>) : <span>先添加参考图片</span>}</div>}
             {prediction.text && <div className="composer-prediction-overlay" aria-hidden="true">{prediction.text}</div>}
             {prediction.text && <span className="sr-only" id="prediction-help">建议：{prediction.text}。按 Tab、右方向键或回车采纳，再次发送才会执行。Esc 关闭建议。</span>}
@@ -1653,8 +1657,8 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
                 <details className="composer-menu skill-menu" ref={skillMenuRef}>
                   <summary className="composer-tool" aria-label="选择 Skill"><Braces size={18} aria-hidden="true" /><span>Skill 技能</span><ChevronRight size={14}/></summary>
                   <div className="composer-popover">
-                    <div className="composer-popover-head"><strong>选择 Skills</strong><span>可多选</span></div>
-                    {enabledSkills.length ? enabledSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.invocationMode === 'auto' ? '自动匹配 · ' : ''}{item.description || '手动选择后在当前对话持续生效'}</small></span></button> }) : <p className="composer-menu-empty">还没有已启用的 Skill。</p>}
+                    <div className="composer-popover-head"><strong>选择 Skills</strong><span>可多选</span></div><label className="skill-menu-search"><Search size={16}/><input aria-label="搜索技能" placeholder="搜索技能" value={skillSearch} onChange={e=>setSkillSearch(e.target.value)} /></label>
+                    {searchedSkills.length ? searchedSkills.map((item) => { const active = selectedReferences.some((entry) => entry.kind === 'skill' && entry.id === item.id); return <button type="button" className="composer-option" data-active={active || undefined} aria-pressed={active} key={item.id} onClick={() => toggleReference({ id: item.id, kind: 'skill', name: item.name, size: new Blob([item.content || '']).size, type: 'skill' })}><span><strong>{item.name}</strong><small>{item.invocationMode === 'auto' ? '自动匹配 · ' : ''}{item.description || '手动选择后在当前对话持续生效'}</small></span></button> }) : <p className="composer-menu-empty">{skillSearch ? '没有匹配的技能。' : '还没有已启用的 Skill。'}</p>}
                     <button className="composer-install-skill" type="button" onClick={addSkillFolder}><FolderInput size={15} />安装新的 Skill 文件夹</button>
                   </div>
                 </details>
@@ -1760,7 +1764,7 @@ function ConversationTitle({ title }: { title: string }) {
   return <strong ref={ref} title={title} className="conversation-title">{title}</strong>
 }
 
-function MessageTurn({ onCopyReply, turnMessages, live, waiting, conversationId, artifactRefreshKey, message, answerActions, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { onCopyReply?: (message: MessageItem) => void; turnMessages?: MessageItem[]; live?: LiveConversationTurn; waiting?: boolean; conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function MessageTurn({ designMode=false, onCopyReply, turnMessages, live, waiting, conversationId, artifactRefreshKey, message, answerActions, workspace, onCopy, onAutomationDecision, onPreviewAttachment, onPreviewImages, onPreviewLink }: { designMode?:boolean; onCopyReply?: (message: MessageItem) => void; turnMessages?: MessageItem[]; live?: LiveConversationTurn; waiting?: boolean; conversationId: string; artifactRefreshKey: string; message: MessageItem; answerActions?: ReactNode; workspace: string; onCopy?: () => void; onAutomationDecision?: (accepted: boolean) => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; onPreviewLink?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   if (message.role === 'user') return <div data-message-id={message.id} data-message-seq={message.seq}><UserTurn content={message.content} design={message.trace?.find(item=>item.id==='design-request')?.designRequest} attachments={message.attachments} onCopy={onCopy} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /></div>
   const items = conversationTurnTrace(turnMessages || [message], live)
   const status = live?.status || savedTraceStatus(message.trace || [])
@@ -1769,7 +1773,8 @@ function MessageTurn({ onCopyReply, turnMessages, live, waiting, conversationId,
     {(turnMessages || []).filter(item => item.id !== message.id).map(item => <span key={item.id} data-message-id={item.id} data-message-seq={item.seq} />)}
     {items.length || live || waiting ? <RunTrace onCopyReply={onCopyReply} items={items} status={status} waiting={waiting} startedAt={Number.isFinite(startedAt) ? startedAt : undefined} endedAt={live?.status === 'running' ? undefined : live?.endedAt} streaming={live?.streaming} finalContent={live ? undefined : message.content} onPreviewAttachment={onPreviewAttachment} onPreviewImages={onPreviewImages} /> : null}
     {!live && !isClarificationQuestion(message) && <div className="assistant-answer">
-      <div className="answer-content"><ArtifactLinks conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onPreview={onPreviewLink} /></div>
+      <div className="answer-content"><ArtifactLinks designMode={designMode} onPreviewImages={onPreviewImages} attachments={message.attachments} conversationId={conversationId} refreshKey={artifactRefreshKey} content={message.content} workspace={workspace} onPreview={onPreviewLink} /></div>
+      {(message.attachments || []).filter(item => item.path && !(designMode && attachmentIsImage(item)) && !message.content.includes(item.path)).map(item => <ConversationFileCard key={item.path} compact item={{name:item.name,path:item.path!,detail:item.type || ''}} onOpen={() => onPreviewAttachment?.(item)} />)}
     </div>}
     {!live && !waiting && !isClarificationQuestion(message) && answerActions}
     {message.automationProposal && <section className="automation-proposal" data-status={message.automationProposal.status} aria-label="定时任务确认">
@@ -1789,57 +1794,19 @@ interface ConversationFileItem {
 }
 
 function ConversationFileCard({ item, onOpen, compact = false, onRemove }: { item: ConversationFileItem; onOpen: () => void; compact?: boolean; onRemove?: () => void }) {
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>()
-  const [menuError, setMenuError] = useState('')
-  const menuRef = useRef<HTMLDivElement>(null)
-  const isHtml = /\.html?$/i.test(item.path)
+  const fileMenu = useFileContextMenu({ path: item.path, name: item.name, onOpen })
   const extension = item.name.split('.').pop()?.toLowerCase() || ''
   const isMarkdown = compact && /^(md|markdown|mdx)$/.test(extension)
   const isSpreadsheet = /^(xlsx?|xlsm|xlsb|csv|tsv|ods)$/.test(extension)
 
-  useEffect(() => {
-    if (!menuPosition) return
-    const closeOutside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuPosition(undefined) }
-    const closeWithKeyboard = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setMenuPosition(undefined) }
-    document.addEventListener('pointerdown', closeOutside)
-    document.addEventListener('keydown', closeWithKeyboard)
-    window.requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
-    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeWithKeyboard) }
-  }, [menuPosition])
-
-  function openContextMenu(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    const width = 210
-    const height = isHtml ? 92 : 50
-    setMenuPosition({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)) })
-  }
-
-  async function showInFolder() {
-    setMenuPosition(undefined)
-    setMenuError('')
-    try { await window.stable.system.showItemInFolder(item.path) }
-    catch (reason) { setMenuError(errorMessage(reason)) }
-  }
-
-  async function openInExternalBrowser() {
-    setMenuPosition(undefined)
-    setMenuError('')
-    try { await window.stable.system.openExternalHtml(item.path) }
-    catch (reason) { setMenuError(errorMessage(reason)) }
-  }
-
   return <div className="conversation-file-card-shell" data-compact={compact || undefined} data-pill={isMarkdown || undefined} data-removable={Boolean(onRemove) || undefined}>
-    <button className="conversation-file-card" type="button" onClick={onOpen} onContextMenu={openContextMenu} title={item.path} aria-label={`在 Stable 内置浏览器预览 ${item.name}`} aria-haspopup="menu">
+    <button className="conversation-file-card" type="button" onClick={onOpen} {...fileMenu.handlers} title={item.path} aria-label={`在 Stable 内置浏览器预览 ${item.name}`} aria-haspopup="menu">
       <span className="conversation-file-icon" data-spreadsheet={compact && isSpreadsheet || undefined}>{compact && isSpreadsheet ? <FileSpreadsheet size={23} aria-hidden="true" /> : <FileText size={isMarkdown ? 14 : 18} aria-hidden="true" />}</span>
       <span className="conversation-file-copy"><strong>{item.name}</strong>{!isMarkdown && <small>{compact ? extension.toUpperCase() || item.detail : item.detail}</small>}</span>
       {!compact && <ChevronRight size={16} aria-hidden="true" />}
     </button>
     {onRemove && <button className="attachment-card-remove" type="button" onClick={onRemove} aria-label={`移除附件 ${item.name}`}><X size={14} aria-hidden="true" /></button>}
-    {menuPosition && <div className="conversation-file-menu" role="menu" aria-label={`${item.name} 附件操作`} ref={menuRef} style={{ left: menuPosition.x, top: menuPosition.y }}>
-      <button type="button" role="menuitem" onClick={() => void showInFolder()}><FolderOpen size={14} aria-hidden="true" /><span>打开文件所在位置</span></button>
-      {isHtml && <button type="button" role="menuitem" onClick={() => void openInExternalBrowser()}><ExternalLink size={14} aria-hidden="true" /><span>用外部浏览器打开</span></button>}
-    </div>}
-    {menuError && <span className="conversation-file-error" role="alert">{menuError}</span>}
+    {fileMenu.menu}{fileMenu.error}
   </div>
 }
 
@@ -1957,7 +1924,7 @@ function localArtifactPaths(content: string, workspace: string) {
   return [...matches.values()]
 }
 
-function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', onPreview }: { content: string; workspace: string; conversationId: string; refreshKey?: string; onPreview?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
+function ArtifactLinks({ designMode=false, onPreviewImages, attachments=[], content, workspace, conversationId, refreshKey = '', onPreview }: { designMode?:boolean; onPreviewImages?:(items:ViewerImageItem[],index:number)=>void; attachments?:MessageItem['attachments']; content: string; workspace: string; conversationId: string; refreshKey?: string; onPreview?: (target: Omit<ConversationPreviewTarget, 'requestId'>) => void }) {
   const requestKey = JSON.stringify([content, workspace, conversationId, refreshKey])
   const [verified, setVerified] = useState<{ key: string; paths: string[] }>({ key: '', paths: [] })
   useEffect(() => {
@@ -1976,7 +1943,8 @@ function ArtifactLinks({ content, workspace, conversationId, refreshKey = '', on
   }, [content, workspace, conversationId, requestKey])
   const available = new Set(verified.key === requestKey ? verified.paths.map(path => path.replace(/\//g, '\\').toLowerCase()) : [])
   const fileAvailability = new Map(localArtifactPaths(content, workspace).map(item => { const key = item.path.replace(/\//g, '\\').toLowerCase(); return [key, available.has(key)] }))
-  return <MarkdownContent content={content} onPreview={onPreview} fileAvailability={fileAvailability} />
+  const images = designMode ? [...new Map([...localArtifactPaths(content, workspace), ...attachments.filter(item=>item.path).map(item=>({name:item.name,path:item.path!}))].filter(item=>/\.(png|jpe?g|webp|gif|bmp)$/i.test(item.path)).map(item=>[item.path.toLowerCase(),item])).values()] : []
+  return <><MarkdownContent content={content} onPreview={onPreview} fileAvailability={fileAvailability} hideImageFiles={designMode ? new Set(images.map(item=>item.path.replace(/\//g,'\\').toLowerCase())) : undefined}/>{images.length>0&&<div className="design-delivery-gallery">{images.map((item,index)=><DesignDeliveryImage key={item.path} item={item} onOpen={()=>onPreviewImages?.(images,index)}/>)}</div>}</>
 }
 
 function UserTurn({ content, design, attachments = [], pending = false, onCopy, onPreviewAttachment, onPreviewImages }: { content: string; design?: DesignRequest; attachments?: MessageItem['attachments']; pending?: boolean; onCopy?: () => void; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void }) {
@@ -2122,4 +2090,10 @@ function RunTrace({ items, status, startedAt, endedAt, streaming, finalContent, 
       </>}
     </div>
   </section>
+}
+
+function DesignDeliveryImage({item,onOpen}:{item:{name:string;path:string};onOpen:()=>void}) {
+ const source=useAttachmentImageSource(item)
+ const menu=useFileContextMenu({path:item.path,name:item.name,onOpen})
+ return <div className="design-delivery-image"><button type="button" onClick={onOpen} {...menu.handlers} aria-label={`查看图片 ${item.name}`}>{source?<img src={source} alt={item.name}/>:<span>图片暂时无法加载：{item.name}</span>}</button>{menu.menu}{menu.error}</div>
 }

@@ -107,7 +107,7 @@ test('Electron side preview isolates web, interactive HTML, and static workspace
   assert.match(main, /resolveWorkspaceEntry\(requested, paths\.readableRoots \|\| paths\.writableRoots \|\| paths\.workspace, \{ fileOnly: true \}\)/)
   assert.match(main, /只有 HTML 文件可以使用外部浏览器打开/)
   assert.match(main, /const openError = await shell\.openPath\(resolved\.path\)/)
-  assert.match(main, /无法使用默认浏览器打开 HTML/)
+  assert.match(main, /return fileActions\('browser', resolved\.path\)/)
   assert.match(main, /STABLE_QA_HTML_FIXTURE/)
   assert.match(main, /interactionText: qaButton\?\.textContent/)
   assert.doesNotMatch(main, /stable:preview:openMarkdown|isConversationPreviewPath/)

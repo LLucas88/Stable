@@ -5,6 +5,7 @@ const {normalizeWebUrl}=require('./preview.cjs')
 const {pageAction}=require('./browser-tool.cjs')
 const {BrowserDownloads}=require('./browser-downloads.cjs')
 const {redact}=require('./approval-ledger.cjs')
+const {createPublicResourcePolicy}=require('./browser-resource-policy.cjs')
 function durableURL(value){try{const u=new URL(value);if(/code|token|ticket|session|oauth|auth|state|password/i.test(u.search))return u.origin+u.pathname;u.hash='';return u.href}catch{return 'about:blank'}}
 function extraAction(action,ref,value){
   const element=ref?globalThis.__stableElements?.get(ref):null
@@ -22,14 +23,19 @@ class BrowserSessionService {
     this.profile.setPermissionRequestHandler((_c,_p,cb)=>cb(false));this.profile.setPermissionCheckHandler(()=>false)
     this.downloads=new BrowserDownloads({electron,store,onChange:()=>this.emit(),tabForContents:c=>[...this.tabs.values()].find(t=>t.view.webContents===c),allowed:(tab,url)=>this.allowed(tab,url)})
     this.downloadListener=(event,item,contents)=>{void this.downloads.begin(event,item,contents).catch(error=>{item.cancel();this.emit()})};this.profile.on('will-download',this.downloadListener)
-    this.profile.webRequest.onBeforeRequest((details,cb)=>{
+    const publicResource=createPublicResourcePolicy()
+    this.profile.webRequest.onBeforeRequest((details,cb)=>{ void (async()=>{
       const tab=[...this.tabs.values()].find(t=>t.view.webContents.id===details.webContentsId)
+      const epoch=tab?.resourceEpoch
       const staticResource=['image','font','stylesheet','script','media'].includes(details.resourceType)
       let allow=details.url==='about:blank'||staticResource&&/^data:/.test(details.url)
       if(tab&&!allow)allow=this.allowed(tab,details.url)
+      const page=tab&&(tab.view.webContents.getURL()||tab.url)
+      if(tab&&!allow&&/^https?:/.test(page)&&this.allowed(tab,page))allow=await publicResource(details)
+      if(tab&&(this.tabs.get(tab.id)!==tab||tab.resourceEpoch!==epoch)){cb({cancel:true});return}
       if(tab&&!allow){try{const origin=new URL(details.url).origin;if(origin!=='null'&&!tab.blockedSites.has(origin)){tab.blockedSites.add(origin);this.emit()}}catch{}}
       cb({cancel:!allow})
-    })
+    })().catch(()=>cb({cancel:true})) })
     this.saved=store.getSetting('browser-tabs-v2')||[]
   }
   sites(id){return this.store.getSetting(`browser-sites:${id}`)||[]}
@@ -48,7 +54,7 @@ class BrowserSessionService {
     wc.on('before-input-event',manualInput);wc.on('before-mouse-event',(_event,input)=>{if(input.type==='mouseDown')manualInput()})
     const guard=(event,target)=>{if(!this.allowed(tab,target)){event.preventDefault();tab.blockedURL=target;tab.error=`需要允许访问 ${new URL(target).origin}`;this.emit()}}
     wc.on('will-navigate',guard);wc.on('will-redirect',guard)
-    wc.on('did-start-navigation',(_e,_u,_same,main)=>{if(main){tab.epoch++;this.emit()}})
+    wc.on('did-start-navigation',(_e,_u,same,main)=>{if(main){if(!same){tab.blockedSites.clear();tab.resourceEpoch=(tab.resourceEpoch||0)+1}tab.epoch++;this.emit()}})
     wc.on('did-navigate-in-page',()=>{tab.epoch++;this.emit()})
     wc.on('did-stop-loading',()=>{tab.url=wc.getURL();tab.title=wc.getTitle()||tab.url;this.persist();this.recordHistory(tab);this.emit()})
     wc.on('did-fail-load',(_e,code,description,_url,main)=>{if(main&&code!==-3){tab.error=description;this.emit()}})

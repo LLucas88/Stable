@@ -270,7 +270,7 @@ class StableStore {
       networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
       design: this.getSetting(`design:${row.id}`) || undefined,
       lastMessagePreview: String(row.latest_preview || '').replace(/\s+/g, ' '),
-      id: row.id, title: row.title, capability: ['none','enabled','low','high','max'].includes(row.capability) ? row.capability : 'auto',
+      id: row.id, title: row.title, capability: ['none','enabled','low','medium','high','xhigh','max'].includes(row.capability) ? row.capability : 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',
       modelId: row.model_id || defaultModelId,
       waitingForInput: JSON.parse(row.latest_trace || '[]').some(item => item.clarification?.status === 'waiting'),
@@ -663,9 +663,9 @@ class StableStore {
     }))
   }
 
-  listSkills() {
+  listSkills({ includeCatalog = false } = {}) {
     const meta = this.getSetting('skillMarketMeta') || {}
-    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().map((row) => ({ ...row, enabled: Boolean(row.enabled), invocationMode: meta[row.id]?.invocationMode === 'auto' ? 'auto' : 'manual', createdAt: row.created_at }))
+    return this.db.prepare('SELECT id,name,description,path,content,enabled,created_at FROM skills ORDER BY created_at DESC').all().filter(row=>includeCatalog || !meta[row.id]?.catalogOnly).map((row) => ({ ...row, enabled: Boolean(row.enabled), invocationMode: meta[row.id]?.invocationMode === 'auto' ? 'auto' : 'manual', createdAt: row.created_at }))
   }
 
   upsertSkill(item) {

@@ -277,6 +277,7 @@ contextBridge.exposeInMainWorld('stable', {
     openPath: (path) => invoke('stable:system:openPath', { path }),
     showItemInFolder: (path) => invoke('stable:system:showItemInFolder', { path }),
     openExternalHtml: (path) => invoke('stable:system:openExternalHtml', { path }),
+    fileAction: (path, action) => invoke('stable:system:fileAction', { path, action }),
   },
   files: {
     path: (file) => webUtils.getPathForFile(file),

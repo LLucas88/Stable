@@ -16,7 +16,7 @@ const { prepareClaudeMemory } = require('./claude-memory.cjs')
 const { loadClaudeExtensions } = require('./claude-extensions.cjs')
 const { createExtensionRuntime } = require('./claude-extension-runtime.cjs')
 const SDK_VERSION = '0.3.308'
-const TOOL_POLICY = 'native-bash-v20'
+const TOOL_POLICY = 'native-bash-v21'
 
 function runtimePath(options = {}) {
   if (options.executable) return options.executable

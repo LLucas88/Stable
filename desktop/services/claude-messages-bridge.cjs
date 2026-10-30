@@ -245,6 +245,7 @@ class ClaudeMessagesBridge {
   constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile, imageDirectory, chatgpt }) {
     this.imageDirectory = imageDirectory
     this.chatgpt = model.providerId === 'chatgpt' ? new (require('./chatgpt-responses.cjs').ChatGPTResponses)({ account: chatgpt, model, reasoningFile }) : null
+    if (require('./model-reasoning.cjs').openAiResponsesModel(model)) this.chatgpt = new (require('./openai-responses.cjs').OpenAIResponses)({ model, apiKey, fetchImpl, reasoningFile })
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl; this.onRequest = onRequest
     this.search = search; this.textOnly = textOnly; this.expectedImages = expectedImages
     this.onDiagnostic = onDiagnostic; this.onFatalError = onFatalError
@@ -254,7 +255,7 @@ class ClaudeMessagesBridge {
   }
   countBody(input, translated = translateTools(this.textOnly ? [] : input.tools, discoveredTools(input))) {
     const messages = compactToolContext(translateMessages(withModelIdentity(input, this.model), this.reasoning, { preserveToolParts: true }), { imageDirectory: this.imageDirectory })
-      .map(message => message.role === 'tool' && Array.isArray(message.content) ? { ...message, content: textContent(message.content) } : message)
+      .map(message => !this.chatgpt && message.role === 'tool' && Array.isArray(message.content) ? { ...message, content: textContent(message.content) } : message)
     return { messages, ...(translated.tools.length ? { tools: translated.tools } : {}),
       ...(input.output_config?.format?.type === 'json_schema' ? { response_format: { type: 'json_schema', json_schema: { name: 'result', schema: input.output_config.format.schema, strict: true } } } : {}) }
   }

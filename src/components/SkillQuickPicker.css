@@ -1,0 +1,13 @@
+.composer-prediction-field{position:relative}
+.skill-quick-picker{position:absolute;bottom:calc(100% + 10px);left:0;right:0;z-index:30;padding:10px;border:1px solid var(--color-line,#ddd);border-radius:16px;background:var(--color-paper,#fff);color:var(--color-ink,#222);box-shadow:0 8px 28px #0002}
+.skill-quick-heading{display:flex;justify-content:space-between;padding:6px 10px;color:var(--color-muted,#888);font-size:12px}
+.skill-quick-heading span{font-size:11px}
+#skill-quick-list{max-height:280px;overflow:auto}
+#skill-quick-list button{display:flex;align-items:center;gap:9px;width:100%;min-width:0;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+#skill-quick-list button[aria-selected=true]{background:var(--surface-selected,#8882)}
+#skill-quick-list strong{font-size:13px;font-weight:500;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#skill-quick-list button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--color-muted,#888)}
+#skill-quick-list p{padding:12px;color:var(--color-muted,#888)}
+
+.skill-menu-search{display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface-selected);border-radius:10px;margin:0 8px 8px}.skill-menu-search input{min-width:0;width:100%;border:0;background:transparent;color:inherit;outline:none}.design-delivery-gallery{display:flex;flex-wrap:wrap;gap:16px;margin:12px 0;align-items:flex-start}.design-delivery-image{max-width:100%;flex:0 1 320px}.design-delivery-image:only-child{flex-basis:360px}.design-delivery-image>button{display:block;background:transparent;border:0;padding:0;cursor:zoom-in;max-width:100%;text-align:left}.design-delivery-image img{display:block;max-width:100%;max-height:480px;width:auto;height:auto;object-fit:contain;border-radius:12px}
+.skill-menu>.composer-popover{width:400px;max-width:calc(100vw - 48px);max-height:380px;overflow:auto;overflow-x:hidden}.skill-menu .skill-menu-search{position:sticky;top:0;z-index:1;background:var(--color-paper)}.skill-menu .composer-option span{min-width:0;overflow:hidden}.skill-menu .composer-option small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

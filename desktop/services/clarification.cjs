@@ -17,10 +17,21 @@ function normalizeCard(value) {
 }
 function waitingCard(value) {
   const text = String(value || '').trim()
-  return text.startsWith(WAIT_MARKER) ? normalizeCard(parseObject(text.slice(WAIT_MARKER.length))) : null
+  // A standalone protocol line may follow public explanation. Never interpret
+  // inline examples or fenced code as an actionable question.
+  const match = /(?:^|\n)[ \t]*\[\[STABLE_WAITING_FOR_INPUT\]\][ \t]*(?:\r?\n|(?=\{))/.exec(text)
+  if (!match) return null
+  const prefix = text.slice(0, match.index).trim()
+  if ((prefix.match(/^\s*```/gm) || []).length % 2) return null
+  const card = normalizeCard(parseObject(text.slice(match.index + match[0].length)))
+  if (!card) return null
+  const explanation = [prefix, card.explanation].filter(Boolean).join('\n\n').slice(0, 8000)
+  return { ...card, ...(explanation ? { explanation } : {}) }
 }
 function waitingAnswer(value) {
   const text = String(value || '').trim()
+  const card = waitingCard(text)
+  if (card) return card.question
   if (text.startsWith(WAIT_MARKER)) {
     const body = text.slice(WAIT_MARKER.length).trim()
     return waitingCard(text)?.question || parseObject(body)?.question || (body.startsWith('{') ? '请补充影响任务结果的关键信息。' : body) || '请补充影响任务结果的关键信息。'
@@ -30,17 +41,19 @@ function waitingAnswer(value) {
   return null
 }
 function clarificationStream() {
-  const buffers = new Map(), released = new Set(), hidden = new Set()
+  const buffers = new Map(), hidden = new Set()
   return (id, delta) => {
     if (hidden.has(id)) return ''
-    if (released.has(id)) return delta
     const buffer = (buffers.get(id) || '') + delta
-    buffers.set(id, buffer)
-    const candidate = buffer.trimStart()
-    if (WAIT_MARKER.startsWith(candidate)) return ''
-    buffers.delete(id)
-    if (candidate.startsWith(WAIT_MARKER)) { hidden.add(id); return '' }
-    released.add(id); return buffer
+    const marker = buffer.indexOf(WAIT_MARKER)
+    if (marker >= 0) { buffers.delete(id); hidden.add(id); return buffer.slice(0, marker) }
+    // Keep only a possible partial marker, allowing explanation to stream.
+    let pending = 0
+    for (let n = 1; n < WAIT_MARKER.length && n <= buffer.length; n++) {
+      if (WAIT_MARKER.startsWith(buffer.slice(-n))) pending = n
+    }
+    buffers.set(id, pending ? buffer.slice(-pending) : '')
+    return pending ? buffer.slice(0, -pending) : buffer
   }
 }
 
@@ -123,6 +136,20 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
   if (pending && /^(?:取消|取消任务|停止|不用了|算了)[。！!\s]*$/.test(reply.prompt)) return { status: 'cancelled', answer: '已取消待澄清的任务。', payload: reply }
   const resuming = Boolean(pending && !/^(?:新任务|换个任务|换一个任务)[：:]/.test(reply.prompt))
   const effective = resuming ? mergePayload(cleanPayload(pending.payload), reply) : reply
+  const { designCountConflict, explicitImageCount } = require('./design-request.cjs')
+  const previousConflict = resuming && designCountConflict(pending.payload)
+  if (previousConflict && pending.question === previousConflict.question) {
+    const chosenCount = explicitImageCount(reply.prompt)
+    if (chosenCount) {
+      effective.design = { ...effective.design, count: chosenCount }
+      return { status: 'ready', payload: effective }
+    }
+    return { status: 'waiting', answer: previousConflict.question, payload: effective,
+      trace: [clarificationTrace(cleanPayload(pending.payload), previousConflict.question, 'clarification', previousConflict)] }
+  }
+  const countConflict = designCountConflict(effective)
+  if (countConflict) return { status: 'waiting', answer: countConflict.question, payload: effective,
+    trace: [clarificationTrace(effective, countConflict.question, 'clarification', countConflict)] }
   // A validated card response already settles this decision. The execution model
   // still checks evidence and handles any genuinely new gaps in context.
   if (payload.clarificationResolved) return { status: 'ready', payload: effective }
@@ -157,6 +184,7 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
     '最近对话：\n' + (messages || []).slice(-6).map(message => message.role + '：' + String(message.content || '').slice(-2000)).join('\n'),
     resuming ? '上一轮问题：' + pending.question : '',
     '当前任务与补充：\n' + effective.prompt,
+    effective.design ? '本条图片参数：' + JSON.stringify(effective.design) + '。文字中的生成数量若与参数冲突，先提问，不自动覆盖参数或直接生成；已明确回答的数量选择按最新回答执行。' : '',
     '已提供的资源名称（待执行阶段读取）：' + [...effective.attachments, ...effective.references].map(item => item.name).join('、'),
   ].filter(Boolean).join('\n\n')
   const parsed = parseObject(await ask(prompt))
