@@ -1,5 +1,6 @@
 'use strict'
 const { readSource } = require('./../helpers/read-source.cjs')
+const prepareVisualFixture = require('../helpers/visual-fixture.cjs')
 // Render the real AgentPage in a hidden window with mock IPC. Never touch the
 // user's running app, account, workspace or network.
 const { app, BrowserWindow, session } = require('electron')
@@ -68,8 +69,10 @@ async function main() {
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<App/>);
     window.remount=async()=>{reactRoot.render(null);await new Promise(r=>setTimeout(r,100));reactRoot.render(<App/>)};
     window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.BASE_URL': '"/"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   const fixtureHtml=path.join(app.getPath('userData'),'composer.html');fs.writeFileSync(fixtureHtml,'<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>');await win.loadFile(fixtureHtml)
+  console.log('DESIGN_NATIVE_FORCED_COLORS', await win.webContents.executeJavaScript('matchMedia("(forced-colors: active)").matches'))
+  await prepareVisualFixture(win)
   for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css','sidebar-layout.css','design-activity.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
@@ -160,6 +163,11 @@ async function main() {
     for(const selector of ['.window-shell','.window-titlebar','.app-shell','.side-rail']) expect(getComputedStyle(document.querySelector(selector)).backgroundColor==='rgba(0, 0, 0, 0)','Mica surface covered by '+selector);
   `)
   fs.writeFileSync(path.join(output,'design-chrome-material.png'),(await win.webContents.capturePage()).toPNG())
+  // Windows Server can enable high contrast by default. Verify both explicit
+  // modes instead of requiring Mica transparency in the accessibility fallback.
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] })
+  await run(`expect(matchMedia('(forced-colors: active)').matches,'Forced-colors emulation missing');expect(getComputedStyle(document.querySelector('.window-shell')).backgroundColor!=='rgba(0, 0, 0, 0)','High-contrast shell must be opaque');expect(getComputedStyle(document.documentElement).getPropertyValue('--surface-shell').trim()==='Canvas','High-contrast shell must use system Canvas');`)
+  await prepareVisualFixture(win)
   await run(`delete document.documentElement.dataset.windowMaterial;document.documentElement.style.removeProperty('background-color');await tick();`)
   await run(`const size=document.querySelector('.design-size-popover');Array.from(size.querySelectorAll('button')).find(b=>b.textContent.startsWith('店铺头像')).click();await tick();expect(size.querySelector('.design-output-limit').textContent.includes('小于 5 MB'),'Avatar limit not linked');`)
   fs.writeFileSync(path.join(output,'design-business-size.png'),(await win.webContents.capturePage()).toPNG())
