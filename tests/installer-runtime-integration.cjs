@@ -19,7 +19,9 @@ async function main() {
   const end = source.indexOf('stablePostInstall:')
   assert.ok(start >= 0 && end > start)
   const section = source.slice(start, end)
-  const completion = source.slice(source.indexOf('!insertmacro stableReportProgress "100"'), source.indexOf('!macro doStartApp'))
+  // Compile the complete launch tail, including both update and fresh-install
+  // branches. Omitting the latter can hide duplicate global macro variables.
+  const completion = source.slice(source.indexOf('!insertmacro stableReportProgress "100"'))
   const compiler = await getMakeNsisPath()
   const env = { ...process.env, ...compiler.env }
   function checked(command, args, options = {}) {
@@ -76,6 +78,7 @@ Var updated
 Var forceRun
 Var taskRoot
 Var appExe
+Var launchLink
 Var installMode
 Var isTryToKeepShortcuts
 !macro setIsTryToKeepShortcuts
@@ -98,10 +101,16 @@ Var isTryToKeepShortcuts
 !macroend
 !macro handleUninstallResult key
 !macroend
-!macro StartApp
+!define StdUtils.ExecShellAsUser '!insertmacro TestExecShellAsUser'
+!macro TestExecShellAsUser result target action args
   FileOpen $8 "$taskRoot\\relaunch-called" w
-  FileWrite $8 "updated-client"
+  FileWrite $8 "\u0024{args}"
   FileClose $8
+!macroend
+!macro StartApp
+  Var /GLOBAL startAppArgs
+  StrCpy $startAppArgs "--updated"
+  \u0024{StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$startAppArgs"
 !macroend
 !macro quitSuccess
   SetErrorLevel 0
@@ -137,6 +146,7 @@ Section
   \u0024{EndIf}
   ${section}
 stablePostInstall:
+  StrCpy $launchLink "$appExe"
   ${completion}
   SetErrorLevel 0
 SectionEnd
@@ -213,6 +223,7 @@ SectionEnd
     assert.equal(result.error, undefined, result.error?.message)
     assert.equal(result.status, scenario.code, `${scenario.name}: ${result.stderr}`)
     assert.equal(fs.existsSync(path.join(home,'relaunch-called')),Boolean(scenario.forceRun && scenario.code===0), `${scenario.name}: relaunch only after a successful requested update`)
+    if (scenario.forceRun && scenario.code === 0) assert.equal(fs.readFileSync(path.join(home,'relaunch-called'), 'utf8'), '--updated')
     const progressFile = path.join(home, 'progress.log')
     const progress = fs.existsSync(progressFile) ? fs.readFileSync(progressFile, 'utf8').trim().split(/\r?\n/).map(line => Number(line.split('|')[0])) : []
     assert(progress.every((value, index) => index === 0 || value >= progress[index - 1]), `${scenario.name}: progress must not go backwards`)

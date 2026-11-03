@@ -64,7 +64,7 @@ test('successful updates relaunch only when explicitly requested, after shortcut
   const startMacroIndex = installSection.indexOf('!macro doStartApp')
   assert.ok(shortcutIndex >= 0 && completeIndex > shortcutIndex)
   assert.ok(updateExitIndex > completeIndex && startMacroIndex > updateExitIndex)
-  assert.match(installSection.slice(completeIndex, updateExitIndex), /\$\{if\} \$\{isForceRun\}[\s\S]+!insertmacro StartApp/)
+  assert.match(installSection.slice(completeIndex, updateExitIndex), /\$\{if\} \$\{isForceRun\}[\s\S]+\$\{StdUtils\.ExecShellAsUser\} \$0 "\$launchLink" "open" "--updated"/)
   assert.doesNotMatch(installSection, /Exec\s+'"\$appExe"'/)
 })
 

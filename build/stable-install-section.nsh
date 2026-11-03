@@ -362,7 +362,8 @@ ${if} ${isUpdated}
   ${endif}
   ${if} ${isForceRun}
     HideWindow
-    !insertmacro StartApp
+    ; StartApp declares a global variable and is already expanded below.
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "--updated"
   ${endif}
   !insertmacro quitSuccess
 ${endif}
