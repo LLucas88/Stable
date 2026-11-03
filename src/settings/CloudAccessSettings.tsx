@@ -3,6 +3,7 @@ import { CircleAlert, LoaderCircle, ShieldCheck } from 'lucide-react'
 import type { BootstrapData } from '../types'
 import { errorMessage } from '../shared/format'
 import logoUrl from '../../build/stable_logo_transparent.png'
+import { DiagnosticExport } from './SupportActions'
 
 export function cloudAccessHint(status: BootstrapData['cloud']['status']) {
   if (status === 'disabled' || status === 'authenticated') return ''
@@ -12,7 +13,7 @@ export function cloudAccessHint(status: BootstrapData['cloud']['status']) {
   return '登录 Stable Cloud 后即可发送模型任务。'
 }
 
-export function CloudAccessSettings({ state, onComplete }: { state: BootstrapData; onComplete: (value: BootstrapData) => void }) {
+export function CloudAccessSettings({ state, onComplete, onOpenUpdates }: { state: BootstrapData; onComplete: (value: BootstrapData) => void; onOpenUpdates?: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -56,6 +57,10 @@ export function CloudAccessSettings({ state, onComplete }: { state: BootstrapDat
         <button className="button primary cloud-auth-submit" type="submit" disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} />正在登录…</> : '登录'}</button>
       </form>}
       <div className="cloud-access-foot"><ShieldCheck size={16} aria-hidden="true" /><span>账号密码不会保存；设备会话由 Windows 安全存储加密。</span></div>
+      <div className="cloud-support-actions">
+        {onOpenUpdates && <button className="text-button" type="button" onClick={onOpenUpdates}>前往软件更新</button>}
+        <DiagnosticExport />
+      </div>
     </section>
 }
 

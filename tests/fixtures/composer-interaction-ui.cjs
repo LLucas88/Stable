@@ -25,7 +25,7 @@ async function main() {
     const initial={cloud:{status:'disabled',enabled:false},activeConversationId:'a',conversations,messages:[],data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{}, releasePreparation, rejectRun; window.decisions=[];window.started=[];window.uiErrors=[];window.preparing=false;window.mode='preparing';window.releasePreparation=()=>releasePreparation();
     const state=(id)=>({...initial,activeConversationId:id});
-    window.stable={appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},agent:{
+    window.stable={updater:{onPrepare:()=>()=>{}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},agent:{
       onEvent:fn=>{listener=fn;return()=>{}},state:async id=>state(id),select:async id=>state(id),configure:async id=>{if(window.mode==='preparing'){window.preparing=true;await new Promise(resolve=>releasePreparation=resolve)}return state(id)},cancel:async()=>{rejectRun?.(new Error('已取消'));return true},
       run:(id)=>{window.started.push(id);return new Promise((resolve,reject)=>{rejectRun=reject})},
       answerApproval:async(id,request,decision)=>{window.decisions.push({id,request,decision});await new Promise(r=>setTimeout(r,70));return true},

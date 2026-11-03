@@ -6,7 +6,7 @@ const { HTML_PREVIEW_GUIDANCE } = require('./browser-command-route.cjs')
 const TOOL_SPECS = [
   {
     name: 'stable_image_generate',
-    description: '使用 GLM-image 或云端 GPT Image 2.5 按文字描述生成新图片，默认1张；additionalImages 可附带第2张并发生成，云端模式使用 Stable 账号，直连模式使用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；不是截图、看图、数据绘图或原图编辑工具。无需切换聊天模型。输出保存为工作区 PNG；父目录须存在，不覆盖文件。相同参数和输出路径可跨轮恢复结果，下载失败可重试下载；结果未知时停止重复生成。生成会产生费用，不要重复生成已经满足要求的图片。',
+    description: '使用 GLM-image 或云端 GPT Image 2.5 按文字描述生成新图片，默认1张；additionalImages 可附带第2张并发生成，云端模式使用 Stable 账号，直连模式使用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；GPT Image 支持本次参考图编辑；GLM 不支持图片输入。不是截图、看图或数据绘图工具。无需切换聊天模型。输出保存为工作区 PNG；父目录须存在，不覆盖文件。相同参数和输出路径可跨轮恢复结果，下载失败可重试下载；结果未知时停止重复生成。生成会产生费用，不要重复生成已经满足要求的图片。',
     parameters: {
       prompt: { type: 'string', required: true, minLength: 1, maxLength: 1000, description: '图片内容、风格、构图和需要包含的文字，不超过1000字符' },
       output: { type: 'string', required: true, description: '工作区内新的 .png 文件路径，父目录必须已存在' },
@@ -14,10 +14,12 @@ const TOOL_SPECS = [
       model: { type: 'string', enum: ['glm-image','gpt-image-2.5-sunburst','gpt-image-2.5-flare'], description: '图片模型；Design 参数优先。GPT Image 需云端。' },
       quality: { type: 'string', enum: ['hd','low','medium','high','xhigh','max','auto'], description: 'GLM 仅 hd；GPT 默认 medium，支持 low/medium/high/xhigh/max/auto。' },
       background: { type: 'string', enum: ['opaque','transparent','auto'], description: 'GPT 可透明背景；GLM 仅 opaque。' },
+      referenceIds: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string' }, description: '仅使用应用提供的参考图 ID。省略时上传本次全部参考图；不能传文件路径或 URL。' },
       additionalImages: { type: 'array', minItems: 1, maxItems: 1, description: '需要多个独立方案时，在此附带第二张，与主图片最多2张并发生成；其余方案下一批。失败后按各自原参数恢复，禁止整批重新生成。', items: { type: 'object', additionalProperties: false, properties: {
         prompt: { type: 'string', required: true, minLength: 1, maxLength: 1000 },
         output: { type: 'string', required: true },
         size: { type: 'string' },
+        referenceIds: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string' } },
         model: { type: 'string' }, quality: { type: 'string' }, background: { type: 'string' },
       } } },
     },
@@ -88,7 +90,7 @@ function installBuiltinBridge(specs, defineTool, publish) {
             const approval = agent.ctx.get('approval')
             if (!approval) throw new Error('缺少浏览器操作审批服务。')
             const outcome = await approval.request({ agent: exec.agent, toolName: spec.name, callId: exec.callId,
-              reason: spec.name === 'stable_image_generate' ? '调用智谱 GLM-Image 生成图片并保存到任务工作区，按次收费。' : `网页操作 ${args.action}，目标 ${args.ref || '(未指定)'}；可能提交表单或改变网站数据。`, signal: exec.signal })
+              reason: spec.name === 'stable_image_generate' ? '调用 GLM 或 GPT Image 生成/编辑图片并保存到任务工作区，按所选模型用量计费。' : `网页操作 ${args.action}，目标 ${args.ref || '(未指定)'}；可能提交表单或改变网站数据。`, signal: exec.signal })
             if (outcome !== 'allowed-once') throw new Error('用户未批准本次网页操作，未执行。')
           }
           exec.signal.throwIfAborted()

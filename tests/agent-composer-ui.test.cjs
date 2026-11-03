@@ -172,7 +172,9 @@ test('large attachment previews no longer reject the send and failures stay reco
 test('sent attachments follow the user message and completed execution timelines collapse without cards', () => {
   const app = readSource(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   const css = readSource(path.join(__dirname, '..', 'src', 'styles', 'app.css'), 'utf8')
-  assert.match(app, /setPrompt\(''\); setAttachments\(\[\]\); setReferences\(current => current\.filter\(item => item\.kind === 'skill'\)\)/)
+  assert.match(app, /setPrompt\(current => current === prompt \? '' : current\)/)
+  assert.match(app, /setAttachmentMap\(current => \(\{ \.\.\.current, \[conversationId\]: \(current\[conversationId\] \|\| \[\]\)\.filter\(item => !attachments\.some\(sent => sent\.path === item\.path\)\) \}\)\)/)
+  assert.match(app, /setReferences\(current => current\.filter\(item => item\.kind === 'skill' \|\| !selectedReferences\.some\(sent => sent\.kind === item\.kind && sent\.id === item\.id\)\)\)/)
   assert.match(app, /setPendingMap\(\(current\) => \(\{ \.\.\.current, \[conversationId\]: \{ content: clarificationPendingContent\(value, entry\.payload\.clarificationResponse,[^\n]+attachments: messageAttachments \} \}\)\)/)
   assert.match(app, /window\.stable\.agent\.configure\(conversationId, conversation\.capability,/)
   assert.match(app, /window\.stable\.agent\.run\(conversationId, value, currentAttachments, currentReferences, entry\.id, entry\.payload\.clarificationResponse, entry\.payload\.design\)/)

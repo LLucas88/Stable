@@ -16,7 +16,7 @@ const { prepareClaudeMemory } = require('./claude-memory.cjs')
 const { loadClaudeExtensions } = require('./claude-extensions.cjs')
 const { createExtensionRuntime } = require('./claude-extension-runtime.cjs')
 const SDK_VERSION = '0.3.308'
-const TOOL_POLICY = 'native-bash-v21'
+const TOOL_POLICY = 'native-bash-v23'
 
 function runtimePath(options = {}) {
   if (options.executable) return options.executable
@@ -294,6 +294,7 @@ class ClaudeHarnessRunner {
         this.options.trustedCli ? require('./wending-cli.cjs').wendingCliAgentInstruction() + '\n本分支通过 stable_wending 的 args 数组调用上述 CLI，优先使用该结构化工具调用业务 CLI。' : '',
         '命令通过 SDK 原生 Bash 在本机执行；Windows 下使用 Git Bash 语法和 /c/...、/d/... 路径，原生文件工具使用 Windows 路径。Bash 不提供 WSL2 隔离，审批通过后可能访问工作区以外的文件和网络。使用 timeout 参数（毫秒），不使用 stable_exec、cwd 或 timeoutMs 参数。禁止后台运行；任务停止前等待命令完成。当前模型服务的联网搜索使用 stable_search；共享浏览器交互使用 stable_browser；文档任务优先使用当前授权且适用的 Skill，stable_excel 等工具保留备用。只可读取当前手动选择或自动授权目录中的技能；禁止通过 shell 安装 Skill。',
         !networkAccess || sandboxMode === 'read-only' ? '本轮只读或禁网，不提供 Bash；请使用获准的原生文件工具，不可请求其他工具绕过此限制。' : '',
+        !networkAccess ? '本轮禁止联网：WebFetch / stable_search / stable_fetch 不能使用；stable_browser 仅可预览本任务工作区的本地 HTML，不可访问远程页面或加载远程资源。浏览器审批不解除禁网限制。' : '',
         session.textOnly ? '本轮只输出所要求的文字或 JSON，禁止调用任何工具。' : '',
         `本轮工作目录：${workspace}\n可读取目录：${readableRoots.join('\n')}\n可写入目录：${sandboxMode === 'read-only' ? '无（只读模式）' : writableRoots.join('\n')}`,
       ].filter(Boolean).join('\n\n')
@@ -301,7 +302,7 @@ class ClaudeHarnessRunner {
         message: { role: 'user', content: [{ type: 'text', text: !saved?.seeded && session.initialPrompt ? session.initialPrompt : turnPrompt }, ...images] } }
       queue.push(first)
       const skillTools = skillOptions.names.length ? ['Skill'] : []
-      const workerTools = ['ToolSearch', ...(nativeTools?.tools || []), ...skillTools, ...extensionRuntime.names, ...['stable_search', ...(this.options.trustedCli ? ['stable_wending'] : []), ...(this.builtins ? ['stable_excel', 'stable_browser', 'stable_skill_install', ...(networkAccess && sandboxMode !== 'read-only' ? ['stable_image_generate'] : [])] : [])].map(name => `mcp__stable__${name}`)]
+      const workerTools = ['ToolSearch', ...(nativeTools?.tools || []), ...skillTools, ...extensionRuntime.names, ...['stable_search', 'stable_fetch', ...(this.options.trustedCli ? ['stable_wending'] : []), ...(this.builtins ? ['stable_excel', 'stable_browser', 'stable_skill_install', ...(networkAccess && sandboxMode !== 'read-only' ? ['stable_image_generate'] : [])] : [])].map(name => `mcp__stable__${name}`)]
       const skillPermission = input => {
         try { return { behavior: 'allow', updatedInput: skillOptions.authorize(input) } }
         catch (error) { return { behavior: 'deny', message: '此 Skill 不在本轮授权白名单中。' } }

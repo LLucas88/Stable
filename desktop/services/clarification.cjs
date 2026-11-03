@@ -76,6 +76,7 @@ function clarificationTurn(messages, prompt, deliveryId, time = Date.now()) {
 
 function cleanPayload(payload) {
   return {
+    ...(payload.designReferenceIds ? { designReferenceIds: payload.designReferenceIds } : {}),
     ...(payload.design ? {design: require('./design-request.cjs').validateDesignRequest(payload.design)} : {}),
     prompt: String(payload.prompt || ''),
     attachments: (Array.isArray(payload.attachments) ? payload.attachments : []).slice(0, 24).map(item => ({ name: String(item?.name || ''), path: String(item?.path || ''), type: String(item?.type || ''), size: Number(item?.size) || 0 })),
@@ -86,6 +87,7 @@ function cleanPayload(payload) {
 function mergePayload(original, reply) {
   const unique = (items, key) => [...new Map(items.map(item => [key(item), item])).values()]
   return {
+    ...((reply.designReferenceIds?.length || original.designReferenceIds?.length) ? { designReferenceIds: [...new Set([...(original.designReferenceIds || []), ...(reply.designReferenceIds || [])])] } : {}),
     ...(reply.design || original.design ? {design: reply.design || original.design} : {}),
     prompt: `${original.prompt}\n\n用户补充（以最新要求为准）：\n${reply.prompt}`,
     attachments: unique([...original.attachments, ...reply.attachments], item => item.path),

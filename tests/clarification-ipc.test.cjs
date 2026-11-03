@@ -7,33 +7,34 @@ const rules=fs.readFileSync(path.resolve(__dirname,'../desktop/defaults/AGENTS.m
 const main=readSource(path.resolve(__dirname,'../desktop/main.cjs'),'utf8');
 const source=main.slice(main.indexOf("ipcMain.handle('stable:agent:run'"),main.indexOf("ipcMain.handle('stable:agent:steer'"));
 function setup(){
- let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[],routes=[];let executionResult={answer:'完成',trace:[]};
+ let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[],routes=[];let executionResult={answer:'完成',trace:[]},deliveryResult={ok:true,errors:[],files:[]};
  const runner={supportsTextOnly:true,run:async(...args)=>{runs.push(args);const result=queue.shift();if(result instanceof Error)throw result;return result||'{"status":"ready"}'}};
  const settings=new Map();const store={revokeConversationGrants:()=>{},updateConversationModel:(id,model)=>{settings.set('chosen-model',model)},getSetting:key=>settings.get(key),setSetting:(key,value)=>settings.set(key,value),conversation:()=>({modelId:'mock'}),listMessages:()=>messages,db:{exec:()=>{},prepare:()=>({get:()=>({state:'preparing'})})},addMessage:(_id,role,content,trace,attachments)=>{const m={id:String(++id),role,content,trace,attachments};messages.push(m);return m},updateConversationContext:()=>{},listLibrary:()=>[],listSkills:()=>[],listWorkflows:()=>[]};
  let lastTask;
  vm.runInNewContext(source,{
-  require: name=>require(path.resolve(__dirname,'../desktop',name)),
+  captureDesignReferences:(_id,attachments)=>({ids:[],attachments:attachments||[]}),readDesignReferences:()=>[],checkDesignDelivery:()=>deliveryResult,
+  path,require: name=>require(path.resolve(__dirname,'../desktop',name)),
   messagePredictions:{interrupt(){}}, conversationTitles: { interrupt() {} }, scheduleConversationTitle() {},
-  taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{publicCatalog:()=>({items:[{id:"glm-chat",model:"glm-5.3-flashx",hasApiKey:true}]}),resolve:id=>{routes.push(id);return {model:{model:id},apiKey:'test-only'}}},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
+  taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{publicCatalog:()=>({items:[{id:"sol-chat",model:"gpt-6.1-sol",providerId:"openai",baseURL:"https://api.openai.com/v1",hasApiKey:true}]}),resolve:id=>{routes.push(id);return {model:{model:id==='sol-chat'?'gpt-6.1-sol':id,providerId:'openai',baseURL:'https://api.openai.com/v1'},apiKey:'test-only'}}},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
   prepareAgentMessage:async(payload,_id,_route,displayPayload=payload)=>{prepared++;lastTask=payload;return {messageAttachments:displayPayload.attachments||[],attachments:payload.attachments,selectedReferences:payload.references,extractedAttachments:{installedSkills:[]},selectedData:[],selectedKnowledge:[],selectedSkills:[],selectedScripts:[]}},
   commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,require('../desktop/services/design-request.cjs').designMessageTrace(prepared.design),prepared.messageAttachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,
-  runAgent:async(query)=>{executed++;lastTask={...lastTask,query};return executionResult},
+  runAgent:async(query,...args)=>{executed++;lastTask={...lastTask,query,executionModel:args[8]?.model};return executionResult},
  });
- return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,routes,setResult:result=>{executionResult=result},stats:()=>({prepared,executed,lastTask})};
+ return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,routes,setResult:result=>{executionResult=result},setDelivery:result=>{deliveryResult=result},stats:()=>({prepared,executed,lastTask})};
 }
 
-test('Design dispatch pins FlashX for an old chat while retaining GLM-image generation settings',async()=>{
+test('Design dispatch pins gpt-6.1-sol high for an old chat while retaining GLM-image generation settings',async()=>{
  const env=setup(),design={model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''};
  env.store.conversation=()=>({modelId:'deepseek',design});
  await env.send({prompt:'生成早餐海报',design});
- assert.equal(env.store.getSetting('chosen-model'),'glm-chat');assert.deepEqual(env.routes,['glm-chat']);assert.equal(env.runs[0][1].model,'glm-chat');
+ assert.equal(env.store.getSetting('chosen-model'),'sol-chat');assert.deepEqual(env.routes,['sol-chat']);assert.equal(env.runs[0][1].model,'gpt-6.1-sol');assert.equal(env.runs[0][1].reasoningSelection,'high');assert.equal(env.stats().lastTask.executionModel.reasoningSelection,'high');
  assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/glm-image/);
 })
 
 test('Design count conflict blocks actual IPC dispatch and applies only the explicitly selected count', async()=>{
  for (const [option,count] of [[0,4],[1,1]]) {
   const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};
-  env.store.conversation=()=>({modelId:'glm-chat',design});
+  env.store.conversation=()=>({modelId:'sol-chat',design});
   await env.send({prompt:'为咖啡活动制作海报。先生成1张。',design});
   assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);
   assert.equal(env.messages[0].trace[0].designRequest.count,4);
@@ -60,7 +61,7 @@ test('Design chat never inherits stored image parameters, while a clarification 
  env.store.conversation=()=>({modelId:'deepseek',design});
  await env.send('解释一下这个设计');
  assert.doesNotMatch(env.stats().lastTask.query,/stable_design_request|1536x2048|最多 4 张/);
- assert.equal(env.messages[0].trace,undefined);assert.equal(env.routes[0],'glm-chat');
+ assert.equal(env.messages[0].trace,undefined);assert.equal(env.routes[0],'sol-chat');
  const next=setup();next.store.conversation=env.store.conversation;next.queue.push(assessment('报告给谁看？'));
  await next.send({prompt:'生成一个海报',design});
  assert.equal(next.messages[0].trace[0].designRequest.count,4);
@@ -205,3 +206,12 @@ test('actual IPC links repeated questions and the final answer without modifying
  assert.equal(env.messages.length,6);assert.equal(env.messages[1],first);assert.equal(env.messages[3],second);
  assert.deepEqual(Array.from(env.messages,m=>m.role),['user','assistant','user','assistant','user','assistant']);
 });
+
+
+test('Design completion rejects invalid final files while image-mode discussion stays valid',async()=>{
+ const design={model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''};
+ const env=setup();env.store.conversation=()=>({modelId:'sol-chat',design});env.setDelivery({ok:false,errors:['图片实际尺寸不符'],files:['E:/mock-workspace/result.png']});
+ await env.send({prompt:'你好',design});assert(!env.messages.at(-1).trace.some(item=>item.id==='design-delivery-check'));
+ env.setResult({answer:'[图片](<E:/mock-workspace/result.png>)',trace:[]});await env.send({prompt:'交付海报',design});
+ assert.match(env.messages.at(-1).content,/交付检查未通过/);assert.equal(env.messages.at(-1).trace.find(item=>item.id==='design-delivery-check').status,'failed');assert.equal(env.messages.at(-1).trace.find(item=>item.id==='runtime').status,'failed');
+})

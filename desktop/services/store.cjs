@@ -269,6 +269,7 @@ class StableStore {
       ...this.conversationContext(row.id),
       networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
       design: this.getSetting(`design:${row.id}`) || undefined,
+      designRevision: this.getSetting(`design-revision:${row.id}`) || 0,
       lastMessagePreview: String(row.latest_preview || '').replace(/\s+/g, ' '),
       id: row.id, title: row.title, capability: ['none','enabled','low','medium','high','xhigh','max'].includes(row.capability) ? row.capability : 'auto',
       permissionMode: ['request', 'auto', 'full'].includes(row.permission_mode) ? row.permission_mode : 'request',

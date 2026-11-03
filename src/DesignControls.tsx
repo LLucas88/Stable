@@ -27,6 +27,8 @@ function DesignSizeControls({ value, onChange }: { value: DesignRequest; onChang
         return <button type="button" key={key} aria-pressed={value.outputPreset === key} onClick={() => { onChange(businessDesign(value, key)); setNotice('') }}><span>{preset.name}</span><small>{preset.width} × {preset.height}</small></button>
       })}<button type="button" aria-pressed={!output} onClick={() => { onChange({ ...value, outputPreset: undefined }); setNotice('') }}>自定义</button></div>
       {output && <div className="design-output-limit" aria-label="交付文件大小">文件大小：小于 {output.maxMB} MB<span>交付尺寸：{output.width} × {output.height} px</span></div>}
+      <label>尺寸处理<select aria-label="尺寸处理" value={value.fit || 'strict'} onChange={e => onChange({ ...value, fit: e.target.value as DesignRequest['fit'] })}><option value="strict">保持完整，不自动补边或裁切</option><option value="contain">允许留边，保留完整图片</option><option value="cover">允许居中裁切，铺满画布</option></select></label>
+      <p className="design-fit-notice">比例不一致时默认暂停。选择裁切前请预览原图；重新构图或扩图需另行确认。</p>
       <strong>选择分辨率</strong><div className="design-resolution-options">{(['standard', '2k'] as const).map(resolution => <button type="button" key={resolution} aria-pressed={(Boolean(output) || value.ratio !== 'custom') && value.resolution === resolution} onClick={() => {
         if (value.outputPreset) onChange({ ...businessDesign({ ...value, resolution }, value.outputPreset) })
         else if (value.ratio !== 'custom') choose(value.ratio, resolution)

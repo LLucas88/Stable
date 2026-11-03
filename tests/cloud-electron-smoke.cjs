@@ -38,6 +38,9 @@ app.whenReady().then(async () => {
         setTimeout(() => response.end('data: [DONE]\n\n'), 150)
       } else if (pathname === '/api/account') {
         // Kept pending to prove AbortSignal reaches Chromium.
+      } else if (pathname === '/api/usage/summary') {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.write('{"totals":') // Headers succeeded, but the JSON body never ends.
       } else { response.writeHead(500); response.end() }
     })
   })
@@ -67,11 +70,16 @@ app.whenReady().then(async () => {
     await assert.rejects(cloudFetch(`${base}/api/auth/change-password`, { method: 'POST', body: 'fake-password' }))
     assert.ok(!requests.some((request) => request.url.includes('must-not-follow')))
     await assert.rejects(cloudFetch(`${base}/api/account`, { signal: AbortSignal.timeout(100) }))
+    const { CloudAccountService } = require('../desktop/services/cloud-account.cjs')
+    const account = new CloudAccountService({store:{getSetting:()=> 'probe',setSetting(){}},secrets:{get:()=>''},appVersion:'test',fetchImpl:cloudFetch,requestTimeoutMs:150})
+    // Use the isolated local proxy above; no public endpoint or real credentials.
+    account.baseURL = base
+    await assert.rejects(account.request('/api/usage/summary'), /超时/)
     const log = fs.readFileSync(logPath, 'utf8')
     assert.doesNotMatch(log, /fake-auth-token|fake-password|fake-result-token|fake-cookie-secret|fake-sensitive|must-not-follow|stable-proxy-probe/)
     const records = log.trim().split('\n').map(JSON.parse)
     assert.ok(records.some((record) => record.status === 403 && record.proxy === 'proxy'))
-    const result = { requests: requests.length, checks: ['proxy-post', 'bearer-preserved', 'cookies-omitted', 'html-403', 'streaming', 'redirect-blocked', 'abort', 'log-redaction'], evidence: logPath }
+    const result = { requests: requests.length, checks: ['proxy-post', 'bearer-preserved', 'cookies-omitted', 'html-403', 'streaming', 'redirect-blocked', 'abort', 'body-timeout-after-200', 'log-redaction'], evidence: logPath }
     fs.writeFileSync(path.join(qaDirectory, 'result.json'), JSON.stringify(result, null, 2))
     process.stdout.write(`CLOUD_ELECTRON_SMOKE_OK ${JSON.stringify(result)}\n`)
   } finally {

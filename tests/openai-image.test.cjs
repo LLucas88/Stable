@@ -15,9 +15,11 @@ test('both GPT image variants preserve quality and background; reject invalid di
 test('Cloud base64 image survives restart without another paid call; policy model wins over tool model',async t=>{
  const workspace=fs.mkdtempSync(path.join(os.tmpdir(),'stable-openai-image-'));t.after(()=>fs.rmSync(workspace,{recursive:true,force:true}))
  const store=new ImageJobStore(path.join(workspace,'receipts'));let calls=0
+ // This test covers routing and replay; native pixel validation has its own Electron fixture.
+ const decoded={isEmpty:()=>false,getSize:()=>({width:1024,height:1024}),toPNG:()=>png,toBitmap:()=>Buffer.alloc(1024*1024*4),resize:()=>decoded}
  const options={policy:{model:'gpt-image-2.5-sunburst',quality:'low',background:'transparent',size:'1024x1024',count:1},jobStore:store,
  resolveRoute:()=>({endpoint:'https://fixture/v1/images/generations',apiKey:'fixture',scope:'cloud:account1',replay:true}),
- nativeImage:{createFromBuffer:b=>({isEmpty:()=>!b.equals(png),getSize:()=>({width:1,height:1}),toPNG:()=>png})},
+ nativeImage:{createFromBuffer:b=>{assert(b.equals(png));return decoded}},
  fetchImpl:async(_url,init)=>{calls++;const b=JSON.parse(init.body);assert.equal(b.model,'gpt-image-2.5-sunburst');assert.equal(b.quality,'low');assert.equal(b.background,'transparent');return Response.json({data:[{b64_json:png.toString('base64')}]})},
  download:()=>{throw Error('must not download base64')},}
  const request={workspace,args:{model:'glm-image',prompt:'coffee poster',output:'poster.png'}}

@@ -6,6 +6,7 @@ const {pageAction}=require('./browser-tool.cjs')
 const {BrowserDownloads}=require('./browser-downloads.cjs')
 const {redact}=require('./approval-ledger.cjs')
 const {createPublicResourcePolicy}=require('./browser-resource-policy.cjs')
+const {previewNetworkScope,allowsPreviewRequest}=require('./browser-network-policy.cjs')
 function durableURL(value){try{const u=new URL(value);if(/code|token|ticket|session|oauth|auth|state|password/i.test(u.search))return u.origin+u.pathname;u.hash='';return u.href}catch{return 'about:blank'}}
 function extraAction(action,ref,value){
   const element=ref?globalThis.__stableElements?.get(ref):null
@@ -26,6 +27,7 @@ class BrowserSessionService {
     const publicResource=createPublicResourcePolicy()
     this.profile.webRequest.onBeforeRequest((details,cb)=>{ void (async()=>{
       const tab=[...this.tabs.values()].find(t=>t.view.webContents.id===details.webContentsId)
+      if(tab?.offlinePreviewScope){cb({cancel:!allowsPreviewRequest(tab.offlinePreviewScope,details)});return}
       const epoch=tab?.resourceEpoch
       const staticResource=['image','font','stylesheet','script','media'].includes(details.resourceType)
       let allow=details.url==='about:blank'||staticResource&&/^data:/.test(details.url)
@@ -33,13 +35,14 @@ class BrowserSessionService {
       const page=tab&&(tab.view.webContents.getURL()||tab.url)
       if(tab&&!allow&&/^https?:/.test(page)&&this.allowed(tab,page))allow=await publicResource(details)
       if(tab&&(this.tabs.get(tab.id)!==tab||tab.resourceEpoch!==epoch)){cb({cancel:true});return}
+      if(tab?.offlinePreviewScope){cb({cancel:!allowsPreviewRequest(tab.offlinePreviewScope,details)});return}
       if(tab&&!allow){try{const origin=new URL(details.url).origin;if(origin!=='null'&&!tab.blockedSites.has(origin)){tab.blockedSites.add(origin);this.emit()}}catch{}}
       cb({cancel:!allow})
     })().catch(()=>cb({cancel:true})) })
     this.saved=store.getSetting('browser-tabs-v2')||[]
   }
   sites(id){return this.store.getSetting(`browser-sites:${id}`)||[]}
-  allowed(tab,url){try{if(url==='about:blank')return true;if(url.startsWith('blob:'))url=url.slice(5);const u=new URL(url.replace(/^ws/, 'http'));return ['http:','https:'].includes(u.protocol)&&this.sites(tab.conversationId).includes(u.origin)}catch{return false}}
+  allowed(tab,url){if(tab.offlinePreviewScope)return allowsPreviewRequest(tab.offlinePreviewScope,{url,resourceType:'mainFrame'});try{if(url==='about:blank')return true;if(url.startsWith('blob:'))url=url.slice(5);const u=new URL(url.replace(/^ws/, 'http'));return ['http:','https:'].includes(u.protocol)&&this.sites(tab.conversationId).includes(u.origin)}catch{return false}}
   permit(id,url){const u=new URL(normalizeWebUrl(url));this.store.setSetting(`browser-sites:${id}`,[...new Set([...this.sites(id),u.origin])])}
   persist(){const existing=this.saved.filter(s=>!this.tabs.has(s.id));this.saved=[...existing,...[...this.tabs.values()].map(t=>({id:t.id,conversationId:t.conversationId,url:durableURL(t.state==='suspended'?t.url:(t.view.webContents.getURL()||t.url)),title:t.title,epoch:t.epoch}))];this.store.setSetting('browser-tabs-v2',this.saved)}
   emit(){this.onChange?.()}
@@ -61,6 +64,7 @@ class BrowserSessionService {
     wc.on('render-process-gone',()=>{tab.state='suspended';tab.error='页面进程已退出，请重新加载。';this.emit()})
     wc.on('console-message',event=>{if(tab.diagnostics&&tab.state!=='user_controlled'){tab.logs.push({level:event.level,message:redact(event.message).slice(0,2000)});tab.logs=tab.logs.slice(-100)}})
     wc.setWindowOpenHandler(({url})=>{
+      if(tab.offlinePreviewScope)return {action:'deny'}
       try{if(url!=='about:blank')normalizeWebUrl(url)}catch{return {action:'deny'}}
       return {action:'allow',createWindow:options=>{
         const popupId=randomUUID();void this.create(conversationId,'about:blank',false,popupId,options)
@@ -83,6 +87,8 @@ class BrowserSessionService {
   close(id,tabId){const tab=this.get(id,tabId);if(this.shown===tab)this.hide();tab.state='closed';tab.view.webContents.close();this.tabs.delete(tab.id);this.saved=this.saved.filter(t=>t.id!==tab.id);this.active.set(id,[...this.tabs.values()].find(t=>t.conversationId===id)?.id);this.persist();this.emit()}
   control(id,tabId,user){const tab=this.get(id,tabId);tab.state=user?'user_controlled':'idle';tab.epoch++;this.emit();return this.snapshot(id)}
   async navigate(id,tabId,action,url){const tab=this.get(id,tabId);if(tab.state==='agent_controlled')throw Error('请先接管页面再导航。');const wc=tab.view.webContents;tab.error='';
+    // Explicit user navigation is separate from model tool permissions.
+    tab.offlinePreviewScope=undefined
     if(action==='open'){this.permit(id,url);tab.blockedURL='';await wc.loadURL(normalizeWebUrl(url))}
     else if(action==='reload'){if(tab.state!=='user_controlled')tab.state='idle';await wc.loadURL((tab.url||wc.getURL())==='about:blank'?'about:blank':normalizeWebUrl(tab.url||wc.getURL()))}
     else if(action==='back'&&wc.navigationHistory.canGoBack())wc.navigationHistory.goBack()
@@ -127,11 +133,13 @@ class BrowserSessionService {
     if(!Number.isFinite(u)||!Number.isFinite(v)||u<0||v<0||u>1||v>1)throw Error('frame 控件不在可操作范围，请重新读取。')
     return {x:q[0]+u*(q[2]-q[0])+v*(q[6]-q[0]),y:q[1]+u*(q[3]-q[1])+v*(q[7]-q[1])}
   }
-  execute(id,args,signal,runId){if(typeof args.value==='string'&&args.value.length>5000)return Promise.reject(Error('单次输入最多5000字符。'));let tab;try{tab=this.get(id,args.tabId)}catch{if(args.tabId||args.action!=='open')return Promise.reject(Error('请先打开此对话的标签页。'))}
-    const perform=async()=>{if(!tab){tab=await this.create(id,'about:blank');}const timeout=AbortSignal.timeout(30000), combined=signal?AbortSignal.any([signal,timeout]):timeout;const abort=()=>{if(tab.state==='agent_controlled'){tab.state='suspended';tab.error='操作超时或已取消，请重新加载或交还控制。';tab.view.webContents.stop();this.emit()}};combined.addEventListener('abort',abort,{once:true});try{return await Promise.race([this.run(tab,args,combined,runId),new Promise((_,reject)=>combined.addEventListener('abort',()=>reject(Error('浏览器操作已取消或超时。')),{once:true}))])}finally{combined.removeEventListener('abort',abort)}}
+  execute(id,args,signal,runId,policy={}){if(typeof args.value==='string'&&args.value.length>5000)return Promise.reject(Error('单次输入最多5000字符。'));let tab;try{tab=this.get(id,args.tabId)}catch{if(args.tabId||args.action!=='open')return Promise.reject(Error('请先打开此对话的标签页。'))}
+    const perform=async()=>{if(!tab){tab=await this.create(id,'about:blank');}const timeout=AbortSignal.timeout(30000), combined=signal?AbortSignal.any([signal,timeout]):timeout;const abort=()=>{if(tab.state==='agent_controlled'){tab.state='suspended';tab.error='操作超时或已取消，请重新加载或交还控制。';tab.view.webContents.stop();this.emit()}};combined.addEventListener('abort',abort,{once:true});try{return await Promise.race([this.run(tab,args,combined,runId,policy),new Promise((_,reject)=>combined.addEventListener('abort',()=>reject(Error('浏览器操作已取消或超时。')),{once:true}))])}finally{combined.removeEventListener('abort',abort)}}
     if(tab){const result=tab.chain.then(perform);tab.chain=result.catch(()=>{});return result}return perform()
   }
-  async run(tab,args,signal,runId){signal?.throwIfAborted();if(['user_controlled','suspended','closed'].includes(tab.state))throw Error('页面已由用户接管或暂停；请等待用户交还后重新读取。');tab.state='agent_controlled';tab.runId=runId;this.emit();const epoch=tab.epoch
+  async run(tab,args,signal,runId,policy={}){signal?.throwIfAborted();if(['user_controlled','suspended','closed'].includes(tab.state))throw Error('页面已由用户接管或暂停；请等待用户交还后重新读取。');
+    if(args.action!=='close')tab.offlinePreviewScope=policy.networkAccess===false?previewNetworkScope(args.action==='open'?args.url:(tab.view.webContents.getURL()||tab.url),policy.workspace,tab.offlinePreviewScope):undefined
+    tab.state='agent_controlled';tab.runId=runId;this.emit();const epoch=tab.epoch
     const assert=()=>{signal?.throwIfAborted();if(tab.state!=='agent_controlled')throw Error('页面控制权已改变，操作终止。')}
     let captureWindow,restoreBounds
     try{

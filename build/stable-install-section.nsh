@@ -360,6 +360,10 @@ ${if} ${isUpdated}
   ${ifNot} ${Silent}
     Sleep 1200
   ${endif}
+  ${if} ${isForceRun}
+    HideWindow
+    !insertmacro StartApp
+  ${endif}
   !insertmacro quitSuccess
 ${endif}
 

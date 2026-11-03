@@ -138,6 +138,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert(first.closed)
   for (const name of ['Agent', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit']) assert(first.parameters.options.tools.includes(name))
   assert(first.parameters.options.agents['stable-worker'].tools.includes('Read'))
+  for (const name of ['stable_search', 'stable_fetch']) assert(first.parameters.options.agents['stable-worker'].tools.includes(`mcp__stable__${name}`))
   assert.equal(first.parameters.options.agents['stable-worker'].autoCompactWindow, 123592, 'the child uses the same 80 percent trigger as the parent')
   assert.equal(JSON.parse(fs.readFileSync(path.join(sessionDirectory(root, 'same'), 'stable-thread.json'), 'utf8')).cliVersion, '2.1.304')
   assert(!first.parameters.options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
@@ -263,6 +264,9 @@ test('network policy changes rebuild the SDK tool catalog for parent and child s
     const options = sdk.captures.at(-1).parameters.options
     assert.equal(options.tools.includes('Bash'), networkAccess)
     assert.equal(options.agents['stable-worker'].tools.includes('Bash'), networkAccess)
+    assert.equal(options.tools.includes('WebFetch'), networkAccess)
+    assert.equal(options.agents['stable-worker'].tools.includes('WebFetch'), networkAccess)
+    if (networkAccess) assert.match(options.systemPrompt.prompt, /优先使用 SDK 原生 WebFetch/)
     assert(!options.agents['stable-worker'].tools.includes('mcp__stable__stable_exec'))
     assert.equal(options.resume, undefined)
     assert.notEqual(options.sessionId, previous)

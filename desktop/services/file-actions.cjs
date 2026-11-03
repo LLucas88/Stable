@@ -6,6 +6,8 @@ const { pathToFileURL } = require('node:url')
 const { resolveWorkspaceEntry } = require('./preview.cjs')
 const TEXT = new Set('.txt .md .markdown .mdx .html .htm .css .js .jsx .ts .tsx .cjs .mjs .json .jsonl .yaml .yml .toml .csv .tsv .xml .svg .py .sh .sql .log .ini'.split(' '))
 const BROWSER = new Set('.html .htm .pdf .svg .png .jpg .jpeg .gif .webp .txt'.split(' '))
+const IMAGES = new Set('.png .jpg .jpeg .webp .gif .bmp'.split(' '))
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 async function windowsFileAction(action, file, run = promisify(execFile)) {
   const env = {}
   for (const name of ['SystemRoot','WINDIR','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA']) {
@@ -23,12 +25,28 @@ async function windowsFileAction(action, file, run = promisify(execFile)) {
     throw Error('Explorer did not confirm visible file selection')
   }
 }
-function createFileActions({ roots, shell, clipboard, dialog, getWindow, platform = process.platform, windows = windowsFileAction }) {
+function createFileActions({ roots, shell, clipboard, nativeImage, dialog, getWindow, platform = process.platform, windows = windowsFileAction }) {
   const reveals = new Map()
   return async (action, value) => {
-    if (!['openWith','browser','saveAs','copyPath','copyContent','reveal'].includes(action)) throw Error('未知的文件操作。')
+    if (!['openWith','browser','saveAs','copyPath','copyContent','copyImage','reveal'].includes(action)) throw Error('未知的文件操作。')
     const file = resolveWorkspaceEntry(value, roots(value), { fileOnly: true })
     if (action === 'copyPath') { clipboard.writeText(file.path); return true }
+    if (action === 'copyImage') {
+      if (!IMAGES.has(file.extension)) throw Error('此文件不是可复制的图片格式。')
+      const fd = fs.openSync(file.path, 'r')
+      let bytes
+      try {
+        if (fs.fstatSync(fd).size > MAX_IMAGE_BYTES) throw Error('图片超过 20 MB，请使用另存为。')
+        bytes = Buffer.alloc(MAX_IMAGE_BYTES + 1)
+        bytes = bytes.subarray(0, fs.readSync(fd, bytes, 0, bytes.length, 0))
+      } finally { fs.closeSync(fd) }
+      if (bytes.length > MAX_IMAGE_BYTES) throw Error('图片超过 20 MB，请使用另存为。')
+      // Decode the original bytes, never the downscaled renderer preview or a screenshot.
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) throw Error('无法读取这张图片，请确认文件完整后重试。')
+      try { clipboard.writeImage(image) } catch { throw Error('无法复制图像到剪贴板，请稍后重试。') }
+      return true
+    }
     if (action === 'reveal') {
       if (platform === 'win32') {
         const key = file.path.toLowerCase()

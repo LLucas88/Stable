@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('stable', {
     onSelectAllMessages: (handler) => { const listener = () => handler(); ipcRenderer.on('stable:editor:selectAllMessages', listener); return () => ipcRenderer.removeListener('stable:editor:selectAllMessages', listener) },
   },
   cloud: {
+    diagnostic: phase => invoke('stable:cloud:diagnostic', phase),
     startup: () => invoke('stable:cloud:startup'),
     login: (username, password) => invoke('stable:cloud:login', { username, password }),
     changePassword: (currentPassword, newPassword, confirmPassword) => invoke('stable:cloud:changePassword', { currentPassword, newPassword, confirmPassword }),
@@ -140,7 +141,8 @@ contextBridge.exposeInMainWorld('stable', {
     selectAttachmentFolder: () => invoke('stable:agent:selectAttachmentFolder'),
     selectSkillFolder: () => invoke('stable:agent:selectSkillFolder'),
     create: (design) => invoke('stable:agent:create', { design }),
-    configureDesign: (id, design) => invoke('stable:agent:design', { id, design }),
+    configureDesign: (id, design, revision) => invoke('stable:agent:design', { id, design, revision }),
+    freezeDesignAttachments: (id, attachments) => invoke('stable:agent:freezeDesignAttachments', { id, attachments }),
     forkAnswer: (id, messageId) => invoke('stable:agent:forkAnswer', { id, messageId }),
     chapters: (id) => invoke('stable:agent:chapters', { id }),
     setChapter: (id, messageId, title) => invoke('stable:agent:setChapter', { id, messageId, title }),
@@ -187,6 +189,16 @@ contextBridge.exposeInMainWorld('stable', {
     },
   },
   updater: {
+    oneClick: () => invoke('stable:update:one-click'),
+    onPrepare: handler => {
+      const listener = async (_event, { id }) => {
+        let result = 'unsaved'
+        try { result = await handler() } catch { /* fail closed on renderer errors */ }
+        void invoke('stable:update:prepared', { id, result }).catch(() => {})
+      }
+      ipcRenderer.on('stable:update:prepare', listener)
+      return () => ipcRenderer.removeListener('stable:update:prepare', listener)
+    },
     state: () => invoke('stable:update:state'),
     check: () => invoke('stable:update:check'),
     download: () => invoke('stable:update:download'),
@@ -196,6 +208,11 @@ contextBridge.exposeInMainWorld('stable', {
       ipcRenderer.on('stable:update:event', listener)
       return () => ipcRenderer.removeListener('stable:update:event', listener)
     },
+  },
+  support: {
+    exportDiagnostics: () => invoke('stable:support:export'),
+    recovery: () => invoke('stable:support:recovery'),
+    openRollback: () => invoke('stable:support:open-rollback'),
   },
   team: {
     state: () => invoke('stable:team:state'),

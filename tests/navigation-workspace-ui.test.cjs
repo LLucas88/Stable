@@ -121,12 +121,12 @@ test('file cards use the shared context menu and route file operations through v
   assert.match(css, /\.conversation-file-menu\s*\{[^}]*position:\s*fixed[^}]*box-shadow:\s*var\(--shadow-float\) !important/)
 })
 
-test('update progress shows automatic download status and installs only on click', () => {
+test('update progress shows downloads and routes explicit clicks through one-click update', () => {
   assert.match(app, /const ready = update\.status === 'downloaded'/)
   assert.match(app, /className="rail-update-button"/)
-  assert.match(app, /window\.stable\.updater\.download\(\)/)
-  assert.match(preload, /stable:update:download/)
-  assert.match(app, /onClick=\{\(\) => ready \? void action\('正在安装软件更新', async \(\) => \{ await window\.stable\.updater\.install\(\) \}\) : onOpen\(\)\}/)
+  assert.match(app, /window\.stable\.updater\.oneClick\(\)/)
+  assert.match(preload, /stable:update:one-click/)
+  assert.match(app, /disabled=\{Boolean\(update\.oneClick\) \|\| update\.status === 'installing'\}/)
 })
 
 test('settings trigger is an icon control aligned at the end of the sidebar', () => {

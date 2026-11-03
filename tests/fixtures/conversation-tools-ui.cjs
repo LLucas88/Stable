@@ -30,7 +30,7 @@ async function main() {
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
     const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'glm-Flash-'+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
-    window.stable={model:{discover:async()=>({catalog:discovered,added:12,errors:[]})},clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
+    window.stable={updater:{onPrepare:()=>()=>{}},model:{discover:async()=>({catalog:discovered,added:12,errors:[]})},clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
       chapters:async id=>window.chapterRows?.[id]||[],
       setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
       forkAnswer:async(id,messageId)=>{window.forked={id,messageId};return {...state('b'),messages:messages.map(item=>({...item,id:'fork-'+item.id})),catchAttachments:[]}},

@@ -1,6 +1,15 @@
-const {app,BrowserWindow}=require('electron'),{buildSync}=require('esbuild'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict')
+const {app,BrowserWindow,nativeImage}=require('electron'),{buildSync}=require('esbuild'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict')
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'stable-quick-skills-'));app.setPath('userData',temp);app.disableHardwareAcceleration()
 app.whenReady().then(async()=>{
+ const pixels=Buffer.alloc(513*257*4)
+ for(let i=0;i<pixels.length;i+=4){pixels[i]=64;pixels[i+1]=32;pixels[i+2]=16;pixels[i+3]=i%12===0?0:i%12===4?128:255}
+ const original=nativeImage.createFromBitmap(pixels,{width:513,height:257}),imagePath=path.join(temp,'原图@2x.png')
+ fs.writeFileSync(imagePath,original.toPNG());const expected=nativeImage.createFromBuffer(fs.readFileSync(imagePath))
+ let clipboardImage
+ const fileAction=require('../../desktop/services/file-actions.cjs').createFileActions({roots:()=>[temp],nativeImage,clipboard:{writeImage:image=>{clipboardImage=image}}})
+ assert.equal(await fileAction('copyImage',imagePath),true)
+ assert.deepEqual(clipboardImage.getSize(),{width:513,height:257});assert.deepEqual(clipboardImage.toBitmap(),expected.toBitmap())
+ assert([0,128,255].every(alpha=>clipboardImage.toBitmap().some((v,index)=>index%4===3&&v===alpha)))
  const source=fs.readFileSync(path.resolve(__dirname,'../../src/App.tsx'),'utf8')
  const functions=source.slice(source.indexOf('function localArtifactPaths('),source.indexOf('function UserTurn('))+source.slice(source.indexOf('function useAttachmentImageSource('),source.indexOf('function ImageLightbox('))+source.slice(source.indexOf('function DesignDeliveryImage('))
  const bundle=buildSync({stdin:{contents: `import React,{useState,useEffect}from'react';import{createRoot}from'react-dom/client';import{MarkdownContent}from'./src/components/MarkdownContent';import{useFileContextMenu}from'./src/components/FileContextMenu';import{ImageIcon}from'lucide-react';${functions};window.stable={agent:{imagePreview:async()=> 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"/>')},preview:{existingFiles:async(id,paths)=>paths}};const content='[海报](C:/work/a.png) [海报2](C:/work/b.png) [表格](C:/work/data.xlsx)';createRoot(document.getElementById('root')).render(<><section id="normal"><ArtifactLinks content={content} workspace="C:/work" conversationId="a" onPreview={()=>{}}/></section><section id="design"><ArtifactLinks designMode content={content} workspace="C:/work" conversationId="b" onPreview={()=>{}} onPreviewImages={()=>window.opened=true}/></section></>);`,resolveDir:path.resolve(__dirname,'../..'),loader:'tsx'},bundle:true,write:false,loader:{'.css':'empty'},format:'iife'}).outputFiles[0].text
@@ -14,5 +23,19 @@ app.whenReady().then(async()=>{
  assert.equal(await run("document.querySelectorAll('#design img').length"),2)
  await run("document.querySelector('#design .design-delivery-image button').click()")
  assert.equal(await run('window.opened'),true)
+ await run("window.copyCalls=[];window.stable.system={fileAction:async(path,action)=>{if(window.copyFailure)throw Error('复制失败，请重试');window.copyCalls.push([path,action]);return true}};void 0")
+ const menu=async selector=>{await run(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:40,clientY:40}))`);await tick()}
+ await menu('#design .design-delivery-image button')
+ assert.equal(await run("[...document.querySelectorAll('[role=menuitem]')].filter(b=>b.textContent==='复制图像'&&!b.disabled).length"),1)
+ await run("[...document.querySelectorAll('[role=menuitem]')].find(b=>b.textContent==='复制图像').click()");await tick()
+ assert.deepEqual(await run('window.copyCalls'),[['C:\\work\\a.png','copyImage']])
+ assert.equal(await run("document.querySelector('#design [role=status]').textContent"),'图像已复制')
+ await run('window.copyFailure=true');await menu('#design .design-delivery-image button')
+ await run("[...document.querySelectorAll('[role=menuitem]')].find(b=>b.textContent==='复制图像').click()");await tick()
+ assert.match(await run("document.querySelector('#design [role=alert]').textContent"),/复制失败/)
+ assert.equal(await run("document.querySelector('#design [role=status]')===null"),true)
+ await menu('#normal .markdown-file-link')
+ assert.equal(await run("[...document.querySelectorAll('[role=menuitem]')].some(b=>b.textContent==='复制图像')"),false)
+ console.log('DESIGN_COPY_IMAGE_NATIVE_AND_MENU_PASSED')
  console.log('DESIGN_DELIVERY_UI_PASSED');win.destroy();app.quit()
 }).catch(e=>{console.error(e);app.exit(1)})

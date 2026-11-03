@@ -71,6 +71,42 @@ const reason = value => value.hookSpecificOutput.permissionDecisionReason
 const linkDir = (target, link) => fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
 function unlinkDirectoryLink(link) { assert.equal(fs.lstatSync(link).isSymbolicLink(), true); fs.unlinkSync(link) }
 
+test('native WebFetch preserves long-page offsets and requires approval even in read-only mode', async t => {
+  const x = fixture(t, { networkAccess: true, sandboxMode: 'read-only' })
+  assert(x.guard.tools.includes('WebFetch'))
+  assert(!x.guard.tools.includes('Bash'))
+  const args = { url: 'https://example.org/article', prompt: 'Read the next part', offset: 100000 }
+  const result = await x.pre('WebFetch', args, 'web-1')
+  assert.equal(decision(result), 'allow')
+  assert.deepEqual(result.hookSpecificOutput.updatedInput, args)
+  assert.equal((await x.guard.canUseTool('WebFetch', args, { toolUseID: 'web-1' })).behavior, 'allow')
+  assert.equal(x.approvals.length, 1)
+  assert.equal(x.approvals[0].name, 'WebFetch')
+  await x.guard.postToolUse({ tool_use_id: 'web-1', tool_response: { result: 'next part' } })
+  assert.deepEqual(x.events.map(e => e.status), ['running', 'completed'])
+  const rejected = fixture(t, { networkAccess: true, requestApproval: async () => false })
+  assert.equal(decision(await rejected.pre('WebFetch', args)), 'deny')
+  const offline = fixture(t)
+  assert(!offline.guard.tools.includes('WebFetch'))
+  assert.equal(decision(await offline.pre('WebFetch', args)), 'deny')
+  assert.equal(offline.approvals.length, 0)
+})
+
+test('native WebFetch rejects local/private URLs and invalid pagination before approval', async t => {
+  const x = fixture(t, { networkAccess: true })
+  const valid = { url: 'https://example.org/article', prompt: 'Read this page' }
+  for (const url of ['file:///C:/secret.txt', 'http://localhost/page', 'https://127.0.0.1/', 'http://10.0.0.1/', 'https://[::1]/', 'https://user:pass@example.org/', 'https://service.internal/']) {
+    assert.equal(decision(await x.pre('WebFetch', {...valid, url})), 'deny', url)
+  }
+  for (const offset of [-1, 1.5, '10', Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(decision(await x.pre('WebFetch', {...valid, offset})), 'deny')
+  }
+  for (const extra of [{prompt:''}, {prompt:' '}, {headers:{}}, {limit:100}]) {
+    assert.equal(decision(await x.pre('WebFetch', {...valid, ...extra})), 'deny')
+  }
+  assert.equal(x.approvals.length, 0)
+})
+
 test('native reads use canonical allowed paths, preserve parameters, and never ask approval', async t => {
   const x = fixture(t)
   const file = path.join(x.workspace, '中文.txt'); fs.writeFileSync(file, 'read me')

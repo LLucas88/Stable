@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Settings, ArrowUp, Check, CircleAlert, Download, FolderInput, Home, LoaderCircle, LogOut, MessageSquareText, Moon, Network, Save, RotateCw, Shield, ShieldCheck, Sun, Search } from 'lucide-react'
 import type { AgentState, BootstrapData, GlobalInstructionsFile, ThemeMode } from '../types'
 import { errorMessage } from '../shared/format'
+import { UpdateRecovery } from './SupportActions'
 export type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history' | 'models' | 'workbuddy'
 
 const ACCOUNT_MODULES: Array<{ id: AccountModuleId; label: string; detail: string; icon: typeof Home }> = [
@@ -64,7 +65,7 @@ export function SettingsContent({ module, state, replaceState, updateTheme, acti
       <div className="settings-page-toolbar"><select aria-label="设置分类" value={module} onChange={event => onSelect(event.target.value as AccountModuleId)}>{ACCOUNT_MODULES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
       {module !== 'workbuddy' && <header><h1 id="settings-page-title" ref={heading} tabIndex={-1}>{selected.label}</h1><p>{selected.detail}</p></header>}
       <div className="settings-page-content" key={module}>
-        {module === 'workbuddy' ? <DataImport onImported={async () => replaceState(await window.stable.bootstrap())} onOpen={onOpenImported} /> : <AccountModuleContent module={module} state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} />}
+        {module === 'workbuddy' ? <DataImport onImported={async () => replaceState(await window.stable.bootstrap())} onOpen={onOpenImported} /> : <AccountModuleContent module={module} state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} onOpenUpdates={() => onSelect('updates')} />}
       </div>
     </div>
   </section>
@@ -75,17 +76,17 @@ export function UpdateProgressButton({ state, action, onOpen }: { state: Bootstr
   if (!['checking', 'available', 'downloading', 'downloaded', 'installing', 'error'].includes(update.status)) return null
   const ready = update.status === 'downloaded'
   const percent = Math.max(0, Math.min(100, update.progress || 0))
-  const label = ready ? `v${update.availableVersion} 已下载，点击安装` : update.status === 'downloading' ? `正在下载更新 ${percent}%` : update.status === 'error' ? '更新失败，点击查看' : update.status === 'installing' ? '正在打开安装窗口' : '正在检查并准备更新'
-  return <button type="button" className="rail-update-button" data-status={update.status} data-tooltip={label} aria-label={label} disabled={update.status === 'installing'} onClick={() => ready ? void action('正在安装软件更新', async () => { await window.stable.updater.install() }) : onOpen()}>
+  const label = update.oneClick ? '正在一键更新，安装完成后自动启动' : ready ? `v${update.availableVersion} 已下载，点击一键更新` : update.status === 'downloading' ? `正在下载 ${percent}%，点击一键更新并自动安装` : update.status === 'error' ? '更新失败，点击查看' : '点击一键更新'
+  return <button type="button" className="rail-update-button" data-status={update.status} data-tooltip={label} aria-label={label} disabled={Boolean(update.oneClick) || update.status === 'installing'} onClick={() => update.status === 'error' ? onOpen() : void action('正在一键更新', async () => { await window.stable.updater.oneClick() })}>
     <svg className="update-progress-ring" viewBox="0 0 32 32" role={update.status === 'downloading' ? 'progressbar' : undefined} aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><circle className="update-ring-track" cx="16" cy="16" r="13" /><circle className="update-ring-value" cx="16" cy="16" r="13" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - (ready ? 100 : percent)} /></svg>
     {update.status === 'error' ? <CircleAlert size={16} /> : ready ? <ArrowUp size={16} /> : ['checking', 'available', 'installing'].includes(update.status) ? <LoaderCircle size={16} className="spin" /> : <Download size={15} />}
   </button>
 }
 
-function AccountModuleContent({ module, state, replaceState, updateTheme, action }: { module: AccountModuleId; state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+function AccountModuleContent({ module, state, replaceState, updateTheme, action, onOpenUpdates }: { module: AccountModuleId; state: BootstrapData; replaceState: (state: BootstrapData) => void; updateTheme: (theme: ThemeMode) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; onOpenUpdates: () => void }) {
   if (module === 'models') return <ModelConnectionSettings state={state} replaceState={replaceState} />
   if (module === 'appearance') return <ThemeSettingsModule state={state} replaceState={replaceState} updateTheme={updateTheme} action={action} />
-  if (module === 'account') return <CloudAccountModule state={state} replaceState={replaceState} action={action} />
+  if (module === 'account') return <CloudAccountModule state={state} replaceState={replaceState} action={action} onOpenUpdates={onOpenUpdates} />
   if (module === 'updates') return <UpdateSettingsModule state={state} action={action} />
   return <AgentHistoryModule state={state} action={action} />
 }
@@ -117,11 +118,11 @@ function formatCloudMoney(micros: number, currency = 'CNY') {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(micros || 0) / 1_000_000)
 }
 
-function CloudAccountModule({ state, replaceState, action }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
+function CloudAccountModule({ state, replaceState, action, onOpenUpdates }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; onOpenUpdates: () => void }) {
   const account = state.cloud.account
   const quota = state.cloud.quota
   const usage = state.cloud.usage?.totals
-  if (cloudAccessHint(state.cloud.status)) return <CloudAccessSettings state={state} onComplete={replaceState} />
+  if (cloudAccessHint(state.cloud.status)) return <CloudAccessSettings state={state} onComplete={replaceState} onOpenUpdates={onOpenUpdates} />
   if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>本地直连模式</strong><span>无需 Stable Cloud 登录。模型连接在设置中配置，用量与额度由模型供应商管理。</span></div>
   const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
   const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
@@ -145,25 +146,21 @@ function CloudAccountModule({ state, replaceState, action }: { state: BootstrapD
 
 function UpdateSettingsModule({ state, action }: { state: BootstrapData; action: (label: string, run: () => Promise<void>) => Promise<void> }) {
   const update = state.update
-  const status = update.status === 'development' ? '开发模式不连接更新服务'
+  const status = update.error || (update.status === 'development' ? '开发模式不连接更新服务'
     : update.status === 'checking' ? '正在检查更新…'
       : update.status === 'available' ? `发现新版本 v${update.availableVersion}，正在准备下载`
         : update.status === 'downloading' ? `正在下载 ${update.progress}%`
-          : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，等待安装`
-            : update.status === 'installing' ? `正在打开 v${update.availableVersion} 安装进度窗口`
-              : update.status === 'error' ? update.error : '已开启自动检查和下载，安装由你决定'
-  const buttonLabel = update.status === 'available' ? '下载更新'
-    : update.status === 'downloading' ? `下载中 ${update.progress}%`
-      : update.status === 'downloaded' ? '安装更新'
-        : update.status === 'installing' ? '正在安装' : '检查更新'
+          : update.status === 'downloaded' ? `v${update.availableVersion} 已下载，${update.oneClick ? '正在检查安装条件' : '点击一键更新即可安装'}`
+            : update.status === 'installing' ? `正在安装 v${update.availableVersion}，完成后自动启动`
+              : update.status === 'current' ? '当前已是最新版本' : '点击一键更新，自动检查、下载并安装')
+  const buttonLabel = update.status === 'installing' ? '正在安装…' : update.oneClick ? (update.status === 'downloading' ? `下载中 ${update.progress}%` : '正在更新…') : update.status === 'error' ? '重试一键更新' : '一键更新'
   const runUpdateAction = () => {
-    if (update.status === 'available') return action('正在下载软件更新', async () => { await window.stable.updater.download() })
-    if (update.status === 'downloaded') return action('正在安装软件更新', async () => { await window.stable.updater.install() })
-    return action('正在检查软件更新', async () => { await window.stable.updater.check() })
+    return action('正在一键更新', async () => { await window.stable.updater.oneClick() })
   }
   return <section className="update-settings account-update-settings">
-    <div className="update-settings-row" data-update-ready={['available', 'downloading', 'downloaded'].includes(update.status) || undefined}><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={['checking', 'downloading', 'installing'].includes(update.status)} onClick={() => void runUpdateAction()}>{buttonLabel}</button></div>
-    <p>Stable 启动时和运行期间会自动检查更新，发现新版后自动下载。下载完成后点击左下角进度按钮或“安装更新”开始安装；退出软件不会自动安装。</p>
+    <div className="update-settings-row" data-update-ready={['available', 'downloading', 'downloaded'].includes(update.status) || undefined}><div><strong>当前版本 v{update.currentVersion}</strong><span aria-live="polite">{status}</span></div><button className="button" type="button" disabled={Boolean(update.oneClick) || update.status === 'installing'} onClick={() => void runUpdateAction()}>{buttonLabel}</button></div>
+    <p>点击“一键更新”后，Stable 会自动检查、下载并安装，安装成功后自动启动客户端。有任务运行或内容未保存时，会先提示处理。后台检查仍会预下载更新；只有点击一键更新后才会安装，退出软件不会自动安装。</p>
+    <UpdateRecovery />
   </section>
 }
 
@@ -181,7 +178,7 @@ function AgentHistoryModule({ state, action }: { state: BootstrapData; action: (
     }).catch((reason) => { if (active) setGlobalStatus(errorMessage(reason)) })
     return () => { active = false }
   }, [])
-  return <section className="global-instructions-settings account-agent-history">
+  return <section className="global-instructions-settings account-agent-history" data-update-unsaved={globalDraft !== globalFile.content || undefined}>
     <p>内容保存到本机 AGENTS.md，仅在之后启动的新任务中读取。</p>
     <div className="field"><label htmlFor="account-global-instructions">本机全局说明</label><textarea id="account-global-instructions" rows={9} value={globalDraft} onChange={(event) => { setGlobalDraft(event.target.value); setGlobalStatus('有尚未保存的更改') }} placeholder="例如：默认使用简体中文；交付文件保存到工作区并返回完整路径。" /></div>
     <div className="global-instructions-meta"><code>{globalFile.path}</code><span role="status">{globalStatus}</span></div>

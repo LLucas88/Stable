@@ -11,6 +11,7 @@ export function ModelConnectionSettings({ state, replaceState }: { state: Bootst
   const [draft, setDraft] = useState(initial ? { ...initial, apiKey: '' } : empty)
   const [advanced, setAdvanced] = useState(!initial)
   const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const saved = state.models.items.find(item => item.id === draft.id)
@@ -29,12 +30,13 @@ export function ModelConnectionSettings({ state, replaceState }: { state: Bootst
       setDraft({ ...item, apiKey: '' })
       await window.stable.model.setDefault(item.id)
       replaceState(await window.stable.bootstrap())
+      setDirty(false)
       setMessage('已在本机加密保存，下次启动自动使用。已有对话可在输入框选择此模型。尚未测试供应商连接。')
     } catch (err) { setError(err instanceof Error ? err.message : '保存失败，请重试。') }
     finally { setBusy(false) }
   }
   if (state.cloud.status !== 'disabled') return <><ChatGPTConnectionSettings onChanged={replaceState} /><p>当前使用 Stable Cloud，模型和生图连接由网关管理员配置，无需填写本机 API Key。服务不可用时，请联系管理员检查对应模型的配置与额度。</p></>
-  return <><ChatGPTConnectionSettings onChanged={replaceState} /><form className="model-connection-settings" aria-busy={busy} onSubmit={event => { event.preventDefault(); void save() }}>
+  return <><ChatGPTConnectionSettings onChanged={replaceState} /><form className="model-connection-settings" aria-busy={busy} data-update-unsaved={busy || dirty || undefined} onChange={() => setDirty(true)} onSubmit={event => { event.preventDefault(); void save() }}>
     <p>输入一次 API Key，保存在当前 Windows 用户的加密存储中。下次打开 Stable 无需重新填写。</p>
     <fieldset disabled={busy}><legend>模型连接</legend>
       <label>供应商与模型<select value={draft.id} onChange={event => {

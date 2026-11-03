@@ -1064,10 +1064,38 @@ test('real SDK discovers cloud search and fetch, then answers with fetched sourc
     assert.equal(request.headers.authorization, 'Bearer ' + credential)
     return Response.json(url.endsWith('/search') ? { results: [{ title: 'Source', url: 'https://example.org/release', snippet: 'short', summary: 'evidence', content: '' }] } : { title: 'Source', content: '# VERIFIED_WEB_EVIDENCE' })
   } })
-  const answer = await runner.run('Search the fixture web service, fetch the matching source and cite it. Only read the approved fixture sources.', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 45000, e => events.push(e), 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  const answer = await runner.run('Search the fixture web service, fetch the matching source and cite it. Only read the approved fixture sources.', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 45000, e => { events.push(e); if (e.kind === 'approval' && e.status === 'running') runner.answerApproval(e.requestId, true) }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
   assert.ifError(failure); assert.match(answer, /VERIFIED_WEB_EVIDENCE.*https:\/\/example.org\/release/)
   assert.equal(requests.length, 5); assert.equal(webCalls.length, 2)
   assert(events.some(e => JSON.stringify(e).includes('stable_fetch')))
+})
+
+test('real SDK child discovers web fetch and inherits the parent network boundary', { timeout: 90_000 }, async t => {
+  for (const networkAccess of [true, false]) await t.test(networkAccess ? 'online' : 'offline', async t => {
+    let childCalls = 0, webCalls = 0, failure
+    const { workspace, runner } = fixture(t, (body, number) => {
+      try {
+        if (body.messages.some(m => m.role === 'user' && JSON.stringify(m.content).includes('CHILD_FETCH_FIXTURE'))) {
+          childCalls++
+          if (childCalls === 1) return upstream({ calls: [{ id: 'child-find-fetch', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_fetch', max_results: 1 } }] })
+          if (childCalls === 2) {
+            nativeTool(body, 'mcp__stable__stable_fetch')
+            return upstream({ calls: [{ id: 'child-fetch', name: 'mcp__stable__stable_fetch', input: { url: 'https://example.org/child' } }] })
+          }
+          assert.match(toolResult(body, 'child-fetch'), networkAccess ? /CHILD_WEB_EVIDENCE/ : /禁止网页抓取/)
+          return upstream({ text: 'CHILD_FETCH_CHECKED' })
+        }
+        if (number === 1) return upstream({ calls: [{ id: 'delegate-fetch', name: 'Agent', input: { description: 'Read fixture source', subagent_type: 'stable-worker', prompt: 'CHILD_FETCH_FIXTURE: fetch the fixture page.', run_in_background: false } }] })
+        assert.match(toolResult(body, 'delegate-fetch'), /CHILD_FETCH_CHECKED/)
+        return upstream({ text: 'PARENT_FETCH_CHECKED' })
+      } catch (error) { failure = error; return upstream({ text: 'FIXTURE_FAILED' }) }
+    }, { expectedModel: 'glm-5.3-flashx', webResponder: async url => {
+      assert(networkAccess); assert(url.endsWith('/fetch')); webCalls++
+      return Response.json({ title: 'Child source', content: 'CHILD_WEB_EVIDENCE' })
+    } })
+    assert.equal(await runner.run('Delegate reading the fixture source', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 35000, e => { if (e.kind === 'approval' && e.status === 'running') runner.answerApproval(e.requestId, true) }, 'workspace-write', [], { cwd: workspace, networkAccess }), 'PARENT_FETCH_CHECKED')
+    assert.ifError(failure); assert.equal(childCalls, 3); assert.equal(webCalls, networkAccess ? 1 : 0)
+  })
 })
 
 test('real SDK steering receipt is delivered and the provider processes the extra prompt', { timeout: 45_000 }, async t => {

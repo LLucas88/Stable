@@ -18,16 +18,14 @@ function cleanBaseURL(value) {
   return raw
 }
 
-function timeoutSignal(milliseconds = 15_000) {
-  return typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(milliseconds) : undefined
-}
-
 class CloudAccountService {
-  constructor({ store, secrets, appVersion, fetchImpl = globalThis.fetch, baseURL = process.env.STABLE_CLOUD_URL }) {
+  constructor({ store, secrets, appVersion, fetchImpl = globalThis.fetch, baseURL = process.env.STABLE_CLOUD_URL, requestTimeoutMs = 15_000, onDiagnostic = () => {} }) {
     this.store = store
     this.secrets = secrets
     this.appVersion = appVersion
     this.fetch = fetchImpl
+    this.requestTimeoutMs = requestTimeoutMs
+    this.onDiagnostic = onDiagnostic
     this.baseURL = cleanBaseURL(baseURL)
     this.snapshot = { status: 'checking', account: null, quota: null, usage: null, models: [], error: '', baseURL: this.baseURL }
     let deviceId = String(store.getSetting(DEVICE_ID_SETTING) || '')
@@ -48,25 +46,51 @@ class CloudAccountService {
     const headers = { accept: 'application/json' }
     if (body !== undefined) headers['content-type'] = 'application/json'
     if (token) headers.authorization = `Bearer ${token}`
-    let response
+    const controller = new AbortController()
+    const started = Date.now(), id = randomUUID()
+    let settled = false
+    const trace = (phase, status) => {
+      if (settled) return
+      try { this.onDiagnostic({ id, version: this.appVersion, route: pathname, method, phase, status, elapsedMs: Date.now() - started }) } catch { /* diagnostics cannot block login */ }
+    }
+    trace('start')
+    let timer
     try {
-      response = await this.fetch(`${this.baseURL}${pathname}`, {
-        method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-        signal: timeoutSignal(), redirect: 'error',
-      })
+      // Bound both headers and body, even when the transport ignores abort.
+      // The losing operation only parses data; it cannot update account state.
+      const operation = (async () => {
+        const response = await this.fetch(`${this.baseURL}${pathname}`, {
+          method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+          signal: controller.signal, redirect: 'error',
+        })
+        trace('headers', response.status)
+        const text = await response.text()
+        let payload = null
+        if (text) {
+          try { payload = JSON.parse(text) } catch { payload = null }
+        }
+        if (!response.ok) throw cloudResponseError(response, payload)
+        if (text && !payload) throw cloudResponseError(response, null)
+        trace('complete', response.status)
+        return payload
+      })()
+      return await Promise.race([operation, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('连接 Stable Cloud 超时，请检查网络后重试。')
+          error.name = 'TimeoutError'
+          reject(error)
+          controller.abort(error)
+        }, this.requestTimeoutMs)
+      })])
     } catch (error) {
-      if (error.cloudDiagnostic) throw error
+      trace(error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'timeout' : 'error', error.status)
+      if (error.cloudDiagnostic || error.status) throw error
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new Error('连接 Stable Cloud 超时，请检查网络后重试。')
       throw new Error(`无法连接 Stable Cloud：${error.message}`)
+    } finally {
+      settled = true
+      clearTimeout(timer)
     }
-    const text = await response.text()
-    let payload = null
-    if (text) {
-      try { payload = JSON.parse(text) } catch { payload = null }
-    }
-    if (!response.ok) throw cloudResponseError(response, payload)
-    if (text && !payload) throw cloudResponseError(response, null)
-    return payload
   }
 
   async restore() {

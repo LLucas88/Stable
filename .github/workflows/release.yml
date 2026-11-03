@@ -40,14 +40,14 @@ jobs:
       - name: Build full installer and lightweight updater
         shell: pwsh
         run: |
-          npx electron-builder --win --x64 --publish never
+          npx electron-builder --win --x64 --publish never --config build/cloud-skills.config.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Full installer build failed.' }
-          npm run dist:update
+          npx electron-builder --win --x64 --publish never --config build/cloud-skills-update.config.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Lightweight updater build failed.' }
       - name: Verify packaged desktop without source dependency fallback
         shell: pwsh
         run: |
-          $output = node -p "require('./package.json').build.directories.output"
+          $output = node -p "require('./build/cloud-skills.config.cjs').directories.output"
           ./tests/verify-packaged-startup.ps1 -PackageDirectory "$output/win-unpacked"
       - name: Download previous Stable installer
         shell: pwsh
@@ -66,7 +66,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Failed to read package version.' }
           ./tests/verify-update-installer.ps1 `
             -PreviousInstaller ./previous-release/Stable-Setup-0.9.31-x64.exe `
-            -UpdateInstaller "./release-$version-update/Stable-Update-$releaseVersion-x64.exe" `
+            -UpdateInstaller "./release-$version-cloud-skills-update/Stable-Update-$releaseVersion-x64.exe" `
             -ExpectedVersion $version
       - name: Upload installer QA evidence
         if: always()
@@ -101,8 +101,8 @@ jobs:
           if ($env:GITHUB_EVENT_NAME -eq 'push' -and ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -ne $tag)) {
             throw "Release tag $env:GITHUB_REF_NAME does not match package version $tag."
           }
-          $output = "release-$version"
-          $updateOutput = "release-$version-update"
+          $output = "release-$version-cloud-skills"
+          $updateOutput = "release-$version-cloud-skills-update"
           $assets = @(
             "$output/Stable-Setup-$releaseVersion-x64.exe",
             "$updateOutput/Stable-Update-$releaseVersion-x64.exe",
@@ -136,10 +136,10 @@ jobs:
           $releaseVersion = node -p "require('./package.json').releaseVersion || require('./package.json').version"
           $destination = New-Item -ItemType Directory -Path "cloud-release-assets"
           $assets = @(
-            "release-$version/Stable-Setup-$releaseVersion-x64.exe",
-            "release-$version-update/Stable-Update-$releaseVersion-x64.exe",
-            "release-$version-update/Stable-Update-$releaseVersion-x64.exe.blockmap",
-            "release-$version-update/latest.yml"
+            "release-$version-cloud-skills/Stable-Setup-$releaseVersion-x64.exe",
+            "release-$version-cloud-skills-update/Stable-Update-$releaseVersion-x64.exe",
+            "release-$version-cloud-skills-update/Stable-Update-$releaseVersion-x64.exe.blockmap",
+            "release-$version-cloud-skills-update/latest.yml"
           )
           foreach ($asset in $assets) {
             New-Item -ItemType HardLink -Path (Join-Path $destination.FullName (Split-Path -Leaf $asset)) -Target (Resolve-Path $asset).Path | Out-Null

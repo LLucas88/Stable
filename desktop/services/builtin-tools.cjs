@@ -2,11 +2,13 @@
 const path = require('node:path')
 const { BrowserTool } = require('./browser-tool.cjs')
 const { executeExcel } = require('./excel-tool.cjs')
+const { previewNetworkScope } = require('./browser-network-policy.cjs')
 
 class BuiltinTools {
-  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, resolveImageRoute, imageJobStore, imagePolicy, networkAccess = true }) {
+  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, resolveImageRoute, imageJobStore, imagePolicy, imageReferences = [], onImageAttempt = () => {}, networkAccess = true }) {
+    this.onImageAttempt = onImageAttempt
     this.networkAccess = networkAccess
-    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, resolveApiKey: resolveImageApiKey, resolveRoute: resolveImageRoute, jobStore: imageJobStore, nativeImage: electron?.nativeImage })
+    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, references: imageReferences, resolveApiKey: resolveImageApiKey, resolveRoute: resolveImageRoute, jobStore: imageJobStore, nativeImage: electron?.nativeImage })
     this.installSkill = installSkill
     this.workspace = writableRoots?.length ? writableRoots : workspace
     this.localHtml = new (require('./local-html-preview.cjs').LocalHtmlPreview)(this.workspace)
@@ -30,9 +32,13 @@ class BuiltinTools {
     if (require('./builtin-tool-policy.cjs').requiresApproval(name, args) && approved !== true) throw Error('此工具操作需要审批。')
     const controller = new AbortController(); this.controllers.set(requestId, controller)
     try {
-      if (name === 'stable_image_generate') return await this.generateImage({ workspace: this.workspace, args, signal: controller.signal })
+      if (name === 'stable_image_generate') { this.onImageAttempt(); return await this.generateImage({ workspace: this.workspace, args, signal: controller.signal }) }
       if (name === 'stable_browser' && args.action === 'open' && typeof args.url === 'string' && /^(?:file:|[a-z]:[\\/]|\/)/i.test(args.url)) args = { ...args, url: await this.localHtml.open(args.url) }
-      if (name === 'stable_browser') return await (this.sharedBrowser ? this.browser.execute(this.conversationId, args, controller.signal, requestId) : this.browser.execute(args, controller.signal))
+      if (name === 'stable_browser') {
+        const policy = { networkAccess: this.networkAccess, workspace: this.workspace }
+        if (!this.networkAccess && args.action === 'open') previewNetworkScope(args.url, this.workspace)
+        return await (this.sharedBrowser ? this.browser.execute(this.conversationId, args, controller.signal, requestId, policy) : this.browser.execute(args, controller.signal, policy))
+      }
       if (name === 'stable_skill_install') {
         if (!this.installSkill) throw Error('当前运行环境未提供 Skill 安装入口。')
         return await this.installSkill(args.path, controller.signal)

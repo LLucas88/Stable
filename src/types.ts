@@ -190,6 +190,7 @@ export interface AutomationTemplate { id: string; title: string; description: st
 export interface AutomationState { items: AutomationItem[]; runs: AutomationRun[]; templates: AutomationTemplate[] }
 
 export interface UpdateState {
+  oneClick?: boolean
   status: 'development' | 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error'
   currentVersion: string; availableVersion?: string; releaseName?: string; progress: number; error?: string
 }
@@ -207,11 +208,12 @@ export interface AgentReference {
 export type AgentCapability = 'auto' | 'none' | 'enabled' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type AgentPermissionMode = 'request' | 'auto' | 'full'
 
-export interface MarketItem { avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert' | 'plugin'; pluginSkills?: { id: string; name: string; description: string }[]; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
+export interface MarketItem { cloudDownload?: boolean; downloadBytes?: number; avatar?: string; tags?: string[]; expertType?: 'individual' | 'team'; provenance?: string; sourceURL?: string; definitionCount?: number; dependencies?: string[]; definitionFiles?: { path: string; content: string; sha256: string }[]; id: string; name: string; kind: 'skill' | 'connector' | 'expert' | 'plugin'; pluginSkills?: { id: string; name: string; description: string }[]; group: string; description: string; content: string; version: string; updateURL?: string; builtin?: boolean; bundled?: boolean; source?: string; score?: number; compatibilityReason?: string; activationBlocked?: boolean; installed: boolean; enabled: boolean }
 export interface ProjectItem { pinned?: boolean; id: string; name: string; rootPath: string; folders?: {path:string; identity:string}[] }
 
 export interface ConversationItem {
   design?: DesignRequest
+  designRevision?: number
   lastMessagePreview?: string
   waitingForInput?: boolean
   networkAccess?: boolean
@@ -235,6 +237,7 @@ export interface ConversationItem {
 }
 
 export interface DesignRequest {
+  fit?: 'strict' | 'contain' | 'cover'
   outputPreset?: 'avatar' | 'shop-sign' | 'poster' | 'popup' | 'showcase' | 'dish'
   model: 'glm-image' | 'gpt-image-2.5-sunburst' | 'gpt-image-2.5-flare'
   quality?: 'hd' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto'
@@ -292,6 +295,7 @@ export interface ContextUsage {
 }
 
 export interface AgentAttachment {
+  designReferenceId?: string
   annotation?: { text: string; comment: string; source: string; tag: string; thumbnail: string }
   name: string
   path: string
@@ -611,6 +615,7 @@ export interface StableBridge {
   }
   bootstrap(): Promise<BootstrapData>
   cloud: {
+    diagnostic(phase: 'startup_failed'): Promise<boolean>
     startup(): Promise<BootstrapData>
     login(username: string, password: string): Promise<BootstrapData>
     changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<BootstrapData>
@@ -705,7 +710,8 @@ export interface StableBridge {
     selectAttachmentFolder(): Promise<AgentAttachment[]>
     selectSkillFolder(): Promise<AgentAttachment[]>
     create(design?: DesignRequest): Promise<AgentState>
-    configureDesign(id: string, design: DesignRequest): Promise<AgentState>
+    configureDesign(id: string, design: DesignRequest, revision?: number): Promise<{ design: DesignRequest; revision: number; conflict: boolean }>
+    freezeDesignAttachments(id: string, attachments: AgentAttachment[]): Promise<AgentAttachment[]>
     forkAnswer(id: string, messageId: string): Promise<AgentState>
     chapters(id: string): Promise<AnswerChapter[]>
     setChapter(id: string, messageId: string, title: string | null): Promise<AnswerChapter[]>
@@ -740,11 +746,18 @@ export interface StableBridge {
     onEvent(handler: (state: AutomationState) => void): () => void
   }
   updater: {
+    oneClick(): Promise<UpdateState>
+    onPrepare(handler: () => 'ready' | 'busy' | 'unsaved'): () => void
     state(): Promise<UpdateState>
     check(): Promise<UpdateState>
     download(): Promise<UpdateState>
     install(): Promise<boolean>
     onEvent(handler: (state: UpdateState) => void): () => void
+  }
+  support: {
+    exportDiagnostics(): Promise<{ path: string } | null>
+    recovery(): Promise<{ rollbackAvailable: boolean }>
+    openRollback(): Promise<boolean>
   }
   team: {
     state(): Promise<TeamState>
@@ -809,7 +822,7 @@ export interface StableBridge {
     openPath(path: string): Promise<boolean>
     showItemInFolder(path: string): Promise<boolean>
     openExternalHtml(path: string): Promise<boolean>
-    fileAction(path: string, action: 'openWith' | 'browser' | 'saveAs' | 'copyPath' | 'copyContent' | 'reveal'): Promise<boolean>
+    fileAction(path: string, action: 'openWith' | 'browser' | 'saveAs' | 'copyPath' | 'copyContent' | 'copyImage' | 'reveal'): Promise<boolean>
   }
   files: {
     path(file: File): string

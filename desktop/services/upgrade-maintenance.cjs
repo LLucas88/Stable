@@ -32,7 +32,7 @@ function writeRollbackScript(destination, install, previous, snapshot, userData)
   const quote = value => "'" + value.replaceAll("'", "''") + "'"
   fs.writeFileSync(destination, '\ufeff' + `# Stable upgrade rollback. Run only after closing Stable.\n$ErrorActionPreference = 'Stop'\n$install = ${quote(install)}\n$previous = ${quote(previous)}\nif (!(Test-Path -LiteralPath (Join-Path $previous 'Stable.exe'))) { throw 'Previous Stable executable is missing.' }\n$running = Get-CimInstance Win32_Process -Filter "Name = 'Stable.exe'"\nif ($running) { throw 'Please save your work and close Stable before rollback.' }\n${snapshot ? `$arguments = @('--stable-restore-upgrade', ${quote('--stable-backup=' + snapshot)}, ${quote('--stable-user-data=' + userData)})\n$quoted = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '\n$process = Start-Process -FilePath (Join-Path $install 'Stable.exe') -ArgumentList $quoted -WindowStyle Hidden -Wait -PassThru\nif ($process.ExitCode -ne 0) { throw 'Data restore failed. Program folders were not changed.' }\n` : ''}$failed = $install + '.__stable_failed_rollback-' + [guid]::NewGuid().ToString()\nif ([IO.Path]::GetDirectoryName($failed) -ne [IO.Path]::GetDirectoryName($install)) { throw 'Invalid rollback path.' }\nMove-Item -LiteralPath $install -Destination $failed\ntry { Move-Item -LiteralPath $previous -Destination $install } catch { Move-Item -LiteralPath $failed -Destination $install; throw }\nWrite-Output 'Stable rollback complete. Newer workspace files and the replaced data are retained.'\n`, 'utf8')
 }
-function maintain({ args, userData, version }) {
+function maintain({ args, userData, version, cloudCatalog }) {
   if (args.includes('--stable-restore-upgrade')) {
     const source = argument(args, '--stable-backup')
     if (!source) throw new Error('未指定回退备份')
@@ -41,6 +41,16 @@ function maintain({ args, userData, version }) {
   const snapshot = backup.prepareUpgrade(userData, version, { force: true })
   const install = argument(args, '--stable-upgrade-install'), previous = argument(args, '--stable-upgrade-previous')
   if (install && previous) writeRollbackScript(path.join(path.dirname(process.execPath), 'Rollback-Stable.ps1'), install, previous, snapshot, userData)
+  // The installer moves the old application directory immediately after this
+  // hook. Preserve bundled skill resources while their recorded paths still
+  // exist; the preceding snapshot restores the original records on rollback.
+  if (require('./skill-delivery-mode.cjs').cloudDeliveryEnabled() && fs.existsSync(path.join(userData, 'stable.db'))) {
+    const store = new (require('./store.cjs').StableStore)(userData)
+    try {
+      const migration = new (require('./cloud-skills.cjs').CloudSkills)({ store, root: userData, catalog: cloudCatalog }).migrateLocal()
+      store.setSetting('cloudSkillMigration', migration)
+    } finally { store.close() }
+  }
   return snapshot
 }
 module.exports = { maintain, writeRollbackScript, verifyRuntime }

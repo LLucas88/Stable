@@ -55,10 +55,11 @@ async function main() {
     window.stable.team={onEvent:noop};window.stable.automations={onEvent:noop};window.stable.updater={onEvent:noop};window.stable.workflows={onEvent:noop};
     window.stable.agent.onState=noop;
     window.stable.agent.create=async design=>{const id='new-'+(conversations.length+1);conversations.push({...conversations[0],id,title:design?'Design 新对话':'普通新对话',projectId:null,messageCount:0,design});initial.activeConversationId=id;return state(id)};
-    window.stable.agent.configureDesign=async(id,design)=>{conversations.find(c=>c.id===id).design=design;return state(id)};
+    window.stable.agent.configureDesign=async(id,design,revision=0)=>{const c=conversations.find(c=>c.id===id);c.design=design;c.designRevision=(c.designRevision||0)+1;return {design,revision:c.designRevision,conflict:false}};
+    window.stable.agent.freezeDesignAttachments=async(_id,attachments)=>attachments;
     initial.models.items=[{id:'mock',displayName:'DeepSeek',model:'deepseek-flash',providerId:'deepseek',hasApiKey:true},{id:'glm',displayName:'GLM-5.3-Flash',model:'glm-5.3-flash',providerId:'zhipu',hasApiKey:true}];
     window.stable.agent.configureModel=async(id,modelId)=>{conversations.find(c=>c.id===id).modelId=modelId;window.modelSwitched={id,modelId};return state(id)};
-    window.stable.agent.run=(id,prompt,attachments,refs,request,clarification,design)=>{window.sent.push({id,prompt,attachments,design});return new Promise(resolve=>{window.finish=()=>{const n=window.sent.length;historyById[id]=[...(historyById[id]||[]),{id:'user-'+n,seq:n*2,createdAt:new Date().toISOString(),role:'user',content:prompt,trace:design?[{id:'design-request',kind:'context',status:'completed',designRequest:{...design}}]:undefined},{id:'done-'+n,seq:n*2+1,createdAt:new Date().toISOString(),role:'assistant',content:'模拟完成',trace:[{kind:'status',status:'completed',title:'完成'}]}];conversations.find(c=>c.id===id).messageCount=historyById[id].length;resolve(state(id))}})};
+    window.stable.agent.run=(id,prompt,attachments,refs,request,clarification,design)=>{window.sent.push({id,prompt,attachments,design,clarification});return new Promise(resolve=>{window.finish=(waiting=false)=>{const n=window.sent.length;const trace=waiting?[{kind:'status',status:'completed',title:'等待补充信息',clarification:{id:'question-'+n,status:'waiting',question:'海报面向哪类顾客？',hint:'确认后继续生成。',options:[{label:'上班族',description:'突出便捷早餐。'},{label:'家庭顾客',description:'突出共享套餐。'}]}}]:[{kind:'status',status:'completed',title:'完成'}];historyById[id]=[...(historyById[id]||[]),{id:'user-'+n,seq:n*2,createdAt:new Date().toISOString(),role:'user',content:prompt,trace:design?[{id:'design-request',kind:'context',status:'completed',designRequest:{...design}}]:undefined},{id:'done-'+n,seq:n*2+1,createdAt:new Date().toISOString(),role:'assistant',content:waiting?'海报面向哪类顾客？':'模拟完成',trace}];const conversation=conversations.find(c=>c.id===id);conversation.messageCount=historyById[id].length;conversation.waitingForInput=waiting;resolve(state(id))}})};
     window.stable.agent.select=async id=>{initial.activeConversationId=id;return state(id)};
     window.stable.agent.search=async()=>[];
     window.stable.agent.imagePreview=async path=>{const canvas=document.createElement('canvas');canvas.width=path.includes('portrait')?640:1280;canvas.height=path.includes('portrait')?960:720;const ctx=canvas.getContext('2d');ctx.fillStyle='#719ca7';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#f1dbc1';ctx.fillRect(40,40,canvas.width-80,canvas.height-80);return canvas.toDataURL()};
@@ -183,26 +184,48 @@ async function main() {
     expect(window.sent[0].attachments[0].name==='reference.png','Reference missing from send');
     expect(window.sent[0].design.count===2&&window.sent[0].design.ratio==='custom'&&window.sent[0].design.width===1312&&window.sent[0].design.height===1024&&window.sent[0].design.text==='仅限今日 23.8','Design parameters lost');
     expect(!window.sent[0].prompt.includes('stable_design_request'),'System parameters leaked into user message');
-    expect(document.querySelector('[data-design-chat="true"]'),'Image send did not return to chat');
+    expect(document.querySelector('[data-design="true"]'),'Image send changed the selected input mode');
     expect(document.querySelector('.design-message-parameters').textContent.includes('1312 × 1024')&&document.querySelector('.design-message-parameters').textContent.includes('2 张'),'Sent image parameters missing');
+    click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
     input('#agent-prompt','解释一下版式');await tick();click('.composer-send');await tick();expect(window.sent.length===1,'Queue bypassed running turn');
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:first-child');await tick();
     const countMenu=Array.from(document.querySelectorAll('.design-controls summary')).find(e=>e.textContent.includes('2 张'));countMenu.click();await tick();Array.from(countMenu.parentElement.querySelectorAll('button')).find(b=>b.textContent==='4 张').click();await tick();
+    expect((await window.stable.agent.state(window.sent[0].id)).conversations.find(c=>c.id===window.sent[0].id).design.count===4,'Unsent panel preferences were not persisted');
     expect(document.querySelector('.user-turn .design-message-parameters').textContent.includes('2 张'),'Editing next parameters mutated sent snapshot');
     input('#agent-prompt','再生成另一组');await tick();click('.composer-send');await tick();
     expect(document.querySelector('.queue-copy .design-message-parameters')?.textContent.includes('4 张'),'Queued image snapshot missing');
     click('[aria-label="工作"]');await tick();expect(!document.querySelector('[data-design="true"]'),'Work kept design composer');
-    click('[aria-label="Design"]');await tick();expect(document.querySelector('[data-design-chat="true"]'),'Design chat mode not restored');
+    click('[aria-label="Design"]');await tick();expect(document.querySelector('[data-design="true"]'),'Manual image mode not restored');
     expect(document.querySelector('.message-queue'),'Switch lost queue');
     window.finish();await tick();await tick();expect(window.sent.length===2&&!window.sent[1].design,'Chat inherited image parameters');
     window.finish();await tick();await tick();expect(window.sent.length===3&&window.sent[2].design.count===4,'Queued image snapshot lost');
-    window.finish();await tick();
+    window.finish();await tick();expect(document.querySelector('[data-design="true"]'),'Completion changed image mode');
+    expect((await window.stable.agent.state(window.sent[0].id)).conversations.find(c=>c.id===window.sent[0].id).design.count===4,'Queued snapshots overwrote newer panel preferences');
     document.documentElement.dataset.theme='dark';await tick();
     expect(getComputedStyle(document.documentElement).getPropertyValue('--color-paper').trim()==='#282a36','Dark theme failed');
     for(const selector of ['.window-titlebar','.app-shell','.side-rail']) expect(getComputedStyle(document.querySelector(selector)).backgroundColor==='rgba(0, 0, 0, 0)','Dark window material covered by '+selector);
     expect(document.querySelector('.composer-send').getBoundingClientRect().bottom<innerHeight,'Send button clipped');
   `)
   fs.writeFileSync(path.join(output,'design-dark.png'),(await win.webContents.capturePage()).toPNG())
+  await run(`
+    input('#agent-prompt','生成另一个早餐海报');await tick();click('.composer-send');await tick();
+    window.finish(true);await tick();await tick();
+    expect(document.querySelector('.clarification-card'),'Design clarification not shown');
+    expect(document.querySelector('[data-design="true"]'),'Clarification changed the selected image mode');
+    input('[aria-label="自定义回答"]','面向上班族');await tick();click('.clarification-send');await tick();
+    expect(window.sent.at(-1).clarification?.source==='custom','Card answer did not resume clarification');
+    expect(document.querySelector('[data-design="true"]'),'Answering clarification changed image mode');
+    window.finish();await tick();await tick();
+    click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
+    input('#agent-prompt','解释设计思路');await tick();click('.composer-send');await tick();
+    expect(!window.sent.at(-1).design,'Manual chat received image parameters');
+    window.finish();await tick();expect(document.querySelector('[data-design-chat="true"]'),'Completion changed the selected chat mode');
+  `)
+  await win.webContents.executeJavaScript('window.remount()');await new Promise(r=>setTimeout(r,3000))
+  await run(`expect(document.querySelector('[data-design-chat="true"]'),'Selected chat mode lost after remount');click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:first-child');await tick();`)
+
+  await win.webContents.executeJavaScript('window.remount()');await new Promise(r=>setTimeout(r,3000))
+  await run(`expect(document.querySelector('[data-design="true"]'),'Selected image mode lost after remount');`)
   await run(`click('.rail-new-chat');await tick();expect(document.querySelector('[data-design="true"]'),'Design new chat lost mode');click('[aria-label="工作"]');await tick();click('.rail-new-chat');await tick();expect(!document.querySelector('[data-design="true"]'),'Ordinary new chat inherited Design')`)
   await run(`
     const pending=[];window.stable.agent.inspectAttachments=paths=>new Promise(resolve=>pending.push(()=>resolve(paths.map(path=>({name:path.split('/').at(-1),path,type:'png',size:100})))));

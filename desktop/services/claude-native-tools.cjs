@@ -7,6 +7,7 @@ const { resolveBoundPath } = require('./claude-tools.cjs')
 const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
 const { TOOL_WATCHDOG_MS } = require('./run-progress.cjs')
 const { toolFailureRecovery } = require('./tool-failure-recovery.cjs')
+const { publicWebURL } = require('./deepseek-web.cjs')
 // Leave time for native process cleanup and the SDK result before the run guard.
 const BASH_TIMEOUT_MS = TOOL_WATCHDOG_MS - 60_000
 const TIMEOUT_RECOVERY = '本次命令超时，整轮任务仍可继续。根据已返回的输出检查已完成步骤和文件；超时不代表已有写入已回滚。请缩小范围、拆分为可恢复步骤或改用其他可用方法继续，不要原样重复长命令；仍须遵守用户停止、审批和费用上限。'
@@ -17,6 +18,7 @@ const WRITES = new Set(['Write', 'Edit', 'NotebookEdit'])
 const SEARCH_LIMIT = 30_000
 const MAX_MUTATION_BYTES = 2_000_000
 const FIELDS = {
+  WebFetch: ['url', 'prompt', 'offset'],
   Bash: ['command', 'timeout', 'description', 'run_in_background', 'dangerouslyDisableSandbox'],
   Read: ['file_path', 'offset', 'limit', 'pages'],
   Write: ['file_path', 'content'],
@@ -91,7 +93,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   const reads = canonicalRoots([...writes, ...readableRoots])
   if (sandboxMode !== 'read-only' && writes.some(root => samePath(root, path.parse(root).root))) throw Error('不能将整个盘符根目录作为可写工作区。')
   const bashEnabled = sandboxMode !== 'read-only' && networkAccess === true
-  const tools = [...TOOLS, ...(bashEnabled ? ['Bash'] : [])]
+  const tools = [...TOOLS, ...(bashEnabled ? ['Bash'] : []), ...(networkAccess ? ['WebFetch'] : [])]
   const calls = new Map()
   let serial = 0
   function protectedWrite(target) {
@@ -122,10 +124,18 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   }
   async function validate(name, input, activeSignal, executionCwd = cwd) {
     aborted(activeSignal)
+    if (name === 'WebFetch' && !networkAccess) throw Error('当前任务禁止联网，不能使用 WebFetch。')
     if (name === 'Bash' && !bashEnabled) throw Error('只读或禁网模式不开放原生 Bash：本机命令无法保证文件只读或禁止网络。')
     if (!tools.includes(name)) throw Error('此原生工具未获准。')
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !FIELDS[name].includes(key))) throw Error('原生工具参数包含不支持的字段。')
     const args = { ...input }, writing = WRITES.has(name)
+    if (name === 'WebFetch') {
+      args.url = publicWebURL(args.url)
+      text(args.prompt, '网页提取要求')
+      if (!args.prompt.trim()) throw Error('网页提取要求不能为空。')
+      if (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0)) throw Error('WebFetch offset 必须是非负整数（网页正文的字符偏移）。')
+      return { args, target: args.url }
+    }
     if (name === 'Bash') {
       text(args.command, '命令')
       if (!args.command.trim() || args.command.length > 100_000) throw Error('命令不能为空或超过 100000 字符。')
@@ -178,7 +188,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     calls.set(id, entry)
     onToolEvent({ id, name, args: checked.args, status: 'running' })
     entry.promise = (async () => {
-      if (WRITES.has(name) || name === 'Bash') {
+      if (WRITES.has(name) || name === 'Bash' || name === 'WebFetch') {
         await approval(requestApproval, { name, args: checked.args, cwd: name === 'Bash' ? checked.target : cwd, ...(name === 'Bash' ? { command: checked.args.command } : {}) }, activeSignal)
         const current = await validate(name, input, activeSignal, executionCwd)
         if (current.target !== checked.target || current.snapshot !== checked.snapshot) throw Error('审批期间文件或路径已变化，请重新读取再操作。')

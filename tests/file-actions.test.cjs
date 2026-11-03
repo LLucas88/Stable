@@ -12,6 +12,25 @@ test('file menu copies exact canonical paths/content and dispatches native actio
  for(const action of ['copyPath','copyContent','reveal','browser','openWith'])assert.equal(await act(action,file),true)
  assert.deepEqual(calls,[['text',fs.realpathSync(file)],['text','<h1>你好</h1>'],['reveal',fs.realpathSync(file)],['browser',fs.realpathSync(file)],['openWith',fs.realpathSync(file)]])
 })
+
+test('copy image rejects invalid, missing, out-of-scope and oversized inputs before changing the clipboard',async t=>{
+ const {root,file,options}=fixture(t);let writes=0,decodes=0
+ const act=createFileActions({...options,nativeImage:{createFromBuffer:()=>{decodes++;return {isEmpty:()=>true}}},clipboard:{writeImage:()=>writes++}})
+ await assert.rejects(act('copyImage',file),/图片格式/)
+ await assert.rejects(act('copyImage',path.join(root,'missing.png')),/不存在/)
+ await assert.rejects(act('copyImage',__filename),/工作区/)
+ const corrupt=path.join(root,'corrupt.png');fs.writeFileSync(corrupt,'not an image')
+ await assert.rejects(act('copyImage',corrupt),/无法读取/)
+ const huge=path.join(root,'huge.png'),fd=fs.openSync(huge,'w');fs.ftruncateSync(fd,20*1024*1024+1);fs.closeSync(fd)
+ await assert.rejects(act('copyImage',huge),/20 MB/)
+ assert.equal(decodes,1);assert.equal(writes,0)
+})
+
+test('copy image reports clipboard failure instead of claiming success',async t=>{
+ const {root,options}=fixture(t),file=path.join(root,'image.png');fs.writeFileSync(file,'fixture')
+ const act=createFileActions({...options,nativeImage:{createFromBuffer:()=>({isEmpty:()=>false})},clipboard:{writeImage:()=>{throw Error('clipboard busy')}}})
+ await assert.rejects(act('copyImage',file),/无法复制图像到剪贴板/)
+})
 test('save as cancellation, copy and self overwrite protection',async t=>{
  const {root,file,options,act}=fixture(t);assert.equal(await act('saveAs',file),false)
  const output=path.join(root,'copy.html');options.dialog.showSaveDialog=async()=>({filePath:output})

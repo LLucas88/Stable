@@ -2,14 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type Key
 import { createPortal } from 'react-dom'
 import { FileText, AppWindow, ExternalLink, Download, Copy, FolderOpen, Clipboard } from 'lucide-react'
 
-type Action = 'openWith' | 'browser' | 'saveAs' | 'copyPath' | 'copyContent' | 'reveal'
-export function useFileContextMenu({ path, name, onOpen, disabled = false }: { path: string; name: string; onOpen: () => void; disabled?: boolean }) {
+type Action = 'openWith' | 'browser' | 'saveAs' | 'copyPath' | 'copyContent' | 'copyImage' | 'reveal'
+export function useFileContextMenu({ path, name, onOpen, disabled = false, copyImage = false }: { path: string; name: string; onOpen: () => void; disabled?: boolean; copyImage?: boolean }) {
   const [position, setPosition] = useState<{ x: number; y: number }>()
   const [error, setError] = useState('')
+  const [status, setStatus] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLElement | null>(null)
   const close = () => { setPosition(undefined); trigger.current?.focus() }
-  useEffect(() => { setPosition(undefined); setError('') }, [path, disabled])
+  useEffect(() => { setPosition(undefined); setError(''); setStatus('') }, [path, disabled])
   useEffect(() => {
     if (!position) return
     const outside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setPosition(undefined) }
@@ -27,13 +28,16 @@ export function useFileContextMenu({ path, name, onOpen, disabled = false }: { p
   }, [position])
   function open(event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>) {
     if (disabled) return
-    event.preventDefault(); event.stopPropagation(); setError(''); trigger.current = event.currentTarget
+    event.preventDefault(); event.stopPropagation(); setError(''); setStatus(''); trigger.current = event.currentTarget
     const rect = event.currentTarget.getBoundingClientRect()
     setPosition('clientX' in event && event.clientX ? { x: event.clientX, y: event.clientY } : { x: rect.left, y: rect.bottom })
   }
   async function act(action?: Action) {
-    close(); setError('')
-    try { if (action) await window.stable.system.fileAction(path, action); else onOpen() }
+    close(); setError(''); setStatus('')
+    try {
+      if (action) { const completed = await window.stable.system.fileAction(path, action); if (action === 'copyImage' && completed) setStatus('图像已复制') }
+      else onOpen()
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
   const extension = path.split('.').pop()?.toLowerCase() || ''
@@ -42,6 +46,7 @@ export function useFileContextMenu({ path, name, onOpen, disabled = false }: { p
     { label: '打开方式…', Icon: AppWindow, action: 'openWith' as Action },
     { label: '在外部浏览器中打开', Icon: ExternalLink, action: 'browser' as Action, disabled: !/^(html?|pdf|svg|png|jpe?g|gif|webp|txt)$/.test(extension) },
     { label: '另存为…', Icon: Download, action: 'saveAs' as Action },
+    ...(copyImage ? [{ label: '复制图像', Icon: Copy, action: 'copyImage' as Action, disabled: !/^(png|jpe?g|webp|gif|bmp)$/.test(extension) }] : []),
     { label: '复制路径', Icon: Copy, action: 'copyPath' as Action },
     { label: '复制文件内容', Icon: Clipboard, action: 'copyContent' as Action, disabled: !/^(txt|md|markdown|mdx|html?|css|jsx?|tsx?|cjs|mjs|jsonl?|ya?ml|toml|csv|tsv|xml|svg|py|sh|sql|log|ini)$/.test(extension) },
     { label: '在资源管理器中打开', Icon: FolderOpen, action: 'reveal' as Action },
@@ -57,5 +62,6 @@ export function useFileContextMenu({ path, name, onOpen, disabled = false }: { p
       buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length]?.focus()
     }}>{items.map(({ label, Icon, action, disabled }, index) => <button type="button" role="menuitem" tabIndex={-1} disabled={disabled} data-divider={index === 3 || undefined} key={label} onClick={() => void act(action)}><Icon size={15} aria-hidden="true"/><span>{label}</span></button>)}</div>, document.body),
     error: error && <span className="conversation-file-error" role="alert">{error}</span>,
+    status: status && <span className="file-action-status" role="status">{status}</span>,
   }
 }

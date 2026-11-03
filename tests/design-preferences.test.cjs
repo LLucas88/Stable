@@ -1,0 +1,35 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os')
+const {saveDesignPreferences}=require('../desktop/services/design-preferences.cjs')
+const {StableStore}=require('../desktop/services/store.cjs')
+const {validateDesignRequest}=require('../desktop/services/design-request.cjs')
+const code=require('esbuild').buildSync({entryPoints:[path.join(__dirname,'../src/shared/design-preferences.ts')],bundle:true,write:false,platform:'node',format:'cjs'}).outputFiles[0].text
+const compiled={exports:{}};new Function('module','exports',code)(compiled,compiled.exports)
+const {DesignPreferenceWriter}=compiled.exports
+const base=validateDesignRequest({model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''})
+test('preferences persist without sending and revision conflicts cannot overwrite newer edits',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'design-prefs-'));let store=new StableStore(dir)
+ t.after(()=>{store.db.close();fs.rmSync(dir,{recursive:true,force:true})})
+ const a=store.activeConversationId(),b=store.createConversation();store.setSetting(`design:${a}`,base);store.setSetting(`design:${b}`,base)
+ assert.equal(saveDesignPreferences(store,a,{...base,count:2},0).revision,1)
+ const stale=saveDesignPreferences(store,a,{...base,count:4},0);assert.equal(stale.conflict,true);assert.equal(stale.design.count,2)
+ store.db.close();store=new StableStore(dir)
+ assert.equal(store.conversation(a).design.count,2);assert.equal(store.conversation(a).designRevision,1);assert.equal(store.conversation(b).design.count,1)
+})
+test('serial saves coalesce late edits, isolate conversations and journal pending values',async()=>{
+ const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},calls=[]
+ const writer=new DesignPreferenceWriter((id,design,revision)=>new Promise(resolve=>calls.push({id,design,revision,resolve})),()=>{},storage)
+ writer.save('a',{...base,count:2},0);await Promise.resolve()
+ writer.save('a',{...base,count:4},0);writer.save('b',{...base,count:3},0);await Promise.resolve()
+ assert.equal(calls.length,2);assert.equal(calls[0].design.count,2)
+ const restored=new DesignPreferenceWriter(async()=>{},()=>{},storage);assert.equal(restored.values.a.count,4)
+ calls[0].resolve({revision:1,conflict:false});await new Promise(r=>setImmediate(r));assert.equal(calls[2].design.count,4);assert.equal(calls[2].revision,1)
+ calls[1].resolve({revision:1,conflict:false});calls[2].resolve({revision:2,conflict:false});assert.equal(await writer.flush(),true)
+ assert.deepEqual(JSON.parse(data.values().next().value),{});assert.equal(writer.values.a.count,4)
+})
+test('conflicting window edits require an explicit retry and retain the local draft',async()=>{
+ let calls=0;const writer=new DesignPreferenceWriter(async(_id,design,revision)=>{calls++;return {design,revision:calls===1?7:revision+1,conflict:calls===1}},()=>{})
+ writer.save('a',{...base,count:4},0);assert.equal(await writer.flush(),false);assert.equal(calls,1);assert.match(writer.errors.a,/另一窗口/)
+ writer.retry('a');assert.equal(await writer.flush(),true);assert.equal(calls,2)
+ writer.observe('a',{...base,count:2},9);assert.equal(writer.values.a.count,2)
+ writer.observe('a',base,2);assert.equal(writer.values.a.count,2,'Old state responses must not roll back the panel')
+})

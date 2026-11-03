@@ -110,4 +110,4 @@ function createCloudFetch({ session, logPath, appVersion }) {
   }
 }
 
-module.exports = { createCloudFetch, cloudResponseError, responseType, MAX_LOG_BYTES }
+module.exports = { createCloudFetch, cloudResponseError, responseType, MAX_LOG_BYTES, appendDiagnostic }

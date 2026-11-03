@@ -4,6 +4,8 @@ import { DesignControls, DesignMessageParameters, DEFAULT_DESIGN } from './Desig
 import type { DesignRequest } from './types'
 import './styles/design-activity.css'
 import { cloudAccessHint } from './settings/CloudAccessSettings'
+import { recoverCloudStartup } from './shared/cloud-startup'
+import { DesignPreferenceWriter } from './shared/design-preferences'
 import { errorMessage, formatBytes, formatAutomationSchedule } from './shared/format'
 import { type ConversationPreviewTarget } from './shared/conversation-preview'
 import { DropTarget, Empty } from './components/ResourcePrimitives'
@@ -179,13 +181,14 @@ export function App() {
 
   useEffect(() => {
     if (state?.cloud.status !== 'checking') return
-    let cancelled = false
-    void window.stable.cloud.startup().then(value => {
-      if (!cancelled) setState(value)
-    }).catch(reason => {
-      if (!cancelled) setState(current => current ? { ...current, cloud: { ...current.cloud, status: 'unavailable', error: errorMessage(reason) } } : current)
-    })
-    return () => { cancelled = true }
+    return recoverCloudStartup(
+      () => window.stable.cloud.startup(),
+      value => setState(current => current?.cloud.status === 'checking' ? { ...current, cloud: value.cloud, models: value.models } : current),
+      reason => {
+        setState(current => current?.cloud.status === 'checking' ? { ...current, cloud: { ...current.cloud, status: 'unavailable', error: errorMessage(reason) } } : current)
+        try { void window.stable.cloud.diagnostic?.('startup_failed').catch(() => {}) } catch { /* reporting cannot block recovery */ }
+      },
+    )
   }, [state?.cloud.status])
 
   function finishLaunch() {
@@ -903,6 +906,18 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const outbox = outboxRef.current
   const queue = outbox.snapshot(state.activeConversationId)
   const [queueEdit, setQueueEdit] = useState<{ conversationId: string; id: string; text: string }>()
+  useEffect(() => window.stable.updater.onPrepare?.(() => {
+    if (document.querySelector('[data-update-unsaved="true"]')) return 'unsaved'
+    if (Object.keys(designPreferencesRef.current?.pending || {}).length) return 'unsaved'
+    if (queueEdit || Object.values(uploadsPending.current).some(count => count > 0)) return 'busy'
+    const errors = [
+      writeComposerValue(composerKey + ':prompts', promptMap),
+      writeComposerValue(composerKey + ':attachments', attachmentMap),
+      writeComposerValue(composerKey + ':references', referenceMap),
+      writeComposerValue(composerKey + ':outbox', outbox.serialize()),
+    ]
+    return errors.some(Boolean) ? 'unsaved' : 'ready'
+  }), [composerKey, promptMap, attachmentMap, referenceMap, outbox, queueEdit])
   const cancelledDrafts = useRef<Record<string, ComposerMessage | undefined>>({})
   const cancelBeforeDispatchRef = useRef<Record<string, boolean>>({})
   const previewRequestRef = useRef(0)
@@ -921,19 +936,41 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const stateRef = useRef(state)
   const activeConversation = state.conversations.find((item) => item.id === state.activeConversationId) || state.conversations[0]
   const designMode = Boolean(activeConversation?.design)
-  const [designInputModes, setDesignInputModes] = useState<Record<string, 'generate' | 'chat'>>({})
+  const [designInputModes, setDesignInputModes] = useState<Record<string, 'generate' | 'chat'>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('stable.design-input-modes.v1') || '{}')
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
+      const modes: Record<string, 'generate' | 'chat'> = {}
+      for (const [id, mode] of Object.entries(saved)) if (mode === 'generate' || mode === 'chat') modes[id] = mode
+      return modes
+    } catch { return {} }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('stable.design-input-modes.v1', JSON.stringify(designInputModes)) } catch { /* Keep the current mode if local storage is unavailable. */ }
+  }, [designInputModes])
   const designInputMode = designInputModes[state.activeConversationId] || (activeConversation?.messageCount ? 'chat' : 'generate')
   const imageMode = designMode && designInputMode === 'generate'
   const changeDesignMode = (mode: 'generate' | 'chat') => setDesignInputModes(current=>({...current,[state.activeConversationId]:mode}))
-  const [designDrafts, setDesignDrafts] = useState<Record<string, DesignRequest>>({})
-  const design: DesignRequest = { ...(designDrafts[state.activeConversationId] || activeConversation?.design || DEFAULT_DESIGN), mode: 'generate' }
+  const [, refreshDesignPreferences] = useState(0)
+  const designPreferencesRef = useRef<DesignPreferenceWriter>()
+  if (!designPreferencesRef.current) {
+    let storage: Storage | undefined
+    try { storage = localStorage } catch { /* IPC saving still works without browser storage. */ }
+    designPreferencesRef.current = new DesignPreferenceWriter((id, value, revision) => window.stable.agent.configureDesign(id, value, revision), () => refreshDesignPreferences(n => n + 1), storage)
+  }
+  const designPreferences = designPreferencesRef.current
+  useEffect(() => {
+    for (const item of state.conversations) designPreferences.observe(item.id, item.design, item.designRevision || 0)
+    designPreferences.restore(state.conversations.map(item => item.id))
+  }, [designPreferences, state.conversations])
+  const design: DesignRequest = { ...(designPreferences.values[state.activeConversationId] || activeConversation?.design || DEFAULT_DESIGN), mode: 'generate' }
   function insertDesignReference(index: number) {
     setPrompt(current => current.replace(/@$/, '') + `@图${index + 1} `)
     promptRef.current?.focus()
   }
   function changeDesign(value: DesignRequest) {
     const id = state.activeConversationId
-    setDesignDrafts(current=>({...current,[id]:value}))
+    designPreferences.save(id, value, activeConversation?.designRevision || 0)
   }
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
@@ -1379,10 +1416,6 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
     const id = state.activeConversationId, draft = cancelledDrafts.current[id]
     if (!draft || running || queue.running) return
     delete cancelledDrafts.current[id]
-    if (draft.design) {
-      setDesignDrafts(current=>({...current,[id]:draft.design!}))
-      setDesignInputModes(current=>({...current,[id]:'generate'}))
-    }
     setPrompt(current => current.trim() ? current + '\n\n' + draft.prompt : draft.prompt)
     setAttachmentMap(current => ({ ...current, [id]: [...(current[id] || []), ...draft.attachments.filter(item => !(current[id] || []).some(existing => existing.path === item.path))] }))
     const refs = referenceMapRef.current[id] || []
@@ -1397,25 +1430,33 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
     window.requestAnimationFrame(()=>promptRef.current?.focus())
   }
 
-  function send() {
+  async function send() {
     if (uploadsPending.current[state.activeConversationId]) { setComposerErrorMap(current => ({ ...current, [state.activeConversationId]: '附件仍在读取，请完成后再发送。' })); return }
     if (cloudAccessHint(state.cloud.status) && activeModel?.providerId !== 'chatgpt') { onOpenAccount(); return }
     if (pendingQuestion && !prompt.trim()) return
     if (!prompt.trim() && !attachments.length && !selectedReferences.length) return
     const conversationId = state.activeConversationId
     try {
+      const message: ComposerMessage = {
+        ...(imageMode ? { design: { ...design } } : {}),
+        prompt: prompt.trim() || '请读取并分析本次引用的资源与附件。',
+        attachments: attachments.map(item => ({ ...item })),
+        references: selectedReferences.map(item => ({ ...item })),
+        ...(pendingQuestion ? { clarificationResponse: { id: pendingQuestion.id, source: 'custom' as const, text: prompt.trim() } } : {}),
+      }
+      if (designMode) changeDesignMode(designInputMode)
+      if (designMode && message.attachments.length) {
+        uploadsPending.current[conversationId] = (uploadsPending.current[conversationId] || 0) + 1
+        try { message.attachments = await window.stable.agent.freezeDesignAttachments(conversationId, message.attachments) }
+        finally { uploadsPending.current[conversationId] -= 1 }
+      }
       const pendingQueue = outbox.snapshot(conversationId)
       if (!pendingQueue.running && !pendingQueue.items.length) outbox.resume(conversationId)
       const dispatch = pendingQuestion ? outbox.reply.bind(outbox) : outbox.enqueue.bind(outbox)
-      void Promise.resolve(dispatch(conversationId, {
-        ...(imageMode ? {design:{...design}} : {}),
-        prompt: prompt.trim() || '请读取并分析本次引用的资源与附件。',
-        attachments: attachments.map((item) => ({ ...item })),
-        references: selectedReferences.map((item) => ({ ...item })),
-        ...(pendingQuestion ? { clarificationResponse: { id: pendingQuestion.id, source: 'custom' as const, text: prompt.trim() } } : {}),
-      })).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
-      setPrompt(''); setAttachments([]); setReferences(current => current.filter(item => item.kind === 'skill'))
-      if (imageMode) changeDesignMode('chat')
+      void Promise.resolve(dispatch(conversationId, message)).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
+      setPrompt(current => current === prompt ? '' : current)
+      setAttachmentMap(current => ({ ...current, [conversationId]: (current[conversationId] || []).filter(item => !attachments.some(sent => sent.path === item.path)) }))
+      setReferences(current => current.filter(item => item.kind === 'skill' || !selectedReferences.some(sent => sent.kind === item.kind && sent.id === item.id)))
       setComposerErrorMap((current) => ({ ...current, [conversationId]: '' }))
       window.requestAnimationFrame(() => promptRef.current?.focus())
     } catch (error) {
@@ -1468,7 +1509,6 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
         return { accepted: false, continue: false, cancelled: true }
       }
       dispatched = true
-      if (entry.payload.design) await window.stable.agent.configureDesign(conversationId, entry.payload.design)
       const result = await window.stable.agent.run(conversationId, value, currentAttachments, currentReferences, entry.id, entry.payload.clarificationResponse, entry.payload.design)
       updateAgentForConversation(result, conversationId)
       completed = true
@@ -1647,6 +1687,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
             </div>
             <div className="composer-actions">
               {designMode && <DesignControls mode={designInputMode} onModeChange={changeDesignMode} value={design} onChange={changeDesign} references={imageAttachments.map(item=>item.name)} onReference={insertDesignReference}/>}
+              {designMode && designPreferences.errors[state.activeConversationId] && <span role="alert">{designPreferences.errors[state.activeConversationId]} <button type="button" onClick={() => designPreferences.retry(state.activeConversationId)}>重试保存</button></span>}
               <div className="composer-tools">
                 <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.pptx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
                 <details className="composer-menu composer-add-menu" ref={addMenuRef}>
@@ -2094,6 +2135,6 @@ function RunTrace({ items, status, startedAt, endedAt, streaming, finalContent, 
 
 function DesignDeliveryImage({item,onOpen}:{item:{name:string;path:string};onOpen:()=>void}) {
  const source=useAttachmentImageSource(item)
- const menu=useFileContextMenu({path:item.path,name:item.name,onOpen})
- return <div className="design-delivery-image"><button type="button" onClick={onOpen} {...menu.handlers} aria-label={`查看图片 ${item.name}`}>{source?<img src={source} alt={item.name}/>:<span>图片暂时无法加载：{item.name}</span>}</button>{menu.menu}{menu.error}</div>
+ const menu=useFileContextMenu({path:item.path,name:item.name,onOpen,copyImage:true})
+ return <div className="design-delivery-image"><button type="button" onClick={onOpen} {...menu.handlers} aria-label={`查看图片 ${item.name}`}>{source?<img src={source} alt={item.name}/>:<span>图片暂时无法加载：{item.name}</span>}</button>{menu.menu}{menu.error}{menu.status}</div>
 }

@@ -6,10 +6,13 @@ const experts = require('./expert-catalog.cjs')
 const { setSkillEnabled, removeSkill } = require('./ops-skill-bundle.cjs')
 const WENDING = { id: 'builtin-wending', name: '问鼎 CLI', kind: 'connector', group: '问鼎', description: '连接问鼎账号与品牌，查询会员、营销和经营数据。', content: '# 问鼎 CLI\n\n在当前对话选择账号与品牌后，用自然语言描述需要查询的数据。登录状态全局保留，品牌按对话保存。\n\n## 使用场景\n会员经营分析、活动效果、商品与订单分析。真实权限和数据范围以已登录账号为准。\n\n## 使用方式\n点击“在对话中试用”，选择品牌并输入任务。涉及修改的操作需要依据当前授权范围处理。', version: '内置', builtin: true }
 class SkillMarket {
-  constructor(store, root) { this.store = store; this.root = root }
+  constructor(store, root, { cloudAccount, cloudDelivery = require('./skill-delivery-mode.cjs').cloudDeliveryEnabled(), cloudCatalog } = {}) {
+    this.store = store; this.root = root
+    if (cloudDelivery) this.downloads = new (require('./cloud-skills.cjs').CloudSkills)({ store, root, account: cloudAccount, catalog: cloudCatalog })
+  }
   entries() {
     const meta = this.store.getSetting('skillMarketMeta') || {}
-    return [...plugins.entries(), ...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills({includeCatalog:true}).filter(item => item.id !== 'wending-market-reference' && !plugins.findSkill(item.id) && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: !meta[item.id]?.catalogOnly, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
+    return [...(this.downloads ? this.downloads.entries() : plugins.entries()), ...experts.listExperts(this.store), { ...WENDING, enabled: meta[WENDING.id]?.enabled !== false, installed: meta[WENDING.id]?.installed !== false }, ...this.store.listSkills({includeCatalog:true}).filter(item => item.id !== 'wending-market-reference' && !this.downloads?.find(item.id) && !plugins.findSkill(item.id) && !experts.expert(item.id)).map(item => ({ ...item, kind: meta[item.id]?.kind || 'skill', group: meta[item.id]?.group || '我的', version: meta[item.id]?.version || '1.0.0', updateURL: meta[item.id]?.updateURL || '', installed: !meta[item.id]?.catalogOnly, bundled: Boolean(meta[item.id]?.bundle), source: meta[item.id]?.source, score: meta[item.id]?.score, compatibilityReason: meta[item.id]?.compatibilityReason, activationBlocked: Boolean(meta[item.id]?.bundle && !['local-workflow', 'manual-resource'].includes(meta[item.id]?.compatibility)) }))]
   }
   detail(id) {
     const entry=this.entries().find(item=>item.id===id)
@@ -35,7 +38,7 @@ class SkillMarket {
     return this.entries()
   }
   metadata(id,patch) { const meta=this.store.getSetting('skillMarketMeta') || {};this.store.setSetting('skillMarketMeta',{...meta,[id]:{...meta[id],...patch}}) }
-  toggle(id,enabled) { if(experts.expert(id)){if(enabled){if(!this.store.listSkills().some(item=>item.id===id))experts.installExpert(this.store,this.root,id);else this.store.setSkillEnabled(id,true)}else this.store.setSkillEnabled(id,false);this.metadata(id,{kind:'expert',group:experts.expert(id).group,removed:false})}else if(id===WENDING.id)this.metadata(id,{enabled,installed:true});else setSkillEnabled(this.store,id,enabled);return this.entries() }
+  toggle(id,enabled) { if (enabled && this.downloads?.find(id)) return this.downloads.install(id).then(() => this.entries()); if(experts.expert(id)){if(enabled){if(!this.store.listSkills().some(item=>item.id===id))experts.installExpert(this.store,this.root,id);else this.store.setSkillEnabled(id,true)}else this.store.setSkillEnabled(id,false);this.metadata(id,{kind:'expert',group:experts.expert(id).group,removed:false})}else if(id===WENDING.id)this.metadata(id,{enabled,installed:true});else setSkillEnabled(this.store,id,enabled);return this.entries() }
   remove(id) { if(id===WENDING.id)this.metadata(id,{installed:false,enabled:false});else removeSkill(this.store,id);return this.entries() }
   async checkUpdate(id) {
     const item=this.entries().find(item=>item.id===id)
@@ -54,6 +57,12 @@ class SkillMarket {
     return item?.defaultPrompt || (item ? `请使用「${item.name}」完成以下任务：\n\n【请填写任务要求】` : '')
   }
   use(id) {
+    if (this.downloads?.find(id)) return this.downloads.install(id).then(skill => {
+      const conversationId = this.store.createConversation()
+      this.store.setSetting(`draft-reference:${conversationId}`, { id, kind: 'skill', name: skill.name, size: Buffer.byteLength(skill.content), type: 'skill' })
+      this.store.setSetting(`conversation-skills:${conversationId}`, [id])
+      return conversationId
+    })
     if (plugins.findSkill(id)) return plugins.installSkill(this.store, this.root, id).then(skill => {
       const conversationId = this.store.createConversation()
       this.store.setSetting(`draft-reference:${conversationId}`, { id, kind: 'skill', name: skill.name, size: Buffer.byteLength(skill.content), type: 'skill' })

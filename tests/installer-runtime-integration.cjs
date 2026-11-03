@@ -19,6 +19,7 @@ async function main() {
   const end = source.indexOf('stablePostInstall:')
   assert.ok(start >= 0 && end > start)
   const section = source.slice(start, end)
+  const completion = source.slice(source.indexOf('!insertmacro stableReportProgress "100"'), source.indexOf('!macro doStartApp'))
   const compiler = await getMakeNsisPath()
   const env = { ...process.env, ...compiler.env }
   function checked(command, args, options = {}) {
@@ -70,7 +71,9 @@ ${lightweight ? '!define STABLE_LIGHTWEIGHT_UPDATE' : ''}
 !define INSTALL_REGISTRY_KEY "Software\\Stable-Isolated-Read-Only-QA"
 !define VERSION "0.91.7"
 !define isUpdated '$updated == "true"'
+!define isForceRun '$forceRun == "true"'
 Var updated
+Var forceRun
 Var taskRoot
 Var appExe
 Var installMode
@@ -95,6 +98,15 @@ Var isTryToKeepShortcuts
 !macroend
 !macro handleUninstallResult key
 !macroend
+!macro StartApp
+  FileOpen $8 "$taskRoot\\relaunch-called" w
+  FileWrite $8 "updated-client"
+  FileClose $8
+!macroend
+!macro quitSuccess
+  SetErrorLevel 0
+  Quit
+!macroend
 Function stableCheckAppRunning
 FunctionEnd
 Function stableInstallApplicationFiles
@@ -111,7 +123,13 @@ Section
   StrCpy $appExe "$INSTDIR\\Stable.exe"
   StrCpy $installMode "CurrentUser"
   StrCpy $updated "false"
+  StrCpy $forceRun "false"
   \u0024{GetParameters} $0
+  ClearErrors
+  \u0024{GetOptions} $0 "--force-run" $1
+  \u0024{IfNot} \u0024{Errors}
+    StrCpy $forceRun "true"
+  \u0024{EndIf}
   ClearErrors
   \u0024{GetOptions} $0 "--updated" $1
   \u0024{IfNot} \u0024{Errors}
@@ -119,6 +137,7 @@ Section
   \u0024{EndIf}
   ${section}
 stablePostInstall:
+  ${completion}
   SetErrorLevel 0
 SectionEnd
 Section "Uninstall"
@@ -134,6 +153,8 @@ SectionEnd
     { name: 'manual-persistent', old: true, runtime: 'persistent', code: 0 },
     { name: 'in-app-embedded', old: true, updated: true, runtime: 'embedded', code: 0 },
     { name: 'in-app-persistent', old: true, updated: true, runtime: 'persistent', code: 0 },
+    { name: 'one-click-relaunch', old: true, updated: true, forceRun:true, runtime: 'persistent', code: 0 },
+    { name: 'one-click-failure-no-relaunch', old: true, updated: true, forceRun:true, runtime: 'embedded', healthExit:4, code:12 },
     { name: 'manual-fresh-rejected', code: 21 },
     { name: 'repeated-upgrade-retains-backups', full: true, old: true, runtime: 'embedded', priorBackup: true, code: 0 },
     { name: 'full-manual-upgrade', full: true, old: true, runtime: 'embedded', code: 0 },
@@ -183,13 +204,15 @@ SectionEnd
       const process = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', locker], { env: runEnv, windowsHide: true, stdio: 'ignore' })
       process.once('error', reject); process.once('exit', code => code === 0 ? resolve() : reject(new Error('Stage lock fixture failed: ' + code)))
     }) : Promise.resolve()
-    const result = spawnSync(scenario.full ? full : light, scenario.updated ? ['--updated', '/S'] : ['/S'], {
+    const args = [...(scenario.updated ? ['--updated'] : []), ...(scenario.forceRun ? ['--force-run'] : []), '/S']
+    const result = spawnSync(scenario.full ? full : light, args, {
       cwd: home, windowsHide: true, encoding: 'utf8', timeout: 30000,
       env: runEnv,
     })
     await lockDone
     assert.equal(result.error, undefined, result.error?.message)
     assert.equal(result.status, scenario.code, `${scenario.name}: ${result.stderr}`)
+    assert.equal(fs.existsSync(path.join(home,'relaunch-called')),Boolean(scenario.forceRun && scenario.code===0), `${scenario.name}: relaunch only after a successful requested update`)
     const progressFile = path.join(home, 'progress.log')
     const progress = fs.existsSync(progressFile) ? fs.readFileSync(progressFile, 'utf8').trim().split(/\r?\n/).map(line => Number(line.split('|')[0])) : []
     assert(progress.every((value, index) => index === 0 || value >= progress[index - 1]), `${scenario.name}: progress must not go backwards`)

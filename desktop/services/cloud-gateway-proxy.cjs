@@ -83,7 +83,7 @@ class CloudGatewayProxy {
     const state = this.account.publicState()
     const token = this.account.token()
     if (state.status !== 'authenticated' || !token || !state.account?.id) throw Error('请先在设置 → 账号中登录 Stable Cloud，再生成图片。')
-    return { endpoint: `${this.account.baseURL}/v1/images/generations`, apiKey: token, scope: `cloud:${this.account.baseURL}:${state.account.id}`, replay: true, fetch: this.fetch }
+    return { endpoint: `${this.account.baseURL}/v1/images/generations`, editEndpoint: `${this.account.baseURL}/v1/images/edits`, apiKey: token, scope: `cloud:${this.account.baseURL}:${state.account.id}`, replay: true, fetch: this.fetch }
   }
 
   async handle(request, response) {

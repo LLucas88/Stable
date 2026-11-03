@@ -188,6 +188,7 @@ class BrowserTool {
     this.session.setPermissionCheckHandler(() => false)
     this.session.on('will-download', event => event.preventDefault())
     this.session.webRequest.onBeforeRequest((details, callback) => {
+      if (this.offlinePreviewScope) { callback({ cancel: !require('./browser-network-policy.cjs').allowsPreviewRequest(this.offlinePreviewScope, details) }); return }
       const allowed = /^https?:\/\//i.test(details.url) || /^wss?:\/\//i.test(details.url) || details.url === 'about:blank' || ['image', 'font', 'media'].includes(details.resourceType) && /^(data|blob):/i.test(details.url)
       callback({ cancel: !allowed })
     })
@@ -195,23 +196,26 @@ class BrowserTool {
       webPreferences: { session: this.session, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false, backgroundThrottling: false, offscreen: true, disableDialogs: true } })
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-attach-webview', event => event.preventDefault())
-    window.webContents.on('will-navigate', (event, url) => { try { normalizeWebUrl(url) } catch { event.preventDefault() } })
+    const guard = (event, url) => { try { normalizeWebUrl(url); if (this.offlinePreviewScope && !require('./browser-network-policy.cjs').allowsPreviewRequest(this.offlinePreviewScope, { url, resourceType: 'mainFrame' })) event.preventDefault() } catch { event.preventDefault() } }
+    window.webContents.on('will-navigate', guard)
+    window.webContents.on('will-redirect', guard)
     this.window = window
     return window
   }
 
-  execute(args, signal) {
-    const running = this.chain.then(() => this.run(args, signal))
+  execute(args, signal, policy = {}) {
+    const running = this.chain.then(() => this.run(args, signal, policy))
     this.chain = running.catch(() => {})
     return running
   }
 
-  async run(args, signal) {
+  async run(args, signal, policy = {}) {
     signal?.throwIfAborted()
     if (!['open', 'read', 'audit', 'click', 'fill', 'select', 'close'].includes(args.action)) throw new Error('未知浏览器操作。')
     if (args.action === 'close') { this.dispose(); return { closed: true } }
     if (args.action !== 'open' && (!this.window || this.window.isDestroyed())) throw new Error('请先 open 打开网页。')
     const url = args.action === 'open' ? normalizeWebUrl(args.url) : null
+    this.offlinePreviewScope = policy.networkAccess === false ? require('./browser-network-policy.cjs').previewNetworkScope(url || this.window.webContents.getURL(), policy.workspace, this.offlinePreviewScope) : undefined
     if (['click', 'fill', 'select'].includes(args.action) && (typeof args.ref !== 'string' || args.ref.length > 100)) throw new Error('请使用最新快照的 ref。')
     if (['fill', 'select'].includes(args.action) && (typeof args.value !== 'string' || args.value.length > 4000)) throw new Error('请输入不超过4000字符的非敏感内容。')
     const window = await this.ensureWindow()

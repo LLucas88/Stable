@@ -62,6 +62,7 @@ function createBundleManager(lock) {
   }
   function applyLocalSkillConfig({ appPath, userData, isPackaged, store }) {
     const file = path.join(isPackaged ? userData : appPath, CONFIG_FILE)
+    if (require('./skill-delivery-mode.cjs').cloudDeliveryEnabled()) return { skipped: 'cloud-delivery' }
     if (!fs.existsSync(file) && !isPackaged) return null
     try {
       if (isPackaged && !fs.existsSync(file)) {

@@ -57,13 +57,14 @@ test('installation progress is stage-based, percentage-labelled, and cannot be c
   assert.match(installer, /!define MUI_CUSTOMFUNCTION_ABORT stableAbortGuard/)
 })
 
-test('successful updates finish shortcuts before 100 percent and never auto-launch', () => {
+test('successful updates relaunch only when explicitly requested, after shortcuts and health checks', () => {
   const shortcutIndex = installSection.indexOf('!insertmacro addDesktopLink')
   const completeIndex = installSection.indexOf('stableReportProgress "100" "complete" "success"')
   const updateExitIndex = installSection.indexOf('!insertmacro quitSuccess', completeIndex)
   const startMacroIndex = installSection.indexOf('!macro doStartApp')
   assert.ok(shortcutIndex >= 0 && completeIndex > shortcutIndex)
   assert.ok(updateExitIndex > completeIndex && startMacroIndex > updateExitIndex)
+  assert.match(installSection.slice(completeIndex, updateExitIndex), /\$\{if\} \$\{isForceRun\}[\s\S]+!insertmacro StartApp/)
   assert.doesNotMatch(installSection, /Exec\s+'"\$appExe"'/)
 })
 

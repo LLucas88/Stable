@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.11.2",
+  "version": "1.11.3",
   "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
@@ -17,7 +17,7 @@
     "test:feature-v2": "node --test tests/skill-selection.test.cjs tests/manual-skills-ui.test.cjs tests/prompts.test.cjs tests/conversation-state.test.cjs tests/project-ipc.test.cjs tests/project-controls-ui.test.cjs tests/sidebar-controls-ui.test.cjs tests/feature-v2-services.test.cjs tests/browser-downloads.test.cjs tests/shared-browser.test.cjs tests/claude-lifecycle.test.cjs tests/conversation-tools-ui.test.cjs tests/skill-market-ui.test.cjs tests/claude-harness.test.cjs tests/tool-approval.test.cjs tests/claude-tools.test.cjs tests/agent-steer-ipc.test.cjs tests/store.test.cjs tests/catch-and-conversation-tools.test.cjs tests/file-location.test.cjs tests/model-switching-ui.test.cjs tests/navigation-workspace-ui.test.cjs tests/feature-v2-startup.test.cjs",
     "test:clarification": "node --test tests/clarification.test.cjs tests/clarification-ipc.test.cjs tests/clarification-interaction.test.cjs tests/clarification-card-ui.test.cjs tests/clarification-agent-page-ui.test.cjs tests/message-outbox.test.cjs",
     "test:integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs",
-    "test:claude-integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs",
+    "test:claude-integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs tests/claude-web-fetch-integration.cjs",
     "runtime:powershell": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-powershell-runtime.ps1",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "tools:install": "npm ci --prefix vendor/agent-tools --ignore-scripts --no-audit --no-fund",
@@ -137,11 +137,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.11.2"
+      "output": "release-1.11.3"
     },
     "win": {
       "icon": "build/stable_app_icon.ico",
-      "artifactName": "Stable-Setup-1.11.2-${arch}.${ext}",
+      "artifactName": "Stable-Setup-1.11.3-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -171,5 +171,5 @@
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.11.2"
+  "releaseVersion": "1.11.3"
 }

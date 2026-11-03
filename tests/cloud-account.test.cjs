@@ -73,6 +73,30 @@ test('restore clears rejected sessions but preserves a retryable network state',
   assert.equal(offline.secrets.get(DEVICE_TOKEN_KEY), 'saved')
 })
 
+for (const stage of ['headers', 'body']) {
+  test(`restore exits checking when ${stage} hangs and ignores abort`, async () => {
+    const ctx = context({}, 'saved-token')
+    ctx.service.requestTimeoutMs = 20
+    let release, signal
+    const pending = new Promise(resolve => { release = resolve })
+    ctx.service.fetch = async (_url, options) => {
+      signal = options.signal
+      if (stage === 'headers') return pending
+      return { ok: true, text: () => pending }
+    }
+    const state = await ctx.service.restore()
+    assert.equal(state.status, 'unavailable')
+    assert.match(state.error, /超时/)
+    assert.equal(signal.aborted, true)
+    assert.equal(ctx.secrets.get(DEVICE_TOKEN_KEY), 'saved-token')
+    release(stage === 'headers' ? Response.json({account:{id:'late'}}) : JSON.stringify({account:{id:'late'}}))
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(ctx.service.publicState().status, 'unavailable')
+    ctx.service.fetch = async () => Response.json({error:{message:'expired'}}, {status:401})
+    assert.equal((await ctx.service.restore()).status, 'signed_out')
+  })
+}
+
 test('reconnect IPC returns the login screen when a previously offline session is rejected', async () => {
   let offline = true
   const ctx = context({ '/api/account': () => {

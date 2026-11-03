@@ -46,7 +46,8 @@ async function main() {
     window.stable.agent.contextUsage=async()=>({model:'deepseek-flash',usedTokens:407600,maxTokens:1000000,percentage:40.76,updatedAt:Date.now(),estimated:true,categories:[{name:'messages',tokens:407600}],mcpTools:[],memoryFiles:[],systemTools:[],skills:[]});
     window.stable.agent.configure=async id=>state(id);
     window.sidebarFixture=()=>{initial.projects=[{id:'p5',name:'五条对话的项目',rootPath:'D:/mock/five'},{id:'p6',name:'六条对话的项目',rootPath:'D:/mock/six'}];initial.conversations=[...initial.conversations,...Array.from({length:11},(_,i)=>({...conversations[0],id:'side-'+i,projectId:i<5?'p5':'p6',title:'根据上传的数据源分析经营情况，生成可查看的 HTML 报告 '+i,messageCount:2}))];window.publishAgent(state('b'))};
-    window.installCalls=0;window.stable.updater.onEvent=fn=>{window.publishUpdate=fn;return()=>{}};window.stable.updater.install=async()=>{window.installCalls++;window.publishUpdate({status:'installing',progress:0,currentVersion:'1.1.0',availableVersion:'1.2.0'})};
+    window.installCalls=0;window.updateClicks=0;window.stable.updater.onEvent=fn=>{window.publishUpdate=value=>{window.updateValue=value;fn(value)};return()=>{}};window.stable.updater.oneClick=async()=>{window.updateClicks++;if(window.updateValue.status==='downloaded'){window.installCalls++;window.publishUpdate({status:'installing',oneClick:true,progress:0,currentVersion:'1.1.0',availableVersion:'1.2.0'})}else window.publishUpdate({...window.updateValue,oneClick:true})};
+    window.stable.support={recovery:async()=>({rollbackAvailable:false})};
     window.permissionChanges=[];window.stable.agent.configurePermission=async(id,permissionMode)=>{window.permissionChanges.push({id,permissionMode});initial.conversations=initial.conversations.map(c=>c.id===id?{...c,permissionMode}:c);return state(id)};
 
     window.stable.agent.configureModel=async(id,modelId)=>{await new Promise(r=>setTimeout(r,60));if(window.failModelSwitch)throw Error('模拟切换失败');initial.conversations=initial.conversations.map(c=>c.id===id?{...c,modelId}:c);return state(id)};
@@ -264,7 +265,8 @@ async function main() {
     six.querySelector('.task-group-expand').click();await tick();expect(six.querySelectorAll('.conversation-select').length===5,'Show less failed');
     window.publishUpdate({status:'downloading',progress:42,currentVersion:'1.1.0',availableVersion:'1.2.0'});await tick();
     expect(document.querySelector('.rail-update-button [role="progressbar"]').getAttribute('aria-valuenow')==='42','Ring lost real download percentage');
-    document.querySelector('.rail-update-button').click();await tick();expect(window.installCalls===0&&document.querySelector('.settings-page h1').textContent==='软件更新','Downloading click must show progress, not install');
+    document.querySelector('.rail-update-button').click();await tick();expect(window.installCalls===0&&window.updateClicks===1&&document.querySelector('.rail-update-button').disabled,'Downloading click must arm one-click update once');
+    document.querySelector('.rail-account-trigger').click();await tick();Array.from(document.querySelectorAll('.account-menu-popover button')).find(b=>b.textContent==='软件更新').click();await tick();
     const search=document.querySelector('.settings-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(search,'模型');search.dispatchEvent(new Event('input',{bubbles:true}));await tick();
     expect(document.querySelectorAll('.settings-navigation nav button').length===1,'Settings search did not filter');document.querySelector('.settings-navigation nav button').click();await tick();expect(document.querySelector('.model-connection-settings'),'Settings navigation failed');
     document.querySelector('.rail-nav [aria-label="对话"]').click();await tick();expect(document.querySelector('#agent-prompt').value==='另一任务草稿','Returning from settings lost draft');

@@ -277,7 +277,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageRoute: () => modelRegistry.resolveImageRoute(store.conversation(context.conversationId)?.modelId), imageJobStore: new (require('./services/image-job-store.cjs').ImageJobStore)(path.join(paths.userData, 'image-jobs', require('node:crypto').createHash('sha256').update(context.conversationId || 'standalone').digest('hex'))), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ onImageAttempt: () => { const control = agentRunners.get(context.conversationId); if (control) control.imageAttempted = true }, imageReferences: agentRunners.get(context.conversationId)?.imageReferences || [], imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageRoute: () => modelRegistry.resolveImageRoute(store.conversation(context.conversationId)?.modelId), imageJobStore: new (require('./services/image-job-store.cjs').ImageJobStore)(path.join(paths.userData, 'image-jobs', require('node:crypto').createHash('sha256').update(context.conversationId || 'standalone').digest('hex'))), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -1543,6 +1543,18 @@ function agentState(conversationId = store.activeConversationId()) {
   }
 }
 
+function designReferenceVault(conversationId) {
+  const directory = path.join(paths.userData, 'design-references', require('node:crypto').createHash('sha256').update(conversationId).digest('hex'))
+  return new (require('./services/design-references.cjs').DesignReferences)(directory, require('electron').nativeImage)
+}
+function captureDesignReferences(conversationId, attachments) {
+  const taskPaths = conversationPaths(conversationId, true), vault = designReferenceVault(conversationId)
+  const ids = vault.capture(attachments || [], file => attachmentPreviews.roots(conversationId, file, taskPaths.readableRoots))
+  return { ids, attachments: vault.materialize(attachments || [], ids, taskPaths.workspace) }
+}
+function readDesignReferences(conversationId, ids) { return designReferenceVault(conversationId).read(ids || []) }
+function checkDesignDelivery(conversationId, answer, policy) { return require('./services/design-delivery.cjs').validateDesignDelivery({ answer, policy, workspace: conversationPaths(conversationId).writableRoots, nativeImage: require('electron').nativeImage }) }
+
 async function prepareAgentMessage(payload, conversationId, modelRoute, displayPayload = payload) {
   const paths = conversationPaths(conversationId, true)
   const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : []
@@ -1612,9 +1624,10 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const paths = conversationId ? conversationPaths(conversationId, true) : conversationPaths(store.activeConversationId())
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
-  const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.modelId)
+  const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.design ? require('./services/design-request.cjs').designChatModel(modelRegistry.publicCatalog()).id : conversation?.modelId)
   const { apiKey } = modelRoute
-  const model = { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
+  const model = conversation?.design ? require('./services/design-request.cjs').designExecutionModel(modelRoute.model)
+    : { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
   const runId = store.startRun('agent', conversationId || null, query)
   const taskTurn = broadcast && agentRunners.get(conversationId)?.taskTurn
   const trace = taskTurn ? [taskTurn] : []
@@ -2053,6 +2066,8 @@ function registerIpc() {
   ipcMain.handle('stable:update:check', () => updateController.check(true))
   ipcMain.handle('stable:update:download', () => updateController.download())
   ipcMain.handle('stable:update:install', () => updateController.install())
+  ipcMain.handle('stable:update:one-click', () => updateController.oneClick())
+  require('./ipc/support.cjs').registerSupportIpc({ ipcMain, dialog, shell, getWindow: () => mainWindow, userData: paths.userData, app, cloudAccount, updateController })
   require('./ipc/resources.cjs').registerResourceIpc({
     ipcMain, store, dialog, getWindow: () => mainWindow, requireText,
     importDataPaths, importKnowledge, importKnowledgePaths, removeStoredAsset, knowledgeRoot,
@@ -2073,7 +2088,7 @@ function registerIpc() {
     const result=templates().use(requireText(value?.id,'模板 ID',100),paths.workspace)
     return {...agentState(result.conversationId),draftPrompt:result.prompt,skills:store.listSkills()}
   })
-  const market = () => new SkillMarket(store, paths.userData)
+  const market = () => new SkillMarket(store, paths.userData, { cloudAccount })
   ipcMain.handle('stable:market:list', () => market().entries())
   ipcMain.handle('stable:market:detail', (_event, value) => market().detail(requireText(value?.id, '条目 ID', 100)))
   ipcMain.handle('stable:market:save', (_event, value) => market().save(value))
@@ -2206,11 +2221,12 @@ function registerIpc() {
   ipcMain.handle('stable:agent:setChapter', (_event, payload) => store.setChapter(requireText(payload?.id, '对话 ID', 100), requireText(payload?.messageId, '消息 ID', 100), payload?.title))
   ipcMain.handle('stable:agent:design', (_event, payload) => {
     const id = requireText(payload?.id, '对话 ID', 100)
-    if (!store.conversation(id)?.design) throw Error('此对话不是 Design 会话。')
-    const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
-    if (!design) throw Error('请选择生图参数。')
-    store.setSetting(`design:${id}`, design)
-    return agentState(id)
+    return require('./services/design-preferences.cjs').saveDesignPreferences(store, id, payload?.design, payload?.revision)
+  })
+  ipcMain.handle('stable:agent:freezeDesignAttachments', (_event, payload) => {
+    const id = requireText(payload?.id, '对话 ID', 100)
+    if (!store.conversation(id)?.design || !Array.isArray(payload?.attachments)) throw Error('Design 参考图请求无效。')
+    return captureDesignReferences(id, payload.attachments).attachments
   })
   ipcMain.handle('stable:agent:create', (_event, payload) => {
     const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
@@ -2220,6 +2236,7 @@ function registerIpc() {
     if (design) {
       store.setSetting(`design:${id}`, design)
       if (designModel) store.updateConversationModel(id, designModel.id, catalog.items.map(item => item.id))
+      store.updateConversationContext(id, require('./services/design-request.cjs').DESIGN_REASONING, [])
     }
     return agentState(id)
   })
@@ -2370,11 +2387,13 @@ function registerIpc() {
     if (design?.mode === 'preserve' && !(payload.attachments || []).some(isDesignImage) && !store.listMessages(conversationId).some(item => item.attachments?.some(isDesignImage))) throw Error('保留原图合成需要先添加原始图片。')
     const designCatalog = conversation.design ? modelRegistry.publicCatalog() : null
     const designModel = designCatalog ? require('./services/design-request.cjs').designChatModel(designCatalog) : null
-    const modelRoute = modelRegistry.resolve(designModel?.id || conversation.modelId)
+    const resolvedRoute = modelRegistry.resolve(designModel?.id || conversation.modelId)
+    const modelRoute = designModel ? { ...resolvedRoute, model: require('./services/design-request.cjs').designExecutionModel(resolvedRoute.model) } : resolvedRoute
     if (designModel && conversation.modelId !== designModel.id) {
       store.revokeConversationGrants(conversationId)
       store.updateConversationModel(conversationId, designModel.id, designCatalog.items.map(item => item.id))
     }
+    if (designModel && conversation.capability !== 'high') store.updateConversationContext(conversationId, 'high', conversation.dataIds || [])
     const taskCli = wendingCli.forConversation(conversationId)
     if (taskCli.login.pending || ['code_sent', 'choose_account', 'choose_brand'].includes(taskCli.login.snapshot().phase)) throw new Error('请先完成或关闭此任务的问鼎登录表单。')
     const executionRunner = createHarnessRunner(conversationId)
@@ -2386,6 +2405,11 @@ function registerIpc() {
     agentRunners.set(conversationId, control)
     taskAlerts.start(conversationId)
     try {
+      delete payload.designReferenceIds
+      if (conversation.design) {
+        const captured = captureDesignReferences(conversationId, payload.attachments)
+        payload.designReferenceIds = captured.ids; payload.attachments = captured.attachments
+      }
       control.phase = 'clarifying'
       const globalInstructions = readGlobalInstructions().content
       const askClarification = async prompt => {
@@ -2423,13 +2447,14 @@ function registerIpc() {
       }
       const executionPayload = clarification.payload
       control.design = require('./services/design-request.cjs').validateDesignRequest(executionPayload.design)
+      control.imageReferences = control.design ? readDesignReferences(conversationId, executionPayload.designReferenceIds) : []
       const taskQuery = executionPayload.prompt
       control.phase = 'preparing'
       const prepared = await prepareAgentMessage(executionPayload, conversationId, modelRoute, payload)
       prepared.design = design
       const { attachments, selectedReferences, extractedAttachments, selectedData, selectedKnowledge, selectedSkills, selectedScripts } = prepared
       if (control.cancelled) throw new Error('任务已停止。')
-      store.updateConversationContext(conversationId, conversation.capability, [])
+      store.updateConversationContext(conversationId, designModel ? 'high' : conversation.capability, [])
       const currentMessage = commitAgentMessage(conversationId, query, prepared)
       conversationLifecycle.checkpoint(deliveryId, [taskTurn])
       if (automationIntent(taskQuery) && !attachments.length && !selectedReferences.length) {
@@ -2451,7 +2476,7 @@ function registerIpc() {
       if (control.cancelled) throw new Error('任务已停止。')
       control.phase = 'agent'
       const designQuery = taskQuery + (control.design
-        ? require('./services/design-request.cjs').designInstruction(control.design)
+        ? require('./services/design-request.cjs').designInstruction(control.design) + (control.imageReferences.length ? '\n本次已固定参考图像素，生图工具将直接上传：' + JSON.stringify(control.imageReferences.map(({id,name,width,height}) => ({id,name,width,height}))) : '')
         : conversation.design ? '\n\n本轮为对话模式，不携带生图参数。此前生图参数仅适用于对应请求，不自动沿用；根据本轮用户消息处理。' : '')
       const result = await runAgent(designQuery, conversationId, attachments, undefined, { manualSkillInvocation: true, data: selectedData, knowledge: selectedKnowledge, skills: selectedSkills, scripts: selectedScripts }, true, extractedAttachments.installedSkills, executionRunner, undefined, modelRoute, currentMessage.id)
       if (result.status === 'waiting') {
@@ -2466,8 +2491,20 @@ function registerIpc() {
       }
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
+      if (control.design && (!result.status || result.status === 'completed') && (control.imageAttempted || require('./services/design-delivery.cjs').imageLinks(result.answer, conversationPaths(conversationId).writableRoots || conversationPaths(conversationId).workspace).length)) {
+        const checked = checkDesignDelivery(conversationId, result.answer, control.design)
+        store.setSetting(`design-delivery:${deliveryId}`, checked)
+        result.trace.push({ id: 'design-delivery-check', kind: 'status', status: checked.ok ? 'completed' : 'failed', title: checked.ok ? '交付文件校验通过' : '交付文件需要调整', detail: checked.errors.join('\n'), time: Date.now() })
+        if (!checked.ok) {
+          result.status = 'failed'
+          const terminal = result.trace.findLast(item => item.id === 'complete' || item.id === 'runtime')
+          if (terminal) { terminal.status = 'failed'; terminal.title = '交付检查未通过' }
+          else result.trace.push({ id: 'runtime', runId: deliveryId, kind: 'status', status: 'failed', title: '交付检查未通过', time: Date.now() })
+          result.answer = '交付检查未通过，已停止自动处理：\n\n' + checked.errors.join('\n\n') + '\n\n文件仅供预览，不代表合格成品。请预览后选择尺寸处理方式，或说明重新构图/扩图要求；不会自动再次生图。\n\n' + checked.files.map(file => `[${path.basename(file)}](<${file}>)`).join('\n\n') + '\n\n处理说明（尚未通过交付检查）：\n\n' + result.answer
+        }
+      }
       store.db.exec('BEGIN IMMEDIATE')
-      try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, [taskTurn, ...result.trace.filter(item => item.id !== 'task-continuity')]);conversationLifecycle.status(deliveryId,'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
+      try { const messageId=store.addMessage(conversationId, 'assistant', result.answer, [taskTurn, ...result.trace.filter(item => item.id !== 'task-continuity')]);conversationLifecycle.status(deliveryId,result.status === 'failed' ? 'failed' : 'completed',{assistantMessageId:messageId});store.db.exec('COMMIT') } catch(error){store.db.exec('ROLLBACK');throw error}
       if (result.status === 'waiting') { control.waitingForInput = true; taskAlerts.wait(conversationId, 'input', 'input') }
       publishAgentState(conversationId)
       if (!result.status || result.status === 'completed') scheduleConversationTitle(conversationId, modelRoute)
@@ -2834,7 +2871,7 @@ function registerIpc() {
     event.sender.send('stable:appearance:launchStart')
   })
   const fileActions = require('./services/file-actions.cjs').registerFileActions({
-    ipcMain, trusted: trustedLoginSender, shell, clipboard, dialog, getWindow: () => mainWindow,
+    ipcMain, trusted: trustedLoginSender, shell, clipboard, nativeImage, dialog, getWindow: () => mainWindow,
     roots: requested => { const paths = conversationPaths(store.activeConversationId()); return attachmentPreviews.roots(store.activeConversationId(), requested, paths.readableRoots || paths.writableRoots || [paths.workspace]) },
   })
   ipcMain.handle('stable:system:openPath', async (_event, payload) => {
@@ -2973,6 +3010,11 @@ async function boot() {
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/ops-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/tencenthub-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
   if (!process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) require('./services/filtered-skill-bundle.cjs').applyLocalSkillConfig({ appPath: app.getAppPath(), userData: paths.userData, isPackaged: app.isPackaged, store })
+  if (require('./services/skill-delivery-mode.cjs').cloudDeliveryEnabled() && !process.env.STABLE_QA_USER_DATA && !process.env.STABLE_QA_CAPTURE) {
+    new (require('./services/cloud-skills.cjs').CloudSkills)({ store, root: paths.userData }).migrateLocalInBackground()
+      .then(migration => store.setSetting('cloudSkillMigration', migration))
+      .catch(() => { try { store?.setSetting('cloudSkillMigration', { failed: true }) } catch {} })
+  }
   browserSession = new (require('./services/browser-session.cjs').BrowserSessionService)({ electron: require('electron'), store, getWindow: () => mainWindow, onChange: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:browser:changed') } })
   conversationLifecycle = new (require('./services/conversation-lifecycle.cjs').ConversationLifecycle)(store,{userData:paths.userData,workspace:paths.workspace,executable:createHarnessRunner().runtimePaths().cli,runtimeAdapter:require('./services/claude-lifecycle.cjs').createClaudeLifecycle({userData:paths.userData})})
   conversationLifecycle.interrupted()
@@ -3042,7 +3084,9 @@ async function boot() {
       logPath: path.join(paths.userData, 'logs', 'cloud-network.jsonl'),
       appVersion: app.getVersion(),
     })
-    cloudAccount = new CloudAccountService({ store, secrets, appVersion: app.getVersion(), fetchImpl: cloudFetch })
+    cloudAccount = new CloudAccountService({ store, secrets, appVersion: app.getVersion(), fetchImpl: cloudFetch,
+      onDiagnostic: record => require('./services/support-diagnostics.cjs').recordRecovery(path.join(paths.userData, 'logs/cloud-recovery.jsonl'), record),
+    })
     cloudGateway = new CloudGatewayProxy({ account: cloudAccount, fetchImpl: cloudFetch })
     await cloudGateway.start()
   }
@@ -3060,6 +3104,15 @@ async function boot() {
   runner = createHarnessRunner()
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
+    beforeInstall: require('./services/update-readiness.cjs').createUpdateReadiness({
+      ipcMain, getWindow: () => mainWindow,
+      blockers: () => {
+        if (agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size || runner?.busy || scriptRunner?.child || activeWorkflowRun) return '有任务正在运行，请等待完成或先停止任务，再点击一键更新。'
+        if (htmlEditors.sessions.size) return '请先保存并退出 HTML 编辑，再点击一键更新。'
+        return ''
+      },
+    }),
+    onDiagnostic: record => require('./services/support-diagnostics.cjs').recordRecovery(path.join(paths.userData, 'logs/cloud-recovery.jsonl'), record),
     publish: (value) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:update:event', value) },
   })
   scriptRunner = new ScriptRunner({ workspace: paths.workspace, packaged: app.isPackaged, resourcesPath: process.resourcesPath })

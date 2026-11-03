@@ -12,6 +12,11 @@ function fixture(t, options = {}) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-image-'))
   t.after(() => fs.rmSync(workspace, { recursive: true, force: true }))
   const calls = [], downloads = []
+  if(options.policy?.size && !options.nativeImage){
+    const [width,height]=options.policy.size.split('x').map(Number)
+    const decoded={isEmpty:()=>false,getSize:()=>({width,height}),toPNG:()=>png,resize:()=>decoded}
+    options={...options,nativeImage:{createFromBuffer:()=>decoded}}
+  }
   const generate = createImageGenerator({ resolveApiKey: () => 'fixture-secret', nativeImage,
     fetchImpl: async (url, options) => { calls.push({url, options}); return Response.json({ data: [{ url: 'https://cdn.bigmodel.cn/test.png' }] }) },
     download: async url => { downloads.push(url); return png }, ...options })

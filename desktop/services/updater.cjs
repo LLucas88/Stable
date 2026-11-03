@@ -5,31 +5,80 @@ function publicError(error) {
   return message.replace(/https?:\/\/[^\s]+/g, 'Stable 云端更新服务').slice(0, 300)
 }
 
-function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
+function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, onDiagnostic = () => {}, beforeInstall = async () => {}, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
   let timer; let interval
-  let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0 }
-  const emit = (patch) => { state = { ...state, ...patch }; publish({ ...state }); return { ...state } }
+  let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0, oneClick: false }
+  let epoch = 0, armed = false, installPromise = null
+  let stageStarted = Date.now()
+  const emit = (patch) => {
+    if ((patch.status && patch.status !== state.status) || patch.error) {
+      try { onDiagnostic({ version: currentVersion, updateStatus: patch.status, elapsedMs: Date.now() - stageStarted }) } catch { /* support logging is optional */ }
+      stageStarted = Date.now()
+    }
+    state = { ...state, ...patch }; publish({ ...state }); return { ...state }
+  }
+  const recordError = error => {
+    try { onDiagnostic({ version: currentVersion, updateStatus: 'error', updateCode: error?.code, elapsedMs: Date.now() - stageStarted }) } catch { /* keep update recovery available */ }
+  }
 
-  function install() {
+  function failed(error, status = 'error') {
+    epoch++; armed = false
+    recordError(error)
+    return emit({ status, oneClick: false, ...(status === 'downloaded' ? { progress: 100 } : {}), error: publicError(error) })
+  }
+
+  async function install() {
+    if (installPromise) return installPromise
+    if (state.status === 'installing') return true
     if (!isPackaged || !autoUpdater || state.status !== 'downloaded') throw new Error('更新尚未下载完成。')
-    emit({ status: 'installing', progress: 0, error: undefined })
-    try { autoUpdater.quitAndInstall(false, false) }
-    catch (error) { emit({ status: 'downloaded', progress: 100, error: publicError(error) }); throw error }
-    return true
+    const attempt = epoch
+    emit({ oneClick: true, error: undefined })
+    installPromise = (async () => {
+      try {
+        // Recheck after download: work may have started since the user clicked.
+        await beforeInstall()
+        if (attempt !== epoch || state.status !== 'downloaded') return false
+        emit({ status: 'installing', progress: 0, error: undefined })
+        autoUpdater.quitAndInstall(false, true)
+        return state.status === 'installing'
+      } catch (error) {
+        if (attempt === epoch) failed(error, 'downloaded')
+        throw error
+      }
+    })().finally(() => { installPromise = null })
+    return installPromise
+  }
+
+  async function oneClick() {
+    if (!isPackaged || !autoUpdater) return check(true)
+    if (state.oneClick || state.status === 'installing') return { ...state }
+    const attempt = ++epoch
+    emit({ oneClick: true, error: undefined })
+    try {
+      await beforeInstall()
+      if (attempt !== epoch) return { ...state }
+      armed = true
+      if (state.status === 'downloaded') await install()
+      else if (state.status === 'available') await download()
+      else await check(true)
+    } catch (error) {
+      if (attempt === epoch) failed(error, state.status === 'downloaded' ? 'downloaded' : 'error')
+    }
+    return { ...state }
   }
 
   async function download() {
     if (!isPackaged || !autoUpdater || state.status !== 'available') throw new Error('当前没有可下载的更新。')
     emit({ status: 'downloading', progress: 0, error: undefined })
     try { await autoUpdater.downloadUpdate(); return { ...state } }
-    catch (error) { return emit({ status: 'error', error: publicError(error) }) }
+    catch (error) { return failed(error) }
   }
 
   if (isPackaged && autoUpdater) {
     // Let the controller start downloads so repeated checks cannot start a second one.
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
-    autoUpdater.autoRunAppAfterInstall = false
+    autoUpdater.autoRunAppAfterInstall = true
     autoUpdater.disableDifferentialDownload = false
     autoUpdater.disableWebInstaller = true
     autoUpdater.on('checking-for-update', () => emit({ status: 'checking', error: undefined }))
@@ -38,10 +87,14 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
       emit({ status: 'available', availableVersion: info.version, releaseName: info.releaseName || '', progress: 0, error: undefined })
       void download()
     })
-    autoUpdater.on('update-not-available', (info) => emit({ status: 'current', availableVersion: info?.version || currentVersion, progress: 0, error: undefined }))
+    autoUpdater.on('update-not-available', (info) => { armed = false; emit({ status: 'current', oneClick: false, availableVersion: info?.version || currentVersion, progress: 0, error: undefined }) })
     autoUpdater.on('download-progress', (info) => emit({ status: 'downloading', progress: Math.max(0, Math.min(100, Math.round(info.percent || 0))) }))
-    autoUpdater.on('update-downloaded', (info) => emit({ status: 'downloaded', availableVersion: info.version, releaseName: info.releaseName || '', progress: 100, error: undefined }))
-    autoUpdater.on('error', (error) => emit({ status: 'error', error: publicError(error) }))
+    autoUpdater.on('update-downloaded', (info) => {
+      if (state.status === 'installing') return
+      emit({ status: 'downloaded', availableVersion: info.version, releaseName: info.releaseName || '', progress: 100, error: undefined })
+      if (state.oneClick && armed) void install().catch(() => {})
+    })
+    autoUpdater.on('error', error => failed(error))
   }
 
   async function check(manual = false) {
@@ -49,7 +102,7 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     if (['checking', 'downloading', 'downloaded', 'installing'].includes(state.status)) return { ...state }
     emit({ status: 'checking', error: undefined })
     try { await autoUpdater.checkForUpdates(); return { ...state } }
-    catch (error) { return emit({ status: 'error', error: publicError(error) }) }
+    catch (error) { return failed(error) }
   }
 
   function start() {
@@ -58,8 +111,8 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     interval = setInterval(() => { void check(false) }, checkIntervalMs)
   }
 
-  function dispose() { clearTimeout(timer); clearInterval(interval); timer = undefined; interval = undefined }
-  return { check, dispose, download, install, start, state: () => ({ ...state }) }
+  function dispose() { epoch++; armed = false; clearTimeout(timer); clearInterval(interval); timer = undefined; interval = undefined }
+  return { check, dispose, download, install, oneClick, start, state: () => ({ ...state }) }
 }
 
 module.exports = { createUpdateController, publicError }

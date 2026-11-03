@@ -13,7 +13,7 @@ const { imageQueue } = require('./image-request-queue.cjs')
 const { imageOptions, checkImageSize } = require('./image-models.cjs')
 const ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/images/generations'
 const MAX_BYTES = 20 * 1024 * 1024
-const IMAGE_GUIDANCE = '需要新生成插画、海报、封面或其他图片素材时，使用 stable_image_generate（支持 GLM-image 和云端 GPT Image 2.5），无需切换对话模型；凭据由 Stable 读取，不要查找或传入 API Key。已有图片查看、截图、数据图表不属于文本生图，不要为这些任务调用。原图编辑需要新背景或装饰时，仅生成新增素材，再通过脚本合成受保护的原图内容；不能把 GLM 当成原图编辑接口。多个独立方案优先通过 additionalImages 附带第二张，每批最多2张并发，其余下一批；依赖上一张结果时串行。复用已生成的文件；成功后用 Read 查看实际图片并提供本地文件链接或嵌入交付文件。失败如实说明，不伪造产物、不反复付费重试。'
+const IMAGE_GUIDANCE = '需要新生成插画、海报、封面或其他图片素材时，使用 stable_image_generate（支持 GLM-image 和云端 GPT Image 2.5），无需切换对话模型；凭据由 Stable 读取，不要查找或传入 API Key。已有图片查看、截图、数据图表不属于文本生图，不要为这些任务调用。GPT Image 可直接编辑本次授权参考图，referenceIds 只能来自应用提供的清单；GLM 不能接收参考图。严格保持原图像素时仍须原图合成，不宣称模型编辑会像素不变。多个独立方案优先通过 additionalImages 附带第二张，每批最多2张并发，其余下一批；依赖上一张结果时串行。复用已生成的文件；成功后用 Read 查看实际图片并提供本地文件链接或嵌入交付文件。失败如实说明，不伪造产物、不反复付费重试。'
 
 // Download only the URL returned by the provider, never a model-supplied URL.
 // Pin public DNS results at connection time, including each redirect; no API key
@@ -61,14 +61,15 @@ function downloadImage(value, signal, redirects = 0) {
 }
 
 function validateArgs(args) {
-  if (!args || Object.keys(args).some(key => !['prompt', 'size', 'output', 'model', 'quality', 'background'].includes(key))) throw Error('生图参数无效。')
+  if (!args || Object.keys(args).some(key => !['prompt', 'size', 'output', 'model', 'quality', 'background', 'referenceIds'].includes(key))) throw Error('生图参数无效。')
   if (typeof args.prompt !== 'string' || !args.prompt.trim() || [...args.prompt].length > 1000) throw Error('图片描述需要 1–1000 个字符。')
   const size = args.size || '1280x1280'
   const parts = /^(\d{3,4})x(\d{3,4})$/.exec(size)
   if (!parts || parts.slice(1).some(value => Number(value) < 512 || Number(value) > 2048 || Number(value) % 32)) throw Error('图片宽高须为 512–2048 且为 32 的整数倍，例如 1280x1280。')
   if (typeof args.output !== 'string' || path.extname(args.output).toLowerCase() !== '.png') throw Error('请提供工作区内新的 .png 输出路径，父目录须已存在。')
+  if (args.referenceIds !== undefined && (!Array.isArray(args.referenceIds) || !args.referenceIds.length || args.referenceIds.length > 4 || new Set(args.referenceIds).size !== args.referenceIds.length || args.referenceIds.some(id => !/^[a-f0-9]{64}$/.test(id)))) throw Error('参考图标识无效。')
   const options = imageOptions(args); checkImageSize(options.model, size)
-  return { prompt: args.prompt.trim(), size, output: args.output, ...options }
+  return { prompt: args.prompt.trim(), size, output: args.output, ...options, ...(args.referenceIds ? { referenceIds: args.referenceIds } : {}) }
 }
 
 async function responseJSON(response) {
@@ -82,28 +83,43 @@ async function responseJSON(response) {
 }
 
 const activeJobs = new Map()
-function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage, sleep = (ms, signal) => delay(ms, undefined, { signal }) }) {
+function createImageGenerator({ policy, references = [], resolveApiKey, resolveRoute, jobStore, nativeImage, fetchImpl = globalThis.fetch, download = downloadImage, sleep = (ms, signal) => delay(ms, undefined, { signal }) }) {
   if (policy?.outputPreset && !Object.hasOwn(require('./design-presets.json'), policy.outputPreset)) throw Error('图片交付规格无效。')
   // Durable receipts retain successful URLs across runs and app restarts.
   // Repeating the same call retries download, not a paid generation.
+  const selectReferences = input => {
+    const selected = input.referenceIds ? input.referenceIds.map(id => {
+      const item = references.find(item => item.id === id)
+      if (!item) throw Error('只能使用本次明确提供的参考图片。')
+      return item
+    }) : references
+    if (selected.length && input.model === 'glm-image') throw Error('GLM 当前不支持参考图直传，请手动选择 GPT Image 后再发送。')
+    if (selected.length > 4) throw Error('本次最多使用 4 张参考图片。')
+    for (const item of selected) if (!Buffer.isBuffer(item.bytes) || createHash('sha256').update(item.bytes).digest('hex') !== item.id) throw Error('参考图快照校验失败。')
+    return selected
+  }
   const jobs = new Map()
   const queue = imageQueue(jobStore?.directory)
   const generate = async ({ workspace, args, signal }) => {
     signal?.throwIfAborted()
     const input = validateArgs(policy ? { ...args, size: policy.size, model: policy.model, quality: policy.quality, background: policy.background } : args)
+    const selectedReferences = selectReferences(input)
+    const referenceBody = selectedReferences.map(({id,mimeType,bytes}) => ({id,mimeType,data:bytes.toString('base64')}))
     const imageProvider = input.model === 'glm-image' ? 'GLM-Image' : 'GPT Image'
     const root = Array.isArray(workspace) ? workspace[0] : workspace
     const requested = path.resolve(root, input.output)
     const route = resolveRoute ? await resolveRoute() : { endpoint: ENDPOINT, apiKey: await resolveApiKey?.(), scope: 'direct', replay: false }
     if (input.model !== 'glm-image' && !route.replay) throw Error('GPT Image 需要已配置的 Stable Cloud 网关。')
+    if (selectedReferences.length && (!route.replay || !route.editEndpoint)) throw Error('云端参考图编辑接口尚未配置，未提交生图请求。')
     if (!route.apiKey) throw Error(route.replay ? '请在设置 → 账号中登录 Stable Cloud，再生成图片。' : '请在设置 → 模型连接中配置智谱标准 API Key，再生成图片。')
-    const key = createHash('sha256').update(JSON.stringify([route.scope, requested, input.prompt, input.size, ...(input.model === 'glm-image' ? [] : [input.model,input.quality,input.background]), ...(policy?.outputPreset ? ['delivery', policy.outputPreset] : [])])).digest('hex')
+    const key = createHash('sha256').update(JSON.stringify([route.scope, requested, input.prompt, input.size, ...(input.model === 'glm-image' ? [] : [input.model,input.quality,input.background]), ...(policy?.outputPreset ? ['delivery', policy.outputPreset] : []), ...(selectedReferences.length ? ['references-v1', selectedReferences.map(item => item.id)] : [])])).digest('hex')
     const saved = jobStore?.read(key)
     if (!jobs.has(key) && saved) jobs.set(key, { output: requested, record: saved, result: saved.result, hash: saved.hash })
     const existing = jobs.get(key)
     if (existing?.result && fs.existsSync(existing.result.path)) {
       const file = toolFile(workspace, requested)
       if (fs.statSync(file).size > MAX_BYTES || createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== existing.hash) throw Error('已生成的文件发生变化，请先查看当前文件，不重复生图。')
+      if (policy) require('./design-output.cjs').inspectDesignImage(nativeImage.createFromBuffer(fs.readFileSync(file)), require('./design-output.cjs').deliverySpec(policy), fs.readFileSync(file))
       return { ...existing.result, reused: true }
     }
     toolFile(workspace, requested, { output: true })
@@ -143,9 +159,9 @@ function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, n
           for (let poll = 0; poll < 160; poll++) {
             combined.throwIfAborted()
             let response
-            try { response = await (route.fetch || fetchImpl)(route.endpoint, { method: 'POST', redirect: 'error', signal: job.record.cloudPending ? AbortSignal.any([combined, AbortSignal.timeout(30_000)]) : combined,
+            try { response = await (route.fetch || fetchImpl)(selectedReferences.length ? route.editEndpoint : route.endpoint, { method: 'POST', redirect: 'error', signal: job.record.cloudPending ? AbortSignal.any([combined, AbortSignal.timeout(30_000)]) : combined,
               headers: { Authorization: `Bearer ${route.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `image-${key}`, ...(route.replay ? { Prefer: 'respond-async' } : {}) },
-              body: JSON.stringify({ model: input.model, prompt: input.prompt, size: input.size, quality: input.quality, ...(input.model === 'glm-image' ? {} : {background:input.background}) }) }) }
+              body: JSON.stringify({ model: input.model, prompt: input.prompt, size: input.size, quality: input.quality, ...(input.model === 'glm-image' ? {} : {background:input.background}), ...(referenceBody.length ? {references:referenceBody} : {}) }) }) }
             catch (error) {
               if (!route.replay || !job.record.cloudPending || combined.aborted) throw error
               await sleep(3000, combined); continue
@@ -202,7 +218,14 @@ function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, n
       let dimensions = decoded.getSize()
       if (!dimensions.width || !dimensions.height || dimensions.width > 4096 || dimensions.height > 4096) throw Error('生成图片尺寸不受支持。')
       let png
-      if (policy?.outputPreset) ({ png, dimensions } = require('./design-output.cjs').finishDesignImage(decoded, nativeImage, policy.outputPreset, input.background))
+      if (policy) {
+        const source = requested + '.source.png', original = decoded.toPNG()
+        if (!fs.existsSync(source)) fs.writeFileSync(toolFile(workspace, source, { output: true }), original, { flag: 'wx' })
+        else if (createHash('sha256').update(fs.readFileSync(toolFile(workspace, source))).digest('hex') !== createHash('sha256').update(original).digest('hex')) throw Error('保留的原图发生变化，已停止处理。')
+        persist({ ...job.record, input, rawPath: source, rawHash: createHash('sha256').update(original).digest('hex') })
+        try { ({ png, dimensions } = require('./design-output.cjs').finishDesignImage(decoded, nativeImage, policy)) }
+        catch (error) { throw Error(error.message + ' 原图预览：' + source + '；可使用原参数恢复本地处理，不会重复生图。') }
+      }
       else png = decoded.toPNG()
       if (png.length > MAX_BYTES) throw Error('生成图片文件过大。')
       combined.throwIfAborted()
@@ -213,7 +236,7 @@ function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, n
       fs.closeSync(fd)
       job.hash = createHash('sha256').update(png).digest('hex')
       job.result = { path: target, model: input.model, mimeType: 'image/png', ...dimensions, bytes: png.length }
-      persist({ ...job.record, status: 'completed', hash: job.hash, result: job.result })
+      persist({ ...job.record, status: 'completed', hash: job.hash, result: job.result, ...(policy ? { deliverySpec: require('./design-output.cjs').deliverySpec(policy) } : {}) })
       return job.result
     })().finally(() => { job.saving = null; if (lockKey) activeJobs.delete(lockKey); if (!job.record) jobs.delete(key) })
     if (lockKey) activeJobs.set(lockKey, job.saving)
@@ -224,6 +247,7 @@ function createImageGenerator({ policy, resolveApiKey, resolveRoute, jobStore, n
     if (additionalImages === undefined) return generate(request)
     if (!Array.isArray(additionalImages) || additionalImages.length !== 1) throw Error('一批最多两张图片，请将其余方案放在下一批。')
     const inputs = [first, ...additionalImages].map(args => validateArgs(policy ? { ...args, size: policy.size, model: policy.model, quality: policy.quality, background: policy.background } : args))
+    for (const input of inputs) selectReferences(input)
     const root = Array.isArray(request.workspace) ? request.workspace[0] : request.workspace
     const targets = inputs.map(input => path.resolve(root, input.output))
     if (new Set(targets.map(file => process.platform === 'win32' ? file.toLowerCase() : file)).size !== inputs.length) throw Error('同批图片需要不同的输出路径。')

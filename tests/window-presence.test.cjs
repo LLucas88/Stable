@@ -29,14 +29,14 @@ test('close minimizes without terminating; explicit quit and Windows shutdown ma
   const b = fixture(); b.window.emit('query-session-end'); assert.equal(b.close(), false)
 })
 
-test('updater allows closing windows before quitAndInstall, not after', () => {
+test('updater allows closing windows before quitAndInstall, not after', async () => {
   let controller
   const f = fixture(() => controller?.state().status === 'installing'), updater = new EventEmitter()
   let installed = false
   updater.quitAndInstall = () => { assert.equal(f.close(), false); installed = true }
   controller = createUpdateController({ autoUpdater: updater, isPackaged: true, currentVersion: 'test' })
-  assert.throws(() => controller.install()); assert.equal(f.close(), true)
-  updater.emit('update-downloaded', { version: 'next' }); controller.install()
+  await assert.rejects(controller.install()); assert.equal(f.close(), true)
+  updater.emit('update-downloaded', { version: 'next' }); await controller.install()
   assert.equal(installed, true)
   updater.emit('error', new Error('Install failed'))
   assert.equal(f.close(), true, 'a failed update must restore close-to-minimize')
