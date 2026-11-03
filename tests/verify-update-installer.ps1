@@ -469,7 +469,29 @@ function Assert-NoAutomaticRestart {
   }
 }
 
-function Invoke-Update([string]$progressFile, [bool]$quiet, [bool]$forceFailure) {
+function Wait-ForRequestedRestart([string]$executable) {
+  $expectedPath = [IO.Path]::GetFullPath($executable)
+  $deadline = [DateTime]::UtcNow.AddSeconds(45)
+  do {
+    foreach ($candidate in @(Get-Process -Name Stable -ErrorAction SilentlyContinue)) {
+      try {
+        if ($candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -eq $expectedPath -and $candidate.MainWindowHandle -ne [IntPtr]::Zero) {
+          $version = Get-StableProductVersion $candidate.Path
+          if ($version -ne $ExpectedVersion) { throw "Requested restart launched unexpected version $version." }
+          return [pscustomobject]@{ Id = $candidate.Id; Version = $version }
+        }
+      } catch [System.ComponentModel.Win32Exception] {
+        # Process metadata can disappear while a helper exits.
+      } catch [System.InvalidOperationException] {
+        # Retry until the installed app has created its own window.
+      }
+    }
+    Start-Sleep -Milliseconds 100
+  } until ([DateTime]::UtcNow -ge $deadline)
+  throw 'The explicitly requested restart did not create an installed Stable window.'
+}
+
+function Invoke-Update([string]$progressFile, [bool]$quiet, [bool]$forceFailure, [bool]$forceRun = $false) {
   Clear-ProgressFiles $progressFile
   $env:STABLE_UPDATE_PROGRESS_FILE = $progressFile
   $env:STABLE_UPDATE_QA_PROGRESS_DELAY_MS = '200'
@@ -479,7 +501,8 @@ function Invoke-Update([string]$progressFile, [bool]$quiet, [bool]$forceFailure)
     Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyContinue
   }
 
-  $arguments = @('--updated', '/S', '--force-run', '/currentuser')
+  $arguments = @('--updated', '/S', '/currentuser')
+  if ($forceRun) { $arguments += '--force-run' }
   if ($quiet) {
     $arguments += '--stable-update-quiet'
   }
@@ -589,9 +612,25 @@ if ($healthcheckExitCode -ne 0) {
   throw "The updated executable failed its healthcheck with $healthcheckExitCode."
 }
 
-$failureBaseline = Restore-PreviousVersion $successBaseline
+# A separate real upgrade verifies the explicitly requested one-click restart.
+# The preceding upgrade intentionally omitted --force-run and must stay closed.
+$restartBaseline = Restore-PreviousVersion $successBaseline
+$restartProgress = Join-Path $evidenceRoot 'success-restart.status'
+$restartContext = Invoke-Update $restartProgress $false $false $true
+$restartContext = Wait-ForVisibleProgress $restartContext $restartProgress
+$restartContext = Wait-ForExpectedTerminal $restartContext $restartProgress '100|complete|success|0' $updateTimeoutMs
+$restartExitCode = Get-QaProcessExitCode $restartContext.Process
+if ($null -eq $restartExitCode) { $restartExitCode = Wait-QaProcess $restartContext.Process $updateTimeoutMs 'Requested restart update' }
+if ($restartExitCode -ne 0) { throw "Requested restart update exited with $restartExitCode." }
+Assert-MonotonicProgress $restartProgress '100|complete|success|0'
+$requestedRestart = Wait-ForRequestedRestart $restartBaseline.Exe
+Assert-DataRetained $restartBaseline
+Assert-PersistentRuntimeReady 'Requested restart update'
+Stop-QaProcesses
+
+$failureBaseline = Restore-PreviousVersion $restartBaseline
 $failureProgress = Join-Path $evidenceRoot 'failure-visible.status'
-$failureContext = Invoke-Update $failureProgress $false $true
+$failureContext = Invoke-Update $failureProgress $false $true $true
 $failureContext = Wait-ForVisibleProgress $failureContext $failureProgress
 $failureContext = Wait-ForVisibleTerminal `
   $failureContext `
@@ -629,7 +668,7 @@ if ($rollbackHealthcheckExitCode -ne 0) {
 }
 
 $quietFailureProgress = Join-Path $evidenceRoot 'failure-quiet.status'
-$quietFailureContext = Invoke-Update $quietFailureProgress $true $true
+$quietFailureContext = Invoke-Update $quietFailureProgress $true $true $true
 $quietFailureContext = Wait-ForExpectedTerminal $quietFailureContext $quietFailureProgress '92|healthcheck_rollback|failed_rolled_back|12' $updateTimeoutMs
 $quietFailureProcessExitCode = Get-QaProcessExitCode $quietFailureContext.Process
 if ($null -eq $quietFailureProcessExitCode) {
@@ -665,6 +704,9 @@ Remove-Item Env:STABLE_UPDATE_FORCE_HEALTHCHECK_FAILURE -ErrorAction SilentlyCon
   SuccessVersion = $successVersion
   SuccessTerminal = Get-TerminalProgress $successProgress
   SuccessAutoRestarted = $false
+  RequestedRestartObserved = $true
+  RequestedRestartVersion = $requestedRestart.Version
+  RequestedRestartTerminal = Get-TerminalProgress $restartProgress
   ShortcutTarget = $shortcut.TargetPath
   RollbackVersion = $restoredVersion
   VisibleFailureStayedOpen = $true
