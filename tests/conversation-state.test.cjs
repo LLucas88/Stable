@@ -1,6 +1,33 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os')
 const { StableStore } = require('../desktop/services/store.cjs')
 function setup(t) { const root=fs.mkdtempSync(path.join(os.tmpdir(),'stable-history-v2-')); const store=new StableStore(root); t.after(()=>{try{store.close()}catch{};fs.rmSync(root,{recursive:true,force:true})}); return {root,store} }
+test('single conversation lookups and runtime events do not materialize other report histories', t => {
+  const { store, root } = setup(t)
+  const { ConversationLifecycle } = require('../desktop/services/conversation-lifecycle.cjs')
+  const lifecycle = new ConversationLifecycle(store, { userData: root })
+  const active = store.activeConversationId()
+  const other = store.createConversation()
+  store.addMessage(active, 'assistant', '请选择', [{ clarification: { status: 'waiting' } }])
+  store.addMessage(other, 'assistant', '经营报告', [{ detail: '数据'.repeat(450000) }])
+  const expected = store.listConversations().find(row => row.id === active)
+  assert.equal(expected.waitingForInput, true)
+  const getContext = store.conversationContext.bind(store)
+  store.conversationContext = id => {
+    assert.equal(id, active, 'unrelated conversation was loaded')
+    return getContext(id)
+  }
+  assert.deepEqual(store.conversation(active), expected)
+  for (const missing of [null, undefined, '', 'unknown']) assert.equal(store.conversation(missing), undefined)
+
+  store.conversation = () => assert.fail('runtime events must not load message summaries')
+  lifecycle.item(active, 'thread', 'turn', { id: 'tool', status: 'running' })
+  lifecycle.item(active, 'thread', 'turn', { id: 'tool', status: 'completed' })
+  store.db.prepare("INSERT INTO conversation_contexts(conversation_id,deletion_state) VALUES(?,'pending') ON CONFLICT(conversation_id) DO UPDATE SET deletion_state='pending'").run(active)
+  lifecycle.item(active, 'thread', 'turn', { id: 'tool', status: 'late' })
+  lifecycle.item('unknown', 'thread', 'turn', { id: 'tool' })
+  const rows = store.db.prepare('SELECT value_json FROM runtime_items').all()
+  assert.deepEqual(rows.map(row => JSON.parse(row.value_json)), [{ id: 'tool', status: 'completed' }])
+})
 test('10,000 equal-time messages page newest-first, display oldest-first, and have no gaps or duplicates',t=>{
   const {store}=setup(t), id=store.activeConversationId();store.db.exec('BEGIN')
   const insert=store.db.prepare('INSERT INTO messages(id,conversation_id,role,content,created_at) VALUES(?,?,?,?,?)')

@@ -3,13 +3,13 @@ const {DesignReferences}=require('../desktop/services/design-references.cjs')
 const {createImageGenerator}=require('../desktop/services/image-generation.cjs')
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=','base64')
 const nativeImage={createFromBuffer:()=>({isEmpty:()=>false,getSize:()=>({width:1,height:1}),toPNG:()=>png})}
-test('reference snapshots retain selected bytes across changes, reject foreign paths and tampering',t=>{
+test('reference snapshots retain selected bytes across changes, reject foreign paths and tampering',async t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'design-refs-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const file=path.join(dir,'a.png');fs.writeFileSync(file,png)
- const vault=new DesignReferences(path.join(dir,'vault'),nativeImage),ids=vault.capture([{path:file}],()=>[dir]);fs.writeFileSync(file,'changed')
+ const vault=new DesignReferences(path.join(dir,'vault'),nativeImage),ids=await vault.capture([{path:file}],()=>[dir]);fs.writeFileSync(file,'changed')
  const materialized=vault.materialize([{path:file,name:'a.png'}],ids,dir);assert.deepEqual(fs.readFileSync(materialized[0].path),png)
- assert.deepEqual(vault.capture(materialized,()=>[dir]),ids,'Queue execution must use the send-time snapshot after the original changes')
- fs.writeFileSync(materialized[0].path,Buffer.concat([png,Buffer.from('modified')]));assert.throws(()=>vault.capture(materialized,()=>[dir]),/快照被修改/)
- assert.deepEqual(vault.read(ids)[0].bytes,png);assert.throws(()=>vault.capture([{path:file}],()=>[path.join(dir,'vault')]),/工作区/)
+ assert.deepEqual(await vault.capture(materialized,()=>[dir]),ids,'Queue execution must use the send-time snapshot after the original changes')
+ fs.writeFileSync(materialized[0].path,Buffer.concat([png,Buffer.from('modified')]));await assert.rejects(()=>vault.capture(materialized,()=>[dir]),/快照被修改/)
+ assert.deepEqual(vault.read(ids)[0].bytes,png);await assert.rejects(()=>vault.capture([{path:file}],()=>[path.join(dir,'vault')]),/工作区/)
  fs.writeFileSync(path.join(dir,'vault',ids[0]+'.image'),'tampered');assert.throws(()=>vault.read(ids),/快照/)
 })
 test('generation sends original reference bytes in order to edits and never silently uses GLM',async t=>{

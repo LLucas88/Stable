@@ -2,6 +2,25 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { traceGroupLabel, traceToolInput, traceToolIcon, latestTraceTool, groupTraceTimeline, buildTraceTimeline, traceItemStatus, savedTraceStatus, traceCommand, changesFiles, commandChangesFiles } = require('../src/trace-timeline.ts')
 const item = (id, time, props = {}) => ({ id, runId: 'r', kind: 'tool', toolName: 'Write', title: id, status: 'completed', time, ...props })
+
+test('delivered source markers suppress only body fragments actually in the final answer', () => {
+  const intro = item('intro', 0, { kind: 'reasoning', eventType: 'agent/answer', content: '先检查数据' })
+  const first = item('first', 1, { kind: 'reasoning', eventType: 'agent/answer', content: '前文', finalAnswerPart: true })
+  const last = item('last', 2, { kind: 'reasoning', eventType: 'agent/answer', content: '后文', finalAnswerPart: true })
+  const items = [intro, first, last], snapshot = JSON.stringify(items)
+  assert.deepEqual(buildTraceTimeline(items, '前文后文').map(x => x.id), ['intro'])
+  assert.equal(buildTraceTimeline(items).length, 3, 'live/failed runs retain every source')
+  assert.equal(buildTraceTimeline(items, '另一个答案').length, 3, 'an unrelated final answer cannot hide old records')
+  assert.equal(JSON.stringify(items), snapshot)
+})
+
+test('tool discovery is distinct from web search and both fetch implementations share a clear label', () => {
+  const entries=['ToolSearch','stable_search','WebFetch','stable_fetch'].map((toolName,i)=>item(String(i),i,{toolName}))
+  assert.deepEqual(groupTraceTimeline(entries).map(x=>x.label),['查找工具','网页搜索','网页抓取'])
+  assert.equal(traceGroupLabel([entries[0]],'completed'),'已查找可用工具')
+  assert.equal(traceGroupLabel([entries[1]],'completed'),'已搜索网页资料')
+  assert.equal(traceGroupLabel([entries[2]],'completed'),'已读取网页正文')
+})
 test('timeline shows all actual tools, public text and pending approvals without changing stored trace', () => {
   const entries = [item('env',0,{id:'runtime-info',kind:'status'}),item('read',1,{toolName:'Read'}),item('browser',2,{toolName:'stable_browser'}),
     item('intro',3,{kind:'reasoning',eventType:'agent/answer',content:'生成报告'}),item('write',8,{startedAt:4,inputDetail:'{"file_path":"report.html"}'}),

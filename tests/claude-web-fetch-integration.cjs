@@ -69,7 +69,7 @@ async function fixture(t, responder, {webResponder}={}) {
     assert.equal(path.dirname(path.resolve(root)),path.resolve(os.tmpdir()))
     await fs.promises.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100})
   })
-  return {pages,requests,events,connects,check:()=>assert.ifError(failure),run:async({networkAccess=true,approve=true,providerId='fixture'}={})=>runner.run('Read the fixture webpage using native WebFetch. Continue long pages using the returned offset.',{providerId,model:'fixture-model',baseURL:'https://provider.invalid/v1'},'local-fixture',45000,e=>{
+  return {runner,pages,requests,events,connects,check:()=>assert.ifError(failure),run:async({networkAccess=true,approve=true,providerId='fixture'}={})=>runner.run('Read the fixture webpage using native WebFetch. Continue long pages using the returned offset.',{providerId,model:'fixture-model',baseURL:'https://provider.invalid/v1'},'local-fixture',45000,e=>{
     events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,approve)
   },'workspace-write',[],{cwd:workspace,networkAccess})}
 }
@@ -101,31 +101,54 @@ test('native WebFetch exposes and executes long-page offset through the real SDK
   assert(x.events.some(e=>e.toolName==='WebFetch' && e.status==='completed'))
 })
 
-test('child agent can discover and execute native WebFetch', {timeout:60000},async t=>{
-  let childStage=0,parentStage=0
-  const x=await fixture(t,body=>{
+test('background child agent fetches a page and the parent waits for its actual result', {timeout:60000},async t=>{
+  let childStage=0,parentStage=0,childFinished=false,parentReceivedResult=false,releaseChild
+  const parentAnsweredWhileWaiting=new Promise(resolve=>{releaseChild=resolve})
+  t.after(()=>releaseChild())
+  const x=await fixture(t,async body=>{
     if(!body.tools?.length)return extractPage(body)
     if(body.messages.some(m=>m.role==='user'&&JSON.stringify(m.content).includes('NATIVE_CHILD_FETCH_FIXTURE'))){
       if(childStage++===0)return upstream(null,[{id:'child-discover',name:'ToolSearch',input:{query:'select:WebFetch',max_results:1}}])
       if(childStage===2){assert(body.tools.some(t=>t.function.name==='WebFetch'));return upstream(null,[{id:'child-page',name:'WebFetch',input:{url:'https://source.stable.test/long',prompt:'Read the opening.',offset:0}}])}
-      assert.match(result(body,'child-page'),/FIRSTPAGEMARKER/);return upstream('CHILD_NATIVE_OK')
+      assert.match(result(body,'child-page'),/FIRSTPAGEMARKER/)
+      await parentAnsweredWhileWaiting
+      childFinished=true
+      return upstream('CHILD_NATIVE_OK')
     }
-    if(parentStage++===0)return upstream(null,[{id:'child',name:'Agent',input:{description:'Read webpage',subagent_type:'stable-worker',prompt:'NATIVE_CHILD_FETCH_FIXTURE: read the public fixture page.'}}])
-    assert.match(result(body,'child'),/CHILD_NATIVE_OK/);return upstream('PARENT_NATIVE_OK')
+    if(parentStage++===0)return upstream(null,[{id:'child',name:'Agent',input:{description:'Read webpage',subagent_type:'stable-worker',prompt:'NATIVE_CHILD_FETCH_FIXTURE: read the public fixture page.',run_in_background:true}}])
+    // Agent's launch receipt is not its result. A background completion may
+    // arrive as a native notification or Stable's forwarded task result.
+    const delivered=body.messages.some(message=>['user','tool'].includes(message.role)&&JSON.stringify(message.content).includes('CHILD_NATIVE_OK'))
+    if(!delivered){
+      assert.match(result(body,'child'),/Async agent launched|background/i)
+      releaseChild()
+      return upstream('WAITING_FOR_CHILD_FETCH')
+    }
+    assert.equal(childFinished,true,'the parent must consume the completed fetch, not predict the child result')
+    parentReceivedResult=true
+    return upstream('PARENT_NATIVE_OK')
   })
   const answer=await x.run();x.check();assert.equal(answer,'PARENT_NATIVE_OK');assert.deepEqual(x.pages,['/long'])
+  assert.equal(parentReceivedResult,true)
+  assert(x.events.some(event=>event.id==='background-wait'),'an early parent answer must leave the run open')
+  assert(x.events.some(event=>event.toolName==='WebFetch'&&event.status==='completed'))
+  assert(x.events.some(event=>event.taskBackground&&event.status==='completed'))
+  assert.equal(x.runner.tasks.active.length,0)
+  assert.equal(x.runner.tasks.pendingResults.length,0,'the final parent answer must consume the task notification')
 })
 
 test('native fetch service failure can use the approved Stable fallback', {timeout:60000},async t=>{
   let stage=0,fallbackCalls=0
   const x=await fixture(t,body=>{
     if(stage++===0)return upstream(null,[{id:'discover',name:'ToolSearch',input:{query:'select:WebFetch,mcp__stable__stable_fetch',max_results:2}}])
-    if(stage===2)return upstream(null,[{id:'native-failure',name:'WebFetch',input:{url:'https://source.stable.test/unavailable',prompt:'Read the page'}}])
-    if(stage===3){assert.match(result(body,'native-failure'),/503/);return upstream(null,[{id:'fallback',name:'mcp__stable__stable_fetch',input:{url:'https://source.stable.test/unavailable'}}])}
-    assert.match(result(body,'fallback'),/FALLBACK_EVIDENCE/);return upstream('FALLBACK_OK')
+    if(stage===2)return upstream(null,[{id:'premature',name:'mcp__stable__stable_fetch',input:{url:'https://source.stable.test/unavailable'}}])
+    if(stage===3){assert.match(result(body,'premature'),/先用 ToolSearch.*WebFetch/);assert.equal(fallbackCalls,0);return upstream(null,[{id:'native-failure',name:'WebFetch',input:{url:'https://source.stable.test/unavailable',prompt:'Read the page'}}])}
+    if(stage===4){assert.match(result(body,'native-failure'),/503/);return upstream(null,[{id:'fallback',name:'mcp__stable__stable_fetch',input:{url:'https://source.stable.test/unavailable'}}])}
+    assert.match(result(body,'fallback'),/FALLBACK_EVIDENCE/,JSON.stringify(x.events.filter(e=>e.toolName==='WebFetch')));return upstream('FALLBACK_OK')
   },{webResponder:async args=>{fallbackCalls++;assert.equal(args.url,'https://source.stable.test/unavailable');return Response.json({title:'fixture',content:'FALLBACK_EVIDENCE'})}})
   const answer=await x.run({providerId:'stable-cloud'});x.check();assert.equal(answer,'FALLBACK_OK')
   assert.equal(fallbackCalls,1);assert(x.pages.includes('/unavailable'))
+  assert(x.events.some(e=>e.toolName==='WebFetch' && e.status==='failed'))
   assert.equal(x.events.filter(e=>e.kind==='approval'&&e.status==='running').length,2)
 })
 
@@ -133,10 +156,11 @@ test('native WebFetch approval rejection and offline policy make no page request
   for(const networkAccess of [true,false])await t.test(networkAccess?'denied':'offline',async t=>{
     let stage=0
     const x=await fixture(t,body=>{
-      if(stage++===0)return upstream(null,[{id:'discover',name:'ToolSearch',input:{query:'select:WebFetch',max_results:1}}])
+      if(stage++===0)return upstream(null,[{id:'discover',name:'ToolSearch',input:{query:networkAccess?'select:WebFetch,mcp__stable__stable_fetch':'select:WebFetch',max_results:2}}])
       if(!networkAccess){assert.match(result(body,'discover'),/No matching deferred tools/);return upstream('BLOCKED_OK')}
       if(stage===2)return upstream(null,[{id:'blocked',name:'WebFetch',input:{url:'https://source.stable.test/long',prompt:'Read this page',offset:100}}])
-      assert.match(result(body,'blocked'),/未批准|denied|not.*allowed/i)
+      if(stage===3){assert.match(result(body,'blocked'),/未批准|denied|not.*allowed/i);return upstream(null,[{id:'denied-fallback',name:'mcp__stable__stable_fetch',input:{url:'https://source.stable.test/long'}}])}
+      assert.match(result(body,'denied-fallback'),/不能回退抓取/)
       return upstream('BLOCKED_OK')
     })
     const answer=await x.run({networkAccess,approve:false});x.check();assert.equal(answer,'BLOCKED_OK')

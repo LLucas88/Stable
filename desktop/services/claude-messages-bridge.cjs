@@ -242,13 +242,14 @@ function usageFromChat(usage, fallback = 0) {
 }
 
 class ClaudeMessagesBridge {
-  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile, imageDirectory, chatgpt }) {
+  constructor({ model, apiKey, fetchImpl = globalThis.fetch, onRequest, onDiagnostic, onActivity, onFatalError, search, textOnly = false, expectedImages = 0, reasoningFile, imageDirectory, chatgpt }) {
     this.imageDirectory = imageDirectory
     this.chatgpt = model.providerId === 'chatgpt' ? new (require('./chatgpt-responses.cjs').ChatGPTResponses)({ account: chatgpt, model, reasoningFile }) : null
     if (require('./model-reasoning.cjs').openAiResponsesModel(model)) this.chatgpt = new (require('./openai-responses.cjs').OpenAIResponses)({ model, apiKey, fetchImpl, reasoningFile })
     this.model = { ...model }; this.apiKey = apiKey; this.fetch = fetchImpl; this.onRequest = onRequest
     this.search = search; this.textOnly = textOnly; this.expectedImages = expectedImages
     this.onDiagnostic = onDiagnostic; this.onFatalError = onFatalError
+    this.onActivity = onActivity
     this.contextRecoveries = 0
     this.token = randomUUID(); this.controllers = new Set(); this.reasoning = new ClaudeReasoningStore(reasoningFile, modelScope(model))
     this.tokenCounter = new CalibratedTokenCounter({ model, file: reasoningFile ? reasoningFile + '.counts.json' : undefined })
@@ -328,9 +329,13 @@ class ClaudeMessagesBridge {
       if (Array.isArray(input.stop_sequences) && input.stop_sequences.length) body.stop = input.stop_sequences
       if (input.output_config?.format?.type === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'result', schema: input.output_config.format.schema, strict: true } }
       let measuredRequest
-      const fetchResponse = async feedback => {
+      const fetchResponse = async (feedback, explanationOnly = false) => {
         if (this.terminalError) throw Object.assign(new Error(this.terminalError.message), { status: this.terminalError.status, requestRejected: true })
         const requestBody = { ...body, messages: feedback ? [...body.messages, { role: 'user', content: feedback }] : [...body.messages] }
+        if (explanationOnly || this.outputFailureReason) {
+          delete requestBody.tools; delete requestBody.tool_choice; delete requestBody.parallel_tool_calls; delete requestBody.response_format
+          if (!explanationOnly) requestBody.messages.push({ role: 'user', content: `本轮工具参数纠正失败，停止新增工具调用。请只说明具体失败原因、已完成部分和缺口，不宣称完成。原因：${this.outputFailureReason}` })
+        }
         // A local request guard is definitive; never retry it as a provider 502.
         let guidance
         try { guidance = this.onRequest?.(requestBody, input) }
@@ -389,7 +394,12 @@ class ClaudeMessagesBridge {
   async respond(upstream, res, catalog, input, regenerate, outputBudget, countedRequest) {
     const stream = input.stream === true
     const id = `msg_${randomUUID()}`; const content = []; const calls = new Map()
-    let text = ''; let thought = ''; let usage; let finish; let textIndex
+    let text = ''; let thought = ''; let usage; let finish; let textIndex; let explanationOnly = Boolean(this.outputFailureReason)
+    let textChunks = [], attemptNumber = 0
+    const discardText = () => {
+      if (text) this.onDiagnostic?.({ kind: 'response_attempt', id: `${id}:attempt:${attemptNumber}`, text })
+      text = ''; textChunks = []; textIndex = undefined; content.length = 0
+    }
     const estimated = this.tokenCounter.estimate(countedRequest?.() || this.countBody(input)).tokens
     const message = () => ({ id, type: 'message', role: 'assistant', model: this.model.model, content, stop_reason: null, stop_sequence: null, usage: usageFromChat(usage, estimated) })
     const emit = (type, data) => { if (stream) res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`) }
@@ -398,6 +408,9 @@ class ClaudeMessagesBridge {
       emit('message_start', { message: message() })
     }
     const append = chunk => {
+      this.onActivity?.()
+      // Keep the HTTP stream alive while validation buffers the candidate.
+      emit('ping', {})
       if (chunk.error) throw new Error(chunk.error.message || '模型流式请求失败。')
       if (chunk.usage) usage = chunk.usage
       const choice = chunk.choices?.[0]
@@ -407,9 +420,9 @@ class ClaudeMessagesBridge {
       if (delta.reasoning_content) thought += delta.reasoning_content
       if (delta.content !== undefined && delta.content !== null && typeof delta.content !== 'string') throw new Error('模型返回了无法解析的文本内容。')
       if (delta.content) {
-        if (textIndex === undefined) { textIndex = content.length; content.push({ type: 'text', text: '' }); emit('content_block_start', { index: textIndex, content_block: { type: 'text', text: '' } }) }
+        if (textIndex === undefined) { textIndex = content.length; content.push({ type: 'text', text: '' }) }
         text += delta.content; content[textIndex].text = text
-        emit('content_block_delta', { index: textIndex, delta: { type: 'text_delta', text: delta.content } })
+        textChunks.push(delta.content)
       }
       for (const [position, part] of (delta.tool_calls || []).entries()) {
         const index = part.index ?? position
@@ -425,17 +438,18 @@ class ClaudeMessagesBridge {
     }
     let completed
     for (let attempt = 0; ; attempt++) {
-      if (upstream.headers?.get('content-type')?.includes('application/json')) append(await upstream.json())
-      else for await (const chunk of readSSE(upstream.body)) append(chunk)
-      if (!finish) throw new Error('模型连接提前结束，未返回完成标记。')
-      if (!['stop', 'tool_calls', 'length'].includes(finish)) throw new Error(`模型未正常完成生成：${finish}`)
+      attemptNumber = attempt
+      try {
+        if (upstream.headers?.get('content-type')?.includes('application/json')) append(await upstream.json())
+        else for await (const chunk of readSSE(upstream.body)) append(chunk)
+      } catch (error) { discardText(); throw error }
       if (countedRequest?.()) this.tokenCounter.observe(countedRequest(), usage)
       // Stable's clarification contract ends the turn immediately, without tools.
       if (text.trimStart().startsWith(WAIT_MARKER)) {
         calls.clear()
         if (finish === 'tool_calls') finish = 'stop'
       }
-      if (this.textOnly && calls.size) throw new Error('需求澄清阶段不允许调用搜索或执行工具。')
+      if (this.textOnly && calls.size) { discardText(); throw new Error('需求澄清阶段不允许调用搜索或执行工具。') }
       completed = []; const ids = new Set()
       const invalid = (code, message) => Object.assign(new Error(message), { validationCode: code })
       const safeName = value => {
@@ -444,6 +458,10 @@ class ClaudeMessagesBridge {
         return name.slice(0, 160).replace(/[^a-zA-Z0-9_.:\-\[\]]/g, '?') || '[missing]'
       }
       try {
+        if (!finish) throw invalid('missing_finish', '模型连接提前结束，未返回完成标记。')
+        if (!['stop', 'tool_calls', 'length'].includes(finish)) throw invalid('invalid_finish', `模型未正常完成生成：${finish}`)
+        if (explanationOnly && calls.size) throw invalid('explanation_tool_call', '原因说明阶段不允许执行工具')
+        if (explanationOnly && !text.trim()) throw invalid('empty_explanation', '模型未返回失败原因说明')
         for (const [, call] of [...calls].sort(([a], [b]) => a - b)) {
           if (!call.id) throw invalid('missing_call_id', '工具调用缺少 ID')
           if (ids.has(call.id)) throw invalid('duplicate_call_id', '工具调用 ID 重复')
@@ -459,13 +477,23 @@ class ClaudeMessagesBridge {
         if (finish === 'tool_calls' && !completed.length) throw invalid('missing_calls', '模型工具完成标记缺少工具调用。')
       } catch (validation) {
         // No tool block has left the bridge: never execute or repair partial JSON.
-        // Give the provider one corrective attempt, then stop SDK transport retries.
+        // One correction, then one tool-free explanation. Never replay invalid
+        // calls or let SDK transport retries restart this exhausted sequence.
         const diagnostic = { kind: 'tool_arguments', reasonCode: validation.validationCode, attempt: attempt + 1, finishReason: finish, outputBudget, availableToolCount: catalog.size,
           completionTokens: usage?.completion_tokens ?? null,
           calls: [...calls.values()].map(call => ({ name: safeName(call.name), availability: catalog.has(call.name) ? 'available' : input.tools?.some(tool => tool.name === call.name) ? 'deferred' : 'absent', argumentBytes: Buffer.byteLength(call.arguments) })) }
         this.onDiagnostic?.(diagnostic)
+        discardText()
         const reason = finish === 'length' ? '工具参数生成达到输出上限' : validation.message
-        if (attempt || !regenerate) throw Object.assign(new Error(`${reason}；纠正后仍失败，已停止重试。finish_reason=${finish}，max_tokens=${outputBudget}，arguments_bytes=${diagnostic.calls.map(call => call.argumentBytes).join(',')}。本次模型响应中的整组工具调用未执行；此前已完成的操作不会回滚。`), { status: 400, outputFailure: true })
+        const failure = `${reason}；纠正后仍失败，已停止重试。finish_reason=${finish}，max_tokens=${outputBudget}，arguments_bytes=${diagnostic.calls.map(call => call.argumentBytes).join(',')}。本次模型响应中的整组工具调用未执行；此前已完成的操作不会回滚。`
+        if (explanationOnly || !regenerate || this.textOnly && attempt) throw Object.assign(new Error([this.outputFailureReason, failure].filter(Boolean).join('\n')), { status: 400, outputFailure: true })
+        if (attempt) {
+          this.outputFailureReason = failure
+          explanationOnly = true
+          calls.clear(); thought = ''; finish = undefined; usage = undefined
+          upstream = await regenerate(`工具参数生成失败：${failure}\n本次只说明失败原因、已完成部分和缺少条件，不调用工具，不宣称任务完成，不猜测文件是否已生成。`, true)
+          continue
+        }
         const repair = validation.validationCode === 'unknown_tool'
           ? `只能调用本次 tools 清单里的完整名称（包括 mcp__ 前缀），不要从摘要猜测工具名称。${catalog.has('ToolSearch') ? '需要的工具尚未加载时，先调用 ToolSearch 取得定义，再继续操作。' : '未提供的工具不可调用；若无需工具则直接回复。'}当前可用工具：${[...catalog.keys()].map(safeName).join(', ')}。`
           : '重新生成完整、正确转义的 JSON 对象；文件内容分成小段，每次只写一个完整片段，再用 Edit 逐步补全。不要一次输出整个长报告。'
@@ -477,7 +505,11 @@ class ClaudeMessagesBridge {
       break
     }
     if (!text && !completed.length && finish !== 'length') throw new Error('模型返回了空结果。')
-    if (textIndex !== undefined) emit('content_block_stop', { index: textIndex })
+    if (textIndex !== undefined) {
+      emit('content_block_start', { index: textIndex, content_block: { type: 'text', text: '' } })
+      for (const chunk of textChunks) emit('content_block_delta', { index: textIndex, delta: { type: 'text_delta', text: chunk } })
+      emit('content_block_stop', { index: textIndex })
+    }
     if (content.length || thought || completed.length) {
       // The SDK strips old thinking blocks, including redacted blocks. Associate
       // text answers with history/content fingerprints as well as tool IDs.

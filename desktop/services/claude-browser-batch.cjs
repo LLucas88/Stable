@@ -4,8 +4,7 @@
 // tool handler, approvals, cancellation, UI events and browser state checks.
 async function runBrowserBatch(args, { invoke, view, signal }) {
   const content = []
-  const observed = new Set((view(args)?.controls || []).map(c => c.label).filter(Boolean))
-  const initial = view(args)
+  let initial = view(args)
   if (args.reviewUpdates?.length) {
     const updated = await invoke({action:'review',tabId:args.tabId,...(args.frameId?{frameId:args.frameId}:{}),reviewUpdates:args.reviewUpdates})
     content.push(...updated.content)
@@ -17,8 +16,8 @@ async function runBrowserBatch(args, { invoke, view, signal }) {
       const { label, ...operation } = step
       if (!operation.purpose && args.purpose) operation.purpose = args.purpose
       if (label !== undefined) {
-        if (!observed.has(label)) throw Error('批量操作的 label 必须来自此前已观察的控件，不能猜测。')
         const matches = (view(args)?.controls || []).filter(c => c.label === label)
+        if (!matches.length) throw Error('批量操作的 label 必须来自当前已观察的控件，不能猜测。')
         if (matches.length !== 1) throw Error('控件名称不唯一或已不可见，请读取当前页面后使用明确 ref。')
         operation.ref = matches[0].ref
       }
@@ -32,7 +31,12 @@ async function runBrowserBatch(args, { invoke, view, signal }) {
       if (result.isError) return finish(content, true)
       const current = view(args)
       if (initial && current && (initial.epoch !== current.epoch || initial.url !== current.url)) {
-        throw Error('页面已导航，批量检查在此停止；请根据新页面重新规划后续步骤。')
+        const documentURL=url=>{try{const u=new URL(url);u.hash='';return u.href}catch{return null}}
+        const anchorOnly=Number.isInteger(initial.documentEpoch)&&initial.documentEpoch===current.documentEpoch&&initial.url!==current.url&&documentURL(initial.url)&&documentURL(initial.url)===documentURL(current.url)
+        if(!anchorOnly)throw Error('页面已导航，批量检查在此停止；请根据新页面重新规划后续步骤。')
+        // invoke returned a fresh snapshot. Labels below resolve from that
+        // snapshot; old explicit refs still fail their epoch check.
+        initial=current
       }
     } catch (error) {
       content.push({ type: 'text', text: `批量步骤 ${index + 1} 停止：${error.message} 已完成步骤保留，不自动重试。` })

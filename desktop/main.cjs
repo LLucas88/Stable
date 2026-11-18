@@ -85,6 +85,7 @@ const windowAppearance = createWindowAppearance({ app, nativeTheme })
 const APP_ID = app.isPackaged ? 'com.stable.agent.production' : 'com.stable.agent.development'
 
 let mainWindow
+let developmentReload
 let tray
 const windowPresence = createWindowPresence({ app, nativeImage, isInstalling: () => updateController?.state().status === 'installing' })
 let previewView
@@ -247,7 +248,7 @@ const userDataPath = process.env.STABLE_QA_USER_DATA || userDataArgument?.slice(
 if (userDataPath) app.setPath('userData', path.resolve(userDataPath))
 
 if (!process.env.STABLE_QA_CAPTURE && !process.env.STABLE_QA_USER_DATA && !updateHealthcheck) {
-  if (!app.requestSingleInstanceLock({ stableMaintenance: upgradeMaintenance })) { if (upgradeMaintenance) app.exit(24); else app.quit() }
+  if (!app.requestSingleInstanceLock({ stableMaintenance: upgradeMaintenance })) { app.exit(upgradeMaintenance ? 24 : 0) }
   else app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
     if (additionalData?.stableMaintenance) return
     if (!mainWindow) return
@@ -277,7 +278,7 @@ function createHarnessRunner(conversationId) {
     saveRuntimeSession: (id, value) => store.saveRuntimeSession(id, value),
     onRuntimeItem: (id,threadId,turnId,item) => conversationLifecycle?.item(id,threadId,turnId,item),
     onTurnAccepted: (id,threadId,turnId) => { const deliveryId=agentRunners.get(id)?.deliveryId;if(deliveryId)conversationLifecycle.status(deliveryId,'running',{threadId,turnId}) },
-    builtinTools: (context = {}) => new BuiltinTools({ onImageAttempt: () => { const control = agentRunners.get(context.conversationId); if (control) control.imageAttempted = true }, imageReferences: agentRunners.get(context.conversationId)?.imageReferences || [], imagePolicy: agentRunners.get(context.conversationId)?.design, resolveImageRoute: () => modelRegistry.resolveImageRoute(store.conversation(context.conversationId)?.modelId), imageJobStore: new (require('./services/image-job-store.cjs').ImageJobStore)(path.join(paths.userData, 'image-jobs', require('node:crypto').createHash('sha256').update(context.conversationId || 'standalone').digest('hex'))), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    builtinTools: (context = {}) => new BuiltinTools({ onImageAttempt: () => { const control = agentRunners.get(context.conversationId); if (control) control.imageAttempted = true }, imageReferences: agentRunners.get(context.conversationId)?.imageReferences || [], imagePolicy: agentRunners.get(context.conversationId)?.design, imageUserPrompt: agentRunners.get(context.conversationId)?.designPrompt, resolveImageRoute: request => modelRegistry.resolveImageRoute(store.conversation(context.conversationId)?.modelId, request), imageJobStore: new (require('./services/image-job-store.cjs').ImageJobStore)(path.join(paths.userData, 'image-jobs', require('node:crypto').createHash('sha256').update(context.conversationId || 'standalone').digest('hex'))), networkAccess: context.networkAccess, installSkill: (source, signal) => require('./services/skill-install.cjs').installWorkspaceSkill({ source, signal, workspace: conversationPaths(context.conversationId).writableRoots, userData: paths.userData, store }), workspace: context.workspace || paths.workspace, writableRoots: context.writableRoots, browserSession, browserEnabled:featureFlags.sharedBrowser, conversationId: context.conversationId, electron: require('electron'), packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
 }
 
@@ -344,6 +345,9 @@ function isAllowedLocalPreviewNavigation(value) {
 
 function configurePreviewSession(webContents, kind) {
   webContents.setWindowOpenHandler(({ url }) => {
+    // loadURL is a host navigation and bypasses will-navigate. An active
+    // editor owns this document; popup links must not replace its runtime.
+    if (htmlEditors.forContents(webContents)) return { action: 'deny' }
     if (kind === 'web') {
       try { void webContents.loadURL(normalizeWebUrl(url)) } catch {}
     } else if (kind === 'html' && isAllowedLocalPreviewNavigation(url)) {
@@ -552,6 +556,13 @@ function updatePreviewBounds(value) {
   return true
 }
 
+function cloudStartupState() {
+  return {
+    models: modelRegistry.publicCatalog(),
+    cloud: cloudAccount?.publicState() || { status: 'disabled', account: null, quota: null, usage: null, models: [], error: '', baseURL: '' },
+  }
+}
+
 function bootstrap() {
   const messages = process.env.STABLE_QA_FIXTURE || process.env.STABLE_QA_IMAGE_FIXTURE ? qaMessages() : store.listMessages()
   return {
@@ -568,8 +579,7 @@ function bootstrap() {
     draftReference: store.getSetting(`draft-reference:${store.activeConversationId()}`),
     skillReferences: skillReferences(store, store.activeConversationId()),
     projects: store.listProjects(),
-    models: modelRegistry.publicCatalog(),
-    cloud: cloudAccount?.publicState() || { status: 'disabled', account: null, quota: null, usage: null, models: [], error: '', baseURL: '' },
+    ...cloudStartupState(),
     team: teamState(),
     automations: automationState(),
     update: updateController?.state() || { status: app.isPackaged ? 'idle' : 'development', currentVersion: app.getVersion(), progress: 0 },
@@ -607,7 +617,7 @@ async function executeAutomation(id, force = false) {
     store.finishAutomationRun(id, runId, result.status || 'completed', result.answer, result.reason || null)
     publishAgentState(item.conversationId)
   } catch (error) {
-    store.finishAutomationRun(id, runId, error.message === '任务已停止。' ? 'cancelled' : 'failed', null, error.message)
+    store.finishAutomationRun(id, runId, require('./services/run-cancellation.cjs').isCancelled(error) ? 'cancelled' : 'failed', null, error.message)
   } finally {
     automationRunners.delete(id)
     publishAutomationState()
@@ -820,7 +830,7 @@ async function executeInboundTeamTask(taskId) {
     auditTeamTask(taskId, 'success', '目标设备执行完成，结果已回传。')
     teamNetwork.send(task.sourceDeviceId, { type: 'task:result', taskId, result: result.answer })
   } catch (error) {
-    const cancelled = error.message === '任务已停止。'
+    const cancelled = require('./services/run-cancellation.cjs').isCancelled(error)
     store.updateTeamTask(taskId, cancelled ? 'cancelled' : 'failed', { error: error.message })
     auditTeamTask(taskId, cancelled ? 'cancelled' : 'failed', error.message)
     try { teamNetwork.send(task.sourceDeviceId, { type: 'task:error', taskId, error: error.message, cancelled }) } catch {}
@@ -1424,6 +1434,8 @@ function requireText(value, name, max = 200_000) {
 }
 
 async function runStoredScript(item, onEvent = () => {}, runOptions = {}, worker = scriptRunner) {
+  const assertActive = () => { if (runOptions.signal?.aborted) throw require('./services/run-cancellation.cjs').cancelledError('脚本已停止。') }
+  assertActive()
   if (!item || item.kind !== 'script') throw new Error('找不到这个脚本。')
   if (!isInside(libraryRoot(item.category), item.path)) throw new Error('旧脚本包无法迁入当前 Stable 私有目录，请删除后重新导入。')
   if (runOptions.confirm !== false) {
@@ -1432,26 +1444,37 @@ async function runStoredScript(item, onEvent = () => {}, runOptions = {}, worker
       detail: `脚本将在 Stable 工作区中以当前用户权限运行：\n${paths.workspace}`,
       buttons: ['取消', '运行'], defaultId: 0, cancelId: 0, noLink: true,
     })
+    assertActive()
     if (confirmation.response !== 1) return { cancelled: true }
   }
   const scriptOptions = { ...runOptions }
   delete scriptOptions.confirm
+  delete scriptOptions.signal
   const runId = store.startRun('script', item.id, item.name)
   store.setLibraryRunResult(item.id, 'running', '')
   const emit = (event) => { publishLibraryEvent(event); onEvent(event) }
+  let ownedChild
+  const stop = () => { if (ownedChild && worker.child === ownedChild) worker.cancel() }
   try {
-    const result = await worker.run(item, emit, scriptOptions)
+    assertActive()
+    const previousChild = worker.child
+    const execution = worker.run(item, emit, scriptOptions)
+    ownedChild = worker.child !== previousChild ? worker.child : null
+    runOptions.signal?.addEventListener('abort', stop, { once: true })
+    if (runOptions.signal?.aborted) stop()
+    const result = await execution
+    assertActive()
     store.setLibraryRunResult(item.id, 'completed', result.output)
     store.finishRun(runId, 'completed', result.output, null)
     emit({ itemId: item.id, stream: 'status', chunk: '脚本执行完成', status: 'completed', time: Date.now() })
     return { result, item: store.libraryItem(item.id) }
   } catch (error) {
-    const status = error.message === '脚本已停止。' ? 'cancelled' : 'failed'
+    const status = require('./services/run-cancellation.cjs').isCancelled(error) ? 'cancelled' : 'failed'
     store.setLibraryRunResult(item.id, status, error.message)
     store.finishRun(runId, status, null, error.message)
     emit({ itemId: item.id, stream: 'status', chunk: error.message, status, time: Date.now() })
     throw error
-  }
+  } finally { runOptions.signal?.removeEventListener('abort', stop) }
 }
 
 async function decideScriptInput({ node, item, input, transcript, aiRunner = runner, modelRoute }) {
@@ -1547,13 +1570,23 @@ function designReferenceVault(conversationId) {
   const directory = path.join(paths.userData, 'design-references', require('node:crypto').createHash('sha256').update(conversationId).digest('hex'))
   return new (require('./services/design-references.cjs').DesignReferences)(directory, require('electron').nativeImage)
 }
-function captureDesignReferences(conversationId, attachments) {
+async function captureDesignReferences(conversationId, attachments) {
   const taskPaths = conversationPaths(conversationId, true), vault = designReferenceVault(conversationId)
-  const ids = vault.capture(attachments || [], file => attachmentPreviews.roots(conversationId, file, taskPaths.readableRoots))
+  const ids = await vault.capture(attachments || [], file => attachmentPreviews.roots(conversationId, file, taskPaths.readableRoots))
   return { ids, attachments: vault.materialize(attachments || [], ids, taskPaths.workspace) }
 }
 function readDesignReferences(conversationId, ids) { return designReferenceVault(conversationId).read(ids || []) }
 function checkDesignDelivery(conversationId, answer, policy) { return require('./services/design-delivery.cjs').validateDesignDelivery({ answer, policy, workspace: conversationPaths(conversationId).writableRoots, nativeImage: require('electron').nativeImage }) }
+
+function runDirectDesignImages(payload, conversationId, query, design) {
+  return require('./services/design-direct.cjs').runDirectDesign({ payload, conversationId, query, design }, {
+    store, lifecycle: conversationLifecycle, controls: agentRunners, alerts: taskAlerts,
+    getPaths: conversationPaths, captureReferences: captureDesignReferences, readReferences: readDesignReferences,
+    resolveImageRoute: (id, request) => modelRegistry.resolveImageRoute(store.conversation(id)?.modelId, request),
+    publishState: publishAgentState, state: agentState, userData: paths.userData, nativeImage: require('electron').nativeImage,
+    publishEvent: event => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event) },
+  })
+}
 
 async function prepareAgentMessage(payload, conversationId, modelRoute, displayPayload = payload) {
   const paths = conversationPaths(conversationId, true)
@@ -1624,11 +1657,12 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   const paths = conversationId ? conversationPaths(conversationId, true) : conversationPaths(store.activeConversationId())
   const conversation = conversationId ? store.conversation(conversationId) : null
   if (conversationId && !conversation) throw new Error('找不到这个对话。')
-  const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.design ? require('./services/design-request.cjs').designChatModel(modelRegistry.publicCatalog()).id : conversation?.modelId)
+  const modelRoute = modelRouteOverride || modelRegistry.resolve(conversation?.modelId)
   const { apiKey } = modelRoute
-  const model = conversation?.design ? require('./services/design-request.cjs').designExecutionModel(modelRoute.model)
-    : { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
+  const model = { ...modelRoute.model, reasoningSelection: normalizeReasoning(modelRoute.model, conversation?.capability) }
   const runId = store.startRun('agent', conversationId || null, query)
+  const taskControl = agentRunners.get(conversationId)
+  if (taskControl?.runner === executionRunner) taskControl.runId = runId
   const taskTurn = broadcast && agentRunners.get(conversationId)?.taskTurn
   const trace = taskTurn ? [taskTurn] : []
   const transcript = createStreamTranscript()
@@ -1665,15 +1699,20 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       const completedText = transcript.flush()
       if (completedText) publish(completedText)
     }
+    const approvalMode = source.kind === 'approval'
+      ? permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request'
+      : undefined
+    const automaticApproval = canAutoApprove(approvalMode)
     const event = {
       id: String(source.id || `status:${trace.length}`), runId,
       kind: ['context', 'reasoning', 'tool', 'status', 'approval'].includes(source.kind) ? source.kind : 'status',
       title: String(source.title || '执行任务').slice(0, 160),
-      ...(source.detail ? { detail: String(source.detail).slice(0, 8000) } : {}),
+      ...(source.detail ? { detail: require('./services/trace-detail.cjs').boundedDetail(source.detail) } : {}),
       ...(source.eventType === 'agent/answer' ? { content: String(source.content || '') } : {}),
+      ...(source.eventType === 'agent/answer' && source.finalAnswerPart === true ? { finalAnswerPart: true } : {}),
       status: ['running', 'completed', 'failed', 'cancelled'].includes(source.status) ? source.status : 'running',
       ...(source.actionDigest ? { actionDigest: source.actionDigest } : {}),
-      ...(source.kind === 'approval' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request') ? { automaticApproval: true } : {}),
+      ...(automaticApproval ? { automaticApproval: true } : {}),
       ...(source.reviewerSource ? { reviewerSource: source.reviewerSource } : {}),
       time: Number.isFinite(source.time) ? source.time : Date.now(),
       ...(source.sessionId ? { sessionId: String(source.sessionId) } : {}),
@@ -1683,6 +1722,12 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       ...(['agent', 'tool'].includes(source.entity) ? { entity: source.entity } : {}),
       ...(['one-shot', 'continuable'].includes(source.mode) ? { mode: source.mode } : {}),
       ...(source.provider ? { provider: String(source.provider).slice(0, 80) } : {}),
+      ...(source.taskId ? {
+        taskId: String(source.taskId), taskRunId: source.taskRunId, taskType: source.taskType,
+        taskBackground: Boolean(source.taskBackground), taskToolUseId: source.taskToolUseId,
+        taskOutputFile: source.taskOutputFile, taskUsage: source.taskUsage,
+        startedAt: source.startedAt,
+      } : {}),
       ...(conversationId ? { conversationId } : {}),
       ...(source.requestId ? { requestId: String(source.requestId) } : {}),
       ...(source.toolName ? { toolName: redactApproval(source.toolName).slice(0, source.kind === 'approval' ? 16000 : 160) } : {}),
@@ -1698,7 +1743,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     }
     if (existing >= 0) trace[existing] = event; else trace.push(event)
     checkpoint(true)
-    const silentApproval = source.kind === 'approval' && source.status === 'running' && canAutoApprove(permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request')
+    const silentApproval = automaticApproval && source.status === 'running'
     if (!silentApproval && broadcast && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:agent:event', event)
     if(source.kind==='approval'&&source.requestId&&source.actualDecision){
       const ledger=new ApprovalLedger(store),request=ledger.register({conversationId,runId,source,query,cwd:paths.workspace})
@@ -1710,7 +1755,7 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     if (source.kind === 'approval' && source.requestId && source.status === 'running') {
       const ledger = new ApprovalLedger(store)
       const request = ledger.register({ conversationId, runId, source, query, cwd: paths.workspace })
-      const mode = permissionModeOverride || (conversationId ? store.conversation(conversationId)?.permissionMode : conversation?.permissionMode) || 'request'
+      const mode = approvalMode
       if (canAutoApprove(mode)) {
         ledger.finish(request.id, { decision: 'approved', reasonCode: 'FULL_ACCESS', rationale: '用户选择完全访问权限，自动批准本次请求', reviewerSource: 'permission_mode' })
         if(!executionRunner.answerApproval(source.requestId, true))return
@@ -1741,6 +1786,8 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     }
   }
   if (installedSkills.length) publish({ id: 'stable-skill-install', kind: 'tool', title: '安装全局 Skill', detail: `已识别并安装：${installedSkills.join('、')}`, status: 'completed' })
+  const activeControl = agentRunners.get(conversationId)
+  const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
   const workbenchAction = conversationId ? requestedWorkbenchAction(query, {
     library: store.listLibrary(),
     workflows: store.listWorkflows().filter(item => !item.nodes.some(node => node.type === 'skill') || explicitlyNamedSkill(query, [{ ...item, enabled: true }])),
@@ -1748,39 +1795,45 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
   }) : null
   if (workbenchAction?.type === 'script') {
     const item = workbenchAction.item
+    const actionController = new AbortController()
+    if (control) { control.stopAction = () => actionController.abort(); if (control.cancelled) control.stopAction() }
     publish({ id: `stable-script:${item.id}`, kind: 'tool', title: `运行 Stable 功能 ${item.name}`, detail: '等待安全确认', status: 'running' })
     try {
       const execution = await runStoredScript(item, (event) => publish({
         id: `stable-script:${item.id}`, kind: 'tool', title: `运行 Stable 功能 ${item.name}`,
         detail: event.chunk, status: event.status || 'running', time: event.time,
-      }))
-      const answer = execution.cancelled
-        ? `已取消运行 Stable 功能“${item.name}”。`
-        : `已运行 Stable 功能“${item.name}”。${execution.result.output.trim() ? `\n\n\`\`\`text\n${execution.result.output.trim().slice(-20_000)}\n\`\`\`` : '\n\n脚本已正常完成，没有返回文本输出。'}`
+      }), { signal: actionController.signal })
+      if (control?.cancelled || execution.cancelled) throw require('./services/run-cancellation.cjs').cancelledError(`已取消运行 Stable 功能“${item.name}”。`)
+      const answer = `已运行 Stable 功能“${item.name}”。${execution.result.output.trim() ? `\n\n\`\`\`text\n${execution.result.output.trim().slice(-20_000)}\n\`\`\`` : '\n\n脚本已正常完成，没有返回文本输出。'}`
       publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
       store.finishRun(runId, 'completed', answer, null)
       return { answer, trace }
     } catch (error) {
-      publish({ id: 'runtime', kind: 'status', title: '执行失败', detail: error.message, status: 'failed' })
-      store.finishRun(runId, 'failed', null, error.message)
+      const cancelled = require('./services/run-cancellation.cjs').isCancelled(error, control)
+      publish({ id: 'runtime', kind: 'status', title: cancelled ? '任务已取消' : '执行失败', detail: error.message, status: cancelled ? 'cancelled' : 'failed' })
+      store.finishRun(runId, cancelled ? 'cancelled' : 'failed', null, error.message)
       throw error
-    }
+    } finally { if (control) control.stopAction = null }
   }
   if (workbenchAction?.type === 'workflow') {
     const item = workbenchAction.item
+    const actionController = new AbortController()
+    if (control) { control.stopAction = () => actionController.abort(); if (control.cancelled) control.stopAction() }
     publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '正在执行已保存的工作流步骤', status: 'running' })
     try {
-      const result = await runWorkflow(item.id, modelRoute, selectedContextOverride?.manualSkillInvocation === true)
+      const result = await runWorkflow(item.id, modelRoute, selectedContextOverride?.manualSkillInvocation === true, { signal: actionController.signal })
+      if (control?.cancelled || result.cancelled) throw require('./services/run-cancellation.cjs').cancelledError('工作流已停止。')
       const answer = result.output || `工作流“${item.name}”已完成。`
       publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: '执行完成', status: 'completed' })
       publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
       store.finishRun(runId, 'completed', answer, null)
       return { answer, trace }
     } catch (error) {
-      publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: error.message, status: 'failed' })
-      store.finishRun(runId, 'failed', null, error.message)
+      const cancelled = require('./services/run-cancellation.cjs').isCancelled(error, control)
+      publish({ id: `stable-workflow:${item.id}`, kind: 'tool', title: `运行工作流 ${item.name}`, detail: error.message, status: cancelled ? 'cancelled' : 'failed' })
+      store.finishRun(runId, cancelled ? 'cancelled' : 'failed', null, error.message)
       throw error
-    }
+    } finally { if (control) control.stopAction = null }
   }
   const legacyContext = !historyOverride ? require('./services/legacy-conversation.cjs').legacyConversationContext(store, paths.userData, conversationId) : null
   const history = historyOverride || store.recentContext(conversationId, undefined, currentMessageId)
@@ -1822,25 +1875,28 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
     ? { key: conversationId, initialPrompt, promptContext: composeAgentContext(promptOptions), contextPolicy: 'uploaded-materials-v1' } : undefined
   const prompt = persistentSession ? composeAgentTurn({ ...promptOptions, history: [] }) : initialPrompt
   const imageAttachments = attachmentImages(attachments)
-  const activeControl = agentRunners.get(conversationId)
-  const control = activeControl?.runner === executionRunner && activeControl.steerRequests ? activeControl : undefined
   const resourceDetail = `${data.length} 条数据${selectedData.length ? '（已引用）' : ''} · ${knowledge.length} 篇知识 · ${skills.length} 个 Skills · ${scripts.length} 个脚本${attachments.length ? ` · ${attachments.length} 个临时附件` : ''}`
   publish({ id: 'context', kind: 'context', title: '准备本次上下文', detail: `${data.length || knowledge.length || skills.length || scripts.length || attachments.length ? resourceDetail : '未加载本地资源'} · ${model.model}`, status: 'completed' })
   publish({ id: 'runtime', kind: 'status', title: '启动 Stable', detail: '已将任务安全传入本地运行时', status: 'running' })
   try {
     const result = await runWithDeliveryChecks({
-      workspace: paths.workspace, delivery, prompt,
+      workspace: paths.workspace, writableRoots: paths.writableRoots, delivery, prompt,
+      getExecutionOutcome: () => executionRunner.lastOutcome,
       getDelivery: control ? () => control.directions.reduce(revisedDelivery, delivery) : undefined,
       getPrompt: control ? () => `${prompt}\n\n${control.directions.length ? `用户在执行中补充的要求（以最新要求为准）：\n${control.steerInputs.map((input) => input.prompt).join('\n')}` : ''}` : undefined,
       execute: async (task) => {
         if (control?.cancelled) throw new Error('任务已停止。')
         const images = [...new Map([...imageAttachments, ...(control?.steerInputs.flatMap((input) => input.images) || [])].map((image) => [image.path, image])).values()]
-        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, selectedSkills: skills, automaticSkills, userQuery: effectiveQuery, cwd: paths.workspace, writableRoots: paths.writableRoots, readableRoots: [...(paths.readableRoots || []), ...(legacyContext ? [legacyContext.readableRoot] : []), ...selectedSkillReadRoots([...skills, ...automaticSkills])], networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
+        const answer = await executionRunner.run(task, model, apiKey, undefined, publish, 'workspace-write', images, { ...persistentSession, selectedSkills: skills, automaticSkills, userQuery: effectiveQuery, acceptanceInstructions: [...history.filter(message => message.role === 'user').map(message => message.content), query].join('\n\n'), cwd: paths.workspace, writableRoots: paths.writableRoots, readableRoots: [...(paths.readableRoots || []), ...(legacyContext ? [legacyContext.readableRoot] : []), ...selectedSkillReadRoots([...skills, ...automaticSkills])], networkAccess: store.permissionContext(conversationId).networkAccess, permissionMode: effectivePermissionMode, globalInstructions: promptOptions.globalInstructions })
         if (control) await Promise.allSettled([...control.steerRequests.values()])
         if (control?.cancelled) throw new Error('任务已停止。')
         return answer
       },
       onCheck: (attempt) => publish({ id: 'delivery-check', kind: 'status', title: '继续完成文件交付', detail: `第 ${attempt} 次检查尚未检测到目标文件`, status: 'running' }),
+      explainFailure: async ({ reason, answer, prompt: currentPrompt }) => {
+        if (control?.cancelled) throw new Error('任务已停止。')
+        return executionRunner.run(`请基于下列执行记录给用户最终说明。交付检查没有确认目标文件，不能宣称交付成功。本次只说明原因，不重新执行工具。列出具体失败原因、已完成的部分和缺少的条件；证据不足时明确原因未确认，不要猜测。\n\n任务：\n${currentPrompt}\n\n交付检查：\n${reason}\n\n模型上一轮说明：\n${answer}`, model, apiKey, 90_000, publish, 'read-only', [], { cwd: paths.workspace, textOnly: true })
+      },
     })
     const { answer, artifacts, reused } = result
     if (result.status === 'waiting') {
@@ -1849,24 +1905,25 @@ async function runAgent(query, conversationId, attachments = [], historyOverride
       return { answer, trace, status: 'waiting', clarification: result.clarification }
     }
     if (result.status === 'failed') {
-      publish({ id: 'delivery-check', kind: 'status', title: '文件交付未完成', detail: result.reason, status: 'failed' })
       publish({ id: 'runtime', kind: 'status', title: '任务受阻', detail: result.reason, status: 'failed' })
       store.finishRun(runId, 'failed', answer, result.reason)
       return { answer, trace, status: 'failed', reason: result.reason }
     }
     publish({ id: 'delivery-check', kind: 'status', title: artifacts.length ? '文件交付已验证' : '文本回答已完成', detail: artifacts.length ? `已确认 ${artifacts.length} 个目标文件${reused.length ? `（其中 ${reused.length} 个复用已有文件）` : ''}` : '本次任务不要求生成文件', status: 'completed' })
-    publish({ id: 'runtime', kind: 'status', title: 'Stable 已完成', detail: '执行结果已返回 Stable', status: 'completed' })
-    publish({ id: 'complete', kind: 'status', title: '任务完成', detail: '执行过程已自动折叠', status: 'completed' })
+    publish({ id: 'runtime', kind: 'status', title: result.limitations ? '已交付，存在数据限制' : 'Stable 已完成', detail: result.limitations || '执行结果已返回 Stable', status: 'completed' })
+    publish({ id: 'complete', kind: 'status', title: result.limitations ? '已交付，存在数据限制' : '任务完成', detail: result.limitations || '执行过程已自动折叠', status: 'completed' })
     store.finishRun(runId, 'completed', answer, null)
     return { answer, trace }
   } catch (error) {
-    publish({ id: 'runtime', kind: 'status', title: error.message === '任务已停止。' ? '任务已停止' : '执行失败', detail: error.message, status: error.message === '任务已停止。' ? 'cancelled' : 'failed' })
-    store.finishRun(runId, 'failed', null, error.message)
+    const cancelled = require('./services/run-cancellation.cjs').isCancelled(error, control)
+    publish({ id: 'runtime', kind: 'status', title: cancelled ? '任务已停止' : '执行失败', detail: error.message, status: cancelled ? 'cancelled' : 'failed' })
+    store.finishRun(runId, cancelled ? 'cancelled' : 'failed', null, error.message)
     throw error
   }
 }
 
-async function runWorkflow(id, modelRouteOverride, manualSkillInvocation = true) {
+async function runWorkflow(id, modelRouteOverride, manualSkillInvocation = true, { signal } = {}) {
+  if (signal?.aborted) throw require('./services/run-cancellation.cjs').cancelledError('工作流已停止。')
   if (activeWorkflowRun) throw new Error('已有工作流正在执行，请先停止。')
   const workflow = store.workflow(id)
   if (!workflow) throw new Error('找不到这个工作流。')
@@ -1891,6 +1948,9 @@ async function runWorkflow(id, modelRouteOverride, manualSkillInvocation = true)
     for (const worker of control.harnessRunners) worker.cancel()
     for (const worker of control.scriptRunners) worker.cancel()
   }
+  const stopRequested = () => { control.cancelled = true; stopWorkers() }
+  signal?.addEventListener('abort', stopRequested, { once: true })
+  if (signal?.aborted) stopRequested()
   const publish = (nodeId, status, detail, extra = {}) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:workflows:event', {
       workflowId: id, nodeId, status, detail: String(detail || '').slice(0, 500), time: Date.now(),
@@ -1993,6 +2053,7 @@ async function runWorkflow(id, modelRouteOverride, manualSkillInvocation = true)
     if (cancelled) return { output: '', workflows: store.listWorkflows(), cancelled: true }
     throw error
   } finally {
+    signal?.removeEventListener('abort', stopRequested)
     if (activeWorkflowRun === control) activeWorkflowRun = undefined
   }
 }
@@ -2060,13 +2121,17 @@ async function generateWorkflow(goal) {
 function registerIpc() {
   require('./services/data-import/ipc.cjs').registerDataImportIpc({ ipcMain, service: dataImport, dialog, getWindow: () => mainWindow, agentState })
   ipcMain.handle('stable:bootstrap', () => bootstrap())
-  require('./ipc/cloud.cjs').registerCloudIpc({ ipcMain, getCloudStartup: () => cloudStartup, cloudAccount, bootstrap, requireText })
+  require('./ipc/cloud.cjs').registerCloudIpc({ ipcMain, getCloudStartup: () => cloudStartup, cloudStartupState, cloudAccount, bootstrap, requireText })
   require('./ipc/automations.cjs').registerAutomationIpc({ ipcMain, store, automationState, publishAutomationState, automationRunners, executeAutomation, requireText, publishAgentState, agentState })
   ipcMain.handle('stable:update:state', () => updateController.state())
   ipcMain.handle('stable:update:check', () => updateController.check(true))
   ipcMain.handle('stable:update:download', () => updateController.download())
   ipcMain.handle('stable:update:install', () => updateController.install())
   ipcMain.handle('stable:update:one-click', () => updateController.oneClick())
+  require('./services/dev-update-ipc.cjs').registerDevUpdateIpc({
+    ipcMain, getWindow: () => mainWindow, getController: () => developmentReload,
+    enabled: () => !app.isPackaged && process.env.STABLE_DEV_WATCH === '1',
+  })
   require('./ipc/support.cjs').registerSupportIpc({ ipcMain, dialog, shell, getWindow: () => mainWindow, userData: paths.userData, app, cloudAccount, updateController })
   require('./ipc/resources.cjs').registerResourceIpc({
     ipcMain, store, dialog, getWindow: () => mainWindow, requireText,
@@ -2077,7 +2142,7 @@ function registerIpc() {
   })
   const templates = () => new (require('./services/template-library.cjs').TemplateLibrary)(store, paths.userData)
   ipcMain.handle('stable:templates:list', () => templates().list())
-  ipcMain.handle('stable:templates:detail', (_event, value) => templates().detail(requireText(value?.id,'模板 ID',100)))
+  ipcMain.handle('stable:templates:detail', (_event, value) => templates().detail(requireText(value?.id,'模板 ID',100),{thumbnail:value?.thumbnail===true}))
   ipcMain.handle('stable:templates:save', (_event, value) => templates().save(requireText(value?.id,'模板 ID',100),value.value || {}))
   ipcMain.handle('stable:templates:import', async () => {
     const result=await dialog.showOpenDialog(mainWindow,{title:'导入 HTML 模板（图片和样式请嵌入文件）',properties:['openFile','multiSelections'],filters:[{name:'HTML',extensions:['html','htm']}]})
@@ -2100,6 +2165,13 @@ function registerIpc() {
   ipcMain.handle('stable:skills:remove', (_event, payload) => { require('./services/ops-skill-bundle.cjs').removeSkill(store, requireText(payload?.id, 'Skill ID', 100)); return store.listSkills() })
   ipcMain.handle('stable:extensions:wendingStatus', () => wendingCli.status())
   const trustedLoginSender = (event) => Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame)
+  const { ImageEditor, registerImageEditorIpc } = require('./services/image-editor.cjs')
+  registerImageEditorIpc(ipcMain, new ImageEditor({
+    store, nativeImage: require('electron').nativeImage, userData: paths.userData, controls: agentRunners,
+    getPaths: conversationPaths, roots: (id, file, roots) => attachmentPreviews.roots(id, file, roots),
+    isLocked: id => conversationLifecycle.locks.has(id),
+    imageConnections:()=>modelRegistry.publicCatalog().items, resolveImageRoute: (id, request) => modelRegistry.resolveImageRoute(store.conversation(id)?.modelId, request), publishState: publishAgentState,
+  }), trustedLoginSender)
   const conversationCli = (id, operation = '') => {
     if (agentRunners.size && /:(sendWendingCode|verifyWendingCode|selectWendingAccount|resetWendingLogin)$/.test(operation)) throw new Error('登录状态全局共用，请先停止运行中的任务，再更换登录账号。')
     if (id === undefined) return wendingCli
@@ -2139,14 +2211,13 @@ function registerIpc() {
     return savePastedImage({ name: payload?.name, mediaType: payload?.mediaType, data: payload?.data }, path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace)
   })
   ipcMain.handle('stable:agent:discardDraftImage', (_event, payload) => discardDraftImage(requireText(payload?.path, '草稿图片路径', 2_000), path.join(paths.workspace, '.stable', 'draft-images'), paths.workspace))
-  ipcMain.handle('stable:agent:imagePreview', (_event, payload) => {
-    const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
-    if (!isImageAttachment(inspected) || !inspected.previewUrl) throw new Error('这个附件不是可预览图片。')
+  ipcMain.handle('stable:agent:imagePreview', async (_event, payload) => {
+    const inspected = await require('./services/image-preview.cjs').readImagePreview(requireText(payload?.path, '图片路径', 2_000), require('electron').nativeImage)
+    if (!inspected.previewUrl) throw new Error('这个附件不是可预览图片。')
     return inspected.previewUrl
   })
   ipcMain.handle('stable:agent:saveImageAs', async (_event, payload) => {
     const inspected = inspectAttachmentPath(requireText(payload?.path, '图片路径', 2_000))
-    if (!isImageAttachment(inspected)) throw new Error('这个附件不是可下载图片。')
     const extension = path.extname(inspected.path).toLowerCase().replace(/^\./, '') || 'png'
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '下载图片',
@@ -2195,7 +2266,7 @@ function registerIpc() {
     const {directoryIdentity}=require('./services/conversation-state.cjs')
     for(const folder of projectId?store.projectFolders(projectId):[]){if(directoryIdentity(folder.path).identity!==folder.identity)throw Error('项目源文件夹身份已变化，请重新定位。')}
     let id=payload?.conversationId
-    if(id&&!store.listConversations().some(item=>item.id===id))throw Error('找不到对话。')
+    if(id&&!store.conversation(id))throw Error('找不到对话。')
     const context=id?store.conversationContext(id):null
     if(!id || (context.projectId!==projectId && (agentRunners.has(id)||store.listMessages(id).length)))id=store.createConversation()
     if(agentRunners.has(id))throw Error('请先停止当前任务。')
@@ -2223,20 +2294,16 @@ function registerIpc() {
     const id = requireText(payload?.id, '对话 ID', 100)
     return require('./services/design-preferences.cjs').saveDesignPreferences(store, id, payload?.design, payload?.revision)
   })
-  ipcMain.handle('stable:agent:freezeDesignAttachments', (_event, payload) => {
+  ipcMain.handle('stable:agent:freezeDesignAttachments', async (_event, payload) => {
     const id = requireText(payload?.id, '对话 ID', 100)
     if (!store.conversation(id)?.design || !Array.isArray(payload?.attachments)) throw Error('Design 参考图请求无效。')
-    return captureDesignReferences(id, payload.attachments).attachments
+    return (await captureDesignReferences(id, payload.attachments)).attachments
   })
   ipcMain.handle('stable:agent:create', (_event, payload) => {
     const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
-    const catalog = design ? modelRegistry.publicCatalog() : null
-    const designModel = catalog ? require('./services/design-request.cjs').designChatModel(catalog) : null
     const id = store.createConversation()
     if (design) {
       store.setSetting(`design:${id}`, design)
-      if (designModel) store.updateConversationModel(id, designModel.id, catalog.items.map(item => item.id))
-      store.updateConversationContext(id, require('./services/design-request.cjs').DESIGN_REASONING, [])
     }
     return agentState(id)
   })
@@ -2249,6 +2316,7 @@ function registerIpc() {
     const id = requireText(payload?.id, '对话 ID', 100)
     const conversation = store.conversation(id)
     if (!conversation) throw new Error('找不到这个对话。')
+    if (cloudAccount?.snapshot.status === 'checking' && !String(conversation.modelId).startsWith('chatgpt:')) await cloudStartup
     const { model } = modelRegistry.resolve(conversation.modelId)
     const active = agentRunners.get(id)?.runner
     const usage = active?.contextModel?.model === model.model && active.contextModel.baseURL === model.baseURL
@@ -2378,22 +2446,20 @@ function registerIpc() {
     if (conversation.sourceType === 'workbuddy') throw Error('这是 WorkBuddy 历史存档，请先选择“在 Stable 中继续”。')
     if (conversationLifecycle.locks.has(conversationId)) throw new Error('正在核实此对话的运行记录，请稍后发送。')
     if (agentRunners.has(conversationId)) throw new Error('这个对话已有任务正在执行。')
+    if (payload?.design != null) {
+      const query = requireText(payload.prompt, '消息')
+      const design = require('./services/design-prompt.cjs').resolveDesignPrompt(payload.design, query)
+      return runDirectDesignImages(payload, conversationId, query, design)
+    }
     const resolvedPrompt = payload?.clarificationResponse ? resolveResponse(store, conversationId, payload.clarificationResponse) : null
     // Never trust a renderer-supplied bypass flag.
     payload = { ...payload, prompt: resolvedPrompt ?? payload?.prompt, clarificationResolved: resolvedPrompt !== null }
     const query = requireText(payload?.prompt, '消息')
-    const design = require('./services/design-request.cjs').validateDesignRequest(payload?.design)
+    const design = require('./services/design-prompt.cjs').resolveDesignPrompt(payload?.design, query)
+    payload = { ...payload, design }
     const isDesignImage = item => /\.(png|jpe?g|webp)$/i.test(item?.path || item?.name || '')
     if (design?.mode === 'preserve' && !(payload.attachments || []).some(isDesignImage) && !store.listMessages(conversationId).some(item => item.attachments?.some(isDesignImage))) throw Error('保留原图合成需要先添加原始图片。')
-    const designCatalog = conversation.design ? modelRegistry.publicCatalog() : null
-    const designModel = designCatalog ? require('./services/design-request.cjs').designChatModel(designCatalog) : null
-    const resolvedRoute = modelRegistry.resolve(designModel?.id || conversation.modelId)
-    const modelRoute = designModel ? { ...resolvedRoute, model: require('./services/design-request.cjs').designExecutionModel(resolvedRoute.model) } : resolvedRoute
-    if (designModel && conversation.modelId !== designModel.id) {
-      store.revokeConversationGrants(conversationId)
-      store.updateConversationModel(conversationId, designModel.id, designCatalog.items.map(item => item.id))
-    }
-    if (designModel && conversation.capability !== 'high') store.updateConversationContext(conversationId, 'high', conversation.dataIds || [])
+    const modelRoute = modelRegistry.resolve(conversation.modelId)
     const taskCli = wendingCli.forConversation(conversationId)
     if (taskCli.login.pending || ['code_sent', 'choose_account', 'choose_brand'].includes(taskCli.login.snapshot().phase)) throw new Error('请先完成或关闭此任务的问鼎登录表单。')
     const executionRunner = createHarnessRunner(conversationId)
@@ -2407,7 +2473,7 @@ function registerIpc() {
     try {
       delete payload.designReferenceIds
       if (conversation.design) {
-        const captured = captureDesignReferences(conversationId, payload.attachments)
+        const captured = await captureDesignReferences(conversationId, payload.attachments)
         payload.designReferenceIds = captured.ids; payload.attachments = captured.attachments
       }
       control.phase = 'clarifying'
@@ -2449,12 +2515,13 @@ function registerIpc() {
       control.design = require('./services/design-request.cjs').validateDesignRequest(executionPayload.design)
       control.imageReferences = control.design ? readDesignReferences(conversationId, executionPayload.designReferenceIds) : []
       const taskQuery = executionPayload.prompt
+      control.designPrompt = taskQuery
       control.phase = 'preparing'
       const prepared = await prepareAgentMessage(executionPayload, conversationId, modelRoute, payload)
-      prepared.design = design
+      prepared.design = design ? control.design : undefined
       const { attachments, selectedReferences, extractedAttachments, selectedData, selectedKnowledge, selectedSkills, selectedScripts } = prepared
       if (control.cancelled) throw new Error('任务已停止。')
-      store.updateConversationContext(conversationId, designModel ? 'high' : conversation.capability, [])
+      store.updateConversationContext(conversationId, conversation.capability, [])
       const currentMessage = commitAgentMessage(conversationId, query, prepared)
       conversationLifecycle.checkpoint(deliveryId, [taskTurn])
       if (automationIntent(taskQuery) && !attachments.length && !selectedReferences.length) {
@@ -2492,7 +2559,7 @@ function registerIpc() {
       control.phase = 'finishing'
       await Promise.allSettled([...control.steerRequests.values()])
       if (control.design && (!result.status || result.status === 'completed') && (control.imageAttempted || require('./services/design-delivery.cjs').imageLinks(result.answer, conversationPaths(conversationId).writableRoots || conversationPaths(conversationId).workspace).length)) {
-        const checked = checkDesignDelivery(conversationId, result.answer, control.design)
+        const checked = await checkDesignDelivery(conversationId, result.answer, control.design)
         store.setSetting(`design-delivery:${deliveryId}`, checked)
         result.trace.push({ id: 'design-delivery-check', kind: 'status', status: checked.ok ? 'completed' : 'failed', title: checked.ok ? '交付文件校验通过' : '交付文件需要调整', detail: checked.errors.join('\n'), time: Date.now() })
         if (!checked.ok) {
@@ -2500,7 +2567,7 @@ function registerIpc() {
           const terminal = result.trace.findLast(item => item.id === 'complete' || item.id === 'runtime')
           if (terminal) { terminal.status = 'failed'; terminal.title = '交付检查未通过' }
           else result.trace.push({ id: 'runtime', runId: deliveryId, kind: 'status', status: 'failed', title: '交付检查未通过', time: Date.now() })
-          result.answer = '交付检查未通过，已停止自动处理：\n\n' + checked.errors.join('\n\n') + '\n\n文件仅供预览，不代表合格成品。请预览后选择尺寸处理方式，或说明重新构图/扩图要求；不会自动再次生图。\n\n' + checked.files.map(file => `[${path.basename(file)}](<${file}>)`).join('\n\n') + '\n\n处理说明（尚未通过交付检查）：\n\n' + result.answer
+          result.answer = require('./services/design-delivery.cjs').designDeliveryFailure(checked, result.answer)
         }
       }
       store.db.exec('BEGIN IMMEDIATE')
@@ -2511,7 +2578,7 @@ function registerIpc() {
       return { answer: result.answer, ...agentState(conversationId), library: store.listLibrary(), skills: store.listSkills(), workflows: store.listWorkflows() }
     } catch (error) {
       const journal=store.db.prepare('SELECT state FROM message_deliveries WHERE id=?').get(deliveryId)
-      const terminalState = journal?.state==='preparing'?'rejected':control.cancelled?'interrupted':'failed'
+      const terminalState = journal?.state==='preparing'?'rejected':require('./services/run-cancellation.cjs').isCancelled(error,control)?'interrupted':'failed'
       conversationLifecycle.status(deliveryId,terminalState,{error:error.message})
       conversationLifecycle.finishFailure(deliveryId,{state:terminalState,error:error.message})
       publishAgentState(conversationId)
@@ -2577,11 +2644,22 @@ function registerIpc() {
     }
     taskAlerts.finish(conversationId)
     control.cancelled = true
+    control.stopAction?.()
     new ApprovalLedger(store)
     store.db.prepare("UPDATE approval_requests SET state='cancelled',decided_at=? WHERE conversation_id=? AND state IN ('pending','reviewing','needs_user')").run(new Date().toISOString(), conversationId)
     for (const reviewer of control.reviewers) reviewer.cancel()
     control.runner.cancel()
     return true
+  })
+  ipcMain.handle('stable:agent:taskAction', async (_event, payload) => {
+    const conversationId = requireText(payload?.conversationId, '对话 ID', 100)
+    const runId = requireText(payload?.runId, '运行 ID', 100)
+    const taskId = requireText(payload?.taskId, '任务 ID', 200)
+    const control = agentRunners.get(conversationId)
+    if (!control || control.cancelled || control.runId !== runId) throw Error('此任务所属的运行已结束或已切换。')
+    if (payload.action === 'stop') return control.runner.stopTask(taskId)
+    if (payload.action === 'background') return control.runner.backgroundTask(taskId)
+    throw Error('不支持的任务操作。')
   })
   ipcMain.handle('stable:agent:answerApproval', (_event, payload) => answerTaskApproval(payload))
   ipcMain.handle('stable:agent:clear', (_event, payload) => {
@@ -2853,23 +2931,6 @@ function registerIpc() {
     return theme
   })
   registerCompletedCountIpc(ipcMain, () => mainWindow, windowPresence)
-  ipcMain.handle('stable:appearance:launchComplete', () => {
-    const theme = normalizeTheme(store.getSetting('theme'))
-    if (mainWindow && !mainWindow.isDestroyed()) applyWindowTheme(mainWindow, theme)
-    return theme
-  })
-  ipcMain.on('stable:appearance:launchReady', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window || window.isDestroyed()) return
-    if (process.env.STABLE_QA_CAPTURE) {
-      window.setPosition(-20_000, -20_000)
-      window.showInactive()
-    } else {
-      window.show()
-      window.focus()
-    }
-    event.sender.send('stable:appearance:launchStart')
-  })
   const fileActions = require('./services/file-actions.cjs').registerFileActions({
     ipcMain, trusted: trustedLoginSender, shell, clipboard, nativeImage, dialog, getWindow: () => mainWindow,
     roots: requested => { const paths = conversationPaths(store.activeConversationId()); return attachmentPreviews.roots(store.activeConversationId(), requested, paths.readableRoots || paths.writableRoots || [paths.workspace]) },
@@ -2913,7 +2974,8 @@ function createWindow() {
   const display = screen.getPrimaryDisplay()
   const defaultWidth = Math.min(Math.round(1600 / display.scaleFactor), display.workArea.width)
   const defaultHeight = Math.min(Math.round(916 / display.scaleFactor), display.workArea.height)
-  const chrome = { backgroundColor: '#ffffff', symbolColor: '#172030', height: 40 }
+  const theme = normalizeTheme(store.getSetting('theme'))
+  const chrome = require('./services/window-appearance.cjs').WINDOW_CHROME[theme]
   const window = new BrowserWindow({
     width: isQa ? qaWidth : defaultWidth, height: isQa ? qaHeight : defaultHeight, minWidth: isQa ? 320 : Math.min(1180, defaultWidth), minHeight: isQa ? 480 : Math.min(720, defaultHeight), show: false, autoHideMenuBar: true,
     backgroundColor: chrome.backgroundColor, icon: resourcePath('build', 'stable_app_icon.png'),
@@ -2945,7 +3007,9 @@ function createWindow() {
       relaunchDisplayName: 'Stable',
     })
   }
-  // A failed renderer handshake must not leave the desktop app invisible.
+  applyWindowTheme(window, theme)
+  window.webContents.on('did-finish-load', () => applyWindowTheme(window, normalizeTheme(store.getSetting('theme'))))
+  // Reveal the loaded UI directly, with a fallback for failed or stalled loads.
   if (!process.env.STABLE_QA_CAPTURE) {
     const reveal = () => {
       if (!window.isDestroyed() && !window.isVisible()) { window.show(); window.focus() }
@@ -2993,6 +3057,7 @@ async function boot() {
     store = new StableStore(paths.userData)
     historyStage = 'verify-recovery'
     finishLocalHistoryRecovery(historyRecovery, store)
+    require('./services/frontend-slides.cjs').ensureFrontendSlides(store, paths.userData)
     dataImport()
     if (app.isPackaged) require('./services/upgrade-backup.cjs').commitUpgrade(paths.userData, app.getVersion(), upgradeBackup)
   } catch (error) {
@@ -3102,16 +3167,18 @@ async function boot() {
   modelRegistry.migrateDeepSeekModels()
   modelRegistry.migrateFlash1017Default()
   runner = createHarnessRunner()
-  updateController = createUpdateController({
-    autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
-    beforeInstall: require('./services/update-readiness.cjs').createUpdateReadiness({
+  const prepareForSourceReload = require('./services/update-readiness.cjs').createUpdateReadiness({
       ipcMain, getWindow: () => mainWindow,
       blockers: () => {
         if (agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size || runner?.busy || scriptRunner?.child || activeWorkflowRun) return '有任务正在运行，请等待完成或先停止任务，再点击一键更新。'
         if (htmlEditors.sessions.size) return '请先保存并退出 HTML 编辑，再点击一键更新。'
         return ''
       },
-    }),
+    })
+  updateController = createUpdateController({
+    autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
+    prepareInstall: process.platform === 'win32' ? version => require('./services/update-window.cjs').prepareUpdateWindow({ userData: paths.userData, version, bounds: mainWindow?.getBounds() }) : undefined,
+    beforeInstall: prepareForSourceReload,
     onDiagnostic: record => require('./services/support-diagnostics.cjs').recordRecovery(path.join(paths.userData, 'logs/cloud-recovery.jsonl'), record),
     publish: (value) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:update:event', value) },
   })
@@ -3123,6 +3190,9 @@ async function boot() {
   registerIpc()
   require('./services/device-provisioning-ipc.cjs').registerDeviceProvisioning({ ipcMain, dialog, getWindow: () => mainWindow, store, secrets, registry: modelRegistry })
   mainWindow = createWindow()
+  mainWindow.webContents.once('did-finish-load', () => {
+    require('./services/update-window.cjs').acknowledgeUpdate(paths.userData, app.getVersion())
+  })
   if(featureFlags.historyRecovery)void conversationLifecycle.startup(id=>{if(!agentRunners.has(id))publishAgentState(id)}).catch(()=>{})
   // Closing only minimizes. Keep an explicit, discoverable exit route.
   tray = new Tray(resourcePath('build', 'stable_app_icon.png'))
@@ -3156,6 +3226,23 @@ async function boot() {
     catch { teamConnection = 'offline'; publishTeam() }
   })
   await mainWindow.loadFile(resourcePath('dist', 'index.html'), { query: process.env.STABLE_QA_PAGE ? { page: process.env.STABLE_QA_PAGE } : undefined })
+  if (!app.isPackaged && process.env.STABLE_DEV_WATCH === '1' && process.send) {
+    const developmentIpc = require('./services/dev-ipc.cjs')
+    const send = message => developmentIpc.sendIpc(process, message)
+    developmentReload = require('./services/dev-reload.cjs').createDevReload({
+      prepare: prepareForSourceReload,
+      reload: () => mainWindow.loadFile(resourcePath('dist', 'index.html')),
+      restart: () => app.quit(), send,
+      confirmRestart: id => developmentIpc.confirmRestart(process,id),
+      onState: state => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:development:state', state)
+      },
+    })
+    process.on('message', developmentReload.receive)
+    process.once('disconnect', () => developmentReload.dispose())
+    app.once('will-quit', () => developmentReload.dispose())
+    send({type:'stable:dev:ready'})
+  }
   const runtimePreloader = new (require('./services/claude-runtime-loader.cjs').ClaudeRuntimePreloader)({
     executable: require('./services/claude-harness.cjs').runtimePath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
@@ -3463,4 +3550,7 @@ app.on('before-quit', () => wendingCli?.dispose())
 app.on('before-quit', () => messagePredictions.invalidate())
 app.on('before-quit', () => conversationTitles?.close())
 let editorsFlushedForQuit=false,editorQuitPending=false
-app.on('before-quit', (event) => { if(!editorsFlushedForQuit&&htmlEditors.sessions.size){event.preventDefault();if(editorQuitPending)return;editorQuitPending=true;void htmlEditors.flushAll().then(()=>{editorsFlushedForQuit=true;editorQuitPending=false;app.quit()}).catch(async error=>{editorQuitPending=false;await dialog.showMessageBox({type:'error',message:'编辑内容尚未保存，已取消退出。',detail:error.message});mainWindow?.show()});return} browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); store?.recoverInterruptedRuns(); store?.close() })
+app.on('before-quit', (event) => { if(!editorsFlushedForQuit&&htmlEditors.sessions.size){event.preventDefault();if(editorQuitPending)return;editorQuitPending=true;void require('./services/editor-quit.cjs').prepareEditorQuit({editors:htmlEditors,dialog,getWindow:()=>mainWindow}).then(ready=>{editorQuitPending=false;if(ready){editorsFlushedForQuit=true;app.quit()}else{app.emit('stable:quit-cancelled');mainWindow?.show()}}).catch(async error=>{try{await dialog.showMessageBox({type:'error',message:'退出检查失败，已保留应用',detail:error.message})}finally{editorQuitPending=false;app.emit('stable:quit-cancelled');mainWindow?.show()}});return} browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); })
+
+// The renderer can still send IPC during before-quit; close only after windows are gone.
+require('./services/store-shutdown.cjs').closeStoreOnQuit(app, () => store)

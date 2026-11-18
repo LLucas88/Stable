@@ -47,18 +47,17 @@ test('main process snapshots the selected route before asynchronous message prep
   const sendHandler = main.slice(main.indexOf("ipcMain.handle('stable:agent:run'"), main.indexOf("ipcMain.handle('stable:agent:cancel'"))
   const runAgent = main.slice(main.indexOf('async function runAgent'), main.indexOf('async function runWorkflow'))
 
-  const route = sendHandler.match(/const resolvedRoute = modelRegistry\.resolve\(([^\n]+)\)/)
+  const route = sendHandler.match(/const modelRoute = modelRegistry\.resolve\(([^\n]+)\)/)
   assert.ok(route)
   assert.ok(route.index < sendHandler.indexOf('await prepareAgentMessage'))
-  // Execute the selected route expression, including Design's fixed override.
-  const resolve = new Function('designModel', 'conversation', 'modelRegistry', `return modelRegistry.resolve(${route[1]})`)
+  // Image mode returns before chat routing; chat keeps its selected model.
+  assert.ok(sendHandler.indexOf('return runDirectDesignImages') < route.index)
+  const resolve = new Function('conversation', 'modelRegistry', `return modelRegistry.resolve(${route[1]})`)
   const registry = { resolve: id => ({ model: { id }, apiKey: 'fixture' }) }
-  assert.equal(resolve(null, { modelId: 'selected' }, registry).model.id, 'selected')
-  assert.equal(resolve({ id: 'design' }, { modelId: 'old' }, registry).model.id, 'design')
+  assert.equal(resolve({ modelId: 'selected' }, registry).model.id, 'selected')
   assert.match(sendHandler, /executionRunner\.run\(proposalPrompt\(taskQuery\), modelRoute\.model, modelRoute\.apiKey/)
   assert.match(sendHandler, /runAgent\([\s\S]*executionRunner, undefined, modelRoute, currentMessage.id\)/)
-  assert.match(sendHandler, /const modelRoute = designModel \? \{ \.\.\.resolvedRoute, model: require\('\.\/services\/design-request\.cjs'\)\.designExecutionModel\(resolvedRoute\.model\) \} : resolvedRoute/)
-  assert.match(runAgent, /const modelRoute = modelRouteOverride \|\| modelRegistry\.resolve\(conversation\?\.design \?[^\n]+: conversation\?\.modelId\)/)
+  assert.match(runAgent, /const modelRoute = modelRouteOverride \|\| modelRegistry\.resolve\(conversation\?\.modelId\)/)
   assert.match(runAgent, /reasoningSelection: normalizeReasoning/)
   assert.match(runAgent, /reviewer\.run\(ledger\.prompt\(request\), model, apiKey/)
   assert.match(runAgent, /execute: async \(task\)[\s\S]*await executionRunner\.run\(task, model, apiKey/)
@@ -69,7 +68,8 @@ test('main process snapshots the selected route before asynchronous message prep
 test('bootstrap returns only redacted model metadata and model removal refreshes conversations', () => {
   const main = source('desktop', 'main.cjs')
   const registry = source('desktop', 'services', 'model-registry.cjs')
-  const bootstrap = main.slice(main.indexOf('function bootstrap()'), main.indexOf('function automationState()'))
+  const bootstrap = main.slice(main.indexOf('function cloudStartupState()'), main.indexOf('function automationState()'))
+  assert.match(bootstrap, /\.\.\.cloudStartupState\(\)/)
   const modelIpc = main.slice(main.indexOf("ipcMain.handle('stable:model:save'"), main.indexOf("ipcMain.handle('stable:settings:globalInstructions'"))
 
   assert.match(bootstrap, /models: modelRegistry\.publicCatalog\(\)/)

@@ -49,10 +49,10 @@ app.whenReady().then(async () => {
   strict.fit='cover';const fixed=await generator()(request);assert.equal(paid,1);assert.deepEqual(nativeImage.createFromPath(fixed.path).getSize(),{width:1024,height:1024})
   const {validateDesignDelivery}=require('../../desktop/services/design-delivery.cjs')
   const answer='[成品](<'+fixed.path+'>)'
-  assert.equal(validateDesignDelivery({answer,policy:strict,workspace,nativeImage}).ok,true)
+  assert.equal((await validateDesignDelivery({answer,policy:strict,workspace,nativeImage})).ok,true)
   fs.writeFileSync(fixed.path,input)
-  assert.equal(validateDesignDelivery({answer,policy:strict,workspace,nativeImage}).ok,false,'A later script resize must invalidate delivery')
-  assert.equal(validateDesignDelivery({answer,policy:{...strict,count:2},workspace,nativeImage}).ok,false)
+  assert.equal((await validateDesignDelivery({answer,policy:strict,workspace,nativeImage})).ok,false,'A later script resize must invalidate delivery')
+  assert.equal((await validateDesignDelivery({answer,policy:{...strict,count:2},workspace,nativeImage})).ok,false)
   for(const [id,spec] of Object.entries(presets)){
     const exact=nativeImage.createFromBitmap(Buffer.alloc(spec.width*spec.height*4,127),{width:spec.width,height:spec.height})
     const result=finishDesignImage(exact,nativeImage,{outputPreset:id,background:'opaque'})

@@ -53,8 +53,12 @@ export function changesFiles(item: AgentTraceItem): boolean {
 export function buildTraceTimeline(items: AgentTraceItem[], finalContent = ''): AgentTraceItem[] {
   const finalText = finalContent.trim()
   return items.filter(item => {
+    if (item.taskId) return true
     if (item.clarificationReply) return true
-    if (item.eventType === 'agent/answer') return Boolean(item.content?.trim()) && item.content!.trim() !== finalText
+    if (item.eventType === 'agent/answer') {
+      const content = item.content?.trim()
+      return Boolean(content) && content !== finalText && !(item.finalAnswerPart && finalText.includes(content!))
+    }
     if (item.status === 'failed' && item.kind !== 'tool') return true
     if (item.kind === 'approval') return item.status === 'running' && !item.automaticApproval
     if (item.kind === 'tool') return true
@@ -70,9 +74,11 @@ export type TraceTimelineEntry =
 function toolCategory(item: AgentTraceItem): string {
   const name = toolName(item).toLowerCase()
   if (/^(read|read_file)$/.test(name)) return '读取文件'
-  if (/^(glob|grep|toolsearch|stable_search)$/.test(name)) return '搜索'
+  if (/^(glob|grep)$/.test(name)) return '搜索'
+  if (name === 'toolsearch') return '查找工具'
+  if (name === 'stable_search' || name === 'websearch') return '网页搜索'
   if (name === 'stable_browser') return '浏览器'
-  if (name === 'stable_fetch') return '网页抓取'
+  if (name === 'stable_fetch' || name === 'webfetch') return '网页抓取'
   if (/^(edit|edit_file|apply_patch|notebookedit)$/.test(name)) return '编辑文件'
   if (/^(write|write_file|create_file)$/.test(name)) return '写入文件'
   if (/^(move_file|rename_file)$/.test(name)) return '移动文件'
@@ -115,6 +121,8 @@ export function traceGroupLabel(items: AgentTraceItem[], runStatus: AgentTraceSt
   const phrases: Record<string, [string, string, string]> = {
     '读取文件': [`正在查看${target}`, `已查看${target}`, '查看文件'],
     '搜索': ['正在查找相关内容', '已查找相关内容', '查找内容'],
+    '查找工具': ['正在查找可用工具', '已查找可用工具', '查找工具'],
+    '网页搜索': ['正在搜索网页资料', '已搜索网页资料', '搜索网页资料'],
     '网页抓取': ['正在读取网页正文', '已读取网页正文', '读取网页正文'],
     '编辑文件': [`正在修改${target}`, `已修改${target}`, '修改文件'],
     '写入文件': [`正在保存${target}`, `已保存${target}`, '保存文件'],
@@ -146,7 +154,7 @@ export function traceToolInput(item: AgentTraceItem): string {
   return item.inputDetail || traceCommand(item)
 }
 export function traceToolIcon(item: AgentTraceItem): 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser' | 'tool' {
-  return ({'编辑文件':'edit','写入文件':'write','移动文件':'move','删除文件':'delete','运行命令':'terminal','修改表格':'table','读取文件':'read','搜索':'search','浏览器':'browser','网页抓取':'browser'} as Record<string, 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser'>)[toolCategory(item)] || 'tool'
+  return ({'编辑文件':'edit','写入文件':'write','移动文件':'move','删除文件':'delete','运行命令':'terminal','修改表格':'table','读取文件':'read','搜索':'search','网页搜索':'search','浏览器':'browser','网页抓取':'browser'} as Record<string, 'edit' | 'write' | 'move' | 'delete' | 'terminal' | 'table' | 'read' | 'search' | 'browser'>)[toolCategory(item)] || 'tool'
 }
 export function latestTraceTool(items: AgentTraceItem[]): AgentTraceItem | undefined {
   return items.filter(item => item.kind === 'tool').reduce<AgentTraceItem | undefined>((latest,item) => !latest || (item.startedAt ?? item.time) >= (latest.startedAt ?? latest.time) ? item : latest, undefined)

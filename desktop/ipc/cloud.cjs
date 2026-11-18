@@ -1,7 +1,7 @@
 'use strict'
 
-function registerCloudIpc({ ipcMain, getCloudStartup, cloudAccount, bootstrap, requireText }) {
-  ipcMain.handle('stable:cloud:startup', async () => { await getCloudStartup(); return bootstrap() })
+function registerCloudIpc({ ipcMain, getCloudStartup, cloudStartupState, cloudAccount, bootstrap, requireText }) {
+  ipcMain.handle('stable:cloud:startup', async () => { await getCloudStartup(); return cloudStartupState() })
   ipcMain.handle('stable:cloud:login', async (_event, payload) => {
     if (!cloudAccount) throw new Error('当前开发模式未启用 Stable Cloud。')
     await cloudAccount.login(requireText(payload?.username, '账号', 64), requireText(payload?.password, '密码', 128))

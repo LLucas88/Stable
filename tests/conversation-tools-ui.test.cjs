@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
 
-test('hidden Electron verifies Catch, scroll states, text editing and original white splash', { skip: process.platform !== 'win32', timeout: 40_000 }, async () => {
+test('hidden Electron verifies Catch, scroll states, text editing', { skip: process.platform !== 'win32', timeout: 40_000 }, async () => {
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   const result = await new Promise((resolve) => {

@@ -1,13 +1,45 @@
 'use strict'
 
 const fs = require('node:fs')
+const path = require('node:path')
 const { spawn } = require('node:child_process')
 
-let sdkPromise
-function loadClaudeSDK() {
-  if (!sdkPromise) sdkPromise = import('@anthropic-ai/claude-agent-sdk').catch(error => { sdkPromise = null; throw error })
-  return sdkPromise
+const SDK_VERSION = '0.3.318'
+const CLI_VERSION = '2.1.318'
+const REQUIRED_SDK_EXPORTS = ['query', 'tool', 'createSdkMcpServer']
+
+function runtimeError(code, message, cause) {
+  return Object.assign(new Error(message, cause ? { cause } : undefined), { code })
 }
+
+// Keep the checks on the cached, default loader. Explicit SDK injection remains
+// available for isolated tests, including old-session migration coverage.
+function createClaudeSDKLoader({
+  importSDK = () => import('@anthropic-ai/claude-agent-sdk'),
+  readVersion = () => JSON.parse(fs.readFileSync(path.join(path.dirname(require.resolve('@anthropic-ai/claude-agent-sdk')), 'package.json'), 'utf8')).version,
+} = {}) {
+  let pending
+  return function load() {
+    if (!pending) pending = Promise.resolve().then(async () => {
+      let version
+      try { version = readVersion() }
+      catch (error) { throw runtimeError('CLAUDE_SDK_METADATA_UNAVAILABLE', '无法读取 Claude Agent SDK 的版本信息，请修复依赖或更新 Stable。', error) }
+      if (version !== SDK_VERSION) throw runtimeError('CLAUDE_SDK_VERSION_MISMATCH', `Claude Agent SDK 版本不匹配：Stable 需要 ${SDK_VERSION}，实际为 ${version || '未知'}。请修复依赖或更新 Stable。`)
+      const sdk = await importSDK()
+      const missing = REQUIRED_SDK_EXPORTS.filter(name => typeof sdk?.[name] !== 'function')
+      if (missing.length) throw runtimeError('CLAUDE_SDK_API_UNAVAILABLE', `Claude Agent SDK 运行时不完整，缺少接口：${missing.join('、')}。请修复依赖或更新 Stable。`)
+      return sdk
+    }).catch(error => { pending = null; throw error })
+    return pending
+  }
+}
+
+function assertClaudeRuntimeVersion(version) {
+  if (version !== CLI_VERSION) throw runtimeError('CLAUDE_CLI_VERSION_MISMATCH', `Claude 运行时版本不匹配：SDK ${SDK_VERSION} 需要 Claude Code ${CLI_VERSION}，实际为 ${typeof version === 'string' && version ? version : '未返回版本'}。请更新完整的 Stable 运行时。`)
+  return version
+}
+
+const loadClaudeSDK = createClaudeSDKLoader()
 
 // Load immutable runtime code while the desktop is idle. No parked agent,
 // account, session, tool server, hooks, prompt or permission grants are shared.
@@ -57,4 +89,4 @@ class ClaudeRuntimePreloader {
   }
 }
 
-module.exports = { loadClaudeSDK, ClaudeRuntimePreloader }
+module.exports = { loadClaudeSDK, createClaudeSDKLoader, assertClaudeRuntimeVersion, SDK_VERSION, CLI_VERSION, ClaudeRuntimePreloader }

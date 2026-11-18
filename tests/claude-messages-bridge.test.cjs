@@ -15,6 +15,44 @@ const completion = (delta, finish_reason = null) => ({ choices: [{ index: 0, del
 const tool = { name: 'Read', description: 'Read a file', input_schema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } }
 const request = (overrides = {}) => ({ model: 'claude-compatibility-name', max_tokens: 4000, stream: true, messages: [{ role: 'user', content: 'hello' }], ...overrides })
 
+test('correction isolates attempt text for streamed and JSON answers, tools, and clarification cards', async t => {
+  const card=WAIT_MARKER+'\n'+JSON.stringify({question:'选哪项？',options:[{label:'甲',description:'甲方案'},{label:'乙',description:'乙方案'}]})
+  for(const stream of [true,false]) for(const mode of ['answer','tool','card','explanation']) await t.test(`${stream}-${mode}`,async()=>{
+    let calls=0;const diagnostics=[]
+    const bridge=new ClaudeMessagesBridge({model,apiKey:'fixture',onDiagnostic:d=>diagnostics.push(d),fetchImpl:async()=>{
+      calls++
+      if(calls===1||mode==='explanation'&&calls===2)return upstream([completion({content:'失效旧文本。',tool_calls:[{id:'bad',function:{name:'Read',arguments:'{bad'}}]},'tool_calls')])
+      return upstream([completion(mode==='tool'?{content:'已更正工具。',tool_calls:[{id:'valid',function:{name:'Read',arguments:'{"file_path":"safe"}'}}]}:{content:mode==='card'?card:'有效正文。'},mode==='tool'?'tool_calls':'stop')])
+    }})
+    await bridge.start()
+    try {
+      const res=await send(bridge,request({stream,tools:[tool]})),body=await res.text()
+      assert.doesNotMatch(body,/失效旧文本/)
+      assert.equal(calls,mode==='explanation'?3:2)
+      assert.equal(diagnostics.filter(x=>x.kind==='response_attempt').length,calls-1)
+      assert.match(body,mode==='tool'?/已更正工具/:mode==='card'?/选哪项/:/有效正文/)
+      if(mode==='tool')assert.match(body,/valid/)
+      if(mode==='card')assert.match(body,/STABLE_WAITING_FOR_INPUT/)
+    } finally {await bridge.close()}
+  })
+})
+
+test('interrupted buffered text survives as attempt evidence but never a successful SDK answer',async()=>{
+ const diagnostics=[];let activity=0
+ const bridge=new ClaudeMessagesBridge({model,apiKey:'fixture',onActivity:()=>activity++,onDiagnostic:d=>diagnostics.push(d),fetchImpl:async()=>new Response(new ReadableStream({
+  start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify(completion({content:'已收到的部分内容。'}))+'\n\n'));},
+  pull(controller){controller.error(Error('fixture interrupted'))},
+ }),{headers:{'content-type':'text/event-stream'}})})
+ await bridge.start()
+ try{
+  const values=await events(bridge,request())
+  assert.equal(activity,1)
+  assert(diagnostics.some(d=>d.kind==='response_attempt'&&d.text==='已收到的部分内容。'))
+  assert(!values.some(x=>x.type==='content_block_delta'||x.type==='message_stop'))
+  assert(values.some(x=>x.type==='error'))
+ }finally{await bridge.close()}
+})
+
 test('real route identity replaces SDK-only identity while user quotes, tools and history survive', async () => {
   const bodies = []
   const reminder = '<system-reminder>\nYou are powered by the model named Sonnet 4.6 (1M context). The exact model ID is claude-sonnet-4-6[1m]. Assistant knowledge cutoff is August 2025.\n</system-reminder>'
@@ -464,7 +502,45 @@ test('invalid tool JSON gets one corrective generation; no partial or sibling to
   }
 })
 
-test('second invalid tool response stops with a diagnostic instead of unlimited transport retries', async () => {
+test('invalid tools can end with a model explanation without executing partial calls', async () => {
+  const bodies = []; let fatal
+  const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onFatalError: value => { fatal = value }, fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    return upstream([completion(bodies.length <= 2 ? { tool_calls: [{ id: 'invalid', function: { name: 'Read', arguments: '{bad' } }] } : { content: '无法完成：两次工具参数不完整，原文件未被修改。' }, bodies.length <= 2 ? 'tool_calls' : 'stop')])
+  } })
+  await bridge.start()
+  try {
+    const values = await events(bridge, request({ tools: [tool] }))
+    assert.equal(bodies.length, 3)
+    assert.equal(bodies[2].tools, undefined)
+    assert.equal(bodies[2].tool_choice, undefined)
+    assert.match(bodies[2].messages.at(-1).content, /只.*说明|仅.*说明/)
+    assert.equal(fatal, undefined)
+    assert.match(bridge.outputFailureReason, /JSON/)
+    assert(!values.some(value => value.content_block?.type === 'tool_use'))
+    assert(values.some(value => value.delta?.text?.includes('无法完成')))
+  } finally { await bridge.close() }
+})
+
+test('empty failure explanations and missing completion markers stay bounded', async () => {
+  for (const malformed of ['empty-explanation', 'missing-finish']) {
+    let calls = 0, fatal
+    const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onFatalError: value => { fatal = value }, fetchImpl: async () => {
+      calls++
+      if (calls <= 2) return upstream([completion({ content: '正在处理。', tool_calls: [{ id: 'invalid', function: { name: 'Read', arguments: '{bad' } }] }, malformed === 'missing-finish' ? null : 'tool_calls')])
+      return upstream([completion({}, 'stop')])
+    } })
+    await bridge.start()
+    try {
+      const values = await events(bridge, request({ tools: [tool] }))
+      assert.equal(calls, 3)
+      assert.match(fatal, /未返回失败原因说明/)
+      assert(!values.some(value => value.content_block?.type === 'tool_use'))
+    } finally { await bridge.close() }
+  }
+})
+
+test('invalid tools and a failed explanation stop without unlimited transport retries', async () => {
   let requests = 0, fatal
   const bridge = new ClaudeMessagesBridge({ model, apiKey: 'key', onFatalError: value => { fatal = value }, fetchImpl: async () => {
     requests++
@@ -473,13 +549,13 @@ test('second invalid tool response stops with a diagnostic instead of unlimited 
   await bridge.start()
   try {
     const values = await events(bridge, request({ tools: [tool] }))
-    assert.equal(requests, 2)
+    assert.equal(requests, 3)
     assert.equal(values.at(-1).error.type, 'invalid_request_error')
     assert.match(fatal, /finish_reason=tool_calls.*arguments_bytes=4/)
     assert(!values.some(value => value.content_block?.type === 'tool_use'))
     const retry = await fetch(bridge.baseURL + '/v1/messages', { method: 'POST', headers: { 'x-api-key': bridge.token }, body: JSON.stringify(request({ tools: [tool] })) })
     assert.equal((await retry.json()).error.message, fatal)
-    assert.equal(requests, 2)
+    assert.equal(requests, 3)
   } finally { await bridge.close() }
 })
 
@@ -689,7 +765,7 @@ test('unknown tool names never bypass validation and diagnostic names redact cre
   await bridge.start()
   try {
     const values=await events(bridge,request({tools:[tool]}))
-    assert.equal(calls,2);assert.equal(diagnostics[1].reasonCode,'unknown_tool');assert.equal(diagnostics[1].calls[0].availability,'absent')
+    assert.equal(calls,3);assert.equal(diagnostics[1].reasonCode,'unknown_tool');assert.equal(diagnostics[1].calls[0].availability,'absent')
     assert.match(diagnostics[1].calls[0].name,/redacted/);assert.doesNotMatch(JSON.stringify(diagnostics)+fatal, /PRIVATE_NAME_CREDENTIAL/)
     assert.match(fatal,/此前已完成的操作不会回滚/);assert.doesNotMatch(fatal,/本次未执行任何工具/)
     assert.equal(values.some(v=>v.content_block?.type==='tool_use'),false)

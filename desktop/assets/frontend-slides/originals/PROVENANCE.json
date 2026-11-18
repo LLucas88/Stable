@@ -1,0 +1,692 @@
+{
+  "repository": "https://github.com/zarazhangrui/beautiful-html-templates",
+  "retrieved": "2026-11-04",
+  "license": "MIT",
+  "files": [
+    {
+      "file": "8-bit-orbit-1.png",
+      "sourcePath": "screenshots/8-bit-orbit-1.png",
+      "blob": "7a512c7f1548d500ea1c2570d34c500d8fbe212b"
+    },
+    {
+      "file": "8-bit-orbit-5.png",
+      "sourcePath": "screenshots/8-bit-orbit-5.png",
+      "blob": "a20c3160cb24e4104dce9d9bc0877ea1dbc827be"
+    },
+    {
+      "file": "8-bit-orbit-6.png",
+      "sourcePath": "screenshots/8-bit-orbit-6.png",
+      "blob": "efe6a32cf785688eb4b9cc85f898241c14aed16f"
+    },
+    {
+      "file": "biennale-yellow-1.png",
+      "sourcePath": "screenshots/biennale-yellow-1.png",
+      "blob": "02f08e6f24085ac990df4eceff8b4dc6bc413504"
+    },
+    {
+      "file": "biennale-yellow-5.png",
+      "sourcePath": "screenshots/biennale-yellow-5.png",
+      "blob": "6d1d10172aeea4c8bdf0b46966be54248d05c7a6"
+    },
+    {
+      "file": "biennale-yellow-8.png",
+      "sourcePath": "screenshots/biennale-yellow-8.png",
+      "blob": "546fd6541e58a8864f9fcded1ba6284ff00f244d"
+    },
+    {
+      "file": "block-frame-1.png",
+      "sourcePath": "screenshots/block-frame-1.png",
+      "blob": "975158ed51336f0a25cda46043fd935ea5d1bf88"
+    },
+    {
+      "file": "block-frame-4.png",
+      "sourcePath": "screenshots/block-frame-4.png",
+      "blob": "b0ceae441ef6eb7f3e0fcfafa4493547792d4ca0"
+    },
+    {
+      "file": "block-frame-8.png",
+      "sourcePath": "screenshots/block-frame-8.png",
+      "blob": "b300f1b7e77153d871299137359956c7a681edb7"
+    },
+    {
+      "file": "blue-professional-1.png",
+      "sourcePath": "screenshots/blue-professional-1.png",
+      "blob": "32570d391c4ab0b19787130304b521501e367dec"
+    },
+    {
+      "file": "blue-professional-6.png",
+      "sourcePath": "screenshots/blue-professional-6.png",
+      "blob": "66a11cf7c32e857744e11f8c349e1a763ff02e74"
+    },
+    {
+      "file": "blue-professional-8.png",
+      "sourcePath": "screenshots/blue-professional-8.png",
+      "blob": "37f5fe115d90d7d4159d8f33863c9df1625d906e"
+    },
+    {
+      "file": "bold-poster-1.png",
+      "sourcePath": "screenshots/bold-poster-1.png",
+      "blob": "1b285daaa7f67faacad18f0c6e73f525c0ce5ee6"
+    },
+    {
+      "file": "bold-poster-4.png",
+      "sourcePath": "screenshots/bold-poster-4.png",
+      "blob": "be40dbbd9cc9d1e9d40fd4119d43f11e188a7481"
+    },
+    {
+      "file": "bold-poster-8.png",
+      "sourcePath": "screenshots/bold-poster-8.png",
+      "blob": "c907d6952d37f79e2f7fffbff943cacf0a9a879d"
+    },
+    {
+      "file": "broadside-1.png",
+      "sourcePath": "screenshots/broadside-1.png",
+      "blob": "12865ef480008f29ce6538dc4e539d92858631d9"
+    },
+    {
+      "file": "broadside-13.png",
+      "sourcePath": "screenshots/broadside-13.png",
+      "blob": "1d9c8a2b63a2b8846dbc4b98184a1fbd228bc9b9"
+    },
+    {
+      "file": "broadside-4.png",
+      "sourcePath": "screenshots/broadside-4.png",
+      "blob": "d0065cb893f296df98ee562092e4fc284e41e476"
+    },
+    {
+      "file": "capsule-1.png",
+      "sourcePath": "screenshots/capsule-1.png",
+      "blob": "8e7290e865dc5aeda10616308e037c519c05d22b"
+    },
+    {
+      "file": "capsule-4.png",
+      "sourcePath": "screenshots/capsule-4.png",
+      "blob": "d6133ec6a2c6ef44ee4e61b29a4f57f797da3782"
+    },
+    {
+      "file": "capsule-8.png",
+      "sourcePath": "screenshots/capsule-8.png",
+      "blob": "264d1d8207386ca7e936e1ae2446c394a67b9c9d"
+    },
+    {
+      "file": "cartesian-1.png",
+      "sourcePath": "screenshots/cartesian-1.png",
+      "blob": "1a689372566d08160dabd621d74a6c9a3074cf62"
+    },
+    {
+      "file": "cartesian-4.png",
+      "sourcePath": "screenshots/cartesian-4.png",
+      "blob": "aa85f0d7ca03f32c6c8f292226f94483d946797e"
+    },
+    {
+      "file": "cartesian-8.png",
+      "sourcePath": "screenshots/cartesian-8.png",
+      "blob": "4aab3c2036dca256e99df89b138b3279eb5a4814"
+    },
+    {
+      "file": "cobalt-grid-1.png",
+      "sourcePath": "screenshots/cobalt-grid-1.png",
+      "blob": "a631b7076f770c7bdb41d6eb9c4634c3ea443f7f"
+    },
+    {
+      "file": "cobalt-grid-3.png",
+      "sourcePath": "screenshots/cobalt-grid-3.png",
+      "blob": "67d315738fbad5016415570b79df0b0142fa46b9"
+    },
+    {
+      "file": "cobalt-grid-5.png",
+      "sourcePath": "screenshots/cobalt-grid-5.png",
+      "blob": "e1f19c354301483905636e955531fc2e8598c504"
+    },
+    {
+      "file": "coral-1.png",
+      "sourcePath": "screenshots/coral-1.png",
+      "blob": "2cc5a090e306e3af129cedc2f9ea181a1278b29d"
+    },
+    {
+      "file": "coral-4.png",
+      "sourcePath": "screenshots/coral-4.png",
+      "blob": "765ffde12afdf5043aa525ba0508be541308afe4"
+    },
+    {
+      "file": "coral-8.png",
+      "sourcePath": "screenshots/coral-8.png",
+      "blob": "fb9562c5d8b4fda8d3b0b77af33d5a6dcfa1bfc3"
+    },
+    {
+      "file": "creative-mode-1.png",
+      "sourcePath": "screenshots/creative-mode-1.png",
+      "blob": "fa015c900085944fce987ef50d0805982f0dee92"
+    },
+    {
+      "file": "creative-mode-4.png",
+      "sourcePath": "screenshots/creative-mode-4.png",
+      "blob": "3d4f4e71b281d1517d5bd97d9372972503b4a7d3"
+    },
+    {
+      "file": "creative-mode-6.png",
+      "sourcePath": "screenshots/creative-mode-6.png",
+      "blob": "79ee65266a4084e3b2a364cdfa560d0f24e73f8f"
+    },
+    {
+      "file": "daisy-days-1.png",
+      "sourcePath": "screenshots/daisy-days-1.png",
+      "blob": "47dc81e5ea6344ce87590fe98ea9e2dbc72a7f6d"
+    },
+    {
+      "file": "daisy-days-4.png",
+      "sourcePath": "screenshots/daisy-days-4.png",
+      "blob": "8335c5ddbb95fc879942ab0c2a510e1c35136ae8"
+    },
+    {
+      "file": "daisy-days-8.png",
+      "sourcePath": "screenshots/daisy-days-8.png",
+      "blob": "bbb3b682d070b330fb885606d6e7490c2cb69475"
+    },
+    {
+      "file": "editorial-forest-1.png",
+      "sourcePath": "screenshots/editorial-forest-1.png",
+      "blob": "7363fe9601341ad2a0af9e80e7e1f56dd9102f72"
+    },
+    {
+      "file": "editorial-forest-2.png",
+      "sourcePath": "screenshots/editorial-forest-2.png",
+      "blob": "be853f8515cc6d60b488a15d95b1e3957dbe5f70"
+    },
+    {
+      "file": "editorial-forest-5.png",
+      "sourcePath": "screenshots/editorial-forest-5.png",
+      "blob": "dd781d85b0c5e37b314af552bdc67063fff5225a"
+    },
+    {
+      "file": "editorial-tri-tone-1.png",
+      "sourcePath": "screenshots/editorial-tri-tone-1.png",
+      "blob": "dfdaa37e42238e13b8a1d367811e9d6a9f0d1e41"
+    },
+    {
+      "file": "editorial-tri-tone-3.png",
+      "sourcePath": "screenshots/editorial-tri-tone-3.png",
+      "blob": "4f39eb4c82187778a021c4f85e395828f5188673"
+    },
+    {
+      "file": "editorial-tri-tone-4.png",
+      "sourcePath": "screenshots/editorial-tri-tone-4.png",
+      "blob": "8dd981bfba0e3146c56f12fdabbccd87715895eb"
+    },
+    {
+      "file": "emerald-editorial-1.png",
+      "sourcePath": "screenshots/emerald-editorial-1.png",
+      "blob": "6ca8fa0da3f40e9b046a5cd5142eed92a3c19034"
+    },
+    {
+      "file": "emerald-editorial-3.png",
+      "sourcePath": "screenshots/emerald-editorial-3.png",
+      "blob": "e88e840d7d6b9089da0c5d737e8297d96682d8b6"
+    },
+    {
+      "file": "emerald-editorial-6.png",
+      "sourcePath": "screenshots/emerald-editorial-6.png",
+      "blob": "d13620d9d790c71208a29ccf419916859d69b058"
+    },
+    {
+      "file": "grove-1.png",
+      "sourcePath": "screenshots/grove-1.png",
+      "blob": "6c09bd3766a7a7b6211bfb555bba022ec34457f8"
+    },
+    {
+      "file": "grove-4.png",
+      "sourcePath": "screenshots/grove-4.png",
+      "blob": "ad7fa2f688569344f8fe8bbedee2a3e787c05c14"
+    },
+    {
+      "file": "grove-8.png",
+      "sourcePath": "screenshots/grove-8.png",
+      "blob": "eb277eda782d35a56ddd6f2e64a916466618a216"
+    },
+    {
+      "file": "long-table-1.png",
+      "sourcePath": "screenshots/long-table-1.png",
+      "blob": "be4012ce22c060ee45bd235e626d28e7e9bbc22e"
+    },
+    {
+      "file": "long-table-3.png",
+      "sourcePath": "screenshots/long-table-3.png",
+      "blob": "15c043847d9821681b17796e9af87fff4b86e330"
+    },
+    {
+      "file": "long-table-7.png",
+      "sourcePath": "screenshots/long-table-7.png",
+      "blob": "ae154d27a123b26575354d908476c9ea59808890"
+    },
+    {
+      "file": "mat-1.png",
+      "sourcePath": "screenshots/mat-1.png",
+      "blob": "3aa953945b1826517c41d90b07d378163f004fb1"
+    },
+    {
+      "file": "mat-4.png",
+      "sourcePath": "screenshots/mat-4.png",
+      "blob": "be7ee2e8f682e6df8b2e3e375033f6698e4a0656"
+    },
+    {
+      "file": "mat-8.png",
+      "sourcePath": "screenshots/mat-8.png",
+      "blob": "4342952cf7a22226227348f0799dc3e526504c66"
+    },
+    {
+      "file": "monochrome-1.png",
+      "sourcePath": "screenshots/monochrome-1.png",
+      "blob": "9d78e2ac753685d3db3032bb2c0b187ea7d31289"
+    },
+    {
+      "file": "monochrome-12.png",
+      "sourcePath": "screenshots/monochrome-12.png",
+      "blob": "9b0ad30e94b5b790d0df926206310f3fad32d82b"
+    },
+    {
+      "file": "monochrome-4.png",
+      "sourcePath": "screenshots/monochrome-4.png",
+      "blob": "6001dc72cce8739a3c8a564a0ceb8d8779c13a2b"
+    },
+    {
+      "file": "neo-grid-bold-1.png",
+      "sourcePath": "screenshots/neo-grid-bold-1.png",
+      "blob": "467c0847a5b3bf392facaebb576294a9d4553066"
+    },
+    {
+      "file": "neo-grid-bold-3.png",
+      "sourcePath": "screenshots/neo-grid-bold-3.png",
+      "blob": "f5a8d6b1cd03ca6dedecd8848c5d339936f5a4d3"
+    },
+    {
+      "file": "neo-grid-bold-8.png",
+      "sourcePath": "screenshots/neo-grid-bold-8.png",
+      "blob": "f335038336b18bab31cd4b70756ee5f296d07c3a"
+    },
+    {
+      "file": "peoples-platform-1.png",
+      "sourcePath": "screenshots/peoples-platform-1.png",
+      "blob": "5e5c1771910974cada77e34c91dd203cc5a15de2"
+    },
+    {
+      "file": "peoples-platform-4.png",
+      "sourcePath": "screenshots/peoples-platform-4.png",
+      "blob": "71af10d24f8822a058460c36661d5b7d7d8b3488"
+    },
+    {
+      "file": "peoples-platform-8.png",
+      "sourcePath": "screenshots/peoples-platform-8.png",
+      "blob": "99e103bd9a50f8fd6ba6eba8962b65d25adac3e9"
+    },
+    {
+      "file": "pin-and-paper-1.png",
+      "sourcePath": "screenshots/pin-and-paper-1.png",
+      "blob": "1ce501623fb526b4ac47dade19b883152b87c12a"
+    },
+    {
+      "file": "pin-and-paper-11.png",
+      "sourcePath": "screenshots/pin-and-paper-11.png",
+      "blob": "989fca28d67ae622fbbdc8d6bc0bfeb64fe5344f"
+    },
+    {
+      "file": "pin-and-paper-3.png",
+      "sourcePath": "screenshots/pin-and-paper-3.png",
+      "blob": "befec44b8d26dd9a9cb5f319f64ccea17c1499e3"
+    },
+    {
+      "file": "pink-script-1.png",
+      "sourcePath": "screenshots/pink-script-1.png",
+      "blob": "517272694ebb4cbcd8087a2aca0ffca63e00161f"
+    },
+    {
+      "file": "pink-script-4.png",
+      "sourcePath": "screenshots/pink-script-4.png",
+      "blob": "ba0a0e5bb3a78e6a99756eab5bae5f69d0cbdacd"
+    },
+    {
+      "file": "pink-script-8.png",
+      "sourcePath": "screenshots/pink-script-8.png",
+      "blob": "e779fe3512e953145027508436f7ae910a474fa8"
+    },
+    {
+      "file": "playful-1.png",
+      "sourcePath": "screenshots/playful-1.png",
+      "blob": "95850d0abbca52532e1a034ce84100e843f48060"
+    },
+    {
+      "file": "playful-6.png",
+      "sourcePath": "screenshots/playful-6.png",
+      "blob": "e2e3a1c7434dc7a2ec731319f3dc53b734864225"
+    },
+    {
+      "file": "playful-8.png",
+      "sourcePath": "screenshots/playful-8.png",
+      "blob": "aad9f46aaa2d68bd390c30f520dea05ee4adc455"
+    },
+    {
+      "file": "raw-grid-1.png",
+      "sourcePath": "screenshots/raw-grid-1.png",
+      "blob": "0d9d665a8b00b2c5d7cece354ccc061fb123a669"
+    },
+    {
+      "file": "raw-grid-4.png",
+      "sourcePath": "screenshots/raw-grid-4.png",
+      "blob": "b0bc0c895eb482e6541c7245bb3379ef1dac9f53"
+    },
+    {
+      "file": "raw-grid-8.png",
+      "sourcePath": "screenshots/raw-grid-8.png",
+      "blob": "a50caf34970597c9bfe23f88d80d06c73219066a"
+    },
+    {
+      "file": "retro-windows-1.png",
+      "sourcePath": "screenshots/retro-windows-1.png",
+      "blob": "48f22a5b1a9b42d758b839b063a40eec1e33c1e6"
+    },
+    {
+      "file": "retro-windows-4.png",
+      "sourcePath": "screenshots/retro-windows-4.png",
+      "blob": "80d6fb5fcfc374c14db9dea008f46d56e0436938"
+    },
+    {
+      "file": "retro-windows-8.png",
+      "sourcePath": "screenshots/retro-windows-8.png",
+      "blob": "88cb965cddb5c902f5dd512fac053c1bba15b74f"
+    },
+    {
+      "file": "retro-zine-1.png",
+      "sourcePath": "screenshots/retro-zine-1.png",
+      "blob": "7be7d0b7317406c9e73262e78ed55d26d0f853fb"
+    },
+    {
+      "file": "retro-zine-4.png",
+      "sourcePath": "screenshots/retro-zine-4.png",
+      "blob": "01ad6689974a8a2508b6cacc8da75e867106fc19"
+    },
+    {
+      "file": "retro-zine-8.png",
+      "sourcePath": "screenshots/retro-zine-8.png",
+      "blob": "422e3b5b3b18e60212bd50f60490e7408bfeb169"
+    },
+    {
+      "file": "sakura-chroma-1.png",
+      "sourcePath": "screenshots/sakura-chroma-1.png",
+      "blob": "c035cdef31f596effb2f2c69938d091f05a8789f"
+    },
+    {
+      "file": "sakura-chroma-3.png",
+      "sourcePath": "screenshots/sakura-chroma-3.png",
+      "blob": "885da49a9a952152f2f20757756d7ef9930fa9da"
+    },
+    {
+      "file": "sakura-chroma-4.png",
+      "sourcePath": "screenshots/sakura-chroma-4.png",
+      "blob": "c68da1aac4ea45f59c48c21337e5ca7f5e82bd0f"
+    },
+    {
+      "file": "scatterbrain-1.png",
+      "sourcePath": "screenshots/scatterbrain-1.png",
+      "blob": "85d9ed76a636012e61cc97caa4557c4923c0eff7"
+    },
+    {
+      "file": "scatterbrain-4.png",
+      "sourcePath": "screenshots/scatterbrain-4.png",
+      "blob": "07c24a6c4f04ff4f31a206dd1d2ec9bf44bd4003"
+    },
+    {
+      "file": "scatterbrain-8.png",
+      "sourcePath": "screenshots/scatterbrain-8.png",
+      "blob": "d57b9804f774c76260fc685d397b89ccc1709304"
+    },
+    {
+      "file": "signal-1.png",
+      "sourcePath": "screenshots/signal-1.png",
+      "blob": "c653adb6f6e3bca907e8679414d085ca5061f89d"
+    },
+    {
+      "file": "signal-18.png",
+      "sourcePath": "screenshots/signal-18.png",
+      "blob": "5d1426aa9d096eaba3db754eecd142d90eceff2e"
+    },
+    {
+      "file": "signal-8.png",
+      "sourcePath": "screenshots/signal-8.png",
+      "blob": "2be54c617edd0bd1ee3a44fc89cd0b7138163e92"
+    },
+    {
+      "file": "soft-editorial-10.png",
+      "sourcePath": "screenshots/soft-editorial-10.png",
+      "blob": "1cdae27342114f64d49be21e44627a76a368eedd"
+    },
+    {
+      "file": "soft-editorial-4.png",
+      "sourcePath": "screenshots/soft-editorial-4.png",
+      "blob": "8743e65f59c03492bb722fc328dec09d9c635c77"
+    },
+    {
+      "file": "soft-editorial-6.png",
+      "sourcePath": "screenshots/soft-editorial-6.png",
+      "blob": "c6242dcc0a297e38452fd8a0f91d04fa8a201b8e"
+    },
+    {
+      "file": "stencil-tablet-1.png",
+      "sourcePath": "screenshots/stencil-tablet-1.png",
+      "blob": "961168a3120613cbbfbdb39899ed9e10348136b7"
+    },
+    {
+      "file": "stencil-tablet-3.png",
+      "sourcePath": "screenshots/stencil-tablet-3.png",
+      "blob": "84530b6c9ac757b57097d5fdff4568be864d693a"
+    },
+    {
+      "file": "stencil-tablet-8.png",
+      "sourcePath": "screenshots/stencil-tablet-8.png",
+      "blob": "aae0cbd7f9e46eb55e31a9f009cdc58d5aaae3c4"
+    },
+    {
+      "file": "studio-1.png",
+      "sourcePath": "screenshots/studio-1.png",
+      "blob": "2861596d06723d49c62a82ce283a588dc0a26ad2"
+    },
+    {
+      "file": "studio-4.png",
+      "sourcePath": "screenshots/studio-4.png",
+      "blob": "4b0768a814125092bf1f6d13a6fc4a82d5580257"
+    },
+    {
+      "file": "studio-8.png",
+      "sourcePath": "screenshots/studio-8.png",
+      "blob": "d0defb2aa9d296616f83fe9378bf28fa582922ff"
+    },
+    {
+      "file": "vellum-1.png",
+      "sourcePath": "screenshots/vellum-1.png",
+      "blob": "1b6246c62096c8bdfb6a669dc56f3d1ac3db1c8f"
+    },
+    {
+      "file": "vellum-4.png",
+      "sourcePath": "screenshots/vellum-4.png",
+      "blob": "240d4b6aceb61b68978f4c24aea6467f5197dd8f"
+    },
+    {
+      "file": "vellum-8.png",
+      "sourcePath": "screenshots/vellum-8.png",
+      "blob": "5ccf925fef26760df8a7379ee08047556029e45b"
+    },
+    {
+      "file": "soft-editorial.html",
+      "sourcePath": "templates/soft-editorial/template.html",
+      "blob": "912f023cb7b1f1b2b245c217ccebec6ab6f5ff23"
+    },
+    {
+      "file": "editorial-forest.html",
+      "sourcePath": "templates/editorial-forest/template.html",
+      "blob": "766e45f8239510919a0c8ff212091f5eb63ecb6d"
+    },
+    {
+      "file": "pin-and-paper.html",
+      "sourcePath": "templates/pin-and-paper/template.html",
+      "blob": "88207a84ea9260555ba434c87a567dcc82813f84"
+    },
+    {
+      "file": "sakura-chroma.html",
+      "sourcePath": "templates/sakura-chroma/template.html",
+      "blob": "1d0a50f43b8ad98948c9cfb3cec68c99be4c0d79"
+    },
+    {
+      "file": "stencil-tablet.html",
+      "sourcePath": "templates/stencil-tablet/template.html",
+      "blob": "1fe6b62c19f48aa4ff82be537afcf9eac77c87ff"
+    },
+    {
+      "file": "cobalt-grid.html",
+      "sourcePath": "templates/cobalt-grid/template.html",
+      "blob": "6df361be7561a43fd54a83cd1fed3a2cbd3d2219"
+    },
+    {
+      "file": "vellum.html",
+      "sourcePath": "templates/vellum/template.html",
+      "blob": "101929a73b9cd539342396fbe6cdef11e685d327"
+    },
+    {
+      "file": "emerald-editorial.html",
+      "sourcePath": "templates/emerald-editorial/template.html",
+      "blob": "c9c4c5fc24deb96174e7ad2a4d142f183cbccd3a"
+    },
+    {
+      "file": "neo-grid-bold.html",
+      "sourcePath": "templates/neo-grid-bold/template.html",
+      "blob": "b76a720fda5358162747aba75a6b019d9cb473be"
+    },
+    {
+      "file": "editorial-tri-tone.html",
+      "sourcePath": "templates/editorial-tri-tone/template.html",
+      "blob": "435d8b0c9635c4c84b82ea80273b816f3b4da9f3"
+    },
+    {
+      "file": "creative-mode.html",
+      "sourcePath": "templates/creative-mode/template.html",
+      "blob": "da652c0e853faeffd85ba2084ba4a9a71535de6a"
+    },
+    {
+      "file": "monochrome.html",
+      "sourcePath": "templates/monochrome/template.html",
+      "blob": "6c08df2bdc784f7bf2cb11222afb5488d49e2db8"
+    },
+    {
+      "file": "peoples-platform.html",
+      "sourcePath": "templates/peoples-platform/template.html",
+      "blob": "ad19705e770b626ade74bb2a15008f7062c7a6d4"
+    },
+    {
+      "file": "pink-script.html",
+      "sourcePath": "templates/pink-script/template.html",
+      "blob": "f3b227cfcc67e26e413199dbf7b0463c5a166d62"
+    },
+    {
+      "file": "8-bit-orbit.html",
+      "sourcePath": "templates/8-bit-orbit/template.html",
+      "blob": "fc772ca6c2a77f05b90ca1ac3dbacbd0261625ec"
+    },
+    {
+      "file": "block-frame.html",
+      "sourcePath": "templates/block-frame/template.html",
+      "blob": "51dc7cb2d3572b04ed746cc6857d87d8b2e827ea"
+    },
+    {
+      "file": "blue-professional.html",
+      "sourcePath": "templates/blue-professional/template.html",
+      "blob": "1afd9aedc4d9bbb2c73d9f02619ce4c5e742b023"
+    },
+    {
+      "file": "bold-poster.html",
+      "sourcePath": "templates/bold-poster/template.html",
+      "blob": "a82de37c77074ebe2aa53e07611c7e6c321b7b9b"
+    },
+    {
+      "file": "broadside.html",
+      "sourcePath": "templates/broadside/template.html",
+      "blob": "cb2098c2401a213da044601cf2f19a35bfedb04a"
+    },
+    {
+      "file": "capsule.html",
+      "sourcePath": "templates/capsule/template.html",
+      "blob": "2fa611be50a64c2d1b192f46a5952b9c281662c3"
+    },
+    {
+      "file": "cartesian.html",
+      "sourcePath": "templates/cartesian/template.html",
+      "blob": "c75f45fdfcc43909274e6516c91130dbab4b6947"
+    },
+    {
+      "file": "coral.html",
+      "sourcePath": "templates/coral/template.html",
+      "blob": "eafadf96be4749f894fdedcb0ed09a1a06e49cef"
+    },
+    {
+      "file": "daisy-days.html",
+      "sourcePath": "templates/daisy-days/template.html",
+      "blob": "f0b82c3661fc6951a0685fc2029108f7ed939555"
+    },
+    {
+      "file": "grove.html",
+      "sourcePath": "templates/grove/template.html",
+      "blob": "a5be2e2b01fa1366090fb4f151f505c3d2bdac46"
+    },
+    {
+      "file": "mat.html",
+      "sourcePath": "templates/mat/template.html",
+      "blob": "65c8158ec9417e224f1ee526d6c91ff4441ba298"
+    },
+    {
+      "file": "playful.html",
+      "sourcePath": "templates/playful/template.html",
+      "blob": "cb0b32b07897e877bd71bec91cc64363897f0da0"
+    },
+    {
+      "file": "raw-grid.html",
+      "sourcePath": "templates/raw-grid/template.html",
+      "blob": "a08e2a5b43e6863e861cde5212604525e6428be4"
+    },
+    {
+      "file": "retro-windows.html",
+      "sourcePath": "templates/retro-windows/template.html",
+      "blob": "7f2226871d6831d1be271a588b5efea3a2820b2d"
+    },
+    {
+      "file": "retro-zine.html",
+      "sourcePath": "templates/retro-zine/template.html",
+      "blob": "d7c75439faa74ad4dfd56eb3be2ffe5b64ce89af"
+    },
+    {
+      "file": "scatterbrain.html",
+      "sourcePath": "templates/scatterbrain/template.html",
+      "blob": "6a98e36c1076f82e09271e3960130a8f8ee394b0"
+    },
+    {
+      "file": "signal.html",
+      "sourcePath": "templates/signal/template.html",
+      "blob": "ef03c32b2ee9c312179ad52298637356d66eb386"
+    },
+    {
+      "file": "studio.html",
+      "sourcePath": "templates/studio/template.html",
+      "blob": "8a05a39ca2c22f2d24298bc71e6c42d57f5673ee"
+    },
+    {
+      "file": "biennale-yellow.html",
+      "sourcePath": "templates/biennale-yellow/template.html",
+      "blob": "9da24c3ad5a4ef2f76d869aee485f9eaf69b0dbc"
+    },
+    {
+      "file": "long-table.html",
+      "sourcePath": "templates/long-table/template.html",
+      "blob": "bcca6c90b57c3a11b074fe01151b278c98eae729"
+    },
+    {
+      "file": "deck-stage.js",
+      "sourcePath": "runtime/deck-stage.js",
+      "blob": "354a820d21485445b21234d529b71e3948d9745a"
+    }
+  ]
+}

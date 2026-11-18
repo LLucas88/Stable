@@ -69,9 +69,29 @@ test('dataset permission failure stops automatic retries and retains the explana
     assert.equal(calls, 1)
     assert.equal(result.status, 'failed')
     assert.match(result.answer, /FAIL_BIZ_04/)
-    assert.match(result.answer, /平台管理员/)
+    assert.equal(result.answer,'FAIL_BIZ_04: 当前品牌无权访问该数据集；尚未生成 Excel。')
     assert.deepEqual(result.artifacts, [])
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('delivery includes authorized output roots and never accepts a file from an ungranted directory',async t=>{
+ const root=mkdtempSync(path.join(os.tmpdir(),'stable-delivery-roots-')),workspace=path.join(root,'workspace'),extra=path.join(root,'extra'),outside=path.join(root,'outside')
+ for(const folder of [workspace,extra,outside])mkdirSync(folder)
+ t.after(()=>{assert.equal(path.dirname(root),path.resolve(os.tmpdir()));rmSync(root,{recursive:true,force:true})})
+ const file=path.join(extra,'report.csv');let calls=0
+ const result=await runWithDeliveryChecks({workspace,writableRoots:[extra],delivery:deliveryRequest('生成 CSV'),prompt:'fixture',execute:async()=>{calls++;writeFileSync(file,'name,value\na,1');return `已生成 [report.csv](${file})`}})
+ assert.equal(calls,1);assert.equal(result.status,'completed');assert.deepEqual(result.artifacts,[file])
+ let explanations=0
+ const rejected=await runWithDeliveryChecks({workspace,writableRoots:[extra],delivery:deliveryRequest('生成 CSV'),prompt:'fixture',execute:async()=>{const ungranted=path.join(outside,'other.csv');writeFileSync(ungranted,'fixture');return `已生成 ${ungranted}`},explainFailure:async context=>{explanations++;assert.match(context.reason,/未检测到/);return '目标文件不在本次授权交付范围，未确认交付。'}})
+ assert.equal(rejected.status,'failed');assert.equal(explanations,1);assert.equal(rejected.answer,'目标文件不在本次授权交付范围，未确认交付。')
+})
+
+test('a model explanation preserves existing artifacts without certifying unresolved review or forcing more execution',async t=>{
+ const root=mkdtempSync(path.join(os.tmpdir(),'stable-review-delivery-'))
+ t.after(()=>{assert.equal(path.dirname(root),path.resolve(os.tmpdir()));rmSync(root,{recursive:true,force:true})})
+ const file=path.join(root,'result.html');let calls=0
+ const result=await runWithDeliveryChecks({workspace:root,delivery:deliveryRequest('生成 HTML'),prompt:'fixture',getExecutionOutcome:()=>({status:'incomplete',reason:'mobile review is blocked'}),execute:async()=>{calls++;writeFileSync(file,'<h1>partial</h1>');return '模型说明：文件已生成，但手机布局未能完成验证。'}})
+ assert.equal(calls,1);assert.equal(result.status,'failed');assert.deepEqual(result.artifacts,[file]);assert.match(result.answer,/模型说明/)
 })
 
 test('missing input is preserved without retry; a plan still retries and never claims completion', async () => {
@@ -95,13 +115,13 @@ test('delivery accepts a verified existing file without modifying its timestamp 
   try {
     const file = path.join(root, 'existing.xlsx')
     writeFileSync(file, 'fixture')
-    const before = artifactSnapshot(root, ['.xlsx'])
+    const before = await artifactSnapshot(root, ['.xlsx'])
     let calls = 0
     const result = await runWithDeliveryChecks({ workspace: root, delivery: deliveryRequest('请导出 Excel'), prompt: 'test', execute: async () => { calls += 1; return `复用已有文件，已检查符合要求。\n${file}` } })
     assert.equal(calls, 1)
     assert.equal(result.status, 'completed')
     assert.deepEqual(result.reused, [file])
-    assert.deepEqual(artifactSnapshot(root, ['.xlsx']), before)
+    assert.deepEqual(await artifactSnapshot(root, ['.xlsx']), before)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -115,16 +135,16 @@ test('a genuinely generated artifact succeeds even if the answer mentions a reso
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('delivery verifier reports only new or modified target artifacts', () => {
+test('delivery verifier reports only new or modified target artifacts', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'stable-delivery-'))
   try {
     mkdirSync(path.join(root, 'outputs'))
     const existing = path.join(root, 'outputs', 'existing.html')
     writeFileSync(existing, '<h1>before</h1>')
-    const before = artifactSnapshot(root, ['.html'])
+    const before = await artifactSnapshot(root, ['.html'])
     const created = path.join(root, 'outputs', 'result.html')
     writeFileSync(created, '<h1>result</h1>')
-    const changed = changedArtifacts(before, artifactSnapshot(root, ['.html']))
+    const changed = changedArtifacts(before, await artifactSnapshot(root, ['.html']))
     assert.deepEqual(changed, [created])
     assert.match(appendArtifactPaths('已完成。', changed), new RegExp(created.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   } finally {

@@ -30,23 +30,15 @@ test('inline examples, fenced examples, malformed and incomplete cards do not cr
   assert.equal(waitingAnswer('为什么增长？这是分析结果。'), null)
 })
 const payload = { prompt: '参考图1的配色，主标题写“周末，慢一点”。先生成 1 张。', design: { model: 'glm-image', mode: 'generate', ratio: '3:4', resolution: '2k', count: 4, text: '' } }
-test('quantity conflict pauses without model calls, preserves parameters and resumes only after explicit choice', async () => {
-  const ask = () => { throw Error('unexpected model call') }
-  const result = await clarifyBeforeExecution({ payload, messages: [], ask })
-  assert.equal(result.status, 'waiting'); assert.equal(result.payload.design.count, 4)
-  const q = result.trace.at(-1).clarification
-  const messages = [{ role: 'user', content: payload.prompt }, { role: 'assistant', content: result.answer, trace: result.trace }]
-  const restored = JSON.parse(JSON.stringify(messages))
-  for (const [index, count] of [[0, 4], [1, 1]]) {
-    const response = { prompt: `【用户选择】\n问题：${q.question}\n路线：${q.options[index].label}\n处理提示：${q.options[index].description}`, clarificationResolved: true }
-    const next = await clarifyBeforeExecution({ payload: response, messages: restored, ask })
-    assert.equal(next.status, 'ready'); assert.equal(next.payload.design.count, count)
-  }
-  const unresolved = await clarifyBeforeExecution({ payload: { prompt: '继续' }, messages: restored, ask })
-  assert.equal(unresolved.status, 'waiting')
-  assert.equal((await clarifyBeforeExecution({ payload: { prompt: '取消' }, messages: restored, ask })).status, 'cancelled')
-  assert.equal(payload.design.count, 4); assert.equal(q.payload.design.count, 4)
+test('explicit user count wins over panel defaults without a conflict card', async () => {
+  let calls=0
+  const result = await clarifyBeforeExecution({ payload, messages: [], ask: async prompt => { calls++; assert.doesNotMatch(prompt,/先提问，不自动覆盖/); return '{"status":"ready"}' } })
+  assert.equal(result.status,'ready'); assert.equal(result.payload.design.count,1)
+  assert.equal(payload.design.count,4); assert.equal(calls,1)
+  const resolved = await clarifyBeforeExecution({ payload: {...payload,clarificationResolved:true}, messages: [], ask:()=>{throw Error('unexpected')} })
+  assert.equal(resolved.status,'ready'); assert.equal(resolved.payload.design.count,1)
 })
+
 test('reference numbers, text in quotes, negation and ambiguous quantities are not interpreted as generation counts', () => {
   for (const text of ['参考图1和图4', '1536x2048', '标题写“先生成1张”', '不要生成1张', '先生成1张，再生成4张', '生成10张', '是不是生成1张？']) assert.equal(explicitImageCount(text), null, text)
   assert.equal(explicitImageCount('先生成两张。'), 2)

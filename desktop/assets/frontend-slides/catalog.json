@@ -1,0 +1,746 @@
+[
+  {
+    "slug": "8-bit-orbit",
+    "name": "像素轨道",
+    "originalName": "8-Bit Orbit",
+    "description": "像素轨道风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "retro-tech",
+      "playful",
+      "cyberpunk"
+    ],
+    "reference": "bold-template-pack/templates/8-bit-orbit/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "8-bit-orbit-1.png",
+      "8-bit-orbit-6.png",
+      "8-bit-orbit-5.png"
+    ]
+  },
+  {
+    "slug": "biennale-yellow",
+    "name": "双年展黄",
+    "originalName": "Biennale Yellow",
+    "description": "双年展黄风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "atmospheric",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/biennale-yellow/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "biennale-yellow-1.png",
+      "biennale-yellow-5.png",
+      "biennale-yellow-8.png"
+    ]
+  },
+  {
+    "slug": "block-frame",
+    "name": "色块边框",
+    "originalName": "BlockFrame",
+    "description": "色块边框风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "bold",
+      "playful",
+      "graphic"
+    ],
+    "reference": "bold-template-pack/templates/block-frame/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "block-frame-1.png",
+      "block-frame-4.png",
+      "block-frame-8.png"
+    ]
+  },
+  {
+    "slug": "blue-professional",
+    "name": "专业蓝调",
+    "originalName": "Blue Professional",
+    "description": "专业蓝调风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "professional",
+      "modern",
+      "calm"
+    ],
+    "reference": "bold-template-pack/templates/blue-professional/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "blue-professional-1.png",
+      "blue-professional-6.png",
+      "blue-professional-8.png"
+    ]
+  },
+  {
+    "slug": "bold-poster",
+    "name": "醒目海报",
+    "originalName": "Bold Poster",
+    "description": "醒目海报风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "bold",
+      "editorial",
+      "loud"
+    ],
+    "reference": "bold-template-pack/templates/bold-poster/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "bold-poster-1.png",
+      "bold-poster-4.png",
+      "bold-poster-8.png"
+    ]
+  },
+  {
+    "slug": "broadside",
+    "name": "大字报",
+    "originalName": "Broadside",
+    "description": "大字报风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "dramatic",
+      "loud"
+    ],
+    "reference": "bold-template-pack/templates/broadside/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "broadside-1.png",
+      "broadside-4.png",
+      "broadside-13.png"
+    ]
+  },
+  {
+    "slug": "capsule",
+    "name": "胶囊设计",
+    "originalName": "Capsule",
+    "description": "胶囊设计风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "playful",
+      "modern",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/capsule/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "capsule-1.png",
+      "capsule-4.png",
+      "capsule-8.png"
+    ]
+  },
+  {
+    "slug": "cartesian",
+    "name": "笛卡尔坐标",
+    "originalName": "Cartesian",
+    "description": "笛卡尔坐标风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "quiet",
+      "considered",
+      "elegant"
+    ],
+    "reference": "bold-template-pack/templates/cartesian/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "cartesian-1.png",
+      "cartesian-4.png",
+      "cartesian-8.png"
+    ]
+  },
+  {
+    "slug": "cobalt-grid",
+    "name": "钴蓝网格",
+    "originalName": "Cobalt Grid",
+    "description": "钴蓝网格风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "design-research",
+      "studious"
+    ],
+    "reference": "bold-template-pack/templates/cobalt-grid/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "cobalt-grid-1.png",
+      "cobalt-grid-3.png",
+      "cobalt-grid-5.png"
+    ]
+  },
+  {
+    "slug": "coral",
+    "name": "珊瑚色调",
+    "originalName": "Coral",
+    "description": "珊瑚色调风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "bold",
+      "warm",
+      "modern"
+    ],
+    "reference": "bold-template-pack/templates/coral/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "coral-1.png",
+      "coral-4.png",
+      "coral-8.png"
+    ]
+  },
+  {
+    "slug": "creative-mode",
+    "name": "创意模式",
+    "originalName": "Creative Mode",
+    "description": "创意模式风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "creative",
+      "confident",
+      "playful"
+    ],
+    "reference": "bold-template-pack/templates/creative-mode/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "creative-mode-1.png",
+      "creative-mode-4.png",
+      "creative-mode-6.png"
+    ]
+  },
+  {
+    "slug": "daisy-days",
+    "name": "雏菊时光",
+    "originalName": "Daisy Days",
+    "description": "雏菊时光风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "cheerful",
+      "playful",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/daisy-days/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "daisy-days-1.png",
+      "daisy-days-4.png",
+      "daisy-days-8.png"
+    ]
+  },
+  {
+    "slug": "editorial-forest",
+    "name": "森林杂志",
+    "originalName": "Editorial Forest",
+    "description": "森林杂志风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "quiet",
+      "considered"
+    ],
+    "reference": "bold-template-pack/templates/editorial-forest/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "editorial-forest-1.png",
+      "editorial-forest-2.png",
+      "editorial-forest-5.png"
+    ]
+  },
+  {
+    "slug": "editorial-tri-tone",
+    "name": "三色杂志",
+    "originalName": "Editorial Tri-Tone",
+    "description": "三色杂志风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "warm",
+      "intentional"
+    ],
+    "reference": "bold-template-pack/templates/editorial-tri-tone/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "editorial-tri-tone-1.png",
+      "editorial-tri-tone-4.png",
+      "editorial-tri-tone-3.png"
+    ]
+  },
+  {
+    "slug": "emerald-editorial",
+    "name": "翡翠杂志",
+    "originalName": "Emerald Editorial",
+    "description": "翡翠杂志风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "editorial",
+      "considered",
+      "confident"
+    ],
+    "reference": "bold-template-pack/templates/emerald-editorial/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "emerald-editorial-1.png",
+      "emerald-editorial-3.png",
+      "emerald-editorial-6.png"
+    ]
+  },
+  {
+    "slug": "grove",
+    "name": "林间",
+    "originalName": "Grove",
+    "description": "林间风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "organic",
+      "considered",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/grove/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "grove-1.png",
+      "grove-4.png",
+      "grove-8.png"
+    ]
+  },
+  {
+    "slug": "long-table",
+    "name": "长桌雅集",
+    "originalName": "Long Table",
+    "description": "长桌雅集风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "warm",
+      "intimate",
+      "modern"
+    ],
+    "reference": "bold-template-pack/templates/long-table/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "long-table-1.png",
+      "long-table-3.png",
+      "long-table-7.png"
+    ]
+  },
+  {
+    "slug": "mat",
+    "name": "衬垫质感",
+    "originalName": "Mat",
+    "description": "衬垫质感风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "warm-modern",
+      "considered",
+      "tactile"
+    ],
+    "reference": "bold-template-pack/templates/mat/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "mat-1.png",
+      "mat-4.png",
+      "mat-8.png"
+    ]
+  },
+  {
+    "slug": "monochrome",
+    "name": "黑白单色",
+    "originalName": "Monochrome",
+    "description": "黑白单色风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "restrained",
+      "literary",
+      "archival"
+    ],
+    "reference": "bold-template-pack/templates/monochrome/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "monochrome-1.png",
+      "monochrome-4.png",
+      "monochrome-12.png"
+    ]
+  },
+  {
+    "slug": "neo-grid-bold",
+    "name": "新锐网格",
+    "originalName": "Neo-Grid Bold",
+    "description": "新锐网格风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "confident",
+      "punchy",
+      "editorial"
+    ],
+    "reference": "bold-template-pack/templates/neo-grid-bold/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "neo-grid-bold-1.png",
+      "neo-grid-bold-3.png",
+      "neo-grid-bold-8.png"
+    ]
+  },
+  {
+    "slug": "peoples-platform",
+    "name": "大众舞台",
+    "originalName": "People's Platform (Block & Bold)",
+    "description": "大众舞台风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "activist",
+      "loud",
+      "graphic"
+    ],
+    "reference": "bold-template-pack/templates/peoples-platform/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "peoples-platform-1.png",
+      "peoples-platform-4.png",
+      "peoples-platform-8.png"
+    ]
+  },
+  {
+    "slug": "pin-and-paper",
+    "name": "别针与纸",
+    "originalName": "Pin & Paper",
+    "description": "别针与纸风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "crafted",
+      "handmade",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/pin-and-paper/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "pin-and-paper-1.png",
+      "pin-and-paper-11.png",
+      "pin-and-paper-3.png"
+    ]
+  },
+  {
+    "slug": "pink-script",
+    "name": "粉色手写",
+    "originalName": "Pink Script — After Hours",
+    "description": "粉色手写风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "nocturnal",
+      "moody",
+      "intentional"
+    ],
+    "reference": "bold-template-pack/templates/pink-script/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "pink-script-1.png",
+      "pink-script-4.png",
+      "pink-script-8.png"
+    ]
+  },
+  {
+    "slug": "playful",
+    "name": "童趣创想",
+    "originalName": "Playful",
+    "description": "童趣创想风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "warm",
+      "approachable",
+      "indie"
+    ],
+    "reference": "bold-template-pack/templates/playful/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "playful-1.png",
+      "playful-6.png",
+      "playful-8.png"
+    ]
+  },
+  {
+    "slug": "raw-grid",
+    "name": "原生网格",
+    "originalName": "Raw Grid",
+    "description": "原生网格风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "raw",
+      "punchy",
+      "energetic"
+    ],
+    "reference": "bold-template-pack/templates/raw-grid/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "raw-grid-1.png",
+      "raw-grid-4.png",
+      "raw-grid-8.png"
+    ]
+  },
+  {
+    "slug": "retro-windows",
+    "name": "复古视窗",
+    "originalName": "Retro Windows",
+    "description": "复古视窗风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "nostalgic",
+      "retro",
+      "geeky"
+    ],
+    "reference": "bold-template-pack/templates/retro-windows/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "retro-windows-1.png",
+      "retro-windows-4.png",
+      "retro-windows-8.png"
+    ]
+  },
+  {
+    "slug": "retro-zine",
+    "name": "复古小刊",
+    "originalName": "Retro Zine",
+    "description": "复古小刊风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "crafted",
+      "lo-fi",
+      "underground"
+    ],
+    "reference": "bold-template-pack/templates/retro-zine/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "retro-zine-1.png",
+      "retro-zine-4.png",
+      "retro-zine-8.png"
+    ]
+  },
+  {
+    "slug": "sakura-chroma",
+    "name": "樱彩光谱",
+    "originalName": "Sakura Chroma",
+    "description": "樱彩光谱风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "retro",
+      "playful",
+      "kawaii-tech"
+    ],
+    "reference": "bold-template-pack/templates/sakura-chroma/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "sakura-chroma-1.png",
+      "sakura-chroma-3.png",
+      "sakura-chroma-4.png"
+    ]
+  },
+  {
+    "slug": "scatterbrain",
+    "name": "灵感散记",
+    "originalName": "Scatterbrain",
+    "description": "灵感散记风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "playful",
+      "creative",
+      "warm"
+    ],
+    "reference": "bold-template-pack/templates/scatterbrain/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "scatterbrain-1.png",
+      "scatterbrain-4.png",
+      "scatterbrain-8.png"
+    ]
+  },
+  {
+    "slug": "signal",
+    "name": "信号场",
+    "originalName": "Signal",
+    "description": "信号场风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "institutional",
+      "trustworthy",
+      "considered"
+    ],
+    "reference": "bold-template-pack/templates/signal/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "signal-1.png",
+      "signal-18.png",
+      "signal-8.png"
+    ]
+  },
+  {
+    "slug": "soft-editorial",
+    "name": "柔和杂志",
+    "originalName": "Soft Editorial",
+    "description": "柔和杂志风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "literary",
+      "elegant",
+      "quiet"
+    ],
+    "reference": "bold-template-pack/templates/soft-editorial/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "soft-editorial-4.png",
+      "soft-editorial-6.png",
+      "soft-editorial-10.png"
+    ]
+  },
+  {
+    "slug": "stencil-tablet",
+    "name": "镂印石板",
+    "originalName": "Stencil & Tablet",
+    "description": "镂印石板风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "archival",
+      "earthy",
+      "tactile"
+    ],
+    "reference": "bold-template-pack/templates/stencil-tablet/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "stencil-tablet-1.png",
+      "stencil-tablet-3.png",
+      "stencil-tablet-8.png"
+    ]
+  },
+  {
+    "slug": "studio",
+    "name": "创作工坊",
+    "originalName": "Studio",
+    "description": "创作工坊风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "electric",
+      "bold",
+      "graphic"
+    ],
+    "reference": "bold-template-pack/templates/studio/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "studio-1.png",
+      "studio-4.png",
+      "studio-8.png"
+    ]
+  },
+  {
+    "slug": "vellum",
+    "name": "羊皮纸韵",
+    "originalName": "Vellum",
+    "description": "羊皮纸韵风格，展示 GitHub 提供的原版演示样片，可参考原始 HTML 制作演示文稿。",
+    "tags": [
+      "scholarly",
+      "literary",
+      "considered"
+    ],
+    "reference": "bold-template-pack/templates/vellum/design.md",
+    "hasOriginalPreview": true,
+    "samples": [
+      "vellum-1.png",
+      "vellum-4.png",
+      "vellum-8.png"
+    ]
+  },
+  {
+    "slug": "preset-bold-signal",
+    "name": "醒目信号",
+    "originalName": "Bold Signal",
+    "description": "醒目信号经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-electric-studio",
+    "name": "电光工作室",
+    "originalName": "Electric Studio",
+    "description": "电光工作室经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-creative-voltage",
+    "name": "创意电压",
+    "originalName": "Creative Voltage",
+    "description": "创意电压经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-dark-botanical",
+    "name": "暗夜植物",
+    "originalName": "Dark Botanical",
+    "description": "暗夜植物经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-notebook-tabs",
+    "name": "笔记索引",
+    "originalName": "Notebook Tabs",
+    "description": "笔记索引经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-pastel-geometry",
+    "name": "柔彩几何",
+    "originalName": "Pastel Geometry",
+    "description": "柔彩几何经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-split-pastel",
+    "name": "柔彩分栏",
+    "originalName": "Split Pastel",
+    "description": "柔彩分栏经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-vintage-editorial",
+    "name": "复古杂志",
+    "originalName": "Vintage Editorial",
+    "description": "复古杂志经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-neon-cyber",
+    "name": "赛博霓虹",
+    "originalName": "Neon Cyber",
+    "description": "赛博霓虹经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-terminal-green",
+    "name": "终端绿光",
+    "originalName": "Terminal Green",
+    "description": "终端绿光经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-swiss-modern",
+    "name": "瑞士现代",
+    "originalName": "Swiss Modern",
+    "description": "瑞士现代经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  },
+  {
+    "slug": "preset-paper-ink",
+    "name": "纸与墨",
+    "originalName": "Paper & Ink",
+    "description": "纸与墨经典风格预设，当前预览为 Stable 示例。",
+    "tags": [
+      "经典风格"
+    ],
+    "reference": "STYLE_PRESETS.md",
+    "hasOriginalPreview": false
+  }
+]

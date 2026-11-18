@@ -1,7 +1,7 @@
 param([string]$StableExe)
 $ErrorActionPreference='Stop'
 $env:STABLE_CLOUD_ENABLED='1'
-$env:STABLE_CLOUD_URL='https://116.62.83.85'
+$env:STABLE_CLOUD_URL='https://121.40.181.213'
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 if(-not $StableExe){throw 'Provide the full path to Stable.exe with -StableExe.'}
 $exe=(Resolve-Path -LiteralPath $StableExe).Path

@@ -19,9 +19,9 @@ async function main() {
   win = new BrowserWindow({ show: false, width: 1440, height: 1000, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } })
   win.webContents.on('console-message', (_event, level, message) => { if(level >= 2) console.error(message) })
 
-  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(').replace('function AccountDock(', 'export function AccountDock(')
+  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function AccountDock(', 'export function AccountDock(')
   const bundle = (await build({ stdin: { contents: `
-    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {App,AgentPage,LaunchSplash} from './src/App'; import {AccountDock} from './src/settings/SettingsWorkspace';
+    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {createPortal} from 'react-dom'; import {App,AgentPage} from './src/App'; import {AccountDock} from './src/settings/SettingsWorkspace';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
@@ -69,12 +69,11 @@ async function main() {
       return <>{createPortal(<AccountDock state={value} onSelect={module=>{window.selectedSettingsModule=module}}/>,document.getElementById('settings'))}<AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/></>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<App/>);
     window.remount=async()=>{reactRoot.render(null);await new Promise(r=>setTimeout(r,100));reactRoot.render(<App/>)};
-    window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.BASE_URL': '"/"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   const fixtureHtml=path.join(app.getPath('userData'),'composer.html');fs.writeFileSync(fixtureHtml,'<html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>');await win.loadFile(fixtureHtml)
   console.log('DESIGN_NATIVE_FORCED_COLORS', await win.webContents.executeJavaScript('matchMedia("(forced-colors: active)").matches'))
   await prepareVisualFixture(win)
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css','sidebar-layout.css','design-activity.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css','sidebar-layout.css','design-activity.css','image-parameters.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 2800))
@@ -109,11 +108,11 @@ async function main() {
     modelMenu.open=false;
     expect(modelMenu.querySelector('summary').textContent.includes('Flare'),'Flare selection failed');
     const quality=Array.from(document.querySelectorAll('.design-controls details')).find(d=>d.querySelector('summary')?.textContent.startsWith('质量'));
-    quality.open=true;expect(quality.querySelectorAll('button').length===6,'Official image quality choices missing');
-    const bg=quality.querySelector('select');bg.value='transparent';bg.dispatchEvent(new Event('change',{bubbles:true}));await tick();expect(bg.value==='transparent','Transparent background not selected');quality.open=false;
+    quality.open=true;expect(quality.querySelectorAll('button[aria-pressed]').length===6,'Official image quality choices missing');
+    quality.open=false;document.querySelector('.p26-more>summary').click();await tick();document.querySelector('.p26-background>summary').click();await tick();[...document.querySelectorAll('.p26-background button')].find(b=>b.textContent.startsWith('透明')).click();await tick();expect(document.querySelector('.p26-background>summary').textContent.includes('透明'),'Transparent background not selected');document.querySelector('.p26-more').open=false;
     modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent==='GLM-image').click();await tick();
     expect(!Array.from(document.querySelectorAll('.design-controls summary')).some(s=>s.textContent.startsWith('质量')),'GPT options leaked into GLM');
-    modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent.includes('Sunburst')).click();await tick();
+    modelMenu.open=true;Array.from(modelMenu.querySelectorAll('button')).find(b=>b.textContent==='GPT Image 2.5 Sunburst').click();await tick();
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
     expect(document.querySelector('[data-design-chat="true"]')&&!document.querySelector('[aria-label="图片尺寸"]'),'Chat mode kept image controls');
     expect(getComputedStyle(document.querySelector('.composer-tools')).display!=='none','Normal chat tools hidden');
@@ -134,7 +133,7 @@ async function main() {
   fs.writeFileSync(path.join(output,'design-model-menu-dark.png'),(await win.webContents.capturePage()).toPNG())
   await run(`document.documentElement.dataset.theme='light';document.querySelectorAll('.design-controls details').forEach(d=>d.open=false);await tick();`)
   await run(`
-    const size=document.querySelector('.design-size-popover');size.closest('details').open=true;
+    document.querySelector('.p26-more').open=true;await tick();const size=document.querySelector('.design-size-popover');size.closest('details').querySelector('summary').click();await tick();
     Array.from(size.querySelectorAll('button')).find(b=>b.textContent.startsWith('弹窗')).click();await tick();
     Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='2K').click();await tick();
     expect(size.querySelector('.design-output-limit').textContent.includes('小于 2 MB')&&size.querySelector('.design-output-limit').textContent.includes('600 × 750'),'Delivery specification missing');
@@ -147,8 +146,15 @@ async function main() {
     const commit=s=>document.querySelector(s).dispatchEvent(new FocusEvent('focusout',{bubbles:true}));
     input('[aria-label="图片宽度"]','1001');await tick();commit('[aria-label="图片宽度"]');await tick();
     input('[aria-label="图片高度"]','777');await tick();commit('[aria-label="图片高度"]');await tick();
-    expect(document.querySelector('[aria-label="图片宽度"]').value==='992'&&document.querySelector('[aria-label="图片高度"]').value==='768','Custom size not aligned');
+    expect(document.querySelector('[aria-label="图片宽度"]').value==='1008'&&document.querySelector('[aria-label="图片高度"]').value==='784','Custom size not aligned');
     expect(document.querySelector('.design-size-notice').textContent.includes('已自动调整'),'Adjustment not shown');
+    const dimensionsBefore=[document.querySelector('[aria-label="图片宽度"]').value,document.querySelector('[aria-label="图片高度"]').value];
+    const slider=size.querySelector('.design-resolution-slider'),before=slider.getBoundingClientRect().x;
+    Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='标准').click();await tick();await tick();
+    expect(size.querySelector('.design-resolution-options [aria-pressed=true]').textContent==='标准','Custom resolution selection invisible');
+    expect(getComputedStyle(slider).boxShadow!=='none'&&slider.getBoundingClientRect().x<before,'Shadow slider did not move');
+    expect(document.querySelector('[aria-label="图片宽度"]').value===dimensionsBefore[0]&&document.querySelector('[aria-label="图片高度"]').value===dimensionsBefore[1],'Resolution changed custom dimensions');
+    Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='2K').click();await tick();
     click('[aria-label="锁定宽高比例"]');await tick();input('[aria-label="图片宽度"]','1311');await tick();commit('[aria-label="图片宽度"]');await tick();
     expect(document.querySelector('[aria-label="图片宽度"]').value==='1312'&&document.querySelector('[aria-label="图片高度"]').value==='1024','Aspect lock failed');
   `)
@@ -175,12 +181,12 @@ async function main() {
   await run(`const size=document.querySelector('.design-size-popover');Array.from(size.querySelectorAll('button')).find(b=>b.textContent==='自定义').click();await tick();click('[aria-label="锁定宽高比例"]');await tick();input('[aria-label="图片宽度"]','1312');await tick();document.querySelector('[aria-label="图片宽度"]').dispatchEvent(new FocusEvent('focusout',{bubbles:true}));await tick();input('[aria-label="图片高度"]','1024');await tick();document.querySelector('[aria-label="图片高度"]').dispatchEvent(new FocusEvent('focusout',{bubbles:true}));await tick();`)
   await run(`
     document.querySelector('.design-size-popover').closest('details').open=false;
-    const controls=document.querySelector('.design-controls');const count=Array.from(controls.querySelectorAll('summary')).find(s=>s.textContent.includes('1 张'));count.click();await tick();
+    const controls=document.querySelector('.design-controls');const count=Array.from(controls.querySelectorAll('summary')).find(s=>s.textContent.includes('数量')||s.textContent.includes('1 张'));count.click();await tick();
     Array.from(count.parentElement.querySelectorAll('button')).find(b=>b.textContent==='2 张').click();await tick();
     const text=document.querySelector('[aria-label="图中文字内容"]');text.closest('details').open=true;input('[aria-label="图中文字内容"]','仅限今日 23.8');await tick();text.closest('details').open=false;
     input('#agent-prompt','生成一份早餐海报');await tick();click('.composer-send');await tick();
     expect(window.sent.length===1,'One submit should dispatch once');
-    expect(window.sent[0].design.model==='gpt-image-2.5-sunburst'&&window.sent[0].design.quality==='medium'&&window.sent[0].design.background==='opaque','GPT model settings lost on send');
+    expect(window.sent[0].design.model==='gpt-image-2.5-sunburst'&&window.sent[0].design.quality==='auto'&&window.sent[0].design.background==='auto','GPT model settings lost on send');
     expect(window.sent[0].attachments[0].name==='reference.png','Reference missing from send');
     expect(window.sent[0].design.count===2&&window.sent[0].design.ratio==='custom'&&window.sent[0].design.width===1312&&window.sent[0].design.height===1024&&window.sent[0].design.text==='仅限今日 23.8','Design parameters lost');
     expect(!window.sent[0].prompt.includes('stable_design_request'),'System parameters leaked into user message');
@@ -189,7 +195,7 @@ async function main() {
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
     input('#agent-prompt','解释一下版式');await tick();click('.composer-send');await tick();expect(window.sent.length===1,'Queue bypassed running turn');
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:first-child');await tick();
-    const countMenu=Array.from(document.querySelectorAll('.design-controls summary')).find(e=>e.textContent.includes('2 张'));countMenu.click();await tick();Array.from(countMenu.parentElement.querySelectorAll('button')).find(b=>b.textContent==='4 张').click();await tick();
+    const countMenu=document.querySelector('[aria-label="生成数量"]');countMenu.click();await tick();Array.from(countMenu.parentElement.querySelectorAll('button')).find(b=>b.textContent==='4 张').click();await tick();
     expect((await window.stable.agent.state(window.sent[0].id)).conversations.find(c=>c.id===window.sent[0].id).design.count===4,'Unsent panel preferences were not persisted');
     expect(document.querySelector('.user-turn .design-message-parameters').textContent.includes('2 张'),'Editing next parameters mutated sent snapshot');
     input('#agent-prompt','再生成另一组');await tick();click('.composer-send');await tick();
@@ -210,11 +216,13 @@ async function main() {
   await run(`
     input('#agent-prompt','生成另一个早餐海报');await tick();click('.composer-send');await tick();
     window.finish(true);await tick();await tick();
-    expect(document.querySelector('.clarification-card'),'Design clarification not shown');
+    expect(!document.querySelector('.clarification-card'),'Old clarification blocks direct image mode');
     expect(document.querySelector('[data-design="true"]'),'Clarification changed the selected image mode');
+    click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
+    expect(document.querySelector('.clarification-card'),'Chat clarification not shown');
     input('[aria-label="自定义回答"]','面向上班族');await tick();click('.clarification-send');await tick();
     expect(window.sent.at(-1).clarification?.source==='custom','Card answer did not resume clarification');
-    expect(document.querySelector('[data-design="true"]'),'Answering clarification changed image mode');
+    expect(document.querySelector('[data-design-chat="true"]'),'Answering clarification changed chat mode');
     window.finish();await tick();await tick();
     click('[aria-label="Design 输入模式"]');await tick();click('[role="menuitemradio"]:last-child');await tick();
     input('#agent-prompt','解释设计思路');await tick();click('.composer-send');await tick();
@@ -226,6 +234,13 @@ async function main() {
 
   await win.webContents.executeJavaScript('window.remount()');await new Promise(r=>setTimeout(r,3000))
   await run(`expect(document.querySelector('[data-design="true"]'),'Selected image mode lost after remount');`)
+  await run(`
+    const state=await window.stable.agent.state(window.sent.at(-1).id);state.models.items.splice(0);state.models.defaultModelId='';
+    window.stable.agent.prediction=async()=>{window.unexpectedPrediction=true;throw Error('Image mode must not call a text model')};
+    await window.remount();
+  `)
+  await new Promise(r=>setTimeout(r,1000))
+  await run(`input('#agent-prompt','无需文字模型直接生图');await tick();const before=window.sent.length;click('.composer-send');await tick();expect(window.sent.length===before+1&&window.sent.at(-1).design,'Empty text catalog blocked image send');window.finish();await tick();await tick();expect(!window.unexpectedPrediction,'Image mode requested a text prediction');`)
   await run(`click('.rail-new-chat');await tick();expect(document.querySelector('[data-design="true"]'),'Design new chat lost mode');click('[aria-label="工作"]');await tick();click('.rail-new-chat');await tick();expect(!document.querySelector('[data-design="true"]'),'Ordinary new chat inherited Design')`)
   await run(`
     const pending=[];window.stable.agent.inspectAttachments=paths=>new Promise(resolve=>pending.push(()=>resolve(paths.map(path=>({name:path.split('/').at(-1),path,type:'png',size:100})))));

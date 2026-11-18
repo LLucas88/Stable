@@ -23,20 +23,61 @@ test('phase timing is monotonic and diagnostics cannot interrupt an answer', asy
   assert.equal(runner.lastTimings.finished, seen.at(-1)[1])
 })
 test('SDK error results retain the real API error when errors is empty',async t=>{
+ const events=[]
  const sdk=mockSdk(async function*(){yield {type:'result',subtype:'error_during_execution',is_error:true,errors:[],result:'API Error: 400 screenshot role invalid'}})
  const {workspace,runner}=fixture(t,sdk)
- await assert.rejects(runner.run('test',model,secret,5000,undefined,'read-only',[],{cwd:workspace}),/400 screenshot role invalid/)
+ await assert.rejects(runner.run('test',model,secret,5000,e=>events.push(e),'read-only',[],{cwd:workspace}),/400 screenshot role invalid/)
+ assert.equal(events.findLast(e=>e.id==='run-progress')?.status,'failed')
 })
-test('retry exhaustion publishes the final tool exception before cancelling',async t=>{
+test('repeated failure blocks only the next identical command and lets the model recover and explain',async t=>{
  const events=[]
  const sdk=mockSdk(async function*({parameters}){
-  const hooks=parameters.options.hooks,pre=hooks.PreToolUse.find(x=>x.matcher.includes('Bash')).hooks[0],failed=hooks.PostToolUseFailure.find(x=>x.matcher.includes('Bash')).hooks[0]
-  for(let i=0;i<3;i++){await pre({tool_name:'Bash',tool_use_id:'fail'+i,tool_input:{command:'python broken.py'},cwd:parameters.options.cwd});await failed({tool_use_id:'fail'+i,error:'specific exception '+i})}
-  yield {type:'result',subtype:'success',result:'unreachable'}
+  const hooks=parameters.options.hooks,pre=hooks.PreToolUse.find(x=>x.matcher.includes('Bash')).hooks[0],failed=hooks.PostToolUseFailure.find(x=>x.matcher.includes('Bash')).hooks[0],post=hooks.PostToolUse.find(x=>x.matcher.includes('Bash')).hooks[0]
+  for(let i=0;i<3;i++){assert.equal((await pre({tool_name:'Bash',tool_use_id:'fail'+i,tool_input:{command:'python broken.py'},cwd:parameters.options.cwd})).hookSpecificOutput.permissionDecision,'allow');await failed({tool_use_id:'fail'+i,error:'specific exception '+i})}
+  const blocked=await pre({tool_name:'Bash',tool_use_id:'blocked',tool_input:{command:'python broken.py'},cwd:parameters.options.cwd})
+  assert.equal(blocked.hookSpecificOutput.permissionDecision,'deny');assert.match(blocked.hookSpecificOutput.permissionDecisionReason,/specific exception 2/)
+  assert.equal((await pre({tool_name:'Bash',tool_use_id:'alternative',tool_input:{command:'python corrected.py'},cwd:parameters.options.cwd})).hookSpecificOutput.permissionDecision,'allow')
+  await post({tool_use_id:'alternative',tool_response:{stdout:'alternative result'}})
+  yield {type:'result',subtype:'success',result:'Model explains the original exception and the alternative result.'}
  })
  const {workspace,runner}=fixture(t,sdk)
- await assert.rejects(runner.run('test',model,secret,5000,event=>{events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/3 次/)
+ assert.match(await runner.run('test',model,secret,5000,event=>{events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/Model explains/)
  assert.equal(events.find(event=>event.id==='fail2'&&event.status==='failed')?.detail,'specific exception 2')
+ assert(!events.some(e=>e.id==='run-progress'&&e.status==='cancelled'))
+})
+
+test('three failed browser destinations remain recoverable through the actual tool event pipeline',async t=>{
+ const events=[]
+ const sdk=mockSdk(async function*({parameters}){
+  const browser=parameters.options.mcpServers.stable.tools.find(tool=>tool.name==='stable_browser')
+  for(const url of ['https://v.douyin.com/short','https://www.iesdouyin.com/share/video/1','https://www.douyin.com/video/1']){
+   const result=await browser.handler({action:'open',url},{})
+   assert.equal(result.isError,true)
+  }
+  yield {type:'result',subtype:'success',result:'Three destinations failed; report the actual missing evidence.'}
+ })
+ const {workspace,runner}=fixture(t,sdk,{builtinTools:()=>({execute:async()=>{throw Error('fixture navigation failed')},dispose(){}})})
+ assert.match(await runner.run('inspect',model,secret,5000,event=>{events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/actual missing evidence/)
+ assert.equal(events.filter(e=>e.toolName==='stable_browser'&&e.status==='failed').length,3)
+ assert(!events.some(e=>e.id==='run-progress'&&e.status==='cancelled'))
+})
+
+test('SDK validation failures without hooks remain visible and let parent and child finish with an explanation',async t=>{
+ for(const child of [false,true])await t.test(child?'child':'parent',async t=>{
+  const events=[]
+  const sdk=mockSdk(async function*(){
+   for(let i=0;i<3;i++){
+    const id='invalid-edit-'+i,parent_tool_use_id=child?'delegation':null
+    yield {type:'assistant',parent_tool_use_id,message:{content:[{type:'tool_use',id,name:'Edit',input:{file_path:'missing.txt',old_string:'before',new_string:'after'}}]}}
+    yield {type:'user',parent_tool_use_id,message:{content:[{type:'tool_result',tool_use_id:id,is_error:true,content:'String to replace not found'}]}}
+   }
+   yield {type:'result',subtype:'success',result:'The source text was not found; the file was not changed.'}
+  })
+  const {workspace,runner}=fixture(t,sdk)
+  assert.match(await runner.run('inspect edit failures',model,secret,5000,e=>events.push(e),'workspace-write',[],{cwd:workspace}),/source text was not found/)
+  assert.equal(events.filter(e=>e.toolName==='Edit'&&e.status==='failed').length,3)
+  assert(!events.some(e=>e.kind==='approval'))
+ })
 })
 test('script edits let the real native-hook progress pipeline continue after prior failures',async t=>{
  const sdk=mockSdk(async function*({parameters}){
@@ -60,7 +101,35 @@ test('script edits let the real native-hook progress pipeline continue after pri
  assert.equal(await runner.run('repair report',model,secret,5000,event=>{if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),'report verified')
 })
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
-function mockSdk(scenario = async function* () { yield { type: 'result', subtype: 'success', result: 'done' } }) {
+test('Stable MCP validation and structured failures are counted before retry blocking, while other tools can continue',async t=>{
+ const events=[];let executions=0
+ const sdk=mockSdk(async function*({parameters}){
+  const browser=parameters.options.mcpServers.stable.tools.find(tool=>tool.name==='stable_browser')
+  for(let i=0;i<3;i++)assert.equal((await browser.handler({action:'open',url:123},{})).isError,true)
+  assert.match(JSON.stringify(await browser.handler({action:'open',url:123},{})),/此调用未执行/)
+  for(let i=0;i<3;i++)assert.equal((await browser.handler({action:'open',url:'https://example.com/fail'},{})).isError,true)
+  assert.match(JSON.stringify(await browser.handler({action:'open',url:'https://example.com/fail'},{})),/此调用未执行/)
+  assert.equal((await browser.handler({action:'open',url:'https://example.com/success'},{})).isError,undefined)
+  yield {type:'result',subtype:'success',result:'The first page failed; the alternative succeeded.'}
+ })
+ const {workspace,runner}=fixture(t,sdk,{builtinTools:()=>({execute:async request=>{executions++;return request.args.url.endsWith('/success')?{ok:true,text:'历史示例：当前品牌无权访问'}:{ok:false,error:{message:'specific navigation failure'}}},dispose(){}})})
+ assert.match(await runner.run('fixture',model,secret,5000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/alternative succeeded/)
+ assert.equal(executions,4);assert.equal(events.filter(e=>e.toolName==='stable_browser'&&e.status==='failed').length,8)
+})
+
+test('help exhaustion blocks only the help call and still lets the model explain',async t=>{
+ const sdk=mockSdk(async function*({parameters}){
+  const pre=parameters.options.hooks.PreToolUse.find(x=>x.matcher.includes('Bash')).hooks[0],post=parameters.options.hooks.PostToolUse.find(x=>x.matcher.includes('Bash')).hooks[0]
+  for(let i=0;i<2;i++){assert.equal((await pre({tool_name:'Bash',tool_use_id:'help'+i,tool_input:{command:'node --help'},cwd:parameters.options.cwd})).hookSpecificOutput.permissionDecision,'allow');await post({tool_use_id:'help'+i,tool_response:{stdout:'usage'}})}
+  const blocked=await pre({tool_name:'Bash',tool_use_id:'help-blocked',tool_input:{command:'node --help'},cwd:parameters.options.cwd})
+  assert.equal(blocked.hookSpecificOutput.permissionDecision,'deny');assert.match(blocked.hookSpecificOutput.permissionDecisionReason,/帮助调用未执行/)
+  yield {type:'result',subtype:'success',result:'I can continue using the existing help.'}
+ })
+ const {workspace,runner}=fixture(t,sdk)
+ assert.match(await runner.run('fixture',model,secret,5000,e=>{if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true}),/continue using/)
+})
+
+function mockSdk(scenario = async function* () { yield { type: 'result', subtype: 'success', result: 'done' } }, connections = {}) {
   const captures = []
   return {
     captures,
@@ -74,7 +143,7 @@ function mockSdk(scenario = async function* () { yield { type: 'result', subtype
         close() { capture.closed = true; closed.resolve() },
         async *[Symbol.asyncIterator]() {
           const first = (await iterator.next()).value; capture.first = first
-          yield { type: 'system', subtype: 'init', session_id: parameters.options.resume || parameters.options.sessionId, mcp_servers: Object.keys(parameters.options.mcpServers).map(name => ({ name, status: 'connected' })) }
+          yield { type: 'system', subtype: 'init', session_id: parameters.options.resume || parameters.options.sessionId, mcp_servers: Object.keys(parameters.options.mcpServers).map(name => ({ name, status: connections[name] || 'connected' })) }
           yield { type: 'user', uuid: first.uuid }
           yield* scenario({ ...capture, iterator, closed: closed.promise })
         },
@@ -94,6 +163,26 @@ function fixture(t, sdk = mockSdk(), options = {}) {
   })
   return { root, workspace, runner, sdk }
 }
+
+test('unavailable optional MCP preserves native work and bounds each MCP call before the runtime watchdog', async t => {
+  for (const connection of ['failed', 'pending']) await t.test(connection, async t => {
+    const sdk = mockSdk(undefined, { reports: connection }), events = []
+    const { root, workspace, runner } = fixture(t, sdk)
+    const file = require('../desktop/services/claude-extensions.cjs').configurationPath(root)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify({ version: 1, enabled: true, mcpServers: { reports: { type: 'http', url: 'https://mcp.invalid/api', tools: ['query'] } } }))
+    const answer = await runner.run('use local files', model, secret, 5000, event => {
+      events.push(event)
+      if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+    }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+    assert.equal(answer, 'done')
+    assert(events.some(event => event.id === 'external-mcp-status' && event.detail.includes('reports')))
+    const servers = sdk.captures[0].parameters.options.mcpServers
+    assert.equal(servers.stable.timeout, 24 * 60 * 60_000)
+    assert.equal(servers.reports.timeout, 9 * 60_000)
+    assert.equal(events.at(-1).status, 'completed')
+  })
+})
 
 test('persistent prompt rules are sent once, updated once and survive runner restart', async t => {
   const { root, workspace, runner, sdk } = fixture(t)
@@ -146,7 +235,7 @@ test('persistent SDK turns resume without repeating initialPrompt and restart af
   assert(!first.parameters.options.mcpServers.stable.tools.some(tool => tool.name === 'stable_file'))
   const delegated = await first.parameters.options.canUseTool('Agent', { subagent_type: 'Explore', model: 'outside-model', isolation: 'worktree', mode: 'bypassPermissions', run_in_background: true, prompt: 'inspect' })
   assert.equal(delegated.updatedInput.subagent_type, 'stable-worker')
-  assert.equal(delegated.updatedInput.run_in_background, false)
+  assert.equal(delegated.updatedInput.run_in_background, true)
   for (const key of ['model', 'isolation', 'mode']) assert.equal(delegated.updatedInput[key], undefined)
   assert.equal((await first.parameters.options.canUseTool('Bash', { command: 'anything' })).behavior, 'deny')
   assert.equal(first.parameters.options.strictMcpConfig, true)
@@ -550,3 +639,50 @@ test('unsupported small compaction windows fail before touching session data or 
  test('native Bash receives the bundled Python path instead of guessing a PATH installation', {skip:process.platform!=='win32'}, async t=>{const {runner,sdk}=fixture(t);await runner.run('read a spreadsheet',model,secret,1000,undefined,'workspace-write',[],{networkAccess:true});const options=sdk.captures[0].parameters.options;const python=path.resolve(__dirname,'../vendor/wending-cli/python/python.exe');assert(fs.existsSync(python));assert(options.systemPrompt.prompt.includes(python.replaceAll('\\','/')));assert.equal(options.env.STABLE_BUNDLED_PYTHON,python);});
 
 test('read-only and text-only turns do not advertise a bundled shell runtime', async t=>{for(const session of [{networkAccess:true},{networkAccess:true,textOnly:true}]){const {runner,sdk}=fixture(t);await runner.run('inspect',model,secret,1000,undefined,'read-only',[],session);const opts=sdk.captures[0].parameters.options;assert.equal(opts.env.STABLE_BUNDLED_PYTHON,undefined);assert(!opts.systemPrompt.prompt.includes('本机内置 Python：'));assert(!opts.tools.includes('Bash'));}});
+
+
+test('continuation final answer is persisted whole and child answers stay separate', async t => {
+  const items = []
+  const sdk = mockSdk(async function* () {
+    const part = (id, text, stop_reason) => ({ type: 'assistant', uuid: id, message: { id, content: [{ type: 'text', text }], stop_reason } })
+    yield part('a', '报告前文\n**⑥ ', 'max_tokens')
+    yield { ...part('child', '子任务的答案', 'end_turn'), parent_tool_use_id: 'child-tool' }
+    yield part('b', '**⑥ 后文', 'end_turn')
+    yield { type: 'result', subtype: 'success', result: '**⑥ 后文' }
+  })
+  const {workspace,runner}=fixture(t,sdk,{onRuntimeItem:(_c,_s,_t,item)=>items.push(item)})
+  const answer=await runner.run('报告',model,secret,5000,undefined,'read-only',[],{key:'continuation',cwd:workspace})
+  assert.equal(answer,'报告前文\n**⑥ 后文')
+  assert.equal(items.findLast(item=>item.phase==='final_answer').text,answer)
+  assert(!answer.includes('子任务'))
+})
+
+test('continuation failure preserves received text without reporting success', async t => {
+  const items=[]
+  const sdk=mockSdk(async function*(){
+    yield {type:'assistant',uuid:'a',message:{id:'a',content:[{type:'text',text:'已生成的前半段'}],stop_reason:'max_tokens'}}
+    yield {type:'result',subtype:'success',result:'已生成的前半段'}
+  })
+  const {workspace,runner}=fixture(t,sdk,{onRuntimeItem:(_c,_s,_t,item)=>items.push(item)})
+  await assert.rejects(runner.run('报告',model,secret,5000,undefined,'read-only',[],{key:'incomplete',cwd:workspace}),{code:'CLAUDE_ANSWER_INCOMPLETE'})
+  const saved=items.findLast(item=>item.phase==='final_answer')
+  assert.equal(saved.text,'已生成的前半段');assert.equal(saved.status,'failed')
+})
+
+
+test('accepted steering starts a fresh answer chain after output limit',async t=>{
+ const waiting=deferred()
+ const part=(id,text,stop_reason)=>({type:'assistant',uuid:id,message:{id,content:[{type:'text',text}],stop_reason}})
+ const sdk=mockSdk(async function*({iterator}){
+  yield part('old','旧报告前文','max_tokens');waiting.resolve()
+  const input=(await iterator.next()).value
+  yield {type:'user',uuid:input.uuid}
+  yield part('new','新要求的答案','end_turn')
+  yield {type:'result',subtype:'success',result:'新要求的答案',user_message_uuid:input.uuid}
+ })
+ const {workspace,runner}=fixture(t,sdk),events=[]
+ const running=runner.run('旧要求',model,secret,5000,e=>events.push(e),'read-only',[],{cwd:workspace})
+ await waiting.promise;await runner.steer('替换旧要求')
+ assert.equal(await running,'新要求的答案')
+ assert.deepEqual(events.filter(x=>x.finalAnswerPart).map(x=>x.id),['new'])
+})

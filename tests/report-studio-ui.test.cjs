@@ -37,7 +37,7 @@ test('version is visible in the account menu and the direct launcher accepts iso
   assert.match(main, /!process\.env\.STABLE_QA_CAPTURE && !process\.env\.STABLE_QA_USER_DATA && !updateHealthcheck/)
   assert.match(main, /app\.isPackaged[\s\S]*appendSwitch\('no-sandbox'\)/)
   assert.doesNotMatch(main, /appendSwitch\('disable-gpu'\)|appendSwitch\('in-process-gpu'\)/)
-  assert.match(main, /stable:appearance:launchReady[\s\S]*window\.show\(\)[\s\S]*window\.focus\(\)/)
+  assert.match(main, /const reveal = \(\) =>[\s\S]*window\.show\(\)[\s\S]*window\.focus\(\)[\s\S]*once\('did-finish-load', reveal\)/)
 })
 
 test('full installer ships the runtime while the lightweight updater reuses it', () => {

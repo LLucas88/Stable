@@ -290,10 +290,10 @@
 .clarification-card-heading button { display: grid; place-items: center; padding: 6px; border: 0; background: transparent; color: inherit; border-radius: 8px; }
 .clarification-card h3 { margin: 16px 0 12px; font-size: 15px; font-weight: 500; line-height: 1.55; overflow-wrap: anywhere; }
 .clarification-options { display: grid; gap: 4px; }
-.clarification-card .clarification-option { color: var(--color-ink); font-weight: 400; margin: 0; position: relative; display: flex; align-items: center; gap: 10px; padding: 6px; min-height: 36px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+.clarification-card .clarification-option { color: var(--color-ink); font: inherit; font-weight: 400; text-align: left; background: transparent; width: 100%; margin: 0; position: relative; display: flex; align-items: center; gap: 10px; padding: 6px; min-height: 36px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
 .clarification-option:hover, .clarification-option[data-selected] { background: var(--color-paper-3); }
 .clarification-option:focus-within { outline: 2px solid var(--color-focus); outline-offset: 1px; }
-.clarification-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.clarification-option:disabled { cursor: default; opacity: .6; }
 .clarification-number { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border: 1px solid var(--color-rule-2); border-radius: 5px; background: var(--color-paper-2); color: var(--color-muted); font-size: 13px; }
 .clarification-option > span:last-child { min-width: 0; }
 .clarification-option strong { display: block; font-size: 14px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
@@ -492,6 +492,10 @@
 /* Completed progress stays available behind its elapsed-time disclosure. */
 #root .run-trace:not([data-status="running"]) { padding-block-end: var(--space-xs); margin-block-end: var(--space-md); border-block-end: 1px solid var(--color-rule-soft) !important; }
 .trace-timeline[hidden] { display: none; }
+.sdk-task { padding: 12px 16px; border: 1px solid var(--color-border); border-radius: 12px; }
+.sdk-task-state { margin-inline-start: 12px; color: var(--color-ink-3); font-size: 12px; }
+.sdk-task pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sdk-task-actions { display: flex; gap: 12px; margin-top: 8px; }
 .trace-summary:disabled { cursor: default; opacity: 1; }
 .trace-summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
 .permission-popover { width: min(16rem, calc(100vw - 4rem)); overflow: visible; }

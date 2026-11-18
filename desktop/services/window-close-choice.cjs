@@ -27,8 +27,10 @@
   window.closeChoiceManaged = true
   const channel = 'stable:window:closeDecision'
   const beforeQuit = () => { quitting = true }
+  const quitCancelled = () => { quitting = false }
   const act = choice => { if (choice === 'minimize') window.minimize(); else if (choice === 'quit') app.quit() }
   app.on('before-quit', beforeQuit)
+  app.on('stable:quit-cancelled', quitCancelled)
   window.on('query-session-end', beforeQuit)
   window.on('session-end', beforeQuit)
   ipcMain.handle(channel, (event, value) => {
@@ -40,7 +42,7 @@
     act(value.choice)
     return true
   })
-  window.on('closed', () => { app.removeListener('before-quit', beforeQuit); ipcMain.removeHandler(channel) })
+  window.on('closed', () => { app.removeListener('before-quit', beforeQuit); app.removeListener('stable:quit-cancelled', quitCancelled); ipcMain.removeHandler(channel) })
   window.on('close', event => {
     if (quitting) return
     event.preventDefault()

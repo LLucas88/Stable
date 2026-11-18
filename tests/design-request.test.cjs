@@ -11,50 +11,17 @@ test('Design rejects unsupported models, dimensions, counts and modes before dis
   }
 })
 
-test('new Design selects gpt-6.1-sol high without migrating existing chats or global defaults',()=>{
-  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm')
-  const {StableStore}=require('../desktop/services/store.cjs')
-  const dir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'stable-design-model-'))
-  const store=new StableStore(dir)
-  const catalog={defaultModelId:'deepseek',items:[{id:'deepseek',model:'deepseek-flash',hasApiKey:true},{id:'sol-local-id',model:'gpt-6.1-sol',providerId:'openai',baseURL:'https://api.openai.com/v1',hasApiKey:true}]}
-  const main=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8')
-  const source=main.slice(main.indexOf("ipcMain.handle('stable:agent:create'"),main.indexOf("ipcMain.handle('stable:agent:state'"))
-  let create
-  try {
-    const original=store.activeConversationId()
-    store.updateConversationModel(original,'deepseek',['deepseek'])
-    store.addMessage(original,'user','保留原历史')
-    store.setSetting(`design:${original}`,validateDesignRequest(base))
-    vm.runInNewContext(source,{require:name=>require(path.resolve(__dirname,'../desktop',name)),ipcMain:{handle:(_,fn)=>{create=fn}},store,modelRegistry:{publicCatalog:()=>catalog},agentState:id=>store.conversation(id)})
-    const ordinary=create(null,{}),design=create(null,{design:base})
-    assert.equal(design.modelId,'sol-local-id')
-    assert.equal(design.capability,'high')
-    assert.notEqual(ordinary.modelId,'sol-local-id')
-    assert.equal(design.design.model,'glm-image')
-    assert.equal(store.conversation(original).modelId,'deepseek')
-    assert.equal(store.listMessages(original)[0].content,'保留原历史')
-    assert.equal(catalog.defaultModelId,'deepseek')
-    catalog.items[1].hasApiKey=false
-    assert.throws(()=>create(null,{design:base}),/gpt-6.1-sol/)
-    catalog.items.pop()
-    assert.throws(()=>create(null,{design:base}),/gpt-6.1-sol/)
-  } finally {store.db.close();fs.rmSync(dir,{recursive:true,force:true})}
-})
+test('new Design needs no text model and leaves ordinary model preferences unchanged',()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),{StableStore}=require('../desktop/services/store.cjs');
+ const root=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'stable-design-create-')),store=new StableStore(root);
+ try {
+  const main=fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8'),source=main.slice(main.indexOf("ipcMain.handle('stable:agent:create'"),main.indexOf("ipcMain.handle('stable:agent:state'"));
+  let create;const previous=store.modelCatalog(),existing=store.activeConversationId();
+  vm.runInNewContext(source,{require:name=>require(path.resolve(__dirname,'../desktop',name)),ipcMain:{handle:(_,fn)=>{create=fn}},store,modelRegistry:{publicCatalog:()=>{throw Error('must not inspect text models')}},agentState:id=>store.conversation(id)});
+  const created=create(null,{design:base});assert.equal(created.design.model,'glm-image');assert.equal(created.modelId,previous.defaultModelId);assert.deepEqual(store.modelCatalog(),previous);assert.ok(store.conversation(existing));
+ }finally{store.close();fs.rmSync(root,{recursive:true,force:true})}
+});
 
-test('Design enforces high effort on supported routes and rejects an implicit fallback',()=>{
-  const {designExecutionModel,designChatModel}=require('../desktop/services/design-request.cjs')
-  const {reasoningParameters}=require('../desktop/services/model-reasoning.cjs')
-  for(const route of [
-    {model:'gpt-6.1-sol',providerId:'openai',baseURL:'https://api.openai.com/v1'},
-    {model:'gpt-6.1-sol',providerId:'stable-cloud',baseURL:'http://127.0.0.1:12345/v1',cloudResponses:true},
-  ]) {
-    const fixed=designExecutionModel({...route,reasoningSelection:'low'})
-    assert.equal(fixed.reasoningSelection,'high');assert.deepEqual(reasoningParameters(fixed),{reasoning_effort:'high'})
-    assert.equal(designChatModel({items:[{...route,hasApiKey:true}]}).model,'gpt-6.1-sol')
-  }
-  assert.throws(()=>designExecutionModel({model:'deepseek-flash'}),/已停止/)
-  assert.throws(()=>designChatModel({items:[{model:'gpt-6.1-sol',baseURL:'https://unknown.invalid',hasApiKey:true}]}),/高思考/)
-})
 test('Design retains visible text as data and instructs real generation plus original composition',()=>{
   assert.equal(designInstruction(undefined),'')
   const result = designInstruction({...base,mode:'preserve',text:'仅限今日 23.8！',count:2})

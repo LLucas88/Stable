@@ -1,6 +1,15 @@
 export type Page = 'agent' | 'automations' | 'team' | 'data' | 'reports' | 'skills' | 'workflows' | 'knowledge' | 'mcp-cli' | 'market' | 'templates'
 export type ThemeMode = 'dark' | 'light'
 
+export interface DevReloadState {
+  enabled: boolean
+  revision: number
+  action: 'reload' | 'restart' | null
+  applying: boolean
+  blocked: boolean
+  message: string
+}
+
 export interface WendingCliStatus {
   id: 'wending-cli'
   status: 'checking' | 'bundled' | 'ready' | 'unavailable'
@@ -237,9 +246,17 @@ export interface ConversationItem {
 }
 
 export interface DesignRequest {
+  bindings?: Partial<Record<'quality' | 'background' | 'size' | 'count', boolean>>
   fit?: 'strict' | 'contain' | 'cover'
   outputPreset?: 'avatar' | 'shop-sign' | 'poster' | 'popup' | 'showcase' | 'dish'
-  model: 'glm-image' | 'gpt-image-2.5-sunburst' | 'gpt-image-2.5-flare'
+  model: 'glm-image' | 'gpt-image-2.5-sunburst' | 'gpt-image-2.5-flare' | 'gpt-image-2.6-sunburst' | 'gpt-image-2.6-flare'
+  outputFormat?: 'png' | 'jpeg' | 'webp' | 'svg' | 'gif'
+  complexity?: 'low' | 'medium' | 'high'
+  frameCount?: number
+  frameDurationMs?: number
+  connectionId?: string
+  upstreamModel?: string
+  editTransport?: 'json' | 'multipart'
   quality?: 'hd' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto'
   background?: 'opaque' | 'transparent' | 'auto'
   mode: 'generate' | 'preserve'
@@ -325,6 +342,13 @@ export interface ClarificationResponse {
 }
 export interface ClarificationTimer { id: string; deadline: number | null; interacted: boolean }
 export interface AgentTraceItem {
+  taskId?: string
+  taskRunId?: string
+  taskType?: string
+  taskBackground?: boolean
+  taskToolUseId?: string
+  taskOutputFile?: string
+  taskUsage?: { total_tokens: number; tool_uses: number; duration_ms: number }
   designRequest?: DesignRequest
   continuationOf?: string
   clarificationReply?: MessageItem
@@ -335,6 +359,7 @@ export interface AgentTraceItem {
   title: string
   detail?: string
   content?: string
+  finalAnswerPart?: boolean
   inputDetail?: string
   startedAt?: number
   status: AgentTraceStatus
@@ -527,7 +552,7 @@ export interface CloudUsageSummary {
   accountId: string
   from: string
   to: string
-  totals: { request_count?: number; settled_count?: number; exception_count?: number; prompt_tokens?: number; completion_tokens?: number; usage_unknown_count?: number; actual_micros?: number }
+  totals: { request_count?: number; settled_count?: number; exception_count?: number; prompt_tokens?: number; completion_tokens?: number; usage_unknown_count?: number; actual_micros?: number; confirmed_micros?: number; uncertain_micros?: number }
   byModel: Array<{ model_id: string; request_count: number; prompt_tokens: number; completion_tokens: number; actual_micros: number }>
 }
 
@@ -605,9 +630,10 @@ export interface DataImportBridge {
 }
 
 export interface StableBridge {
+  imageEditor: import('./image-editor-types').ImageEditorApi
   dataImport: DataImportBridge
   workbuddy: DataImportBridge
-  templates: {list():Promise<TemplateItem[]>;detail(id:string):Promise<TemplateItem & {html:string}>;import():Promise<TemplateItem[]>;save(id:string,value:Partial<TemplateItem>):Promise<TemplateItem[]>;use(id:string):Promise<AgentState>}
+  templates: {list():Promise<TemplateItem[]>;detail(id:string,options?:{thumbnail?:boolean}):Promise<TemplateItem & {html:string;previewImages?:string[]}>;import():Promise<TemplateItem[]>;save(id:string,value:Partial<TemplateItem>):Promise<TemplateItem[]>;use(id:string):Promise<AgentState>}
 
   windowClose: {
     onRequest(handler: () => void): () => void
@@ -616,7 +642,7 @@ export interface StableBridge {
   bootstrap(): Promise<BootstrapData>
   cloud: {
     diagnostic(phase: 'startup_failed'): Promise<boolean>
-    startup(): Promise<BootstrapData>
+    startup(): Promise<Pick<BootstrapData, 'cloud' | 'models'>>
     login(username: string, password: string): Promise<BootstrapData>
     changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<BootstrapData>
     refresh(): Promise<BootstrapData>
@@ -730,6 +756,7 @@ export interface StableBridge {
     clarificationTimer(conversationId: string, id: string, action: 'start' | 'interact'): Promise<ClarificationTimer>
     run(conversationId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[], clientRequestId?: string, clarificationResponse?: ClarificationResponse, design?: DesignRequest): Promise<AgentState & { answer: string; library: DataLibraryItem[]; skills: SkillItem[]; workflows: WorkflowItem[] }>
     cancel(conversationId: string): Promise<boolean>
+    taskAction(conversationId: string, runId: string, taskId: string, action: 'stop' | 'background'): Promise<boolean>
     steer(conversationId: string, requestId: string, prompt: string, attachments?: AgentAttachment[], references?: AgentReference[]): Promise<AgentState>
     answerApproval(conversationId: string, requestId: string, decision: boolean | 'deny' | 'once' | 'conversation'): Promise<boolean>
     clear(conversationId: string): Promise<AgentState>
@@ -744,6 +771,11 @@ export interface StableBridge {
     run(id: string): Promise<AutomationState>
     decideProposal(conversationId: string, messageId: string, accepted: boolean): Promise<{ agent: AgentState; automations: AutomationState }>
     onEvent(handler: (state: AutomationState) => void): () => void
+  }
+  development?: {
+    state(): Promise<DevReloadState>
+    apply(revision: number): Promise<DevReloadState>
+    onState(handler: (state: DevReloadState) => void): () => void
   }
   updater: {
     oneClick(): Promise<UpdateState>
@@ -815,8 +847,6 @@ export interface StableBridge {
   appearance: {
     setCompletedCount(count: number): Promise<number>
     setTheme(theme: ThemeMode): Promise<ThemeMode>
-    completeLaunch(): Promise<ThemeMode>
-    onLaunchStart(handler: () => void): () => void
   }
   system: {
     openPath(path: string): Promise<boolean>
@@ -835,4 +865,4 @@ declare global {
   }
 }
 
-export interface TemplateItem { id:string; name:string; category:string; description:string; tags:string[]; skillId:string; prompt:string; favorite:boolean; builtin?:boolean }
+export interface TemplateItem { hasOriginalPreview?:boolean; originalName?:string; id:string; name:string; category:string; description:string; tags:string[]; skillId:string; prompt:string; favorite:boolean; builtin?:boolean }

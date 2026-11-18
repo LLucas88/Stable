@@ -71,6 +71,39 @@ const reason = value => value.hookSpecificOutput.permissionDecisionReason
 const linkDir = (target, link) => fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
 function unlinkDirectoryLink(link) { assert.equal(fs.lstatSync(link).isSymbolicLink(), true); fs.unlinkSync(link) }
 
+test('native Read forwards allow_large without relaxing directory checks',async t=>{
+  const x=fixture(t), file=path.join(x.workspace,'large.txt');fs.writeFileSync(file,'fixture')
+  for(const allow_large of [true,false]){
+    const result=await x.pre('Read',{file_path:file,offset:20,limit:30,allow_large})
+    assert.equal(decision(result),'allow');assert.equal(result.hookSpecificOutput.updatedInput.allow_large,allow_large)
+  }
+  for(const allow_large of [1,'true',{}])assert.equal(decision(await x.pre('Read',{file_path:file,allow_large})),'deny')
+  const outside=path.join(x.outside,'private.txt');fs.writeFileSync(outside,'private')
+  assert.equal(decision(await x.pre('Read',{file_path:outside,allow_large:true})),'deny')
+})
+
+test('native command outputs are readable across resume but never grant other sessions, config, writes or links',async t=>{
+  const x=fixture(t),home=path.join(x.root,'sdk-home'),output=path.join(home,'projects','fixture-project','session-one','tool-results','result.txt')
+  fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,'output')
+  const privateFile=path.join(x.outside,'private.txt');fs.writeFileSync(privateFile,'private')
+  const other=output.replace('session-one','session-two');fs.mkdirSync(path.dirname(other),{recursive:true});fs.writeFileSync(other,'other session')
+  const config=path.join(home,'settings.txt');fs.writeFileSync(config,'settings')
+  const hard=path.join(path.dirname(output),'hard.txt');fs.linkSync(privateFile,hard)
+  const linked=path.join(home,'projects','linked-project');linkDir(path.join(home,'projects','fixture-project'),linked)
+  let approvals=0,id=0
+  const create=()=>createNativeToolGuard({workspace:x.workspace,runtimeHome:home,runtimeSessionId:'session-one',requestApproval:async()=>{approvals++;return true}})
+  const pre=(guard,name,args)=>guard.preToolUse({tool_use_id:'output-'+(++id),tool_name:name,tool_input:args})
+  for(const guard of [create(),create()]){
+    assert.equal(decision(await pre(guard,'Read',{file_path:output,offset:1,limit:1})),'allow')
+    assert.equal(decision(await pre(guard,'Grep',{path:output,pattern:'output'})),'allow')
+    for(const file of [other,config,hard,output.replace('fixture-project','linked-project'),path.dirname(output)])assert.equal(decision(await pre(guard,'Read',{file_path:file})),'deny',file)
+    assert.equal(decision(await pre(guard,'Write',{file_path:output,content:'replace'})),'deny')
+    assert.equal(decision(await pre(guard,'Edit',{file_path:output,old_string:'output',new_string:'replace'})),'deny')
+    assert.equal(decision(await pre(guard,'Glob',{path:path.dirname(output),pattern:'*'})),'deny')
+  }
+  assert.equal(approvals,0);assert.equal(fs.readFileSync(output,'utf8'),'output')
+})
+
 test('native WebFetch preserves long-page offsets and requires approval even in read-only mode', async t => {
   const x = fixture(t, { networkAccess: true, sandboxMode: 'read-only' })
   assert(x.guard.tools.includes('WebFetch'))
@@ -298,7 +331,7 @@ test('recursive search can be cancelled and PostToolUseFailure reports the origi
   const allowed = await x.pre('Read', { file_path: '1.txt' }, 'native-failure')
   assert.equal(decision(allowed), 'allow')
   await x.guard.postToolUseFailure({ tool_use_id: 'native-failure', error: 'native read failed' })
-  assert.deepEqual(x.events.at(-1), { id: 'native-failure', name: 'Read', args: { file_path: path.join(x.workspace, '1.txt') }, status: 'failed', detail: 'native read failed' })
+  assert.deepEqual(x.events.at(-1), { id: 'native-failure', name: 'Read', args: { file_path: path.join(x.workspace, '1.txt') }, cwd: x.workspace, status: 'failed', detail: 'native read failed' })
 })
 
  test('Bash quote failures return safe recovery guidance without rewriting or reapproving commands',async t=>{const x=fixture(t,{networkAccess:true});const args={command:'node -e "console.log(1)"'};assert.equal(decision(await x.pre('Bash',args,'bad-quote')),'allow');const reply=await x.guard.postToolUseFailure({tool_use_id:'bad-quote',error:'Exit code 1: bad substitution'});assert.match(reply.hookSpecificOutput?.additionalContext||'',/Write.*Edit/);assert.match(reply.hookSpecificOutput.additionalContext,/审批/);assert.equal(x.approvals.length,1);assert.equal(x.events.at(-1).status,'failed');});

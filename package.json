@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.11.3",
+  "version": "1.11.5",
   "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "start": "electron .",
+    "start:watch": "node scripts/start-watch.cjs",
     "start:team-dev": "node scripts/start-team-dev.cjs",
     "build": "vite build --configLoader runner",
     "typecheck": "tsc --noEmit",
@@ -18,6 +19,7 @@
     "test:clarification": "node --test tests/clarification.test.cjs tests/clarification-ipc.test.cjs tests/clarification-interaction.test.cjs tests/clarification-card-ui.test.cjs tests/clarification-agent-page-ui.test.cjs tests/message-outbox.test.cjs",
     "test:integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs",
     "test:claude-integration": "node --test --test-concurrency=1 tests/claude-sdk-integration.cjs tests/claude-web-fetch-integration.cjs",
+    "test:claude-upgrade": "node --test --test-concurrency=1 tests/claude-runtime-loader.test.cjs tests/claude-sdk-deployment.test.cjs tests/claude-sdk-completion.test.cjs tests/claude-sdk-upgrade-integration.cjs",
     "runtime:powershell": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-powershell-runtime.ps1",
     "runtime:archive": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-runtime.ps1",
     "tools:install": "npm ci --prefix vendor/agent-tools --ignore-scripts --no-audit --no-fund",
@@ -32,7 +34,7 @@
     "runtime:git": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-git-runtime.ps1"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.308",
+    "@anthropic-ai/claude-agent-sdk": "0.3.318",
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.8",
     "@xmldom/xmldom": "0.8.14",
@@ -137,11 +139,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.11.3"
+      "output": "release-1.11.5"
     },
     "win": {
       "icon": "build/stable_app_icon.ico",
-      "artifactName": "Stable-Setup-1.11.3-${arch}.${ext}",
+      "artifactName": "Stable-Setup-1.11.5-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -165,11 +167,11 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://116.62.83.85/updates/",
+        "url": "https://121.40.181.213/updates/",
         "useMultipleRangeRequest": false
       }
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.11.3"
+  "releaseVersion": "1.11.5"
 }

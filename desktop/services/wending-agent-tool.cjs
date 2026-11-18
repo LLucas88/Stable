@@ -34,7 +34,15 @@ function runWending({ trustedCli, args, cwd, signal }) {
     child.stdout.on('data', value => { output = (output + out.write(value)).slice(-1_000_000) })
     child.stderr.on('data', value => { stderr = (stderr + err.write(value)).slice(-1_000_000) })
     child.on('error', error => { cleanup(); reject(error) })
-    child.on('close', code => { cleanup(); output += out.end(); stderr += err.end(); if (stopped) reject(Error('问鼎调用已停止或超时。')); else if (code) reject(Error(`问鼎调用失败（${code}）：${stderr.slice(-2000)}`)); else resolve({ code, output, stderr }) })
+    child.on('close', (code, exitSignal) => {
+      cleanup(); output += out.end(); stderr += err.end()
+      if (stopped) reject(Error('问鼎调用已停止或超时。'))
+      else if (code !== 0) {
+        const details = [stderr.trim() && `stderr:\n${stderr.trim().slice(-2000)}`,
+          output.trim() && `stdout:\n${output.trim().slice(-2000)}`].filter(Boolean).join('\n')
+        reject(Error(`问鼎调用失败（${code ?? exitSignal ?? '未知退出状态'}）：${details || '进程未返回错误详情。'}`))
+      } else resolve({ code, output, stderr })
+    })
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort()
     timer = setTimeout(abort, 120_000)
   })

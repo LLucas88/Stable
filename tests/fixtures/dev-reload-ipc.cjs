@@ -1,0 +1,20 @@
+const {app}=require('electron')
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os')
+const userData=process.argv[2]?path.resolve(process.argv[2]):fs.mkdtempSync(path.join(os.tmpdir(),'stable-dev-ipc-'))
+fs.mkdirSync(userData,{recursive:true});app.setPath('userData',userData)
+app.disableHardwareAcceleration()
+const {createDevReload}=require('../../desktop/services/dev-reload.cjs')
+const {sendIpc,confirmRestart}=require('../../desktop/services/dev-ipc.cjs')
+app.whenReady().then(()=>{
+ const service=createDevReload({prepare:async()=>{},reload:async()=>{},restart:()=>app.quit(),send:message=>sendIpc(process,message),confirmRestart:id=>confirmRestart(process,id),onState:state=>void sendIpc(process,{type:'stable:dev:test-state',state})})
+ // Fixture-only controls: production accepts apply solely from its trusted UI.
+ process.on('message',message=>{
+  if(message?.type==='stable:dev:test-state')void sendIpc(process,{type:'stable:dev:test-state',state:service.state()})
+  else if(message?.type==='stable:dev:test-apply')void service.apply(message.revision).then(state=>sendIpc(process,{type:'stable:dev:test-result',state})).catch(error=>sendIpc(process,{type:'stable:dev:test-error',code:error.code,message:error.message}))
+  else if(message?.type==='stable:dev:test-stop')app.quit()
+  else service.receive(message)
+ })
+ process.once('disconnect',()=>service.dispose())
+ process.send({type:'stable:dev:ready'})
+ setTimeout(()=>app.exit(1),10000).unref()
+})

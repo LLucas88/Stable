@@ -19,9 +19,9 @@ async function main() {
   win = new BrowserWindow({ show: false, width: 1280, height: 800, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } })
   win.webContents.on('console-message', (_event, level, message) => { if(level >= 2) console.error(message) })
 
-  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(').replace('  function setAttachments(', '  window.setTestAttachments = setAttachments;\n  function setAttachments(')
+  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('  function setAttachments(', '  window.setTestAttachments = setAttachments;\n  function setAttachments(')
   const built = await build({ outfile: 'fixture.js', stdin: { contents: `
-    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
+    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage} from './src/App';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     conversations.push({...conversations[0],id:'empty',title:'空白草稿',messageCount:0});
@@ -45,7 +45,6 @@ async function main() {
     function Test(){const [value,setValue]=useState(initial); window.changeState=setValue;window.fixtureState=state;window.draft=draft;
       return <AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
-    window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.png': 'dataurl', '.svg': 'dataurl', '.mp4': 'dataurl', '.css': 'css' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })
   const bundle=built.outputFiles.find(file=>file.path.endsWith('.js')).text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))

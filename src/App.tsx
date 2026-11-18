@@ -1,4 +1,5 @@
 import { useFileContextMenu } from './components/FileContextMenu'
+import { ImageEditor } from './ImageEditor'
 import { ConversationActivity } from './ConversationActivity'
 import { DesignControls, DesignMessageParameters, DEFAULT_DESIGN } from './DesignControls'
 import type { DesignRequest } from './types'
@@ -19,6 +20,8 @@ import './styles/sidebar-layout.css'
 import { ContextUsageButton } from './ContextUsageButton'
 import { TemplateLibrary } from './TemplateLibrary'
 import { type AccountModuleId, AccountDock, SettingsNavigation, SettingsContent, UpdateProgressButton } from './settings/SettingsWorkspace'
+import { UpdateNotice } from './UpdateNotice'
+import { DevUpdateNotice } from './DevUpdateNotice'
 
 import { ImportedConversationContinuation } from './imports/DataImport'
 import { EffortSlider } from './EffortSlider'
@@ -36,16 +39,16 @@ import { ConversationTools } from './ConversationTools'
 
 import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
-import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, Palette, Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
-import launchLogoUrl from '../build/stable_launch_logo.png'
 import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
 import { WorkflowStudio } from './WorkflowStudio'
 import { formatElapsedTime } from './duration'
 import { buildTraceTimeline, groupTraceTimeline, traceGroupLabel, savedTraceStatus, traceCommand, traceItemStatus, traceToolInput, traceToolIcon, latestTraceTool } from './trace-timeline'
+import { SdkTask } from './SdkTask'
 import { MessageOutbox, type OutboxEntry, type OutboxResult } from './message-outbox'
 import { readComposerValue, writeComposerValue, useComposerValue } from './composer-storage'
 import { taskErrorMessage } from './task-feedback'
@@ -117,8 +120,6 @@ export function App() {
   const [repositoryTab, setRepositoryTab] = useState<RepositoryPageId>(isRepositoryPage(initialPage) ? initialPage : 'data')
   const [agentPrefill, setAgentPrefill] = useState('')
   const [state, setState] = useState<BootstrapData | null>(null)
-  const [showLaunch, setShowLaunch] = useState(true)
-  const [launchRunning, setLaunchRunning] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('正在读取本地工作区')
@@ -140,10 +141,6 @@ export function App() {
   const confirmationResolver = useRef<((value: boolean) => void) | null>(null)
   const railResize = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const conversationSearchButtonRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    return window.stable.appearance.onLaunchStart(() => setLaunchRunning(true))
-  }, [])
 
   useEffect(() => window.stable.team.onEvent((team) => {
     setState((current) => current ? { ...current, team } : current)
@@ -171,15 +168,6 @@ export function App() {
   }, [page])
 
   useEffect(() => {
-    if (!launchRunning || !showLaunch) return
-    const timer = window.setTimeout(() => {
-      setShowLaunch(false)
-      void window.stable.appearance.completeLaunch()
-    }, 2100)
-    return () => window.clearTimeout(timer)
-  }, [launchRunning, showLaunch])
-
-  useEffect(() => {
     if (state?.cloud.status !== 'checking') return
     return recoverCloudStartup(
       () => window.stable.cloud.startup(),
@@ -190,11 +178,6 @@ export function App() {
       },
     )
   }, [state?.cloud.status])
-
-  function finishLaunch() {
-    setShowLaunch(false)
-    void window.stable.appearance.completeLaunch()
-  }
 
   useEffect(() => {
     window.stable.bootstrap().then((value) => {
@@ -380,12 +363,12 @@ export function App() {
     setStatus('问鼎 CLI 已载入，请确认提示词后发送')
   }
 
-  const launch = showLaunch ? <LaunchSplash running={launchRunning} onFinish={finishLaunch} /> : null
-
-  if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div>{launch}</>
+  if (!state) return <><div className="window-shell"><WindowTitlebar /><BootScreen status={status} error={error} /></div></>
 
   return (
     <><div className="window-shell">
+      <UpdateNotice update={state.update} />
+      <DevUpdateNotice />
       <WindowTitlebar railCollapsed={railCollapsed} searchOpen={conversationSearchOpen} searchButtonRef={conversationSearchButtonRef} onToggleRail={() => setRailCollapsed((current) => !current)} onSearch={openConversationSearch} />
       <div className="app-shell" data-rail-collapsed={railCollapsed || undefined} style={{ '--rail-width': `${railCollapsed ? 0 : railWidth}px` } as CSSProperties}>
       {!railCollapsed && <aside className="side-rail" id="stable-main-navigation" aria-label="主导航">
@@ -460,7 +443,7 @@ export function App() {
         {error && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭错误"><X size={18} /></button></div>}
       </div>
       {conversationSearchOpen && <ConversationSearch query={conversationSearchQuery} results={conversationSearchResults} loading={conversationSearchLoading} error={conversationSearchError} activeConversationId={state.activeConversationId} onQueryChange={setConversationSearchQuery} hasMore={searchHasMore} onMore={()=>{const query=conversationSearchQuery;setConversationSearchLoading(true);void window.stable.agent.search(query,conversationSearchResults.length).then(results=>{if(searchQueryRef.current!==query)return;setConversationSearchResults(current=>[...new Map([...current,...results].map(i=>[i.id,i])).values()]);setSearchHasMore(results.length===30)}).catch(reason=>setConversationSearchError(errorMessage(reason))).finally(()=>setConversationSearchLoading(false))}} onSelect={selectConversationSearchResult} onClose={() => closeConversationSearch()} />}
-    </div>{launch}</>
+    </div></>
   )
 }
 
@@ -590,24 +573,6 @@ function ConfirmModal({ value, onCancel, onConfirm }: { value: { title: string; 
       <div className="confirm-copy"><span>{value.title}</span><h2 id="confirm-title">{value.message}</h2><p id="confirm-detail">{value.detail}</p></div>
       <div className="confirm-actions"><button className="button" type="button" onClick={onCancel}>取消</button><button className="button danger" type="button" autoFocus onClick={onConfirm}>确认</button></div>
     </section>
-  </div>
-}
-
-function LaunchSplash({ running, onFinish }: { running: boolean; onFinish: () => void }) {
-  return <div
-    className="launch-splash"
-    data-running={running}
-    role="button"
-    tabIndex={0}
-    aria-label="Stable 正在启动，点击跳过动画"
-    onPointerDown={onFinish}
-    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onFinish() }}
-  >
-    <div className="launch-aura" aria-hidden="true" />
-    <div className="launch-logo-wrap">
-      <img className="launch-logo" src={launchLogoUrl} alt="Stable" />
-      <span className="launch-scan" aria-hidden="true" />
-    </div>
   </div>
 }
 
@@ -808,7 +773,7 @@ interface ImageViewerTarget {
   index: number
 }
 
-function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget, activityView = false, onActivityCount }: { activityView?: boolean; onActivityCount?: (count: number) => void; onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
+function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, consumePrefill, updateAgent, updateAutomations, updateTeam, action, openConversation, conversationTasksTarget, activityView = false, onActivityCount }: { activityView?: boolean; onActivityCount?: (count: number) => void; onOpenAccount: () => void; onDraftsChange?: (ids: string[]) => void; active: boolean; state: BootstrapData; prefill: string; consumePrefill: () => void; updateAgent: (value: AgentState | Pick<BootstrapData, 'models'>) => void; updateAutomations: (value: AutomationState) => void; updateTeam: (value: TeamState) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; openConversation: () => void; conversationTasksTarget: HTMLDivElement | null }) {
   const composerKey = `stable-composer-v1:${state.paths.userData}`
   const [promptMap, setPromptMap, promptSaveError] = useComposerValue<Record<string, string>>(composerKey + ':prompts', {})
   const prompt = promptMap[state.activeConversationId] || ''
@@ -875,9 +840,10 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const modelSwitchPending = useRef(false)
   useEffect(() => {
     let disposed = false
-    if (window.stable.model?.discover) {
+    // Cloud startup already supplies the authenticated catalog.
+    if (state.cloud.status === 'disabled' && window.stable.model?.discover) {
       void window.stable.model.discover().then(result => {
-        if (!disposed) updateAgent({ ...stateRef.current, models: result.catalog })
+        if (!disposed) updateAgent({ models: result.catalog })
       }).catch(() => { /* Keep the existing catalog if background discovery fails. */ })
     }
     return () => { disposed = true }
@@ -963,19 +929,22 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
     for (const item of state.conversations) designPreferences.observe(item.id, item.design, item.designRevision || 0)
     designPreferences.restore(state.conversations.map(item => item.id))
   }, [designPreferences, state.conversations])
-  const design: DesignRequest = { ...(designPreferences.values[state.activeConversationId] || activeConversation?.design || DEFAULT_DESIGN), mode: 'generate' }
+  const [designBindings, setDesignBindings] = useState<Record<string, DesignRequest['bindings']>>({})
+  const design: DesignRequest = { ...(designPreferences.values[state.activeConversationId] || activeConversation?.design || DEFAULT_DESIGN), mode: 'generate', bindings: designBindings[state.activeConversationId] || {} }
   function insertDesignReference(index: number) {
     setPrompt(current => current.replace(/@$/, '') + `@图${index + 1} `)
     promptRef.current?.focus()
   }
   function changeDesign(value: DesignRequest) {
     const id = state.activeConversationId
-    designPreferences.save(id, value, activeConversation?.designRevision || 0)
+    setDesignBindings(current=>({...current,[id]:{...value.bindings}}))
+    // Keep remembered values separate from the single-message binding switches.
+    designPreferences.save(id, { ...value, bindings: undefined }, activeConversation?.designRevision || 0)
   }
   const running = Boolean(runningMap[state.activeConversationId])
   const pendingPrompt = pendingMap[state.activeConversationId]
   const liveTrace = traceMap[state.activeConversationId]
-  const pendingQuestion = !running && state.messages.at(-1)?.role === 'assistant' ? [...(state.messages.at(-1)?.trace || [])].reverse().find(item => item.clarification?.status === 'waiting')?.clarification : undefined
+  const pendingQuestion = !imageMode && !running && state.messages.at(-1)?.role === 'assistant' ? [...(state.messages.at(-1)?.trace || [])].reverse().find(item => item.clarification?.status === 'waiting')?.clarification : undefined
   const [hiddenQuestionId, setHiddenQuestionId] = useState('')
   useEffect(() => { setHiddenQuestionId('') }, [state.activeConversationId, active])
   const pendingApproval = running ? liveTrace?.items.find((item) => item.kind === 'approval' && item.status === 'running' && item.requestId) : undefined
@@ -1008,7 +977,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const latestMessage = state.messages.at(-1)
   const prediction = useMessagePrediction({
     conversationId: state.activeConversationId, messageId: latestMessage?.id, modelId: activeModel?.id,
-    eligible: active && state.messagePredictionsEnabled !== false && latestMessage?.role === 'assistant'
+    eligible: active && !imageMode && state.messagePredictionsEnabled !== false && latestMessage?.role === 'assistant'
       && !activeConversation?.archivedAt && !running && !queue.running && !queue.items.length && !queue.paused
       && !pendingQuestion && !pendingApproval && !composerError && !prompt && !attachments.length
       && !selectedReferences.some(item => item.kind !== 'skill') && latestMessage?.automationProposal?.status !== 'pending',
@@ -1454,6 +1423,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
       if (!pendingQueue.running && !pendingQueue.items.length) outbox.resume(conversationId)
       const dispatch = pendingQuestion ? outbox.reply.bind(outbox) : outbox.enqueue.bind(outbox)
       void Promise.resolve(dispatch(conversationId, message)).catch(error => setComposerErrorMap(current => ({ ...current, [conversationId]: errorMessage(error) })))
+      if (imageMode) setDesignBindings(current=>({...current,[conversationId]:{}}))
       setPrompt(current => current === prompt ? '' : current)
       setAttachmentMap(current => ({ ...current, [conversationId]: (current[conversationId] || []).filter(item => !attachments.some(sent => sent.path === item.path)) }))
       setReferences(current => current.filter(item => item.kind === 'skill' || !selectedReferences.some(sent => sent.kind === item.kind && sent.id === item.id)))
@@ -1686,7 +1656,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
             }} placeholder={prediction.text ? '' : pendingQuestion ? '回答上方问题…' : running ? '继续输入，发送后将排队等待…' : imageMode ? '结合参考图片，描述你想创作的画面；使用 @ 引用图片…' : '给 Stable 一个任务，或选择、拖入、粘贴图片与文件'} />
             </div>
             <div className="composer-actions">
-              {designMode && <DesignControls mode={designInputMode} onModeChange={changeDesignMode} value={design} onChange={changeDesign} references={imageAttachments.map(item=>item.name)} onReference={insertDesignReference}/>}
+              {designMode && <DesignControls mode={designInputMode} onModeChange={changeDesignMode} value={design} onChange={changeDesign} connections={state.models.items} references={imageAttachments.map(item=>item.name)} onReference={insertDesignReference}/>}
               {designMode && designPreferences.errors[state.activeConversationId] && <span role="alert">{designPreferences.errors[state.activeConversationId]} <button type="button" onClick={() => designPreferences.retry(state.activeConversationId)}>重试保存</button></span>}
               <div className="composer-tools">
                 <input ref={attachmentInputRef} type="file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.yaml,.yml,.html,.log,.xml,.pdf,.docx,.pptx,.xlsx,.xls,.zip" onChange={(event) => { const files = Array.from(event.target.files || []); addAttachments(files.map((file) => window.stable.files.path(file)).filter(Boolean)); event.target.value = '' }} />
@@ -1769,7 +1739,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
     {browserPanel?.open && active && <BrowserPanel obscured={Boolean(editingId || imageViewer || projectOverlay || removeTarget || conversationMenuId || projectMenuId)} key={state.activeConversationId} conversationId={state.activeConversationId} initialTarget={browserPanel.target} onEditRequest={acceptHtmlEditRequest} onClose={()=>setBrowserPanels(current=>({...current,[state.activeConversationId]:{...current[state.activeConversationId],open:false}}))} onImport={value=>setAttachmentMap(current=>({...current,[state.activeConversationId]:[...(current[state.activeConversationId]||[]),value]}))}/>}
 
     </div>
-    {imageViewer && <ImageLightbox items={imageViewer.items} index={imageViewer.index} onIndexChange={(index) => setImageViewer((current) => current ? { ...current, index } : current)} onClose={() => setImageViewer(undefined)} />}
+    {imageViewer && <ImageLightbox key={state.activeConversationId} conversationId={state.activeConversationId} items={imageViewer.items} index={imageViewer.index} onIndexChange={(index) => setImageViewer((current) => current ? { ...current, index } : current)} onClose={() => setImageViewer(undefined)} />}
   </section>
 }
 
@@ -1870,15 +1840,18 @@ function AttachmentImage({ item }: { item: { name: string; path?: string; previe
     : <span className="attachment-thumbnail attachment-thumbnail-placeholder" aria-hidden="true"><ImageIcon size={18} /></span>
 }
 
-function ImageLightbox({ items, index, onIndexChange, onClose }: { items: ViewerImageItem[]; index: number; onIndexChange: (index: number) => void; onClose: () => void }) {
+function ImageLightbox({ conversationId, items, index, onIndexChange, onClose }: { conversationId: string; items: ViewerImageItem[]; index: number; onIndexChange: (index: number) => void; onClose: () => void }) {
   const item = items[index]
   const source = useAttachmentImageSource(item || {})
   const [zoom, setZoom] = useState(1)
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
   const [downloadStatus, setDownloadStatus] = useState('')
+  const [editing, setEditing] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { if (!editing) closeRef.current?.focus() }, [editing])
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -1930,8 +1903,10 @@ function ImageLightbox({ items, index, onIndexChange, onClose }: { items: Viewer
   const fitScale = naturalSize.width && naturalSize.height ? Math.min(1, availableWidth / naturalSize.width, availableHeight / naturalSize.height) : 1
   const imageStyle = naturalSize.width && naturalSize.height ? { width: `${Math.round(naturalSize.width * fitScale * zoom)}px`, height: `${Math.round(naturalSize.height * fitScale * zoom)}px` } : undefined
 
+  if (editing && item?.path) return <ImageEditor key={`${conversationId}:${item.path}`} conversationId={conversationId} path={item.path} onClose={() => setEditing(false)} />
   return <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`图片预览 ${item?.name || ''}`} ref={dialogRef} onKeyDown={handleKeyDown} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className="image-lightbox-toolbar">
+      <button className="image-lightbox-button" type="button" onClick={() => setEditing(true)} disabled={!item?.path||! /\.(png|jpe?g|webp)$/i.test(item.path)} aria-label="编辑图片" title={/\.(svg|gif)$/i.test(item?.path||'')?'SVG / GIF 可预览和下载，暂不支持直接编辑':'编辑图片'}><Pencil size={20} aria-hidden="true" /></button>
       <button className="image-lightbox-button" type="button" onClick={() => void downloadImage()} disabled={!item?.path} aria-label="下载图片到本地"><Download size={20} aria-hidden="true" /></button>
       <button className="image-lightbox-button" type="button" onClick={onClose} aria-label="关闭图片预览" ref={closeRef}><X size={22} aria-hidden="true" /></button>
     </div>
@@ -1984,7 +1959,7 @@ function ArtifactLinks({ designMode=false, onPreviewImages, attachments=[], cont
   }, [content, workspace, conversationId, requestKey])
   const available = new Set(verified.key === requestKey ? verified.paths.map(path => path.replace(/\//g, '\\').toLowerCase()) : [])
   const fileAvailability = new Map(localArtifactPaths(content, workspace).map(item => { const key = item.path.replace(/\//g, '\\').toLowerCase(); return [key, available.has(key)] }))
-  const images = designMode ? [...new Map([...localArtifactPaths(content, workspace), ...attachments.filter(item=>item.path).map(item=>({name:item.name,path:item.path!}))].filter(item=>/\.(png|jpe?g|webp|gif|bmp)$/i.test(item.path)).map(item=>[item.path.toLowerCase(),item])).values()] : []
+  const images = designMode ? [...new Map([...localArtifactPaths(content, workspace), ...attachments.filter(item=>item.path).map(item=>({name:item.name,path:item.path!}))].filter(item=>/\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(item.path)).map(item=>[item.path.toLowerCase(),item])).values()] : []
   return <><MarkdownContent content={content} onPreview={onPreview} fileAvailability={fileAvailability} hideImageFiles={designMode ? new Set(images.map(item=>item.path.replace(/\//g,'\\').toLowerCase())) : undefined}/>{images.length>0&&<div className="design-delivery-gallery">{images.map((item,index)=><DesignDeliveryImage key={item.path} item={item} onOpen={()=>onPreviewImages?.(images,index)}/>)}</div>}</>
 }
 
@@ -2024,11 +1999,14 @@ function useStreamingText(content: string, live: boolean, followLines = false) {
     if (!animate) { setVisible(received.current); return }
     const timer = window.setInterval(() => setVisible(current => {
       const target = received.current
-      const prefix = target.startsWith(current) ? current : ''
-      const remaining = Array.from(target.slice(prefix.length))
-      const nextLine = followLines ? remaining.indexOf('\n') : -1
-      const count = Math.max(1, Math.ceil(remaining.length / 4))
-      return prefix + remaining.slice(0, nextLine >= 0 ? Math.min(count, nextLine + 1) : count).join('')
+      if (target === current) return current
+      const start = target.startsWith(current) ? current.length : 0
+      let end = start + Math.ceil((target.length - start) / 4)
+      const newline = followLines ? target.indexOf('\n', start) : -1
+      if (newline >= 0) end = Math.min(end, newline + 1)
+      // Reveal complete UTF-16 surrogate pairs, including emoji.
+      if (end < target.length && /[\uD800-\uDBFF]/.test(target.charAt(end - 1)) && /[\uDC00-\uDFFF]/.test(target.charAt(end))) end++
+      return target.slice(0, end)
     }), 24)
     return () => window.clearInterval(timer)
   }, [animate, followLines])
@@ -2049,31 +2027,34 @@ function TraceToolIcon({ item }: { item: AgentTraceItem }) {
 }
 function TraceToolPreview({ item }: { item: AgentTraceItem }) {
   const visible = useStreamingText(traceToolInput(item), true, true)
-  const line = visible.split(/\r?\n/).filter(line => line.trim()).at(-1) || '…'
+  const text = visible.trimEnd()
+  const line = text.slice(text.lastIndexOf('\n') + 1) || '…'
   return <span className="trace-tool-preview trace-running-label" title={line}>{line}</span>
 }
 
-function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status: AgentTraceStatus; agentName?: string }) {
+const TraceAction = memo(function TraceAction({ item, status, agentName }: { item: AgentTraceItem; status: AgentTraceStatus; agentName?: string }) {
+  const [expanded, setExpanded] = useState(false)
   const itemStatus = traceItemStatus(item, status)
   const command = useStreamingText(traceCommand(item), itemStatus === 'running' && item.kind === 'tool')
   const statusLabel = item.status === 'running' && status !== 'running'
     ? (status === 'cancelled' ? '已取消' : '已结束')
     : itemStatus === 'running' ? '运行中' : itemStatus === 'completed' ? '已完成' : itemStatus === 'cancelled' ? '已取消' : '执行失败'
   const Icon = item.entity === 'agent' ? Bot : item.kind === 'approval' ? ShieldCheck : item.kind === 'tool' ? Wrench : CircleAlert
-  return <details className="trace-action" data-status={itemStatus}>
+  if (item.taskId) return <SdkTask item={item} status={status} />
+  return <details className="trace-action" data-status={itemStatus} onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary>
       {item.kind === 'tool' ? <TraceToolIcon item={item} /> : <Icon size={15} aria-hidden="true" />}
       <span className={`trace-command${itemStatus === 'running' && item.kind === 'tool' ? ' trace-running-label' : ''}`}>{agentName && item.entity !== 'agent' ? `${agentName} · ` : ''}{item.kind === 'approval' && item.reason ? item.reason : command}</span>
       {item.kind === 'approval' && <span className="trace-action-state">{statusLabel}</span>}
     </summary>
-    <div className="trace-action-detail">
+    {expanded && <div className="trace-action-detail">
       {item.inputDetail && <pre>{item.inputDetail}</pre>}
       {item.kind !== 'tool' && item.detail && item.detail !== item.inputDetail && <pre>{item.detail}</pre>}
       {item.kind === 'tool' && !item.inputDetail && <pre>{traceCommand(item)}</pre>}
       {item.kind !== 'tool' && !item.detail && !item.inputDetail && <p>{statusLabel}，没有更多详情。</p>}
-    </div>
+    </div>}
   </details>
-}
+})
 
 function RunTrace({ items, status, startedAt, endedAt, streaming, finalContent, waiting = false, onCopyReply, onPreviewAttachment, onPreviewImages }: { onCopyReply?: (message: MessageItem) => void; waiting?: boolean; onPreviewAttachment?: (item: MessageAttachmentItem) => void; onPreviewImages?: (items: ViewerImageItem[], index: number) => void; items: AgentTraceItem[]; status: AgentTraceStatus; active?: boolean; startedAt?: number; endedAt?: number; streaming?: { id: string; time: number; content: string }; finalContent?: string }) {
   const firstEventAt = useMemo(() => items.length ? Math.min(...items.map((item) => item.startedAt ?? item.time)) : Date.now(), [items])
@@ -2086,12 +2067,13 @@ function RunTrace({ items, status, startedAt, endedAt, streaming, finalContent, 
   const showTimeline = waiting || status === 'running' || expanded
   useEffect(() => { setExpanded(false) }, [status])
   const timeline = useMemo(() => {
+    if (!showTimeline) return []
     const entries = streaming?.content && !items.some((item) => item.id === streaming.id)
       ? [...items, { id: streaming.id, runId: '', kind: 'reasoning' as const, eventType: 'agent/answer' as const, title: '', status: 'running' as const, time: streaming.time, content: streaming.content }]
       : items
     return buildTraceTimeline(entries, finalContent)
-  }, [items, streaming, finalContent])
-  const latestTool = latestTraceTool(items)
+  }, [showTimeline, items, streaming, finalContent])
+  const latestTool = status === 'running' ? latestTraceTool(items) : undefined
   const liveTool = status === 'running' && latestTool?.status === 'running' ? latestTool : undefined
   const groupedTimeline = useMemo(() => groupTraceTimeline(timeline), [timeline])
   const pendingCount = timeline.filter(item => item.kind === 'approval' && traceItemStatus(item, status) === 'running').length

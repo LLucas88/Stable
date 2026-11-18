@@ -14,6 +14,10 @@ async function main(){
  await ui(`window.stable.preview.openFile(${JSON.stringify(file)},{x:400,y:100,width:700,height:600})`)
  const started=await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorStart',filePath:${JSON.stringify(file)}})`)
  const contents=webContents.getAllWebContents().find(w=>w.getURL().includes('editor-main.html'));assert.ok(contents)
+ const popupTarget=path.join(workspace,'popup-report.html');fs.writeFileSync(popupTarget,'<h1>must not replace editor</h1>')
+ const editorURL=contents.getURL()
+ await contents.executeJavaScript(`window.open(${JSON.stringify(require('node:url').pathToFileURL(popupTarget).href)},'_blank');true`)
+ await delay(150);assert.equal(contents.getURL(),editorURL,'popup links must not navigate away from the active editor')
  const edit=code=>contents.executeJavaScriptInIsolatedWorld(1015,[{code:code+';true'}])
  await edit(`__stableHtmlEditor.choose('#title');__stableHtmlEditor.run('text','真实 IPC 保存')`)
  await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorSave',sessionId:${JSON.stringify(started.sessionId)}})`);assert.ok(fs.readFileSync(file,'utf8').includes('真实 IPC 保存'))
@@ -23,10 +27,13 @@ async function main(){
  await edit(`__stableHtmlEditor.run('undo')`);await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorSave',sessionId:${JSON.stringify(started.sessionId)}})`);assert.ok(fs.readFileSync(file,'utf8').includes('真实 IPC 保存'))
  // External/AI updates refresh only a clean editor; dirty updates remain conflicts.
  fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('真实 IPC 保存','AI 更新后'))
- await delay(1400);assert.equal(await contents.executeJavaScript(`document.querySelector('#title').textContent`),'AI 更新后')
+ const refreshDeadline=Date.now()+6000
+ while(Date.now()<refreshDeadline&&await contents.executeJavaScript(`document.querySelector('#title')?.textContent`).catch(()=>null)!=='AI 更新后')await delay(100)
+ assert.equal(await contents.executeJavaScript(`document.querySelector('#title').textContent`),'AI 更新后')
  const disk=fs.readFileSync(file,'utf8');await edit(`__stableHtmlEditor.choose('#title');__stableHtmlEditor.run('text','未保存的修改')`);fs.writeFileSync(file,disk+'<!-- external -->')
- electron.dialog.showMessageBox=async()=>({response:1})
+ electron.dialog.showMessageBox=async()=>({response:0})
  app.quit();await delay(300);assert.equal(host.isDestroyed(),false);assert.ok(fs.readFileSync(file,'utf8').endsWith('<!-- external -->'))
+ electron.dialog.showMessageBox=async()=>({response:1})
  await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorReload',sessionId:${JSON.stringify(started.sessionId)}})`)
  // Upload grants precede sending a message; opening the file must also pass the request filter.
  const uploaded=path.join(root,'uploaded.html'),neighbor=path.join(root,'not-uploaded.html')
@@ -44,6 +51,26 @@ async function main(){
  await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorStop',sessionId:${JSON.stringify(uploadEdit.sessionId)}})`)
  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,file,sessionId:started.sessionId,retainedContents:contents.id,uploadedPreview:true,uploadedRelativeAssets:true,uploadedEdit:true,neighborDenied:true},null,2))
 
- console.log('HTML_EDITOR_APP_PASSED');app.exit(0)
+ // A dirty editor whose renderer changed used to block every quit attempt.
+ // Preserve its recovery snapshot, leave external edits untouched, and test
+ // actual app.quit (not app.exit or a killed process).
+ await ui(`window.stable.preview.openFile(${JSON.stringify(file)},{x:400,y:100,width:700,height:600})`)
+ const finalEditor=await ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorStart',filePath:${JSON.stringify(file)}})`)
+ const finalContents=webContents.getAllWebContents().find(w=>w.getURL().includes('editor-main.html'))
+ await finalContents.executeJavaScriptInIsolatedWorld(1015,[{code:`__stableHtmlEditor.choose('#title');__stableHtmlEditor.run('text','退出保留的编辑');true`}])
+ const finalOriginal=fs.readFileSync(file,'utf8')+'<!-- final external -->';fs.writeFileSync(file,finalOriginal)
+ await assert.rejects(ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorSave',sessionId:${JSON.stringify(finalEditor.sessionId)}})`),/修改/)
+ await finalContents.loadURL('about:blank')
+ let preserving=false
+ electron.dialog.showMessageBox=async(...args)=>{const options=args.at(-1);assert(options.buttons.includes('保留草稿并退出'));preserving=true;return {response:1}}
+ app.once('will-quit',()=>{
+  try{
+   assert(preserving);assert.equal(fs.readFileSync(file,'utf8'),finalOriginal)
+   const draft=JSON.parse(fs.readFileSync(path.join(workspace,'.stable','html-editor',finalEditor.sessionId+'.json'),'utf8'))
+   assert(draft.changes.some(change=>change.text==='退出保留的编辑'))
+   console.log('HTML_EDITOR_APP_PASSED')
+  }catch(error){console.error(error.stack);process.exitCode=1}
+ })
+ app.quit()
 }
 main().catch(error=>{console.error(error.stack);app.exit(1)})

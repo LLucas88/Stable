@@ -47,9 +47,12 @@ export function ReportPage({ items, update, action }: { items: ReportItem[]; upd
   const [previewHtml, setPreviewHtml] = useState('')
   const [dragId, setDragId] = useState('')
   const [studioDirty, setStudioDirty] = useState(false)
+  const studioRevision = useRef(0)
   const studioFrame = useRef<HTMLIFrameElement>(null)
   const pendingSnapshots = useRef(new Map<string, { resolve: (value: { project: ReportStudioProject; html: string }) => void; reject: (reason: Error) => void; timer: number }>())
   const sortedItems = useMemo(() => [...items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [items])
+  const savedReport = items.find((item) => item.id === draft.id)
+  const unsaved = view === 'editor' && (studioDirty || !savedReport || JSON.stringify(draft) !== JSON.stringify(reportDraft(savedReport)))
 
   useEffect(() => {
     if (view !== 'editor' || draft.mode === 'studio') return
@@ -68,7 +71,7 @@ export function ReportPage({ items, update, action }: { items: ReportItem[]; upd
         target.postMessage({ type: 'stable-report-load', project: studioProject(draft) }, '*')
         setStudioDirty(false)
       }
-      if (message.type === 'stable-report-dirty') setStudioDirty(true)
+      if (message.type === 'stable-report-dirty') { studioRevision.current++; setStudioDirty(true) }
       if (message.type === 'stable-report-snapshot-result' && message.requestId) {
         const pending = pendingSnapshots.current.get(message.requestId)
         if (!pending) return
@@ -101,6 +104,7 @@ export function ReportPage({ items, update, action }: { items: ReportItem[]; upd
   }
 
   async function persistStudio(exportAfter: boolean) {
+    const revision = studioRevision.current
     const snapshot = await requestStudioSnapshot()
     await action(exportAfter ? '正在保存并导出 HTML 报告' : '正在保存报告工程', async () => {
       const component = draft.components.find((item) => item.type === 'studio')
@@ -114,7 +118,7 @@ export function ReportPage({ items, update, action }: { items: ReportItem[]; upd
       update(result.items)
       setDraft(reportDraft(result.item))
       setPreviewHtml(result.item.html)
-      setStudioDirty(false)
+      setStudioDirty(studioRevision.current !== revision)
       if (exportAfter) await window.stable.reports.export(result.item.id)
     })
   }
@@ -185,11 +189,11 @@ export function ReportPage({ items, update, action }: { items: ReportItem[]; upd
     setDragId('')
   }
 
-  if (view === 'editor') return <section className="report-editor reveal" data-mode={draft.mode}>
+  if (view === 'editor') return <section className="report-editor reveal" data-mode={draft.mode} data-update-unsaved={unsaved || undefined}>
     <header className="report-toolbar">
       <button className="button" type="button" onClick={() => setView('library')}><ArrowLeft size={17} />报告库</button>
       <div className="field grow"><label htmlFor="report-name">报告名称</label><input id="report-name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></div>
-      {draft.mode === 'studio' && <span className="report-save-state" data-dirty={studioDirty || undefined}>{studioDirty ? '尚未保存' : '已保存'}</span>}
+      {draft.mode === 'studio' && <span className="report-save-state" data-dirty={unsaved || undefined}>{unsaved ? '尚未保存' : '已保存'}</span>}
       <button className="button primary" type="button" onClick={save}><Save size={17} />保存 HTML</button>
       {draft.mode === 'studio' ? <button className="button" type="button" onClick={() => void persistStudio(true)}><Download size={17} />导出</button> : draft.id && items.some((item) => item.id === draft.id) && <button className="button" type="button" onClick={() => { const item = items.find((candidate) => candidate.id === draft.id); if (item) exportReport(item) }}><Download size={17} />导出</button>}
     </header>

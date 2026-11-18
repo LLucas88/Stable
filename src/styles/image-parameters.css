@@ -1,0 +1,55 @@
+.p26-complexity{border:0;border-top:1px solid var(--color-rule-2);padding:13px 0 0;margin:13px 0 0}.p26-complexity legend{font-size:12px;font-weight:600;float:left;margin-bottom:8px}.p26-complexity .design-options{clear:both;display:flex;gap:6px}.p26-complexity .design-options button{display:flex;align-items:center;justify-content:center;gap:4px;flex:1;min-height:32px;padding:6px}.p26-complexity p,.p26-edit-panel p{font-size:12px;line-height:1.65;margin:8px 0;color:var(--color-ink-2)}.p26-output .composer-popover{width:286px!important;max-height:min(560px,calc(100vh - 170px));overflow:auto}.p26-formats{margin-top:8px}.p26-formats button{display:flex!important;justify-content:space-between;align-items:center;min-height:49px!important;width:100%}.p26-formats b{font-size:12px;font-weight:500}.p26-formats small{display:block;font-size:12px;color:var(--color-ink-2);margin-top:3px}.p26-motion{border-top:1px solid var(--color-rule-2);padding-top:12px;margin-top:10px}.p26-motion label{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:10px 0;font-size:12px}.p26-motion input{width:100%;accent-color:var(--color-accent)}.p26-motion select{background:var(--color-paper);color:var(--color-ink);padding:6px;border:1px solid var(--color-rule);border-radius:6px}.p26-output[open]>.composer-popover,.p26-edit-panel{animation:p26-in 140ms var(--ease-out)}@keyframes p26-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}.p26-editor-extra{position:relative}.p26-edit-panel{position:absolute;right:0;bottom:calc(100% + 12px);width:290px;background:#fff;color:#202321;padding:16px;border:1px solid #dedfda;border-radius:12px;box-shadow:0 8px 30px #18251c26;z-index:4;--color-ink-2:#626a62;--color-rule-2:#e5e5df}.p26-edit-panel .design-options{margin:8px 0}.p26-edit-panel .design-options button{font-size:12px}.p26-edit-panel .design-options button[aria-pressed=true]{background:#e3eddf;color:#25482d;border-color:#a9c3a4}.p26-edit-panel label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;margin-top:14px}.p26-edit-panel .p26-switch{justify-content:flex-start}.p26-region-draw{position:absolute;inset:0;z-index:3;cursor:crosshair;touch-action:none}.p26-region-box{position:absolute;border:2px dashed #1769ff;background:#1769ff13;pointer-events:none;z-index:4}.p26-region-box span{position:absolute;left:-2px;bottom:100%;padding:5px 8px;font-size:12px;color:white;background:#1769ff;white-space:nowrap}.p26-default-region{position:absolute;left:8px;bottom:8px;z-index:5;font-size:12px!important}.p26-notice{position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:20000;max-width:80vw;padding:10px 16px;border:1px solid var(--color-rule);background:var(--color-paper);color:var(--color-ink);box-shadow:var(--shadow-float);border-radius:9px;font-size:13px}.p26-output :focus-visible,.p26-complexity :focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}.p26-editor-extra :focus-visible{outline:2px solid #2783e9;outline-offset:2px}@media(prefers-reduced-motion:reduce){.p26-output[open]>.composer-popover,.p26-edit-panel{animation:none}}@media(max-width:900px){.p26-output .composer-popover{left:auto!important;right:0}.p26-edit-panel{right:0;width:min(290px,calc(100vw - 30px))}}
+
+.p26-complexity .design-options button{white-space:nowrap;flex-shrink:0}.p26-complexity .design-options button:first-child{flex:1.5}
+
+/* Standalone parameters reuse the current composer and editor visual styles. */
+.p26-choice.p26-complexity{border:0;margin:0;padding:0}
+.p26-choice .composer-popover{width:286px;max-height:min(430px,calc(100vh - 180px));overflow:auto;animation:p26-in 140ms var(--ease-out,ease-out)}
+.p26-choice-list{display:grid;gap:3px;margin-top:9px}
+.p26-choice .composer-option{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:48px;text-align:left}
+.p26-choice .composer-option>span{flex:1}.p26-choice .composer-option>svg{flex-shrink:0}
+.p26-choice .composer-option b{font-size:12px;font-weight:500}
+.p26-choice .composer-option small{display:block;font-size:12px;line-height:1.5;margin-top:3px;color:var(--color-muted)}
+.p26-choice .composer-popover p{font-size:12px;line-height:1.65;margin:10px 0 0;color:var(--color-muted)}
+.p26-choice summary[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+.p26-choice-value{font-weight:500}
+.p26-background-swatch{width:14px;height:14px;display:inline-block;flex-shrink:0;border:1px solid currentColor;border-radius:3px;background-color:transparent}
+.p26-background-swatch.auto{border-style:dashed}
+.p26-background-swatch.opaque{background:var(--color-muted,#737b73)}
+.p26-background-swatch.transparent{background-color:#fff;background-image:conic-gradient(#b9c0bc 25%,transparent 0 50%,#b9c0bc 0 75%,transparent 0);background-size:8px 8px}
+.p26-editor-choice{flex-shrink:0;--color-muted:#626a62}
+.image-editor .p26-editor-choice>summary{display:inline-flex;min-height:36px;gap:7px;border:1px solid #dedfda;border-radius:9px;padding:7px 11px;background:#fff;color:inherit;font:inherit;cursor:pointer;box-sizing:border-box}
+.image-editor .p26-editor-choice[open]>summary,.image-editor .p26-editor-choice>summary:hover{background:#f1f3ef}
+.image-editor .p26-editor-choice[data-bound=true]>summary{background:#e3eddf;color:#25482d;border-color:#a9c3a4}
+.image-editor .p26-editor-choice .composer-popover{position:absolute;right:0;left:auto;bottom:calc(100% + 12px);padding:16px;background:#fff;color:#202321;border:1px solid #dedfda;border-radius:12px;box-shadow:0 8px 30px #18251c26;z-index:5;box-sizing:border-box}
+.image-editor .p26-editor-choice .composer-option{border:0;background:transparent;border-radius:7px;padding:8px}
+.image-editor .p26-editor-choice .composer-option:hover{background:#f1f3ef}
+.image-editor .p26-editor-choice .composer-option[aria-pressed=true]{background:#e3eddf;color:#25482d}
+.image-edit-submit-row:has(.p26-editor-choice){flex-wrap:wrap}
+.image-edit-submit-row:has(.p26-editor-choice)>span{min-width:180px}
+.p26-choice :focus-visible{outline:2px solid var(--color-focus,#2783e9);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.p26-choice .composer-popover{animation:none}}
+
+/* Only the generation toolbar collects parameters into one existing-style popover. */
+#root .design-controls .p26-more>.p26-more-panel{width:300px;max-width:calc(100vw - 32px);max-height:min(560px,calc(100vh - 180px));overflow:auto;overscroll-behavior:contain;padding:12px;box-sizing:border-box;animation:p26-in 140ms var(--ease-out,ease-out)}
+.p26-more-title{display:block;padding:4px 8px 10px;font-size:12px;font-weight:600}
+.p26-settings-items{display:flex;flex-direction:column;gap:3px}
+#root .design-controls .p26-settings-items>details>summary{display:flex;min-height:40px;gap:8px;padding:9px 8px;border-radius:7px;box-sizing:border-box}
+.p26-settings-items>details>summary>svg{flex-shrink:0}
+.p26-settings-items>details>summary>.p26-setting-label{flex:1}
+.p26-settings-items>details>summary>.p26-setting-value{margin-left:auto;max-width:190px;overflow:hidden;text-overflow:ellipsis;color:var(--color-muted)}
+.p26-settings-items>.p26-choice>summary>span:not(.p26-background-swatch){display:contents}
+.p26-settings-items .p26-choice-value{margin-left:auto;font-weight:400;color:var(--color-muted)}
+.p26-settings-items>details>summary>svg:last-child{transform:rotate(-90deg)}
+.p26-settings-items>details[open][data-side=left]>summary>svg:last-child{transform:rotate(90deg)}
+#root .design-controls .p26-more .p26-settings-items>details>.p26-submenu{position:fixed;inset:auto!important;left:var(--p26-sub-x,12px)!important;top:var(--p26-sub-y,12px)!important;bottom:auto!important;right:auto!important;margin:0;translate:none!important;width:var(--p26-sub-width,300px)!important;max-width:calc(100vw - 24px);max-height:min(580px,calc(100vh - 24px))!important;overflow:auto;overscroll-behavior:contain;padding:14px;box-sizing:border-box;border:1px solid var(--color-rule-soft)!important;border-radius:var(--radius-md);background:var(--surface-floating,var(--color-paper));color:var(--color-ink);box-shadow:var(--shadow-float)!important;animation:p26-submenu-in 120ms var(--ease-out,ease-out)}
+#root .design-controls .p26-submenu:not(:popover-open){display:none}
+#root .design-controls .p26-submenu::backdrop{background:transparent}
+@keyframes p26-submenu-in{from{opacity:0}to{opacity:1}}
+.p26-more .p26-choice-list{margin-top:8px}
+.p26-more .p26-formats{margin-top:8px}
+.p26-more .p26-background-swatch{display:inline-block!important}
+.p26-more :focus-visible{outline:2px solid var(--color-focus,#2783e9);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){#root .design-controls .p26-more>.p26-more-panel,#root .design-controls .p26-more .p26-settings-items>details>.p26-submenu{animation:none}}
+
+.image-edit-overlay[data-tool="region"]{pointer-events:auto;cursor:crosshair}.p26-formats button:disabled{opacity:.45;cursor:not-allowed}

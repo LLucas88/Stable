@@ -40,7 +40,7 @@ async function main(){
  assert.equal(await win.webContents.executeJavaScript(`window.sent.length`),0)
  await win.webContents.executeJavaScript(`window.switchTask(false)`);await new Promise(r=>setTimeout(r,80))
  assert.ok(await win.webContents.executeJavaScript(`document.querySelector('.clarification-card').getClientRects().length > 0`))
- await win.webContents.executeJavaScript(`document.querySelectorAll('.clarification-card input')[1].click()`);await new Promise(r=>setTimeout(r,80));await win.webContents.executeJavaScript(`document.querySelector('.clarification-send').click()`);await new Promise(r=>setTimeout(r,300))
+ await win.webContents.executeJavaScript(`document.querySelectorAll('.clarification-option')[1].click()`);await new Promise(r=>setTimeout(r,300))
  const pending=await win.webContents.executeJavaScript(`({bubbles:document.querySelectorAll('.user-bubble').length,question:document.querySelector('.user-question')?.textContent,assistant:!!document.querySelector('[data-message-id="a"]'),radius:getComputedStyle(document.querySelector('.user-bubble[data-clarification]')).borderRadius,text:document.querySelector('.conversation-stream').innerText})`)
  assert.equal(pending.bubbles,2);assert.equal(pending.question,'这份报告主要面向谁？');assert.equal(pending.assistant,true);assert.equal(pending.radius,'22px');assert.doesNotMatch(pending.text,/本次任务没有额外执行记录/)
  assert.equal(await win.webContents.executeJavaScript(`!!document.querySelector('[data-message-id="a"] .assistant-answer')`),false)

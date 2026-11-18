@@ -13,17 +13,28 @@ function fixture(t, options = {}) {
 }
 const decision = value => value.hookSpecificOutput.permissionDecision
 
-test('native timeout precedes the run watchdog and partial output can guide the next model step', async t => {
+test('background Bash preserves SDK timeout limits and approval; invalid or denied work cannot start', async t => {
+  const x = fixture(t)
+  const result = await x.pre({command:'long calculation',run_in_background:true,timeout:7200000})
+  assert.equal(decision(result),'allow')
+  assert.equal(x.approvals[0].args.timeout,7200000)
+  assert.equal(x.approvals[0].args.run_in_background,true)
+  assert.equal(decision(await x.pre({command:'longer',run_in_background:true,timeout:7200001},'too-long')),'deny')
+  const denied = fixture(t,{requestApproval:async()=>false})
+  assert.equal(decision(await denied.pre({command:'job',run_in_background:true})),'deny')
+})
+
+test('SDK owns the shell deadline and partial output can guide the next model step', async t => {
   const { BASH_TIMEOUT_MS } = require('../desktop/services/claude-native-tools.cjs')
   const { RunProgress, TOOL_WATCHDOG_MS } = require('../desktop/services/run-progress.cjs')
   const x = fixture(t), pre = await x.pre({ command: 'long job', timeout: 600000 })
   assert.equal(pre.hookSpecificOutput.updatedInput.timeout, BASH_TIMEOUT_MS)
   assert.equal(x.approvals[0].args.timeout, BASH_TIMEOUT_MS)
   assert.equal((await x.guard.canUseTool('Bash', pre.hookSpecificOutput.updatedInput, { toolUseID: 'bash-1' })).behavior, 'allow')
-  assert(TOOL_WATCHDOG_MS - BASH_TIMEOUT_MS >= 60000)
+  assert.equal(BASH_TIMEOUT_MS, 600000)
   let now = 0; const progress = new RunProgress({ now: () => now })
   progress.start('bash-1', 'long job'); now = BASH_TIMEOUT_MS + 1000
-  assert.equal(progress.check(), null)
+  assert.equal(progress.check(false, { managedToolIds: new Set(['bash-1']) }), null)
   const response = { stdout: 'step one completed', stderr: 'Command timed out', interrupted: true }
   const hook = await x.guard.postToolUse({ tool_use_id: 'bash-1', tool_response: response })
   assert.deepEqual(x.events.at(-1).output, response)
@@ -69,9 +80,9 @@ test('read-only and offline policies hide Bash and deny both hooks and fallback 
   }
 })
 
-test('Bash rejects unsupported options, background execution and sandbox overrides before approval', async t => {
+test('Bash rejects unsupported options, malformed background flags and sandbox overrides before approval', async t => {
   const x = fixture(t)
-  for (const args of [{ command: '' }, { command: ' ' }, { command: 'pwd', cwd: x.workspace }, { command: 'pwd', timeoutMs: 10 }, { command: 'pwd', timeout: 600001 }, { command: 'pwd', timeout: NaN }, { command: 'pwd', run_in_background: true }, { command: 'pwd', dangerouslyDisableSandbox: true }]) {
+  for (const args of [{ command: '' }, { command: ' ' }, { command: 'pwd', cwd: x.workspace }, { command: 'pwd', timeoutMs: 10 }, { command: 'pwd', timeout: 600001 }, { command: 'pwd', timeout: NaN }, { command: 'pwd', run_in_background: 'true' }, { command: 'pwd', dangerouslyDisableSandbox: true }]) {
     assert.equal(decision(await x.pre(args)), 'deny')
   }
   assert.equal(x.approvals.length, 0)

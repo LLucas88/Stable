@@ -6,7 +6,8 @@ const { randomUUID } = require('node:crypto')
 
 const MAX_LOG_BYTES = 256 * 1024
 const responseDiagnostics = new WeakMap()
-const ROUTES = new Set(['/api/auth/login', '/api/auth/change-password', '/api/auth/logout', '/api/account', '/api/usage/summary', '/v1/models', '/v1/chat/completions', '/v1/tools/search', '/v1/tools/fetch'])
+const responseLogPaths = new WeakMap()
+const ROUTES = new Set(['/api/auth/login', '/api/auth/change-password', '/api/auth/logout', '/api/account', '/api/usage/summary', '/v1/models', '/v1/chat/completions', '/v1/responses', '/v1/images/generations', '/v1/images/edits', '/v1/tools/search', '/v1/tools/fetch'])
 const NETWORK_CODES = ['ERR_PROXY_CONNECTION_FAILED', 'ERR_TUNNEL_CONNECTION_FAILED', 'ERR_NO_SUPPORTED_PROXIES', 'ERR_PROXY_AUTH_UNSUPPORTED', 'ERR_CERT_AUTHORITY_INVALID', 'ERR_CERT_COMMON_NAME_INVALID', 'ERR_CERT_DATE_INVALID', 'ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_RESET', 'ERR_CONNECTION_REFUSED', 'ERR_INTERNET_DISCONNECTED', 'ERR_TIMED_OUT', 'ERR_ABORTED']
 
 function responseType(response) {
@@ -68,6 +69,12 @@ function cloudResponseError(response, payload) {
   const error = new Error(`${message}${diagnosticSuffix(record)}`)
   error.status = response.ok ? 502 : response.status
   error.code = payload?.error?.code || payload?.code || (response.ok ? 'invalid_cloud_response' : `http_${response.status}`)
+  const diagnostic = require('./image-diagnostic.cjs').safeImageDiagnostic(payload?.error?.diagnostic)
+  if (diagnostic) {
+    error.imageDiagnostic = diagnostic
+    if (record) appendDiagnostic(responseLogPaths.get(response), { ...record, event: 'image_failure', diagnostic })
+  }
+  if (['unknown','rejected','not_submitted'].includes(payload?.error?.request_state)) error.requestState = payload.error.request_state
   return error
 }
 
@@ -99,6 +106,8 @@ function createCloudFetch({ session, logPath, appVersion }) {
     }
     const type = responseType(response)
     Object.assign(record, { status: response.status, responseType: type })
+    const gatewayRequestId = response.headers.get('x-stable-request-id') || ''
+    if (/^req_[A-Za-z0-9_-]{8,100}$/.test(gatewayRequestId)) record.gatewayRequestId = gatewayRequestId
     if (!response.ok || !['json', 'event-stream'].includes(type)) {
       const ray = response.headers.get('cf-ray') || ''
       record.proxy = await proxyMode(session, url)
@@ -106,6 +115,7 @@ function createCloudFetch({ session, logPath, appVersion }) {
     }
     appendDiagnostic(logPath, record)
     responseDiagnostics.set(response, record)
+    responseLogPaths.set(response, logPath)
     return response
   }
 }

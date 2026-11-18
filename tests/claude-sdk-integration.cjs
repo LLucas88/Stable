@@ -10,9 +10,219 @@ const os = require('node:os')
 const path = require('node:path')
 const { ClaudeHarnessRunner, sessionDirectory } = require('../desktop/services/claude-harness.cjs')
 const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.cjs')
+const { CLI_VERSION } = require('../desktop/services/claude-runtime-loader.cjs')
 
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
 const credential = 'local-native-fixture-key'
+
+test('real SDK background Bash survives an early answer and returns its result', { timeout: 60000 }, async t => {
+  const events = []; let failure; let sawBackground = false
+  const { workspace, runner } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [{ id: 'background-command', name: 'Bash', input: { command: 'sleep 3; printf BACKGROUND_DONE > background.txt; printf BACKGROUND_OUTPUT', run_in_background: true } }] })
+      if (number === 2) {
+        const result = toolResult(body, 'background-command')
+        assert.match(result, /background|task_id/i)
+        assert.doesNotMatch(result, /不允许后台/)
+        sawBackground = true
+        return upstream({ text: 'WAITING_FOR_BACKGROUND' })
+      }
+      assert.equal(fs.readFileSync(path.join(workspace, 'background.txt'), 'utf8'), 'BACKGROUND_DONE')
+      if (number === 3) {
+        const completed = events.findLast(e => e.taskOutputFile && e.status === 'completed')
+        assert(completed, 'SDK completion carries the registered output path')
+        return upstream({ calls: [{ id: 'background-output', name: 'Read', input: { file_path: completed.taskOutputFile } }] })
+      }
+      assert.match(toolResult(body, 'background-output'), /BACKGROUND_OUTPUT/)
+      return upstream({ text: 'BACKGROUND_DELIVERED' })
+    } catch (error) { failure = error; return upstream({ text: 'FIXTURE_FAILED' }) }
+  })
+  const answer = await runner.run('Run a background command and report its completed output.', model, credential, 40000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.ifError(failure)
+  assert.equal(sawBackground, true)
+  assert.equal(answer, 'BACKGROUND_DELIVERED')
+  assert(events.some(e => e.taskId && e.status === 'running'))
+  assert(events.some(e => e.taskId && e.status === 'completed'))
+})
+
+test('real SDK single task stop leaves another background command and the model running', { timeout: 60000 }, async t => {
+  const events = []; let failure; let stopping
+  const { workspace, runner } = fixture(t, (body, number) => {
+    if (number === 1) return upstream({ calls: [
+      { id: 'cancel-one', name: 'Bash', input: { command: 'sleep 20; printf BAD > cancelled.txt', description: 'STOP_ME', run_in_background: true } },
+      { id: 'keep-one', name: 'Bash', input: { command: 'sleep 3; printf KEPT > kept.txt', description: 'KEEP_ME', run_in_background: true } },
+    ] })
+    return upstream({ text: fs.existsSync(path.join(workspace, 'kept.txt')) ? 'ONE_STOPPED_OTHER_DELIVERED' : 'WAITING_FOR_OTHER' })
+  })
+  const answer = await runner.run('Run two commands, stop the first only.', model, credential, 45000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+    if (event.taskId && event.taskBackground && event.status === 'running' && event.title === 'STOP_ME' && !stopping) {
+      stopping = runner.stopTask(event.taskId).catch(error => { failure = error })
+    }
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  await stopping; assert.ifError(failure)
+  assert.equal(answer, 'ONE_STOPPED_OTHER_DELIVERED')
+  assert.equal(runner.cancelled, false)
+  assert.equal(fs.existsSync(path.join(workspace, 'cancelled.txt')), false)
+  assert.equal(fs.readFileSync(path.join(workspace, 'kept.txt'), 'utf8'), 'KEPT')
+  assert(events.some(e => e.taskId && e.status === 'cancelled'))
+  assert(events.some(e => e.taskId && e.status === 'completed'))
+})
+
+test('real SDK background command failure reaches the model which repairs and delivers', { timeout: 60000 }, async t => {
+  const events = []
+  const { workspace, runner } = fixture(t, (body, number) => {
+    if (number === 1) return upstream({ calls: [{ id: 'fails-in-background', name: 'Bash', input: { command: 'sleep 2; echo BACKGROUND_FAILURE >&2; exit 7', run_in_background: true } }] })
+    if (toolResult(body, 'repair-background')) return upstream({text:'REPAIRED_BACKGROUND_FAILURE'})
+    if (events.some(e => e.taskId && e.status === 'failed')) {
+      assert.match(JSON.stringify(body.messages), /exit code 7|BACKGROUND_FAILURE|failed/i)
+      return upstream({calls:[{id:'repair-background',name:'Bash',input:{command:'printf REPAIRED > repaired.txt'}}]})
+    }
+    return upstream({text:'WAITING_FOR_BACKGROUND'})
+  })
+  const answer = await runner.run('Run a job and repair a failure.',model,credential,40000,event=>{
+    events.push(event)
+    if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.equal(answer,'REPAIRED_BACKGROUND_FAILURE')
+  assert.equal(fs.readFileSync(path.join(workspace,'repaired.txt'),'utf8'),'REPAIRED')
+  assert(events.some(e=>e.taskId&&e.status==='failed'))
+  assert.equal(runner.lastOutcome.status,'completed')
+})
+
+test('real SDK background failures count final outcomes and block only the fourth identical retry', {timeout:60000},async t=>{
+  let attempts=0;let failure;const events=[]
+  const {workspace,runner}=fixture(t,body=>{
+    try {
+      if(runner.tasks.background.length)return upstream({text:'WAITING_FOR_ATTEMPT'})
+      if(attempts<4){attempts++;return upstream({calls:[{id:'background-failure-'+attempts,name:'Bash',input:{command:'printf attempt >> bg-attempts.txt; sleep 0.1; echo SOURCE_BG_FAILURE >&2; exit 7',run_in_background:true}}]})}
+      assert.match(toolResult(body,'background-failure-4'),/此调用未执行/)
+      return upstream({text:'BACKGROUND_FAILURE_EXPLAINED'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  const answer=await runner.run('Handle repeated background failure.',model,credential,45000,event=>{
+    events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(answer,'BACKGROUND_FAILURE_EXPLAINED')
+  assert.equal(fs.readFileSync(path.join(workspace,'bg-attempts.txt'),'utf8'),'attempt'.repeat(3))
+  assert.equal(events.filter(e=>e.toolName==='Bash'&&e.status==='failed').length,4)
+})
+
+test('real SDK foreground Bash can be moved to background through the task control API', { timeout: 60000 }, async t => {
+  let moved; let failure; const events=[]
+  const {workspace,runner}=fixture(t,(_body,number)=>{
+    if(number===1)return upstream({calls:[{id:'move-command',name:'Bash',input:{command:'sleep 3; printf MOVED > moved.txt',description:'MOVE_ME'}}]})
+    return upstream({text:fs.existsSync(path.join(workspace,'moved.txt'))?'MOVED_AND_DELIVERED':'WAITING_FOR_MOVED'})
+  })
+  const answer=await runner.run('Run a command, move it to the background and await its result.',model,credential,40000,event=>{
+    events.push(event)
+    if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+    if(event.taskId&&event.taskType==='local_bash'&&event.taskToolUseId&&!event.taskBackground&&event.status==='running'&&!moved) {
+      moved=runner.backgroundTask(event.taskId).catch(error=>{failure=error})
+    }
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure)
+  assert.equal(await moved,true,JSON.stringify(events.filter(e=>e.taskId)))
+  assert.equal(answer,'MOVED_AND_DELIVERED')
+  assert(events.some(e=>e.taskBackground))
+})
+
+test('real SDK native TaskStop is scoped and returns cancellation to the model', { timeout: 60000 }, async t => {
+  const events=[];let failure
+  const {workspace,runner}=fixture(t,(body,number)=>{
+    try {
+      if(number===1)return upstream({calls:[{id:'find-stop',name:'ToolSearch',input:{query:'select:TaskStop',max_results:1}}]})
+      if(number===2){
+        assert(body.tools.some(tool=>tool.function.name==='TaskStop'),JSON.stringify(body.messages.at(-1)))
+        return upstream({calls:[{id:'stop-foreign',name:'TaskStop',input:{task_id:'foreign-task'}}]})
+      }
+      if(number===3){
+        assert.match(toolResult(body,'stop-foreign'),/不属于|No task|not found/i)
+        return upstream({calls:[{id:'start-to-stop',name:'Bash',input:{command:'sleep 20; printf BAD > should-not-exist.txt',run_in_background:true}}]})
+      }
+      if(number===4){
+        const task=events.findLast(e=>e.taskId&&e.taskBackground&&e.status==='running')
+        assert(task)
+        return upstream({calls:[{id:'stop-owned',name:'TaskStop',input:{task_id:task.taskId}}]})
+      }
+      assert.match(toolResult(body,'stop-owned'),/stop|killed|success/i)
+      return upstream({text:'OWNED_TASK_STOPPED'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  const result=await runner.run('Stop a background command using TaskStop.',model,credential,40000,event=>{
+    events.push(event);if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(result,'OWNED_TASK_STOPPED')
+  assert.equal(fs.existsSync(path.join(workspace,'should-not-exist.txt')),false)
+  assert(events.some(e=>e.taskId&&e.status==='cancelled'))
+})
+
+test('real SDK waits for model consumption when a background task finishes during an earlier response', { timeout: 60000 }, async t => {
+  const {workspace,runner}=fixture(t,async(_body,number)=>{
+    if(number===1)return upstream({calls:[{id:'fast-bg',name:'Bash',input:{command:'sleep 1; printf FAST_DONE',run_in_background:true}}]})
+    if(number===2){await new Promise(r=>setTimeout(r,2500));return upstream({text:'OLD_RESPONSE_BEFORE_RESULT'})}
+    return upstream({text:'RESULT_CONSUMED'})
+  })
+  const answer=await runner.run('Wait for the background job result.',model,credential,40000,event=>{
+    if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.equal(answer,'RESULT_CONSUMED')
+})
+
+test('real SDK whole-run cancellation reaps background commands before delayed writes', { timeout: 30000 }, async t => {
+  const {workspace,runner}=fixture(t,(_body,number)=>number===1
+    ? upstream({calls:[{id:'background-to-reap',name:'Bash',input:{command:'printf STARTED > bg-started.txt; sleep 3; printf ORPHAN > bg-orphan.txt',run_in_background:true}}]})
+    : upstream({text:'WAITING_FOR_BACKGROUND'}))
+  const result=runner.run('Start a cancellable background command.',model,credential,20000,event=>{
+    if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+  },'workspace-write',[],{cwd:workspace,networkAccess:true}).then(value=>({value}),error=>({error}))
+  await until(()=>fs.existsSync(path.join(workspace,'bg-started.txt')))
+  runner.cancel()
+  assert.equal((await result).error?.code,'STABLE_RUN_CANCELLED')
+  await new Promise(resolve=>setTimeout(resolve,3500))
+  assert.equal(fs.existsSync(path.join(workspace,'bg-orphan.txt')),false)
+})
+
+test('real SDK stopping the only background task after an early answer wakes the model', {timeout:45000},async t=>{
+  let stopped;let failure
+  const {workspace,runner}=fixture(t,(_body,number)=>number===1
+    ?upstream({calls:[{id:'only-background',name:'Bash',input:{command:'sleep 20; printf BAD > only-orphan.txt',run_in_background:true}}]})
+    :upstream({text:stopped?'ONLY_TASK_STOP_EXPLAINED':'WAITING_FOR_ONLY_TASK'}))
+  const answer=await runner.run('Start one background job.',model,credential,30000,event=>{
+    if(event.kind==='approval'&&event.status==='running')runner.answerApproval(event.requestId,true)
+    if(event.id==='background-wait'&&!stopped)stopped=runner.stopTask(runner.tasks.background[0].id).catch(error=>{failure=error})
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  await stopped;assert.ifError(failure);assert.equal(answer,'ONLY_TASK_STOP_EXPLAINED')
+  assert.equal(runner.cancelled,false);assert.equal(fs.existsSync(path.join(workspace,'only-orphan.txt')),false)
+})
+
+test('real SDK background child Bash still waits for Stable approval and reports its result', { timeout: 60000 }, async t => {
+  let approvals=0;let failure
+  const {workspace,runner}=fixture(t,body=>{
+    try {
+      const child=body.messages.some(m=>m.role==='user'&&JSON.stringify(m.content).includes('BACKGROUND_CHILD_APPROVAL'))
+      if(child){
+        if(!toolResult(body,'bg-child-write'))return upstream({calls:[{id:'bg-child-write',name:'Bash',input:{command:'printf CHILD_APPROVED > child-approved.txt'}}]})
+        return upstream({text:'BACKGROUND_CHILD_RESULT'})
+      }
+      if(!toolResult(body,'bg-child'))return upstream({calls:[{id:'bg-child',name:'Agent',input:{description:'Approved background work',prompt:'BACKGROUND_CHILD_APPROVAL: execute the requested command.',subagent_type:'stable-worker',run_in_background:true}}]})
+      if(!JSON.stringify(body.messages).includes('BACKGROUND_CHILD_RESULT'))return upstream({text:'WAITING_FOR_CHILD'})
+      assert.equal(fs.readFileSync(path.join(workspace,'child-approved.txt'),'utf8'),'CHILD_APPROVED')
+      return upstream({text:'BACKGROUND_CHILD_DELIVERED'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  const answer=await runner.run('Delegate an approved background command.',model,credential,40000,event=>{
+    if(event.kind==='approval'&&event.status==='running'){
+      approvals++;assert.equal(fs.existsSync(path.join(workspace,'child-approved.txt')),false)
+      runner.answerApproval(event.requestId,true)
+    }
+  },'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(answer,'BACKGROUND_CHILD_DELIVERED');assert.equal(approvals,1)
+})
 
 test('real SDK resumes private reasoning on text-only answers without exposing it', { timeout: 120000 }, async t => {
   let failure
@@ -90,28 +300,46 @@ test('upgraded Codex conversation continues with bundled Git Bash and no system 
 })
 
 test('real SDK recovers from a gateway context rejection by compacting instead of aborting', { timeout: 60000 }, async t => {
-  let seeded = false, rejected = false, summaries = 0
-  const events = []
-  const { workspace, runner, requests } = fixture(t, body => {
-    const text = JSON.stringify(body.messages)
-    if (/summariz|summary of (?:the |this )?conversation|summary.*conversation so far/i.test(text)) {
-      summaries++
-      return upstream({ text: 'COMPACTED_CONTEXT: Keep existing svgcharts.py edits. Continue checking the report.', inputTokens: 2000 })
+  for (const malformedFirstSummary of [false, true]) await t.test(malformedFirstSummary ? 'missing summary tags are repaired once' : 'well-formed summary needs one request', async t => {
+    let seeded = false, rejected = false, summaries = 0
+    const events = [], summaryPrompts = []
+    const { root, workspace, runner, requests } = fixture(t, body => {
+      const text = JSON.stringify(body.messages)
+      const summaryPrompt = compactionPrompt(body)
+      if (summaryPrompt) {
+        summaryPrompts.push(summaryPrompt); summaries++
+        assert(summaries <= (malformedFirstSummary ? 2 : 1), 'summary recovery must remain bounded')
+        const summary = 'COMPACTED_CONTEXT: Keep existing svgcharts.py edits. Continue checking the report.'
+        // SDK 2.1.311+ validates the requested summary wrapper and retries a
+        // response without it. The fixture must satisfy the real wire contract.
+        return upstream({ text: malformedFirstSummary && summaries === 1 ? summary : `<summary>${summary}</summary>`, inputTokens: 2000 })
+      }
+      if (!seeded) { seeded = true; return upstream({ text: 'Saved svgcharts.py. ' + 'historical report detail '.repeat(15000), inputTokens: 20000 }) }
+      if (!rejected) { rejected = true; return Response.json({ error: { message: '请求内容与最大输出长度超过模型上下文限制。' } }, { status: 400 }) }
+      assert(summaries > 0)
+      assert.match(text, /COMPACTED_CONTEXT/)
+      assert.match(text, /svgcharts\.py edits/)
+      return upstream({ text: 'CONTEXT_RECOVERED', inputTokens: 2500 })
+    })
+    const profile = { ...model, contextWindow: 1000000 }
+    const session = { key: 'context-rejection', cwd: workspace }
+    await runner.run('Save report progress', profile, credential, 25000, e => events.push(e), 'read-only', [], session)
+    const originalThread = runner.threadId
+    assert.equal(await runner.run('Continue checking the report', profile, credential, 30000, e => events.push(e), 'read-only', [], session), 'CONTEXT_RECOVERED')
+    assert.equal(runner.threadId, originalThread)
+    assert.equal(summaries, malformedFirstSummary ? 2 : 1)
+    if (malformedFirstSummary) {
+      assert(summaryPrompts[1].startsWith(summaryPrompts[0]), 'the second request retries the same summary rather than starting a second compaction phase')
+      assert.match(summaryPrompts[1].slice(summaryPrompts[0].length), /summary inside <summary><\/summary> tags/)
     }
-    if (!seeded) { seeded = true; return upstream({ text: 'Saved svgcharts.py. ' + 'historical report detail '.repeat(15000), inputTokens: 20000 }) }
-    if (!rejected) { rejected = true; return Response.json({ error: { message: '请求内容与最大输出长度超过模型上下文限制。' } }, { status: 400 }) }
-    assert(summaries > 0)
-    assert.match(text, /COMPACTED_CONTEXT/)
-    return upstream({ text: 'CONTEXT_RECOVERED', inputTokens: 2500 })
+    assert.equal(events.filter(e => e.title === '上下文已自动压缩').length, 1)
+    assert(events.some(e => e.title === '网关拒绝上下文长度，正在自动压缩'))
+    assert.equal(requests.length, malformedFirstSummary ? 5 : 4)
+    const sizes = requests.map(body => JSON.stringify(body.messages).length)
+    assert(sizes.at(-1) < Math.max(...sizes.slice(0, -1)))
+    const usage = require('../desktop/services/context-usage.cjs').readContextUsage(root, session.key, profile)
+    assert(usage.usedTokens < profile.contextWindow * .8)
   })
-  const profile = { ...model, contextWindow: 1000000 }
-  const session = { key: 'context-rejection', cwd: workspace }
-  await runner.run('Save report progress', profile, credential, 25000, e => events.push(e), 'read-only', [], session)
-  assert.equal(await runner.run('Continue checking the report', profile, credential, 30000, e => events.push(e), 'read-only', [], session), 'CONTEXT_RECOVERED')
-  assert.equal(summaries, 1)
-  assert(events.some(e => e.title === '上下文已自动压缩'))
-  assert(events.some(e => e.title === '网关拒绝上下文长度，正在自动压缩'))
-  assert.equal(requests.length, 4)
 })
 
 test('real SDK screenshot crosses the Cloud boundary as user image evidence', { timeout: 45000 }, async t => {
@@ -155,6 +383,7 @@ test('real SDK exposes a definitive gateway rejection and does not retry it', { 
 
 test('real SDK discovers image generation, uses approval, and receives a durable artifact', { timeout: 45000 }, async t => {
   let failure, generated = 0
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64')
   const { workspace, runner, requests } = fixture(t, (body, number) => {
     try {
       if (number === 1) return upstream({ calls: [{ id: 'discover-image', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_image_generate', max_results: 1 } }] })
@@ -162,7 +391,7 @@ test('real SDK discovers image generation, uses approval, and receives a durable
       assert.equal(number, 3)
       const output = toolResult(body, 'image')
       assert.match(JSON.stringify(output), /bird.png/)
-      assert(fs.existsSync(path.join(workspace, 'bird.png')))
+      assert.deepEqual(fs.readFileSync(path.join(workspace, 'bird.png')), png)
       return upstream({ text: 'IMAGE_ARTIFACT_VERIFIED' })
     } catch (error) { failure = error; return upstream({ text: 'FIXTURE_FAILED' }) }
   }, { builtinTools: context => {
@@ -173,8 +402,8 @@ test('real SDK discovers image generation, uses approval, and receives a durable
       fetchImpl: async (_url, request) => {
         generated++; assert.equal(request.headers.Authorization, 'Bearer image-only-secret')
         return Response.json({ data: [{ url: 'https://cdn.bigmodel.cn/fixture.png' }] })
-      }, download: async () => Buffer.from('fixture-image'),
-      nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 1280 }), toPNG: () => Buffer.from('fixture-image') }) },
+      }, download: async () => png,
+      nativeImage: { createFromBuffer: bytes => ({ isEmpty: () => !bytes.equals(png), getSize: () => ({ width: 1, height: 1 }), toPNG: () => png }) },
     })
     return tools
   } })
@@ -328,29 +557,92 @@ test('real SDK repairs a failing script and continues beyond the old three-failu
   assert.equal(fs.readFileSync(path.join(workspace,'analyze.sh'),'utf8'),'printf REPAIRED\n')
 })
 
-test('real SDK returns timed-out command output to the model and completes a smaller step in the same run', { timeout: 45000 }, async t => {
-  const events = []; let requests = 0
+test('real SDK repeated failures block only the repeated call and preserve main and child recovery',{timeout:120000},async t=>{
+ for(const child of [false,true])await t.test(child?'child':'main',async t=>{
+  let stage=0,parentStage=0,failure;const events=[]
+  const {workspace,runner}=fixture(t,body=>{
+   try{
+    const isChild=body.messages.some(m=>m.role==='user'&&JSON.stringify(m.content).includes('CHILD_REPEAT_FIXTURE'))
+    if(child&&!isChild){
+     if(parentStage++===0)return upstream({calls:[{id:'delegate-repeat',name:'Agent',input:{description:'Handle a failed fixture',subagent_type:'stable-worker',run_in_background:false,prompt:'CHILD_REPEAT_FIXTURE: inspect the command failures and use the alternative.'}}]})
+     assert.match(toolResult(body,'delegate-repeat'),/MODEL_FAILURE_EXPLANATION/)
+     return upstream({text:'PARENT_RECEIVED_MODEL_REASON'})
+    }
+    stage++
+    if(stage<=4)return upstream({calls:[{id:'repeated-'+stage,name:'Bash',input:{command:'bash fail.sh',timeout:10000}}]})
+    if(stage===5){assert.match(toolResult(body,'repeated-4'),/此调用未执行/);assert.match(toolResult(body,'repeated-4'),/SOURCE_FAILURE/);return upstream({calls:[{id:'alternative-command',name:'Bash',input:{command:'printf ALTERNATIVE_OK'}}]})}
+    assert.match(toolResult(body,'alternative-command'),/ALTERNATIVE_OK/)
+    return upstream({text:'MODEL_FAILURE_EXPLANATION: SOURCE_FAILURE blocked the original approach; the alternative was verified.'})
+   }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  fs.writeFileSync(path.join(workspace,'fail.sh'),'printf "attempt\\n" >> attempts.txt\nprintf SOURCE_FAILURE >&2\nexit 1\n')
+  const answer=await runner.run('Handle the fixture command failure',model,credential,50000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.match(answer,child?/PARENT_RECEIVED_MODEL_REASON/:/MODEL_FAILURE_EXPLANATION/)
+  assert.equal(fs.readFileSync(path.join(workspace,'attempts.txt'),'utf8').trim().split(/\r?\n/).length,3)
+  assert.equal(events.filter(e=>e.toolName==='Bash'&&e.status==='failed').length,4)
+  assert(!events.some(e=>e.id==='run-progress'&&e.status==='cancelled'))
+ })
+})
+
+test('real SDK Stable MCP validation and execution failures are counted once and preserve recovery', {timeout:45000},async t=>{
+ let failure,executions=0;const events=[]
+ const {workspace,runner}=fixture(t,(body,number)=>{
+  try{
+   if(number===1)return upstream({calls:[{id:'find-browser-validation',name:'ToolSearch',input:{query:'select:mcp__stable__stable_browser',max_results:1}}]})
+   if(number<=4)return upstream({calls:[{id:'invalid-browser-'+number,name:'mcp__stable__stable_browser',input:{action:'open',url:123}}]})
+   if(number===5)assert.match(toolResult(body,'invalid-browser-4'),/string|字符串|validation|invalid/i)
+   if(number<=8)return upstream({calls:[{id:'failed-browser-'+number,name:'mcp__stable__stable_browser',input:{action:'open',url:'https://example.com/fail'}}]})
+   if(number===9){assert.match(toolResult(body,'failed-browser-8'),/此调用未执行/);return upstream({calls:[{id:'recovered-browser',name:'mcp__stable__stable_browser',input:{action:'open',url:'https://example.com/success'}}]})}
+   assert.match(toolResult(body,'recovered-browser'),/BROWSER_RECOVERED/)
+   return upstream({text:'MODEL_PARAMETER_FAILURE_EXPLAINED'})
+  }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+ },{builtinTools:()=>({execute:async request=>{executions++;return request.args.url.endsWith('/success')?{ok:true,text:'BROWSER_RECOVERED'}:{ok:false,error:{message:'PAGE_FAILED'}}},dispose(){}})})
+ const answer=await runner.run('Inspect fixture invalid browser arguments',model,credential,30000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+ assert.ifError(failure);assert.equal(answer,'MODEL_PARAMETER_FAILURE_EXPLAINED');assert.equal(executions,4)
+ assert.equal(events.filter(e=>e.toolName==='stable_browser'&&e.status==='failed').length,7,JSON.stringify(events.filter(e=>e.kind==='tool')))
+})
+
+test('real SDK unfinished review reaches a model explanation without cancelling the run', {timeout:45000},async t=>{
+ let failure;const events=[]
+ const {workspace,runner}=fixture(t,(body,number)=>{
+  try{
+   if(number===1)return upstream({calls:[{id:'review-discovery',name:'ToolSearch',input:{query:'select:mcp__stable__stable_browser',max_results:1}}]})
+   if(number===2)return upstream({calls:[{id:'unfinished-shot',name:'mcp__stable__stable_browser',input:{action:'screenshot',tabId:'fixture'}}]})
+   if(number<=5)return upstream({text:'PREMATURE_REVIEW_FINISH'})
+   assert.match(JSON.stringify(body.messages),/请基于现有证据作最终说明/)
+   return upstream({text:'MODEL_REVIEW_REASON: the screenshot exists, but the required review evidence was not established.'})
+  }catch(error){failure=error;return upstream({text:'[[STABLE_WAITING_FOR_INPUT]]'})}
+ },{builtinTools:()=>({execute:async()=>({tabId:'fixture',image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='}),dispose(){}})})
+ const answer=await runner.run('Inspect the fixture screenshot',model,credential,30000,e=>events.push(e),'workspace-write',[],{cwd:workspace})
+ assert.ifError(failure);assert.match(answer,/MODEL_REVIEW_REASON/);assert.match(answer,/尚未提交检查记录/)
+ assert.equal(runner.lastOutcome.status,'incomplete')
+ assert(!events.some(e=>e.id==='run-progress'&&e.status==='cancelled'))
+})
+
+test('real SDK foreground deadline backgrounds eligible commands while the model completes other work', { timeout: 45000 }, async t => {
+  const events = []; let requests = 0; let failure
   const { workspace, runner } = fixture(t, (body, number) => {
+    try {
     requests++
-    if (number === 1) return upstream({ calls: [{ id: 'slow-step', name: 'Bash', input: { command: 'printf PARTIAL_STEP_DONE; sleep 3; printf bad > orphan-timeout.txt', timeout: 1000 } }] })
+    if (number === 1) return upstream({ calls: [{ id: 'slow-step', name: 'Bash', input: { command: 'printf PARTIAL_STEP_DONE; sleep 3; printf DONE > background-timeout.txt', timeout: 1000 } }] })
     if (number === 2) {
-      assert.match(toolResult(body, 'slow-step'), /PARTIAL_STEP_DONE/)
-      assert.match(toolResult(body, 'slow-step'), /timed out|timeout|超时/i)
-      assert.match(JSON.stringify(body.messages), /拆分为可恢复步骤/)
+      assert.match(toolResult(body, 'slow-step'), /background/i)
       return upstream({ calls: [{ id: 'smaller-step', name: 'Bash', input: { command: 'printf RECOVERED > recovered.txt; cat recovered.txt', timeout: 10000 } }] })
     }
     assert.match(toolResult(body, 'smaller-step'), /RECOVERED/)
+    if (!events.some(event => event.taskId && event.status === 'completed')) return upstream({ text: 'WAITING_FOR_BACKGROUND' })
     return upstream({ text: 'RECOVERY_FINISHED' })
+    } catch(error) { failure=error;return upstream({text:'FIXTURE_FAILED'}) }
   })
   const result = await runner.run('Complete the task; split slow steps if necessary', model, credential, 25000, event => {
     events.push(event)
     if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
   }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
-  assert.equal(result, 'RECOVERY_FINISHED'); assert.equal(requests, 3)
+  assert.ifError(failure); assert.equal(result, 'RECOVERY_FINISHED'); assert(requests >= 3)
   assert.equal(fs.readFileSync(path.join(workspace, 'recovered.txt'), 'utf8'), 'RECOVERED')
-  assert(events.some(event => event.id === 'slow-step' && event.status === 'failed'))
-  await new Promise(resolve => setTimeout(resolve, 2500))
-  assert.equal(fs.existsSync(path.join(workspace, 'orphan-timeout.txt')), false)
+  assert(!events.some(event => event.id === 'slow-step' && event.status === 'failed'))
+  assert(events.some(event => event.taskId && event.taskBackground))
+  assert.equal(fs.readFileSync(path.join(workspace, 'background-timeout.txt'), 'utf8'), 'DONE')
 })
 
 test('real SDK native Bash executes only after approval and reports output and errors', { timeout: 120_000 }, async t => {
@@ -427,7 +719,7 @@ for (const subagentType of ['stable-worker', 'fork']) test(`real SDK ${subagentT
       assert.match(toolResult(body, 'child-bash'), /CHILD_NATIVE_OK/)
       return upstream({ text: 'CHILD_DONE' })
     }
-    if (number === 1) return upstream({ calls: [{ id: 'parent-agent', name: 'Agent', input: { description: 'Test child Bash', prompt: 'CHILD_BASH_MARKER: run the command', subagent_type: subagentType } }] })
+    if (number === 1) return upstream({ calls: [{ id: 'parent-agent', name: 'Agent', input: { description: 'Test child Bash', prompt: 'CHILD_BASH_MARKER: run the command', subagent_type: subagentType, run_in_background: false } }] })
     assert.match(toolResult(body, 'parent-agent'), /CHILD_DONE/)
     return upstream({ text: 'PARENT_DONE' })
   })
@@ -502,10 +794,52 @@ test('real SDK external MCP connects only after approval and enforces per-call g
     if (mode.startsWith('allow')) {
       assert.equal(remoteCalls[0].name, 'queryReadAgent')
       assert.deepEqual(remoteCalls[0].arguments, { value: 'fixture' })
-      assert(events.some(event => event.id === 'runtime-info' && /Claude Code 2\.1\.308/.test(event.detail)))
+      assert(events.some(event => event.id === 'runtime-info' && event.detail.includes(`Claude Code ${CLI_VERSION}`)))
     }
     assert.equal(approvals, ['disabled', 'read-only'].includes(mode) ? 0 : mode === 'deny-connect' ? 1 : 2)
     if (['disabled', 'read-only', 'deny-connect'].includes(mode)) assert.equal(remoteRequests.length, 0)
+  })
+})
+
+test('real SDK optional MCP timeout or connection failure leaves local tools available', { timeout: 90000 }, async t => {
+  for (const mode of ['timeout', 'disconnected']) await t.test(mode, async t => {
+    const http = require('node:http'); let calls = 0
+    const server = http.createServer(async (req, res) => {
+      if (mode === 'disconnected') { res.writeHead(503).end(); return }
+      if (req.method !== 'POST') { res.writeHead(405).end(); return }
+      let raw = ''; for await (const chunk of req) raw += chunk
+      const message = JSON.parse(raw)
+      if (message.id === undefined) { res.writeHead(202).end(); return }
+      let result = {}
+      if (message.method === 'initialize') result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture', version: '1' } }
+      if (message.method === 'tools/list') result = { tools: [{ name: 'slowReadAgent', description: 'Slow fixture query', inputSchema: { type: 'object', properties: {} } }] }
+      if (message.method === 'tools/call') { calls++; return }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+    })
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+    t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) })
+    const events = []
+    const { root, workspace, runner } = fixture(t, (body, number) => {
+      if (mode === 'timeout' && number === 1) return upstream({ calls: [{ id: 'discover-slow', name: 'ToolSearch', input: { query: 'select:mcp__reports__slowReadAgent' } }] })
+      if (mode === 'timeout' && number === 2) return upstream({ calls: [{ id: 'remote-slow', name: 'mcp__reports__slowReadAgent', input: {} }] })
+      if (mode === 'timeout' && number === 3) assert.match(toolResult(body, 'remote-slow'), /timed? ?out|timeout|超时/i)
+      if (number === (mode === 'timeout' ? 3 : 1)) return upstream({ calls: [{ id: 'native-fallback', name: 'Read', input: { file_path: path.join(workspace, 'local.txt') } }] })
+      assert.match(toolResult(body, 'native-fallback'), /LOCAL_OK/)
+      return upstream({ text: 'OPTIONAL_MCP_RECOVERED' })
+    }, { toolTimeoutMs: 1000 })
+    fs.writeFileSync(path.join(workspace, 'local.txt'), 'LOCAL_OK')
+    const config = require('../desktop/services/claude-extensions.cjs').configurationPath(root)
+    fs.mkdirSync(path.dirname(config), { recursive: true })
+    fs.writeFileSync(config, JSON.stringify({ version: 1, enabled: true, mcpServers: { reports: { type: 'http', url: `http://127.0.0.1:${server.address().port}/mcp`, tools: ['slowReadAgent'] } } }))
+    const answer = await runner.run('use local sources if the optional query fails', model, credential, 30000, event => {
+      events.push(event)
+      if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+    }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+    assert.match(answer, /OPTIONAL_MCP_RECOVERED/)
+    assert.equal(calls, mode === 'timeout' ? 1 : 0)
+    if (mode === 'timeout') assert(events.some(event => event.toolName === 'mcp__reports__slowReadAgent' && event.status === 'failed'))
+    else assert(events.some(event => event.id === 'external-mcp-status'))
+    assert.equal(events.at(-1).status, 'completed')
   })
 })
 
@@ -737,9 +1071,55 @@ test('real SDK stops after failed correction without retrying the invalid Write 
   const events = []
   const { workspace, runner, requests } = fixture(t, () => new Response('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'bad-write', function: { name: 'Write', arguments: '{broken' } }] }, finish_reason: 'tool_calls' }] }) + '\n\ndata: [DONE]\n\n'))
   await assert.rejects(runner.run('Write report', model, credential, 30000, event => events.push(event), 'workspace-write', [], { cwd: workspace }), /纠正后仍失败.*finish_reason=tool_calls/)
-  assert.equal(requests.length, 2)
+  assert.equal(requests.length, 3, 'one correction and one explanation attempt, with no invalid tool execution')
   assert.equal(events.findLast(event => event.id === 'run-progress').status, 'failed')
   assert.equal(fs.existsSync(path.join(workspace, 'report.html')), false)
+})
+
+test('real SDK returns a model failure explanation after invalid tools and preserves incomplete delivery', { timeout: 60000 }, async t => {
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    if (number <= 2) return new Response('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'bad-write', function: { name: 'Write', arguments: '{broken' } }] }, finish_reason: 'tool_calls' }] }) + '\n\ndata: [DONE]\n\n')
+    assert.equal(body.tools, undefined)
+    assert.match(body.messages.at(-1).content, /只说明失败原因/)
+    return upstream({ text: 'MODEL_FAILURE_REASON: 两次写入参数无效，目标报告没有生成。' })
+  })
+  const result = await require('../desktop/services/delivery.cjs').runWithDeliveryChecks({
+    workspace, prompt: '生成报告 HTML 文件', delivery: { required: true, extensions: ['.html'] },
+    execute: task => runner.run(task, model, credential, 30000, undefined, 'workspace-write', [], { cwd: workspace }),
+    getExecutionOutcome: () => runner.lastOutcome,
+  })
+  assert.match(result.answer, /MODEL_FAILURE_REASON/)
+  assert.equal(result.status, 'failed')
+  assert.equal(runner.lastOutcome.status, 'incomplete')
+  assert.equal(requests.length, 3)
+  assert.equal(fs.existsSync(path.join(workspace, 'report.html')), false)
+})
+
+test('real SDK lets the model recover from a timed-out Stable tool after the operation settles', { timeout: 60000 }, async t => {
+  const pending = new Map(), cancelled = [], events = []
+  const { workspace, runner } = fixture(t, (body, number) => {
+    if (number === 1) return upstream({ calls: [{ id: 'discover-timeout', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_browser' } }] })
+    if (number === 2) return upstream({ calls: [{ id: 'slow-browser', name: 'mcp__stable__stable_browser', input: { action: 'open', url: 'https://slow.invalid/' } }] })
+    if (number === 3) {
+      assert.match(toolResult(body, 'slow-browser'), /超时.*任务仍可继续/)
+      assert.equal(cancelled.length, 1)
+      assert.equal(pending.size, 0, 'the timed-out operation has settled before the next model call')
+      return upstream({ calls: [{ id: 'alternative-read', name: 'Read', input: { file_path: path.join(workspace, 'alternative.txt') } }] })
+    }
+    assert.match(toolResult(body, 'alternative-read'), /LOCAL_ALTERNATIVE/)
+    return upstream({ text: 'MODEL_RECOVERED: 网页超时，已使用本地资料完成。' })
+  }, { toolTimeoutMs: 50, builtinTools: () => ({
+    execute: request => new Promise((resolve, reject) => pending.set(request.requestId, reject)),
+    cancel: id => { cancelled.push(id); const reject = pending.get(id); pending.delete(id); reject?.(new Error('operation aborted')) }, dispose() {},
+  }) })
+  fs.writeFileSync(path.join(workspace, 'alternative.txt'), 'LOCAL_ALTERNATIVE')
+  const answer = await runner.run('inspect page or local source', model, credential, 30000, event => {
+    events.push(event)
+    if (event.kind === 'approval' && event.status === 'running') runner.answerApproval(event.requestId, true)
+  }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
+  assert.match(answer, /MODEL_RECOVERED/)
+  assert.equal(events.filter(event => event.toolName === 'stable_browser' && event.status === 'failed').length, 1)
+  assert.equal(events.at(-1).status, 'completed')
 })
 
 test('real SDK Edit validation failure is recorded as failed even when hooks are bypassed', { timeout: 60000 }, async t => {
@@ -782,6 +1162,19 @@ test('real SDK request budget preserves failure reason, files and shared resume 
 })
 const texts = body => body.messages.filter(message => message.role === 'user').map(message => typeof message.content === 'string' ? message.content : message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n')
 const toolResult = (body, id) => body.messages.findLast(message => message.role === 'tool' && message.tool_call_id === id)?.content
+function compactionPrompt(body) {
+  // Inspect the SDK's user-role summary instruction, not arbitrary historical
+  // text containing "summary" (or Stable's appended run-progress reminder).
+  // Automatic compaction may append the instruction to an existing user turn.
+  const index = body.messages.findLastIndex(message => message.role === 'user' && typeof message.content === 'string'
+    && message.content.includes('CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.')
+    && message.content.includes('Your task is to create a detailed summary of the conversation so far'))
+  if (index < 0 || body.messages.slice(index + 1).some(message => message.role !== 'user')) return undefined
+  const content = body.messages[index].content
+  const prompt = content.slice(content.indexOf('CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.'))
+  assert.match(prompt, /<summary>/)
+  return prompt
+}
 function nativeTool(body, name) {
   const value = body.tools?.find(tool => tool.function.name === name)
   assert(value, 'native tool must be advertised: ' + name)
@@ -937,6 +1330,108 @@ test('real SDK native Write, Read and Edit preserve provider tool chains and fil
   assert.equal(requests.length, 5)
 })
 
+test('real SDK Read preserves line ranges and accepts its native allow_large option', { timeout: 45000 }, async t => {
+  let failure
+  const { workspace, runner } = fixture(t, (body, number) => {
+    try {
+      const file=path.join(workspace,'long-source.txt')
+      if(number===1){assert(nativeTool(body,'Read').parameters.properties.allow_large);return upstream({calls:[{id:'long-read',name:'Read',input:{file_path:file,offset:3001,limit:2,allow_large:true}}]})}
+      const output=toolResult(body,'long-read')
+      assert.match(output,/SOURCE_LINE_3001/);assert.match(output,/SOURCE_LINE_3002/);assert.doesNotMatch(output,/SOURCE_LINE_3003/)
+      return upstream({text:'NATIVE_LONG_READ_OK'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  fs.writeFileSync(path.join(workspace,'long-source.txt'),Array.from({length:4000},(_,i)=>`SOURCE_LINE_${i+1} ${'x'.repeat(100)}`).join('\n'))
+  const answer=await runner.run('Read exactly lines 3001 and 3002',model,credential,30000,undefined,'read-only',[],{cwd:workspace})
+  assert.ifError(failure);assert.equal(answer,'NATIVE_LONG_READ_OK')
+})
+
+test('real SDK long Bash output can be read through native Read without opening the session directory', { timeout: 60000 }, async t => {
+  let failure,outputPath
+  const events=[]
+  const { workspace, runner }=fixture(t,(body,number)=>{
+    try{
+      if(number===1)return upstream({calls:[{id:'long-shell',name:'Bash',input:{command:`node -e "for(let i=1;i<=5000;i++)process.stdout.write('OUTPUT_LINE_'+i+' '+'x'.repeat(100)+'\\n')"`,timeout:15000}}]})
+      if(number===2){
+        const detail=events.findLast(e=>e.id==='long-shell'&&e.status==='completed')?.detail||''
+        outputPath=detail.match(/完整输出：([^\r\n]+)/)?.[1]||toolResult(body,'long-shell')?.match(/Full output saved to: ([^\r\n]+)/)?.[1]
+        assert(outputPath,JSON.stringify({detail,result:toolResult(body,'long-shell')}))
+        return upstream({calls:[{id:'read-shell-tail',name:'Read',input:{file_path:outputPath,offset:4500,limit:2}}]})
+      }
+      assert.match(toolResult(body,'read-shell-tail'),/OUTPUT_LINE_4500/,outputPath);assert.match(toolResult(body,'read-shell-tail'),/OUTPUT_LINE_4501/)
+      return upstream({text:'NATIVE_OUTPUT_READ_OK'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  const answer=await runner.run('Print the fixture output and read its saved tail.',model,credential,45000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(answer,'NATIVE_OUTPUT_READ_OK')
+})
+
+test('real SDK child long Bash output remains readable within the parent session', {timeout:60000},async t=>{
+  let childStage=0,parentStage=0,outputPath,failure
+  const events=[]
+  const {workspace,runner}=fixture(t,body=>{
+    try{
+      if(body.messages.some(m=>m.role==='user'&&JSON.stringify(m.content).includes('CHILD_LONG_OUTPUT_FIXTURE'))){
+        if(childStage++===0)return upstream({calls:[{id:'child-long-shell',name:'Bash',input:{command:`node -e "for(let i=1;i<=5000;i++)process.stdout.write('CHILD_LINE_'+i+' '+'x'.repeat(100)+'\\n')"`,timeout:15000}}]})
+        if(childStage===2){
+          const detail=events.findLast(e=>e.id==='child-long-shell'&&e.status==='completed')?.detail||''
+          outputPath=detail.match(/完整输出：([^\r\n]+)/)?.[1]||toolResult(body,'child-long-shell')?.match(/Full output saved to: ([^\r\n]+)/)?.[1]
+          assert(outputPath)
+          return upstream({calls:[{id:'child-read-output',name:'Read',input:{file_path:outputPath,offset:4500,limit:2}}]})
+        }
+        assert.match(toolResult(body,'child-read-output'),/CHILD_LINE_4500/,outputPath)
+        return upstream({text:'CHILD_OUTPUT_READ_OK'})
+      }
+      if(parentStage++===0)return upstream({calls:[{id:'delegate-output',name:'Agent',input:{description:'Read long command output',subagent_type:'stable-worker',run_in_background:false,prompt:'CHILD_LONG_OUTPUT_FIXTURE: print and inspect the saved output.'}}]})
+      if(parentStage===2){
+        assert.match(toolResult(body,'delegate-output'),/CHILD_OUTPUT_READ_OK/)
+        return upstream({calls:[{id:'parent-read-output',name:'Read',input:{file_path:outputPath,offset:4999,limit:2}}]})
+      }
+      assert.match(toolResult(body,'parent-read-output'),/CHILD_LINE_5000/,outputPath)
+      return upstream({text:'PARENT_OUTPUT_READ_OK'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  const answer=await runner.run('Delegate output generation and inspect the result',model,credential,45000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(answer,'PARENT_OUTPUT_READ_OK')
+})
+
+test('real SDK child Edit validation failures remain visible to the parent trace', {timeout:60000},async t=>{
+  let childStage=0,parentStage=0,failure
+  const events=[]
+  const {workspace,runner}=fixture(t,body=>{
+    try{
+      if(body.messages.some(m=>m.role==='user'&&JSON.stringify(m.content).includes('CHILD_INVALID_EDIT_FIXTURE'))){
+        if(childStage++===0)return upstream({calls:[{id:'child-read',name:'Read',input:{file_path:path.join(workspace,'child-edit.txt')}}]})
+        if(childStage===2)return upstream({calls:[{id:'child-bad-edit',name:'Edit',input:{file_path:path.join(workspace,'child-edit.txt'),old_string:'not found',new_string:'changed'}}]})
+        assert.match(toolResult(body,'child-bad-edit'),/not found/i);return upstream({text:'CHILD_EDIT_FAILED'})
+      }
+      if(parentStage++===0)return upstream({calls:[{id:'delegate-edit',name:'Agent',input:{description:'Inspect edit failure',subagent_type:'stable-worker',run_in_background:false,prompt:'CHILD_INVALID_EDIT_FIXTURE: inspect the failed edit.'}}]})
+      assert.match(toolResult(body,'delegate-edit'),/CHILD_EDIT_FAILED/);return upstream({text:'PARENT_EDIT_CHECKED'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  fs.writeFileSync(path.join(workspace,'child-edit.txt'),'preserve original')
+  assert.equal(await runner.run('Delegate the fixture edit',model,credential,45000,e=>{events.push(e);if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace}), 'PARENT_EDIT_CHECKED')
+  assert.ifError(failure);assert.equal(fs.readFileSync(path.join(workspace,'child-edit.txt'),'utf8'),'preserve original')
+  assert(events.some(e=>e.toolName==='Edit'&&e.status==='failed'&&/not found/i.test(e.detail)),JSON.stringify(events.filter(e=>e.kind==='tool')))
+})
+
+test('real SDK file reads after a Bash script edit return fresh content rather than an old cached read', {timeout:45000},async t=>{
+  let failure
+  const {workspace,runner}=fixture(t,(body,number)=>{
+    try{
+      const file=path.join(workspace,'cache-source.txt')
+      if(number===1)return upstream({calls:[{id:'cache-before',name:'Read',input:{file_path:file}}]})
+      if(number===2){assert.match(toolResult(body,'cache-before'),/CACHE_BEFORE/);return upstream({calls:[{id:'cache-edit',name:'Bash',input:{command:"printf 'CACHE_AFTER\\n' > cache-source.txt"}}]})}
+      if(number===3)return upstream({calls:[{id:'cache-after',name:'Read',input:{file_path:file}}]})
+      assert.match(toolResult(body,'cache-after'),/CACHE_AFTER/);assert.doesNotMatch(toolResult(body,'cache-after'),/CACHE_BEFORE/)
+      return upstream({text:'FRESH_READ_OK'})
+    }catch(error){failure=error;return upstream({text:'FIXTURE_FAILED'})}
+  })
+  fs.writeFileSync(path.join(workspace,'cache-source.txt'),'CACHE_BEFORE\n')
+  const answer=await runner.run('Read, edit by script, and reread the fixture file',model,credential,30000,e=>{if(e.kind==='approval'&&e.status==='running')runner.answerApproval(e.requestId,true)},'workspace-write',[],{cwd:workspace,networkAccess:true})
+  assert.ifError(failure);assert.equal(answer,'FRESH_READ_OK')
+})
+
 test('real SDK native Read, Glob and Grep inspect allowed files in read-only mode', { timeout: 45_000 }, async t => {
   let approvals = 0
   const { workspace, runner } = fixture(t, (body, number) => {
@@ -1047,7 +1542,7 @@ test('real SDK provider search keeps the Stable MCP transport alongside native f
   assert.equal(result, 'NATIVE_PROVIDER_SEARCH_OK'); assert.equal(searches, 1)
 })
 
-test('real SDK discovers cloud search and fetch, then answers with fetched source evidence', { timeout: 60000 }, async t => {
+test('real SDK discovers cloud search but cannot invoke fallback before native fetch', { timeout: 60000 }, async t => {
   let failure
   const webCalls = [], events = []
   const { workspace, runner, requests } = fixture(t, (body, number) => {
@@ -1056,8 +1551,8 @@ test('real SDK discovers cloud search and fetch, then answers with fetched sourc
       if (number === 2) { nativeTool(body, 'mcp__stable__stable_search'); return upstream({ calls: [{ id: 'search-web', name: 'mcp__stable__stable_search', input: { query: 'site:example.org release', maxResults: 2 } }] }) }
       if (number === 3) { assert.match(toolResult(body, 'search-web'), /https:\/\/example.org\/release/); return upstream({ calls: [{ id: 'find-fetch', name: 'ToolSearch', input: { query: 'select:mcp__stable__stable_fetch', max_results: 1 } }] }) }
       if (number === 4) { nativeTool(body, 'mcp__stable__stable_fetch'); return upstream({ calls: [{ id: 'fetch-web', name: 'mcp__stable__stable_fetch', input: { url: 'https://example.org/release' } }] }) }
-      assert.equal(number, 5); assert.match(toolResult(body, 'fetch-web'), /VERIFIED_WEB_EVIDENCE/)
-      return upstream({ text: '已核对 VERIFIED_WEB_EVIDENCE。[来源](https://example.org/release)' })
+      assert.equal(number, 5); assert.match(toolResult(body, 'fetch-web'), /先用 ToolSearch.*WebFetch/)
+      return upstream({ text: 'FALLBACK_REQUIRES_NATIVE' })
     } catch (error) { failure = error; return upstream({ text: 'FAILED' }) }
   }, { expectedModel: 'glm-5.3-flashx', webResponder: async (url, request) => {
     webCalls.push([url, JSON.parse(request.body)])
@@ -1065,8 +1560,9 @@ test('real SDK discovers cloud search and fetch, then answers with fetched sourc
     return Response.json(url.endsWith('/search') ? { results: [{ title: 'Source', url: 'https://example.org/release', snippet: 'short', summary: 'evidence', content: '' }] } : { title: 'Source', content: '# VERIFIED_WEB_EVIDENCE' })
   } })
   const answer = await runner.run('Search the fixture web service, fetch the matching source and cite it. Only read the approved fixture sources.', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 45000, e => { events.push(e); if (e.kind === 'approval' && e.status === 'running') runner.answerApproval(e.requestId, true) }, 'workspace-write', [], { cwd: workspace, networkAccess: true })
-  assert.ifError(failure); assert.match(answer, /VERIFIED_WEB_EVIDENCE.*https:\/\/example.org\/release/)
-  assert.equal(requests.length, 5); assert.equal(webCalls.length, 2)
+  assert.ifError(failure); assert.equal(answer, 'FALLBACK_REQUIRES_NATIVE')
+  assert.equal(requests.length, 5); assert.equal(webCalls.length, 1)
+  assert(!events.some(e => e.kind === 'approval'), 'premature fallback must not reach approval or network')
   assert(events.some(e => JSON.stringify(e).includes('stable_fetch')))
 })
 
@@ -1082,7 +1578,7 @@ test('real SDK child discovers web fetch and inherits the parent network boundar
             nativeTool(body, 'mcp__stable__stable_fetch')
             return upstream({ calls: [{ id: 'child-fetch', name: 'mcp__stable__stable_fetch', input: { url: 'https://example.org/child' } }] })
           }
-          assert.match(toolResult(body, 'child-fetch'), networkAccess ? /CHILD_WEB_EVIDENCE/ : /禁止网页抓取/)
+          assert.match(toolResult(body, 'child-fetch'), networkAccess ? /先用 ToolSearch.*WebFetch/ : /禁止网页抓取/)
           return upstream({ text: 'CHILD_FETCH_CHECKED' })
         }
         if (number === 1) return upstream({ calls: [{ id: 'delegate-fetch', name: 'Agent', input: { description: 'Read fixture source', subagent_type: 'stable-worker', prompt: 'CHILD_FETCH_FIXTURE: fetch the fixture page.', run_in_background: false } }] })
@@ -1094,7 +1590,7 @@ test('real SDK child discovers web fetch and inherits the parent network boundar
       return Response.json({ title: 'Child source', content: 'CHILD_WEB_EVIDENCE' })
     } })
     assert.equal(await runner.run('Delegate reading the fixture source', { ...model, providerId: 'stable-cloud', model: 'glm-5.3-flashx' }, credential, 35000, e => { if (e.kind === 'approval' && e.status === 'running') runner.answerApproval(e.requestId, true) }, 'workspace-write', [], { cwd: workspace, networkAccess }), 'PARENT_FETCH_CHECKED')
-    assert.ifError(failure); assert.equal(childCalls, 3); assert.equal(webCalls, networkAccess ? 1 : 0)
+    assert.ifError(failure); assert.equal(childCalls, 3); assert.equal(webCalls, 0)
   })
 })
 
@@ -1191,7 +1687,8 @@ test('real SDK Agent delegation inherits bounded native file tools and keeps chi
       return upstream({ calls: [{ id: 'native-agent-call', name: agent.function.name, input: { description: 'Inspect fixture', prompt: 'NATIVE_CHILD_MARKER: read child-source.txt and return NATIVE_CHILD_OK.', subagent_type: 'Explore', model: 'haiku', run_in_background: true, isolation: 'worktree' } }] })
     }
     childResult = body.messages.findLast(message => message.role === 'tool' && message.tool_call_id === 'native-agent-call')?.content
-    assert.match(childResult || '', /NATIVE_CHILD_OK/)
+    if (!JSON.stringify(body.messages).includes('NATIVE_CHILD_OK')) return upstream({ text: 'WAITING_FOR_CHILD' })
+    assert.match(JSON.stringify(body.messages), /NATIVE_CHILD_OK/)
     return upstream({ text: 'NATIVE_PARENT_OK' })
   })
   fs.writeFileSync(path.join(workspace, 'child-source.txt'), 'NATIVE_CHILD_SOURCE')
@@ -1252,9 +1749,9 @@ test('real SDK automatically compacts and resumes at the configured context wind
     const events = []
     const { root, workspace, runner, requests } = fixture(t, body => {
       const text = JSON.stringify(body.messages)
-      if (/summariz|summary of (?:the |this )?conversation|summary.*conversation so far/i.test(text)) {
+      if (compactionPrompt(body)) {
         summaries++
-        return upstream({ text: 'COMPACTED_CONTEXT: Preserve KEEP_AFTER_COMPACT. Continue the user task.', inputTokens: 2000 })
+        return upstream({ text: '<summary>COMPACTED_CONTEXT: Preserve KEEP_AFTER_COMPACT. Continue the user task.</summary>', inputTokens: 2000 })
       }
       if (seedTurns < 3) {
         seedTurns++
@@ -1271,16 +1768,20 @@ test('real SDK automatically compacts and resumes at the configured context wind
     })
     const profile = { ...model, contextWindow }
     const session = { key: 'compact-fixture', cwd: workspace }
+    let originalThread
     for (let turn = 1; turn <= 3; turn++) {
       assert.match(await runner.run('KEEP_AFTER_COMPACT: perform fixture step ' + turn, profile, credential, 45000, event => events.push(event), 'read-only', [], session), new RegExp('^TURN_' + turn))
+      originalThread ??= runner.threadId
+      assert.equal(runner.threadId, originalThread)
     }
     for (let step = 1; step <= 2; step++) {
       assert.equal(await runner.run('Check below threshold ' + step, profile, credential, 45000, event => events.push(event), 'read-only', [], session), 'BOUNDARY_' + step)
       assert.equal(summaries, 0)
     }
     assert.equal(await runner.run('Continue the fixture task.', profile, credential, 45000, event => events.push(event), 'read-only', [], session), 'AFTER_COMPACTION_OK')
+    assert.equal(runner.threadId, originalThread, 'compaction must preserve the native session across process restarts')
     assert.equal(summaries, 1, 'The native SDK must issue one actual compaction request')
-    assert(events.some(event => event.title === '上下文已自动压缩'), 'The native runtime must emit compact_boundary')
+    assert.equal(events.filter(event => event.title === '上下文已自动压缩').length, 1, 'The native runtime must emit exactly one compact_boundary')
     assert.equal(requests.length, 7)
     const sizes = requests.map(body => JSON.stringify(body.messages).length)
     assert(sizes.at(-1) < Math.max(...sizes.slice(0, -1)), 'the resumed request uses the compacted history')

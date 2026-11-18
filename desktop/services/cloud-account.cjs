@@ -4,7 +4,7 @@ const os = require('node:os')
 const { randomUUID } = require('node:crypto')
 const { cloudResponseError } = require('./cloud-transport.cjs')
 
-const DEFAULT_CLOUD_URL = 'https://116.62.83.85'
+const DEFAULT_CLOUD_URL = 'https://121.40.181.213'
 const DEVICE_TOKEN_KEY = 'cloud:device-token'
 const DEVICE_ID_SETTING = 'cloudDeviceId'
 

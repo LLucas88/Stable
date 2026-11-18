@@ -1,6 +1,16 @@
 !macro preInit
   ReadEnvStr $stableProgressFile "STABLE_UPDATE_PROGRESS_FILE"
   ${If} ${isUpdated}
+    ${If} $stableProgressFile != ""
+      Push $0
+      Push $1
+      System::Call 'kernel32::GetCurrentProcessId() i .r0'
+      FileOpen $1 "$stableProgressFile.pid" w
+      FileWrite $1 "$0"
+      FileClose $1
+      Pop $1
+      Pop $0
+    ${EndIf}
     StrCpy $stableUpdateCanClose "false"
     !insertmacro stableReportProgress "1" "launching" "running" "0"
   ${EndIf}
@@ -14,7 +24,13 @@
     ClearErrors
     ${GetOptions} $R0 "--stable-update-quiet" $R1
     ${If} ${Errors}
-      SetSilent normal
+      ReadEnvStr $R1 "STABLE_UPDATE_QUIET"
+      ${If} $R1 == "1"
+      ${AndIf} $stableProgressFile != ""
+        SetSilent silent
+      ${Else}
+        SetSilent normal
+      ${EndIf}
     ${Else}
       SetSilent silent
     ${EndIf}

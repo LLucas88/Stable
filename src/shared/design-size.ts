@@ -35,23 +35,26 @@ const snap = (value: number) => Math.min(2048, Math.max(512, Math.round(value / 
 export function resizeDesign(value: DesignRequest, axis: 'width' | 'height', raw: number): DesignRequest {
   let [width, height] = designDimensions(value)
   if (!Number.isFinite(raw)) return value
+  const max = value.model === 'glm-image' ? 2048 : 3840, step = value.model === 'glm-image' ? 32 : 16
+  const snap = (n: number) => Math.min(max, Math.max(512, Math.round(n / step) * step))
   if (value.aspectLocked === false) {
     if (axis === 'width') width = snap(raw)
     else height = snap(raw)
   } else {
     const ratio = width / height
     if (axis === 'width') {
-      width = snap(Math.min(Math.min(2048, 2048 * ratio), Math.max(Math.max(512, 512 * ratio), raw)))
+      width = snap(Math.min(Math.min(max, max * ratio), Math.max(Math.max(512, 512 * ratio), raw)))
       height = snap(width / ratio)
     } else {
-      height = snap(Math.min(Math.min(2048, 2048 / ratio), Math.max(Math.max(512, 512 / ratio), raw)))
+      height = snap(Math.min(Math.min(max, max / ratio), Math.max(Math.max(512, 512 / ratio), raw)))
       width = snap(height * ratio)
     }
   }
   if (value.model !== 'glm-image') {
-    if(width>height*3)height=snap(Math.ceil(width/3/32)*32)
-    if(height>width*3)width=snap(Math.ceil(height/3/32)*32)
-    while(width*height<655360) {if(width<=height)width+=32;else height+=32}
+    if(width>height*3)height=snap(Math.ceil(width/3/step)*step)
+    if(height>width*3)width=snap(Math.ceil(height/3/step)*step)
+    while(width*height<655360) {if(width<=height)width+=step;else height+=step}
   }
+  while(width*height>8294400) { if(width>=height)width-=step;else height-=step }
   return { ...value, outputPreset: undefined, ratio: 'custom', width, height }
 }

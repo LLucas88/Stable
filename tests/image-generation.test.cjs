@@ -24,6 +24,23 @@ function fixture(t, options = {}) {
   return { workspace, args, calls, downloads, invoke: (args, signal) => generate({workspace,args,signal}) }
 }
 
+test('confirmed pre-submit egress outage is not retried automatically and can resume with the same key', async t => {
+ const x=fixture(t),directory=path.join(x.workspace,'receipts'),keys=[];let healthy=false,calls=0;
+ const options={nativeImage,jobStore:new ImageJobStore(directory),resolveRoute:()=>({endpoint:'https://gateway.test/v1/images/generations',apiKey:'fixture',scope:'cloud',replay:true}),download:async()=>png,fetchImpl:async(_url,init)=>{calls++;keys.push(init.headers['Idempotency-Key']);return healthy?Response.json({data:[{url:'https://cdn.example/a.png'}]}):Response.json({error:{code:'openai_egress_unavailable',message:'线路暂时不可用，尚未提交生成。'}},{status:503});}};
+ const run=()=>createImageGenerator(options)({workspace:x.workspace,args:x.args});
+ await assert.rejects(run(),/尚未提交生成/);assert.equal(calls,1);
+ assert.equal(options.jobStore.list()[0].status,'failed');assert.equal(options.jobStore.list()[0].notSubmitted,true);
+ healthy=true;await run();assert.equal(calls,2);assert.equal(new Set(keys).size,1);assert.equal(options.jobStore.list()[0].status,'completed');
+});
+
+test('egress error while recovering an unknown image never downgrades its receipt to not submitted', async t => {
+ const x=fixture(t),directory=path.join(x.workspace,'receipts');let calls=0;
+ const options={nativeImage,jobStore:new ImageJobStore(directory),resolveRoute:()=>({endpoint:'https://gateway.test/v1/images/generations',apiKey:'fixture',scope:'cloud',replay:true}),fetchImpl:async()=>{if(++calls===1)throw Error('network lost');return Response.json({error:{code:'openai_egress_unavailable',message:'线路暂时不可用'}},{status:503});}};
+ const run=()=>createImageGenerator(options)({workspace:x.workspace,args:x.args});
+ await assert.rejects(run());await assert.rejects(run());assert.equal(calls,2);
+ const receipt=options.jobStore.list()[0];assert.equal(receipt.status,'submitted');assert.equal(receipt.unknown,true);assert.equal(receipt.notSubmitted,undefined);
+});
+
 test('cloud async generation survives 210 seconds of simulated processing and polls only one key', async t => {
   let calls = 0, elapsed = 0
   const keys = new Set()
@@ -85,6 +102,19 @@ test('cancelled cloud wait is recovered by a fresh runner using the same receipt
   assert.equal(calls,2);assert.equal(keys.size,1);assert.equal(jobStore.list()[0].status,'completed')
 })
 
+test('confirmed cloud failure clears unknown recovery but never submits the same paid job again', async t => {
+  const base=fixture(t),jobStore=new ImageJobStore(path.join(base.workspace,'recovery-receipts'))
+  let calls=0,mode='lost';const keys=new Set()
+  const options={jobStore,nativeImage,resolveRoute:()=>({endpoint:'https://gateway.test/image',apiKey:'key',scope:'cloud',replay:true}),download:async()=>png,
+    fetchImpl:async(_url,options)=>{calls++;keys.add(options.headers['Idempotency-Key']);if(mode==='lost')throw Error('disconnected');if(mode==='failed')return Response.json({error:{code:'image_generation_failed',message:'上次已失败，预占已释放。'}},{status:422});return Response.json({data:[{url:'https://cdn.example/a.png'}]})}}
+  const request={workspace:base.workspace,args:base.args}
+  await assert.rejects(createImageGenerator(options)(request),/结果未确认/)
+  mode='failed';await assert.rejects(createImageGenerator(options)(request),/上次已失败/)
+  assert.equal(jobStore.list()[0].status,'failed');assert.equal(keys.size,1);assert.equal(calls,2)
+  await assert.rejects(createImageGenerator(options)(request),/上次已失败/);assert.equal(calls,2)
+  mode='success';await createImageGenerator(options)({...request,args:{...base.args,prompt:'用户已修正的新请求',output:'new.png'}});assert.equal(calls,3)
+})
+
 test('batch generates independent images together, validates all paths first and retains partial success', async t => {
   let calls=0,active=0,maximum=0
   const x=fixture(t,{fetchImpl:async()=>{const index=++calls;active++;maximum=Math.max(maximum,active);await new Promise(r=>setImmediate(r));active--;return index===2?new Response('',{status:402}):Response.json({data:[{url:'https://cdn.example/a.png'}]})}})
@@ -143,6 +173,28 @@ test('custom Design size reaches the actual image request instead of the model s
   assert.equal(JSON.parse(x.calls[0].options.body).size,'992x768')
 })
 
+test('prompt-resolved portrait overrides square policy at provider, output and count checks', async t => {
+  const policy=require('../desktop/services/design-prompt.cjs').resolveDesignPrompt({model:'glm-image',mode:'generate',ratio:'1:1',resolution:'2k',count:2,text:''},'生成1张，尺寸928x2016')
+  const x=fixture(t,{policy});const result=await x.invoke({...x.args,size:'2048x2048'})
+  assert.equal(JSON.parse(x.calls[0].options.body).size,'928x2016');assert.equal(result.width,928);assert.equal(result.height,2016)
+  await assert.rejects(x.invoke({...x.args,output:'extra.png'}),/数量|张|上限/)
+  assert.equal(x.calls.length,1)
+})
+
+test('reference-derived Design overrides are validated before payment and update delivery contract', async t => {
+  const {validateDesignRequest}=require('../desktop/services/design-request.cjs')
+  const policy=validateDesignRequest({model:'glm-image',mode:'generate',ratio:'1:1',resolution:'2k',count:2,text:''})
+  const decoded={isEmpty:()=>false,getSize:()=>({width:928,height:2016}),toPNG:()=>png,resize:()=>decoded}
+  const x=fixture(t,{policy,nativeImage:{createFromBuffer:()=>decoded}})
+  await assert.rejects(x.invoke({...x.args,designOverrides:{size:'2048x4436'}}),/2048/)
+  assert.equal(x.calls.length,0)
+  const result=await x.invoke({...x.args,designOverrides:{size:'928x2016',count:1}})
+  assert.equal(result.width,928);assert.equal(result.height,2016);assert.equal(policy.size,'928x2016')
+  assert.equal(JSON.parse(x.calls[0].options.body).size,'928x2016')
+  await assert.rejects(x.invoke({...x.args,output:'new.png',designOverrides:{size:'1024x1024'}}),/中途/)
+  assert.equal(x.calls.length,1)
+})
+
 test('official credential selection prefers current profile, then default, and excludes proxy/Coding Plan', () => {
   const profile = (id, baseURL = 'https://open.bigmodel.cn/api/paas/v4') => ({ id, baseURL })
   const catalog = { defaultModelId: 'b', legacyModelId: 'old', items: [profile('proxy','https://proxy.test/glm'),profile('plan','https://open.bigmodel.cn/api/coding/paas/v4'),profile('a'),profile('b'),profile('old')] }
@@ -194,7 +246,7 @@ test('missing credential, cancellation and corrupted images never create an arti
   const noKey=fixture(t,{resolveApiKey:()=>''})
   await assert.rejects(noKey.invoke(noKey.args),/API Key/); assert.equal(noKey.calls.length,0)
   const bad=fixture(t,{download:async()=>Buffer.from('<html>not an image</html>')})
-  await assert.rejects(bad.invoke(bad.args),/无法解码/)
+  await assert.rejects(bad.invoke(bad.args),/无法解码|格式与请求不一致/)
   assert(!fs.existsSync(path.join(bad.workspace,'bird.png')))
   const abort=new AbortController();abort.abort()
   const x=fixture(t);await assert.rejects(x.invoke(x.args,abort.signal));assert.equal(x.calls.length,0)

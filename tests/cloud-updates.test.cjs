@@ -54,9 +54,9 @@ test('installed update provider resolves metadata and installer entirely on Stab
   const provider = new GenericProvider(pkg.build.publish[0], {}, { platform: 'win32', executor: { request: async options => { urls.push(options); return f.raw } } })
   const info = await provider.getLatestVersion()
   const url = provider.resolveFiles(info)[0].url
-  assert.equal(url.origin, 'https://116.62.83.85')
+  assert.equal(url.origin, 'https://121.40.181.213')
   assert.equal(url.pathname, `/updates/${f.manifest.path}`)
-  assert.equal(urls[0].hostname, '116.62.83.85')
+  assert.equal(urls[0].hostname, '121.40.181.213')
   assert.match(urls[0].path, /^\/updates\/latest.yml/)
 })
 

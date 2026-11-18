@@ -50,3 +50,13 @@ test('deletion waits for runner cleanup and preserves a task that cannot stop', 
   assert.equal(runners.has('b'), true)
   await stopBeforeDelete('missing', runners, () => { throw Error('Should not cancel') })
 })
+
+test('cancelled editor quit restores the close chooser and removes its listeners when closed',()=>{
+  const app=new EventEmitter(),window=new EventEmitter();let prompts=0
+  window.webContents={mainFrame:{},send:()=>prompts++};window.minimize=()=>{}
+  installWindowCloseChoice(window,app,{handle(){},removeHandler(){}},{get(){},set(){}})
+  app.emit('before-quit');app.emit('stable:quit-cancelled')
+  let prevented=false;window.emit('close',{preventDefault(){prevented=true}})
+  assert(prevented);assert.equal(prompts,1)
+  window.emit('closed');assert.equal(app.listenerCount('stable:quit-cancelled'),0)
+})

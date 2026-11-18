@@ -114,7 +114,7 @@ async function run() {
       }
       sheet.views = [{ state: 'frozen', ySplit: 1 }]
       sheet.getRow(1).font = { bold: true }
-      sheet.columns.forEach(column => { column.width = 20 })
+      for (const column of sheet.columns || []) column.width = 20
     }
   } else {
     const sheet = workbook.getWorksheet(args.sheet)

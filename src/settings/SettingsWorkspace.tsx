@@ -138,7 +138,8 @@ function CloudAccountModule({ state, replaceState, action, onOpenUpdates }: { st
       <div><span>模型请求</span><strong>{Number(usage?.request_count || 0).toLocaleString('zh-CN')}</strong></div>
       <div><span>输入 Token</span><strong>{Number(usage?.prompt_tokens || 0).toLocaleString('zh-CN')}</strong></div>
       <div><span>输出 Token</span><strong>{Number(usage?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>确认消耗</span><strong>{formatCloudMoney(Number(usage?.actual_micros || 0), quota?.currency || 'CNY')}</strong></div>
+      <div><span>{typeof usage?.confirmed_micros === 'number' ? '已确认消费' : '账面用量（含待核对）'}</span><strong>{formatCloudMoney(Number(usage?.confirmed_micros ?? usage?.actual_micros ?? 0), quota?.currency || 'CNY')}</strong></div>
+      <div><span>待核对额度</span><strong>{typeof usage?.uncertain_micros === 'number' ? formatCloudMoney(usage.uncertain_micros, quota?.currency || 'CNY') : '旧网关暂未提供'}</strong></div>
     </div>
     <div className="account-module-actions"><button className="button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新账号</button><button className="text-button account-logout" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}><LogOut size={15} aria-hidden="true" />退出账号</button></div>
   </section>

@@ -123,6 +123,10 @@ function cloneWorkflow(item: WorkflowItem): WorkflowItem {
   return { ...item, nodes: item.nodes.map((node) => ({ ...node, position: { ...node.position } })), edges: item.edges.map((edge) => ({ ...edge })) }
 }
 
+function workflowContent(item: WorkflowItem) {
+  return JSON.stringify({ name: item.name, description: item.description, nodes: item.nodes, edges: item.edges })
+}
+
 function createsCycle(source: string, target: string, edges: WorkflowItem['edges']) {
   const outgoing = new Map<string, string[]>()
   for (const edge of edges) outgoing.set(edge.source, [...(outgoing.get(edge.source) || []), edge.target])
@@ -161,6 +165,9 @@ export function WorkflowStudio({ state, update, action, busy }: {
   const canvasRef = useRef<HTMLDivElement>(null)
   const flowRef = useRef<ReactFlowInstance<WorkflowFlowNode, Edge> | null>(null)
   const enhancementRunsRef = useRef(new Set<string>())
+  const savedWorkflow = state.workflows.find((item) => item.id === draft.id)
+  const unsaved = Boolean(editorPrompt || goal || enhancingNodeIds.size)
+    || workflowContent(draft) !== workflowContent(savedWorkflow || emptyWorkflow())
 
   const resources = useMemo<FlowData['resources']>(() => ({
     data: state.data.filter((item) => item.enabled),
@@ -318,7 +325,7 @@ export function WorkflowStudio({ state, update, action, busy }: {
   const selectedNodeEnhancing = Boolean(selectedTextNode && enhancingNodeIds.has(selectedTextNode.id))
   const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
 
-  return <section className="workflow-studio reveal">
+  return <section className="workflow-studio reveal" data-update-unsaved={unsaved || undefined}>
     <header className="workflow-studio-head">
       <div className="workflow-title-fields"><input value={draft.name} aria-label="工作流名称" onChange={(event) => setDraft({ ...draft, name: event.target.value })} /><input value={draft.description} aria-label="工作流说明" placeholder="说明这个流程会完成什么" onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></div>
       <div className="button-row"><button className="button" onClick={() => void action('保存工作流', () => save())}><Save size={16} />保存</button>{workflowRunning ? <button className="button danger" onClick={() => void window.stable.workflows.cancel()}><CircleStop size={16} />停止</button> : <button className="button primary" disabled={!draft.nodes.length} onClick={() => void action('运行工作流', () => save(true))}><Play size={16} />运行</button>}</div>

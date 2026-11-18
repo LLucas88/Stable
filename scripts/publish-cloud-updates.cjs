@@ -21,7 +21,7 @@ async function main() {
     release.assets.push({ name, size: (await fs.stat(filename)).size, digest: 'sha256:' + hash.digest('hex'), browser_download_url: `https://github.com/LLucas88/Stable/releases/download/${tag}/${name}` })
   }
   planRelease(release, manifest)
-  const base = 'https://116.62.83.85/updates/_publish/'
+  const base = 'https://121.40.181.213/updates/_publish/'
   for (const asset of release.assets) {
     const response = await fetch(base + asset.name, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Length': String(asset.size), 'X-Content-SHA256': asset.digest.slice(7) }, body: createReadStream(path.join(directory, asset.name)), duplex: 'half', signal: AbortSignal.timeout(60 * 60 * 1000) })
     if (!response.ok) throw Error(`Upload failed: ${asset.name} HTTP ${response.status}`)
@@ -30,7 +30,7 @@ async function main() {
   const response = await fetch(base + 'commit', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ release, raw }), signal: AbortSignal.timeout(120_000) })
   if (!response.ok) throw Error(`Cloud publication failed HTTP ${response.status}`)
   await response.arrayBuffer()
-  const live = await fetch('https://116.62.83.85/updates/latest.yml', { signal: AbortSignal.timeout(30_000) })
+  const live = await fetch('https://121.40.181.213/updates/latest.yml', { signal: AbortSignal.timeout(30_000) })
   if (!live.ok || yaml.parse(await live.text()).version !== manifest.version) throw Error('Public channel verification failed')
   console.log(`Cloud channel verified: ${manifest.version}`)
 }

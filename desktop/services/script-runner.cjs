@@ -128,7 +128,7 @@ class ScriptRunner {
         if (settled) return
         append('stdout', stdoutDecoder.end())
         append('stderr', stderrDecoder.end())
-        if (this.cancelRequested) return finish(new Error('脚本已停止。'))
+        if (this.cancelRequested) return finish(require('./run-cancellation.cjs').cancelledError('脚本已停止。'))
         if (code === 0) return finish(null, { code, signal, output })
         finish(new Error(`脚本执行失败（退出码 ${code ?? '未知'}）。${output.trim() ? `\n${output.slice(-4000)}` : ''}`))
       }

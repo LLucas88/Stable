@@ -7,7 +7,7 @@ const rules=fs.readFileSync(path.resolve(__dirname,'../desktop/defaults/AGENTS.m
 const main=readSource(path.resolve(__dirname,'../desktop/main.cjs'),'utf8');
 const source=main.slice(main.indexOf("ipcMain.handle('stable:agent:run'"),main.indexOf("ipcMain.handle('stable:agent:steer'"));
 function setup(){
- let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[],routes=[];let executionResult={answer:'完成',trace:[]},deliveryResult={ok:true,errors:[],files:[]};
+ let handler,id=0,prepared=0,executed=0;const messages=[],runs=[],queue=[],failures=[],routes=[],directCalls=[];let executionResult={answer:'完成',trace:[]},deliveryResult={ok:true,errors:[],files:[]};
  const runner={supportsTextOnly:true,run:async(...args)=>{runs.push(args);const result=queue.shift();if(result instanceof Error)throw result;return result||'{"status":"ready"}'}};
  const settings=new Map();const store={revokeConversationGrants:()=>{},updateConversationModel:(id,model)=>{settings.set('chosen-model',model)},getSetting:key=>settings.get(key),setSetting:(key,value)=>settings.set(key,value),conversation:()=>({modelId:'mock'}),listMessages:()=>messages,db:{exec:()=>{},prepare:()=>({get:()=>({state:'preparing'})})},addMessage:(_id,role,content,trace,attachments)=>{const m={id:String(++id),role,content,trace,attachments};messages.push(m);return m},updateConversationContext:()=>{},listLibrary:()=>[],listSkills:()=>[],listWorkflows:()=>[]};
  let lastTask;
@@ -18,63 +18,31 @@ function setup(){
   taskAlerts:new (require('../desktop/services/task-alerts.cjs').TaskAlerts)({notify:()=>{}}), ...helpers,ipcMain:{handle:(_name,cb)=>handler=cb},requireText:v=>v,modelRegistry:{publicCatalog:()=>({items:[{id:"sol-chat",model:"gpt-6.1-sol",providerId:"openai",baseURL:"https://api.openai.com/v1",hasApiKey:true}]}),resolve:id=>{routes.push(id);return {model:{model:id==='sol-chat'?'gpt-6.1-sol':id,providerId:'openai',baseURL:'https://api.openai.com/v1'},apiKey:'test-only'}}},wendingCli:{forConversation:()=>({login:{pending:false,snapshot:()=>({})}})},createHarnessRunner:()=>runner,conversationLifecycle:{locks:new Map(),checkpoint:()=>{},begin:()=>({duplicate:false}),status:()=>{},finishFailure:(_id,result)=>failures.push(result)},agentRunners:new Map(),randomUUID:()=>String(++id),store,readGlobalInstructions:()=>({content:rules}),conversationPaths:()=>({workspace:'E:/mock-workspace'}),
   prepareAgentMessage:async(payload,_id,_route,displayPayload=payload)=>{prepared++;lastTask=payload;return {messageAttachments:displayPayload.attachments||[],attachments:payload.attachments,selectedReferences:payload.references,extractedAttachments:{installedSkills:[]},selectedData:[],selectedKnowledge:[],selectedSkills:[],selectedScripts:[]}},
   commitAgentMessage:(_id,query,prepared)=>store.addMessage(_id,'user',query,require('../desktop/services/design-request.cjs').designMessageTrace(prepared.design),prepared.messageAttachments),publishAgentState:()=>{},agentState:()=>({messages}),automationIntent:()=>false,
+  runDirectDesignImages:async(payload,id,query,design)=>{directCalls.push({payload,id,query,design});store.addMessage(id,'user',query,require('../desktop/services/design-request.cjs').designMessageTrace(design),payload.attachments);return {answer:'直接生图',messages}},
   runAgent:async(query,...args)=>{executed++;lastTask={...lastTask,query,executionModel:args[8]?.model};return executionResult},
  });
- return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,routes,setResult:result=>{executionResult=result},setDelivery:result=>{deliveryResult=result},stats:()=>({prepared,executed,lastTask})};
+ return {store,send:prompt=>handler(null,{conversationId:'a',...(typeof prompt==='string'?{prompt}:prompt)}),queue,messages,runs,failures,routes,directCalls,setResult:result=>{executionResult=result},setDelivery:result=>{deliveryResult=result},stats:()=>({prepared,executed,lastTask})};
 }
 
-test('Design dispatch pins gpt-6.1-sol high for an old chat while retaining GLM-image generation settings',async()=>{
+test('Design image dispatch bypasses text model routing, preflight and agent execution',async()=>{
  const env=setup(),design={model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''};
- env.store.conversation=()=>({modelId:'deepseek',design});
+ env.store.conversation=()=>({modelId:'missing-text-model',design});env.queue.push(Error('text model must not run'));
  await env.send({prompt:'生成早餐海报',design});
- assert.equal(env.store.getSetting('chosen-model'),'sol-chat');assert.deepEqual(env.routes,['sol-chat']);assert.equal(env.runs[0][1].model,'gpt-6.1-sol');assert.equal(env.runs[0][1].reasoningSelection,'high');assert.equal(env.stats().lastTask.executionModel.reasoningSelection,'high');
- assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/glm-image/);
-})
+ assert.equal(env.store.getSetting('chosen-model'),undefined);assert.deepEqual(env.routes,[]);assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);assert.equal(env.directCalls.length,1);assert.equal(env.directCalls[0].design.model,'glm-image');
+});
 
-test('Design count conflict blocks actual IPC dispatch and applies only the explicitly selected count', async()=>{
- for (const [option,count] of [[0,4],[1,1]]) {
-  const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};
-  env.store.conversation=()=>({modelId:'sol-chat',design});
-  await env.send({prompt:'为咖啡活动制作海报。先生成1张。',design});
-  assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);
-  assert.equal(env.messages[0].trace[0].designRequest.count,4);
-  const card=helpers.pendingClarification(env.messages);
-  await env.send({clarificationResponse:{id:card.id,source:'choice',option}});
-  assert.equal(env.runs.length,0);assert.equal(env.stats().executed,1);
-  assert.equal(env.stats().lastTask.design.count,count);
-  assert.match(env.stats().lastTask.query,new RegExp('最多 '+count+' 张'));
-  assert.equal(design.count,4);assert.equal(env.messages[0].trace[0].designRequest.count,4);
- }
-})
+test('direct Design resolves user dimensions and count without changing saved defaults',async()=>{
+ const env=setup(),design={model:'gpt-image-2.5-sunburst',mode:'generate',ratio:'1:1',resolution:'2k',count:4,text:''};
+ await env.send({prompt:'先生成1张。尺寸928x2016。',design,attachments:[{path:'reference.png'}]});
+ assert.equal(env.directCalls[0].design.count,1);assert.equal(env.directCalls[0].design.size,'928x2016');assert.equal(env.directCalls[0].payload.attachments[0].path,'reference.png');assert.equal(design.count,4);assert.equal(env.messages[0].trace[0].designRequest.count,1);
+ const invalid=setup();await assert.rejects(invalid.send({prompt:'尺寸2048x4436',design}),/3840/);assert.equal(invalid.runs.length,0);assert.equal(invalid.directCalls.length,0);
+});
 
-test('Design send keeps user history clean but delivers validated settings to the execution model', async()=>{
- const env=setup();const design={model:'glm-image',mode:'preserve',ratio:'9:16',resolution:'2k',count:2,text:'仅限今日'};
- await env.send({prompt:'生成早餐海报',attachments:[{path:'original.png',name:'original.png'}],design});
- assert.equal(env.stats().executed,1);assert.match(env.stats().lastTask.query,/1152x2048/);assert.match(env.stats().lastTask.query,/原样合成/);
- assert.equal(env.messages[0].content,'生成早餐海报');assert.doesNotMatch(env.messages[0].content,/stable_design_request/);
- assert.equal(env.messages[0].trace[0].designRequest.size,'1152x2048');
- assert.equal(env.messages[0].trace[0].designRequest.count,2);
-})
+test('Design chat uses the selected chat model without inheriting saved image parameters',async()=>{
+ const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};env.store.conversation=()=>({modelId:'deepseek',design});
+ await env.send('解释一下这个设计');assert.equal(env.directCalls.length,0);assert.equal(env.routes[0],'deepseek');assert.doesNotMatch(env.stats().lastTask.query,/stable_design_request|1536x2048|最多 4 张/);assert.equal(env.messages[0].trace,undefined);
+});
 
-test('Design chat never inherits stored image parameters, while a clarification retains its original request',async()=>{
- const env=setup(),design={model:'glm-image',mode:'generate',ratio:'3:4',resolution:'2k',count:4,text:''};
- env.store.conversation=()=>({modelId:'deepseek',design});
- await env.send('解释一下这个设计');
- assert.doesNotMatch(env.stats().lastTask.query,/stable_design_request|1536x2048|最多 4 张/);
- assert.equal(env.messages[0].trace,undefined);assert.equal(env.routes[0],'sol-chat');
- const next=setup();next.store.conversation=env.store.conversation;next.queue.push(assessment('报告给谁看？'));
- await next.send({prompt:'生成一个海报',design});
- assert.equal(next.messages[0].trace[0].designRequest.count,4);
- await next.send('给管理层');
- assert.match(next.stats().lastTask.query,/1536x2048/);assert.match(next.stats().lastTask.query,/最多 4 张/);
- assert.equal(next.messages.find(m=>m.role==='user'&&m.content==='给管理层').trace,undefined);
-})
-test('invalid Design parameters and missing originals fail before any model request',async()=>{
- const env=setup();const design={model:'glm-image',mode:'preserve',ratio:'1:1',resolution:'standard',count:1,text:''};
- await assert.rejects(env.send({prompt:'生成海报',design}),/原始图片/);
- await assert.rejects(env.send({prompt:'生成海报',design:{...design,count:9}}),/参数无效/);
- assert.equal(env.runs.length,0);assert.equal(env.stats().executed,0);assert.equal(env.messages.length,0)
-})
 test('actual send handler asks before preparing attachments or running any task, then resumes with original resources',async()=>{
  const env=setup();env.queue.push(assessment('报告给谁看？'));
  await env.send({prompt:'请生成 Word 报告',attachments:[{path:'source.csv',name:'source.csv'}],references:[{kind:'skill',id:'report'}]});
@@ -161,7 +129,7 @@ test('stop ends a persisted question even with no active runner and clears the r
  env.messages.push({role:'assistant',content:'给谁看？',trace:[trace]})
  let cancel,finished=0,published=0
  const block=main.slice(main.indexOf("ipcMain.handle('stable:agent:cancel'"),main.indexOf("ipcMain.handle('stable:agent:answerApproval'"))
- vm.runInNewContext(block,{...helpers,randomUUID:()=> 'cancel-delivery',ipcMain:{handle:(_name,cb)=>cancel=cb},requireText:v=>v,agentRunners:new Map(),store:env.store,taskAlerts:{finish:()=>finished++},publishAgentState:()=>published++})
+ vm.runInNewContext(block,{...helpers,randomUUID:()=> 'cancel-delivery',ipcMain:{handle:(name,cb)=>{if(name==='stable:agent:cancel')cancel=cb}},requireText:v=>v,agentRunners:new Map(),store:env.store,taskAlerts:{finish:()=>finished++},publishAgentState:()=>published++})
  assert.equal(cancel(null,{conversationId:'a'}),true)
  assert.equal(helpers.pendingClarification(env.messages),null);assert.equal(env.messages.at(-1).content,'本轮已停止。')
  assert.equal(finished,1);assert.equal(published,1)
@@ -208,10 +176,9 @@ test('actual IPC links repeated questions and the final answer without modifying
 });
 
 
-test('Design completion rejects invalid final files while image-mode discussion stays valid',async()=>{
+test('direct image submission does not resume an older clarification',async()=>{
+ const env=setup();env.queue.push(assessment('报告给谁看？'));await env.send('生成报告');const calls=env.runs.length;
  const design={model:'glm-image',mode:'generate',ratio:'1:1',resolution:'standard',count:1,text:''};
- const env=setup();env.store.conversation=()=>({modelId:'sol-chat',design});env.setDelivery({ok:false,errors:['图片实际尺寸不符'],files:['E:/mock-workspace/result.png']});
- await env.send({prompt:'你好',design});assert(!env.messages.at(-1).trace.some(item=>item.id==='design-delivery-check'));
- env.setResult({answer:'[图片](<E:/mock-workspace/result.png>)',trace:[]});await env.send({prompt:'交付海报',design});
- assert.match(env.messages.at(-1).content,/交付检查未通过/);assert.equal(env.messages.at(-1).trace.find(item=>item.id==='design-delivery-check').status,'failed');assert.equal(env.messages.at(-1).trace.find(item=>item.id==='runtime').status,'failed');
-})
+ await env.send({prompt:'生成一张饮品图',design,clarificationResponse:{id:'stale-question',source:'choice',option:0}});
+ assert.equal(env.runs.length,calls);assert.equal(env.directCalls[0].query,'生成一张饮品图');
+});

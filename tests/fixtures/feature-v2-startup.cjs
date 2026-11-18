@@ -6,6 +6,7 @@ fs.cpSync(path.join(repo,'dist'),path.join(root,'dist'),{recursive:true});fs.mkd
 process.env.STABLE_QA_USER_DATA=path.join(root,'profile');process.env.STABLE_QA_CAPTURE=path.join(root,'startup.png');process.env.STABLE_QA_INSPECT=path.join(root,'inspect.json');process.env.STABLE_QA_CAPTURE_DELAY='6000';process.env.STABLE_QA_WIDTH='1440';process.env.STABLE_QA_HEIGHT='960';process.env.STABLE_QA_THEME='light'
 app.getAppPath=()=>repo
 for(const name of ['show','showInactive','focus'])BrowserWindow.prototype[name]=function(){}
+app.on('browser-window-created', (_event, window) => { window.webContents.once('did-finish-load', async () => { try { assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".launch-splash"))'), false) } catch (error) { errors.push(String(error)) } }) })
 let errors=[];process.on('unhandledRejection',error=>{errors.push(String(error));console.error('STARTUP_ERROR',error)})
 app.whenReady().then(()=>electron.session.defaultSession.webRequest.onBeforeRequest((d,cb)=>cb({cancel:/^https?:/.test(d.url)})))
 app.on('before-quit',()=>{const file=path.join(root,'inspect.json');if(!fs.existsSync(file))return;const metrics=JSON.parse(fs.readFileSync(file));fs.writeFileSync(path.join(repo,'qa-artifacts/feature-v2/startup-result.json'),JSON.stringify({errors,metrics},null,2));console.log('FEATURE_V2_STARTUP',JSON.stringify({errors,root,body:metrics.bodyText?.slice(0,200)}))})

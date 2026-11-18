@@ -1,6 +1,6 @@
 'use strict'
 
-const { readdirSync, statSync } = require('node:fs')
+const { readdir, stat } = require('node:fs/promises')
 const path = require('node:path')
 const { waitingAnswer, waitingCard, WAIT_MARKER } = require('./clarification.cjs')
 
@@ -42,30 +42,30 @@ function revisedDelivery(current, instruction) {
   return /另外|同时|还要|也要|also/i.test(text) ? { type: 'artifact', extensions: [...new Set([...current.extensions, ...target.extensions])] } : target
 }
 
-function artifactSnapshot(root, extensions) {
+async function artifactSnapshot(root, extensions) {
   const wanted = new Set((extensions || []).map((extension) => extension.toLowerCase()))
   const files = new Map()
   if (!root || !wanted.size) return files
   const skipped = new Set(['.git', 'node_modules'])
   let visited = 0
-  function visit(directory) {
+  async function visit(directory) {
     if (visited >= 20_000) return
     let entries = []
-    try { entries = readdirSync(directory, { withFileTypes: true }) } catch { return }
+    try { entries = await readdir(directory, { withFileTypes: true }) } catch { return }
     for (const entry of entries) {
       if (visited >= 20_000) return
       visited += 1
       if (entry.isDirectory() && skipped.has(entry.name)) continue
       const fullPath = path.join(directory, entry.name)
-      if (entry.isDirectory()) { visit(fullPath); continue }
+      if (entry.isDirectory()) { await visit(fullPath); continue }
       if (!entry.isFile() || !wanted.has(path.extname(entry.name).toLowerCase())) continue
       try {
-        const stats = statSync(fullPath)
+        const stats = await stat(fullPath)
         if (stats.size > 0) files.set(fullPath, `${stats.size}:${stats.mtimeMs}`)
       } catch {}
     }
   }
-  visit(root)
+  for (const directory of new Set(Array.isArray(root) ? root : [root])) { visited = 0; await visit(directory) }
   return files
 }
 
@@ -106,12 +106,14 @@ function referencedExistingArtifacts(answer, before, after) {
   })
 }
 
-async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onCheck = () => {}, getDelivery, getPrompt }) {
-  const before = artifactSnapshot(workspace, getDelivery ? FORMAT_RULES.flatMap((rule) => rule.extensions) : delivery.extensions)
+async function runWithDeliveryChecks({ workspace, writableRoots = [], delivery, prompt, execute, explainFailure, onCheck = () => {}, getDelivery, getPrompt, getExecutionOutcome }) {
+  // These roots come from the task's authorization, never from model text.
+  const roots = [...new Set([workspace, ...writableRoots].map(root => path.resolve(root)))]
+  const before = await artifactSnapshot(roots, getDelivery ? FORMAT_RULES.flatMap((rule) => rule.extensions) : delivery.extensions)
   let answer = await execute(prompt)
   for (let attempt = 0; ; attempt += 1) {
     delivery = getDelivery?.() || delivery
-    const after = artifactSnapshot(workspace, delivery.extensions)
+    const after = await artifactSnapshot(roots, delivery.extensions)
     const changed = changedArtifacts(before, after)
     const answerPaths = String(answer || '').replace(/\\/g, '/')
     const named = changed.filter(file => {
@@ -121,7 +123,10 @@ async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onC
     })
     // Explicit deliveries win over intermediate files discovered by the scan.
     // Keep fallback discovery for agents that omit the final path, excluding scratch paths.
-    const created = named.length ? named : changed.filter(file => !path.relative(workspace, file).split(/[\\/]/).some(part => /^[_.]/.test(part) || /^(?:tmp|temp|cache)$/i.test(part)))
+    const created = named.length ? named : changed.filter(file => {
+      const root = roots.find(root => { const relative = path.relative(root, file); return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative) })
+      return root && !path.relative(root, file).split(/[\\/]/).some(part => /^[_.]/.test(part) || /^(?:tmp|temp|cache)$/i.test(part))
+    })
     const reason = deliveryBlocker(answer)
     const reused = !reason ? referencedExistingArtifacts(answer, before, after) : []
     const artifacts = [...new Set([...created, ...reused])]
@@ -129,12 +134,22 @@ async function runWithDeliveryChecks({ workspace, delivery, prompt, execute, onC
     if (question && (waitingCard(answer) || String(answer).trim().startsWith(WAIT_MARKER) || !artifacts.length)) {
       return { answer: question, clarification: waitingCard(answer), artifacts: [], reused: [], status: 'waiting', reason: '等待用户补充信息。' }
     }
+    const outcome = getExecutionOutcome?.()
+    if (outcome?.status === 'incomplete') return { answer: appendArtifactPaths(answer, artifacts), artifacts, reused, status: 'failed', reason: outcome.reason }
     if (delivery.type !== 'artifact' || artifacts.length) {
-      return { answer: appendArtifactPaths(answer, artifacts), artifacts, reused, status: 'completed' }
+      const limitations=outcome?.limitations||''
+      const finalAnswer=limitations&&!String(answer).includes(limitations)?`${answer}\n\n已披露的数据限制：\n${limitations}`:answer
+      return { answer: appendArtifactPaths(finalAnswer, artifacts), artifacts, reused, status: 'completed', ...(limitations?{limitations}:{}) }
     }
     if (reason || attempt >= 2) {
       const detail = reason || '本轮未检测到符合要求的交付文件。以下保留 Agent 返回的说明，任务未标记为交付成功。'
-      return { answer: `文件交付未完成：${detail}\n\n${String(answer).trim()}`, artifacts: [], reused: [], status: 'failed', reason: detail }
+      // Explicit model-reported blockers already explain why work cannot finish.
+      // Otherwise give the model the check result and a tool-free chance to
+      // explain it, instead of replacing its answer with a generic hard stop.
+      if (!reason && explainFailure) answer = await explainFailure({ reason: detail, answer, prompt: getPrompt?.() || prompt })
+      const question = waitingAnswer(answer)
+      if (question && (waitingCard(answer) || String(answer).trim().startsWith(WAIT_MARKER))) return { answer: question, clarification: waitingCard(answer), artifacts: [], reused: [], status: 'waiting', reason: detail }
+      return { answer: String(answer).trim(), artifacts: [], reused: [], status: 'failed', reason: detail }
     }
     onCheck(attempt + 1)
     answer = await execute(`${getPrompt?.() || prompt}\n\n## 续跑要求\n本轮尚未检测到目标文件。若前置条件齐备，请继续实际生成并检查文件；若权限不足、登录失效或缺少数据，停止调用并如实说明，不得编造文件或重复请求。若复用工作区已有文件，需核验内容符合当前需求，明确说明“复用已有文件，已检查”，并列出完整绝对路径，不要改动文件时间来通过校验。\n\n上一轮说明（仅供参考）：\n${String(answer).slice(-6_000)}`)

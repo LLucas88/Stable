@@ -2,7 +2,7 @@
 
 const { loadClaudeExtensions } = require('./claude-extensions.cjs')
 
-function createExtensionRuntime({ userData, config, disabled, networkAccess, requestApproval, signal, onToolEvent }) {
+function createExtensionRuntime({ userData, config, disabled, networkAccess, requestApproval, signal, beforeTool, onToolEvent }) {
   const names = Object.entries(config.grants).flatMap(([server, tools]) => tools.map(tool => `mcp__${server}__${tool}`))
   function current() {
     if (signal.aborted) throw Error('任务已停止。')
@@ -37,12 +37,14 @@ function createExtensionRuntime({ userData, config, disabled, networkAccess, req
     },
     async preToolUse(input) {
       if (input.tool_name.startsWith('mcp__stable__')) return {}
-      const decision = await this.permission(input.tool_name, input.tool_input)
-      onToolEvent({ id: input.tool_use_id, name: input.tool_name, args: input.tool_input, status: decision.behavior === 'allow' ? 'running' : 'failed', detail: decision.message })
+      const event = { id: input.tool_use_id, name: input.tool_name, args: input.tool_input }
+      const blocked = beforeTool?.(event)
+      const decision = blocked ? { behavior: 'deny', message: blocked } : await this.permission(input.tool_name, input.tool_input)
+      onToolEvent({ ...event, status: decision.behavior === 'allow' ? 'running' : 'failed', retryBlocked: Boolean(blocked), detail: decision.message })
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision.behavior, permissionDecisionReason: decision.message } }
     },
     completed(input, failed = false) {
-      if (!input.tool_name.startsWith('mcp__stable__')) onToolEvent({ id: input.tool_use_id, name: input.tool_name, args: input.tool_input, status: failed ? 'failed' : 'completed', detail: failed ? '外部 MCP 工具调用失败。' : '外部 MCP 工具调用完成。' })
+      if (!input.tool_name.startsWith('mcp__stable__')) onToolEvent({ id: input.tool_use_id, name: input.tool_name, args: input.tool_input, status: failed || require('./tool-outcome.cjs').toolResultFailed(input.tool_response) ? 'failed' : 'completed', ...(input.error ? { detail: input.error } : { output: input.tool_response }) })
     },
   }
 }

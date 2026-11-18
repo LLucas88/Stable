@@ -11,12 +11,13 @@ function imageType(bytes) {
 }
 class DesignReferences {
   constructor(directory, nativeImage) { this.directory = directory; this.nativeImage = nativeImage }
-  capture(attachments, rootsForFile) {
+  async capture(attachments, rootsForFile) {
     const images = attachments.filter(item => TYPES[path.extname(item.path || '').toLowerCase()])
     if (!images.length) return []
     if (images.length > 4) throw Error('本次最多使用 4 张参考图片，请减少图片后发送。')
     let total = 0
-    const prepared = images.map(item => {
+    const prepared = []
+    for (const item of images) {
       const source = resolveWorkspaceEntry(item.path, rootsForFile(item.path), { fileOnly: true })
       const file = typeof source === 'string' ? source : source.path
       const size = fs.statSync(file).size
@@ -24,12 +25,12 @@ class DesignReferences {
       const bytes = fs.readFileSync(file), mimeType = imageType(bytes)
       total += bytes.length - size
       if (!bytes.length || bytes.length > 10 * 1024 * 1024 || total > 20 * 1024 * 1024) throw Error('参考图读取期间大小发生变化，请重新添加。')
-      const image = this.nativeImage.createFromBuffer(bytes), dimensions = image.getSize()
+      const image = await require('./image-artifacts.cjs').decodeRaster(bytes,this.nativeImage), dimensions = image.getSize()
       if (image.isEmpty() || dimensions.width > 8192 || dimensions.height > 8192 || dimensions.width * dimensions.height > 32_000_000) throw Error('参考图无法读取或尺寸过大。')
       const id = hash(bytes)
       if (item.designReferenceId && item.designReferenceId !== id) throw Error('已发送的参考图快照被修改，请重新添加图片。')
-      return { id, name: path.basename(file), mimeType, bytes, ...dimensions }
-    })
+      prepared.push({ id, name: path.basename(file), mimeType, bytes, ...dimensions })
+    }
     fs.mkdirSync(this.directory, { recursive: true })
     for (const item of prepared) {
       const { bytes, ...metadata } = item

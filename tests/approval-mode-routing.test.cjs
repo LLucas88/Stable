@@ -7,7 +7,9 @@ const source=readSource(path.join(__dirname,'../desktop/main.cjs'),'utf8').repla
 const start=source.indexOf("    if (source.kind === 'approval' && source.requestId && source.status === 'running') {")
 const end=source.indexOf('\n  }\n  if (installedSkills.length)',start)
 assert.ok(start>=0&&end>start)
-const block='(source)=>{'+source.slice(start,end)+'\n}'
+const modeStart=source.indexOf("    const approvalMode = source.kind")
+const approvalModeSource=source.slice(modeStart,source.indexOf("    const event = {",modeStart))
+const block='(source)=>{'+approvalModeSource+source.slice(start,end)+'\n}'
 async function route(mode, decision='approved', options={}) {
   const replies=[],events=[],reviews=[],records=[],waits=[]
   const digest='a'.repeat(64), control={reviewers:new Set()}
@@ -44,7 +46,7 @@ test('review timeout denies; disabled or exhausted reviewer falls back to user w
 test('full permission suppresses pending approval broadcasts; other modes retain them',()=>{
  const expression=source.match(/const silentApproval = ([^\n]+)/)[1];
  for(const mode of ['full','auto','request']) for(const status of ['running','completed']) {
-  const silent=vm.runInNewContext(expression,{source:{kind:'approval',status},canAutoApprove,permissionModeOverride:mode});
+  const silent=vm.runInNewContext(approvalModeSource+expression,{source:{kind:'approval',status},canAutoApprove,permissionModeOverride:mode});
   assert.equal(silent,mode==='full'&&status==='running');
  }
  assert.match(source,/if \(!silentApproval && broadcast/);

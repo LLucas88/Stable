@@ -1,0 +1,106 @@
+'use strict'
+const test = require('node:test'), assert = require('node:assert/strict')
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm')
+const { ClaudeBackgroundTasks } = require('../desktop/services/claude-background-tasks.cjs')
+const { RunProgress } = require('../desktop/services/run-progress.cjs')
+
+test('SDK task lifecycle retains output, progress, cancellation and rejects stale runs', () => {
+  const events = [], tasks = new ClaudeBackgroundTasks(e => events.push(e))
+  const send = (subtype, extra = {}) => tasks.update({ type: 'system', subtype, task_id: 'a', run_id: '002', ...extra })
+  send('task_started', { tool_use_id: 'tool-a', task_type: 'local_agent', is_backgrounded: false })
+  send('task_updated', { patch: { is_backgrounded: true } })
+  send('task_progress', { summary: 'checked source', usage: { total_tokens: 40, tool_uses: 2, duration_ms: 12000 } })
+  assert.equal(tasks.background.length, 1)
+  assert.equal(events.at(-1).taskUsage.tool_uses, 2)
+  send('task_notification', { run_id: '001', status: 'failed' })
+  assert.equal(tasks.active.length, 1)
+  send('task_updated', { patch: { status: 'completed' } })
+  assert.equal(tasks.active.length, 1, 'wait for output notification, not just a terminal patch')
+  send('task_notification', { status: 'stopped', summary: 'user stopped it', output_file: '/output/a.txt' })
+  assert.equal(tasks.background.length, 0)
+  assert.equal(events.at(-1).status, 'cancelled')
+  assert.equal(events.at(-1).taskOutputFile, '/output/a.txt')
+  assert.throws(() => tasks.requireActive('a'), /已结束/)
+  assert.throws(() => tasks.requireActive('foreign'), /不属于/)
+  send('task_progress', { summary: 'late progress' })
+  assert.equal(tasks.active.length, 0, 'late progress never resurrects a completed task')
+})
+
+test('SDK background snapshots reconcile activity without treating disappearance or ambient work as success', () => {
+  const tasks = new ClaudeBackgroundTasks()
+  tasks.update({ type: 'system', subtype: 'background_tasks_changed', tasks: [{task_id:'a',task_type:'local_bash',description:'job'}, {task_id:'watch',ambient:true}] })
+  assert.equal(tasks.background.length, 1)
+  tasks.update({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })
+  assert.equal(tasks.background.length, 1)
+  assert.equal(tasks.liveBackground.length, 0, 'missing SDK result does not disable the runtime silence guard forever')
+  tasks.finish('failed', 'runtime disconnected')
+  assert.equal(tasks.active.length, 0)
+  assert.equal(tasks.tasks.get('a').summary, 'runtime disconnected')
+})
+
+test('a completed background result must enter a subsequent model request before delivery', () => {
+  const tasks = new ClaudeBackgroundTasks()
+  tasks.merge({task_id:'a',tool_use_id:'spawn-a',is_backgrounded:true})
+  tasks.observeRequest({messages:[{role:'user',content:'initial request'}]})
+  tasks.update({type:'system',subtype:'task_notification',task_id:'a',status:'completed',summary:'result'})
+  assert.deepEqual(tasks.pendingResults,['a'])
+  tasks.observeRequest({messages:[{role:'user',content:'<task-notification><task-id>a</task-id><tool-use-id>older-spawn</tool-use-id></task-notification>'}]})
+  assert.deepEqual(tasks.pendingResults,['a'])
+  tasks.observeRequest({messages:[{role:'user',content:'<task-notification><task-id>a</task-id><tool-use-id>spawn-a</tool-use-id></task-notification>'}]})
+  assert.deepEqual(tasks.pendingResults,[])
+})
+
+test('unconsumed native results are forwarded only once and acknowledged on the next model request', () => {
+  const tasks = new ClaudeBackgroundTasks()
+  tasks.merge({task_id:'a',is_backgrounded:true})
+  tasks.update({type:'system',subtype:'task_notification',task_id:'a',status:'stopped',summary:'Stopped by user'})
+  const prompt=tasks.resultPrompt()
+  assert.match(prompt,/Stopped by user/)
+  assert.equal(tasks.resultPrompt(),'')
+  assert.deepEqual(tasks.pendingResults,['a'])
+  tasks.observeRequest({messages:[{role:'tool',tool_call_id:'native-call',content:prompt}]})
+  assert.deepEqual(tasks.pendingResults,[])
+})
+
+test('a long SDK task bypasses the old wall-clock stop, while model silence and unowned hangs still stop', () => {
+  let now = 0
+  const progress = new RunProgress({ now: () => now })
+  progress.startTool({id:'a',name:'Bash',args:{command:'long calculation'}})
+  now = 90 * 60000
+  assert.equal(progress.check(false, { managedToolIds: new Set(['a']) }), null)
+  assert.match(progress.check(false, {managedToolIds:new Set(['a']),awaitingTaskResults:true}), /SDK 已移除后台任务/)
+  assert.match(progress.check(), /工具执行/)
+  progress.complete('a', {status:'completed'})
+  now += 20 * 60000
+  assert.equal(progress.check(false, {backgroundActive:true}), null)
+  assert.match(progress.check(), /模型或工具进展/)
+})
+
+test('only SDK-registered ordinary output files gain read access outside the workspace', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stable-sdk-output-'))
+  t.after(() => { assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir())); fs.rmSync(root, {recursive:true, force:true}) })
+  const output = path.join(root,'owned.output'), other = path.join(root,'other.txt')
+  fs.writeFileSync(output,'own'); fs.writeFileSync(other,'other')
+  const tasks = new ClaudeBackgroundTasks()
+  tasks.merge({task_id:'a',output_file:output})
+  assert.equal(tasks.outputAllowed(output), true)
+  assert.equal(tasks.outputAllowed(other), false)
+  fs.linkSync(output,path.join(root,'hardlink'))
+  assert.equal(tasks.outputAllowed(output), false)
+})
+
+test('task IPC rejects another conversation, stale run and unsupported action without cancelling the run', async () => {
+  const source = fs.readFileSync(path.join(__dirname,'../desktop/main.cjs'),'utf8')
+  const block = source.slice(source.indexOf("ipcMain.handle('stable:agent:taskAction'"),source.indexOf("ipcMain.handle('stable:agent:answerApproval'"))
+  let handler; const calls=[]
+  const control = {runId:'r',runner:{stopTask:async id=>{calls.push(['stop',id]);return true},backgroundTask:async id=>{calls.push(['background',id]);return true}}}
+  vm.runInNewContext(block,{ipcMain:{handle:(_name,fn)=>{handler=fn}},agentRunners:new Map([['c',control]]),requireText:v=>{if(typeof v!=='string'||!v)throw Error('invalid');return v}})
+  const send = extra => handler(null,{conversationId:'c',runId:'r',taskId:'a',action:'stop',...extra})
+  await assert.rejects(send({conversationId:'other'}),/已结束或已切换/)
+  await assert.rejects(send({runId:'old'}),/已结束或已切换/)
+  await assert.rejects(send({action:'all'}),/不支持/)
+  assert.equal(await send({}),true)
+  assert.equal(await send({action:'background'}),true)
+  assert.deepEqual(calls,[['stop','a'],['background','a']])
+  assert.equal(control.cancelled,undefined)
+})

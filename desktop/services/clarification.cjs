@@ -138,20 +138,7 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
   if (pending && /^(?:取消|取消任务|停止|不用了|算了)[。！!\s]*$/.test(reply.prompt)) return { status: 'cancelled', answer: '已取消待澄清的任务。', payload: reply }
   const resuming = Boolean(pending && !/^(?:新任务|换个任务|换一个任务)[：:]/.test(reply.prompt))
   const effective = resuming ? mergePayload(cleanPayload(pending.payload), reply) : reply
-  const { designCountConflict, explicitImageCount } = require('./design-request.cjs')
-  const previousConflict = resuming && designCountConflict(pending.payload)
-  if (previousConflict && pending.question === previousConflict.question) {
-    const chosenCount = explicitImageCount(reply.prompt)
-    if (chosenCount) {
-      effective.design = { ...effective.design, count: chosenCount }
-      return { status: 'ready', payload: effective }
-    }
-    return { status: 'waiting', answer: previousConflict.question, payload: effective,
-      trace: [clarificationTrace(cleanPayload(pending.payload), previousConflict.question, 'clarification', previousConflict)] }
-  }
-  const countConflict = designCountConflict(effective)
-  if (countConflict) return { status: 'waiting', answer: countConflict.question, payload: effective,
-    trace: [clarificationTrace(effective, countConflict.question, 'clarification', countConflict)] }
+  if (effective.design) effective.design = require('./design-prompt.cjs').resolveDesignPrompt(effective.design, resuming ? reply.prompt : effective.prompt)
   // A validated card response already settles this decision. The execution model
   // still checks evidence and handles any genuinely new gaps in context.
   if (payload.clarificationResolved) return { status: 'ready', payload: effective }
@@ -186,7 +173,7 @@ async function clarifyBeforeExecution({ payload, messages, ask }) {
     '最近对话：\n' + (messages || []).slice(-6).map(message => message.role + '：' + String(message.content || '').slice(-2000)).join('\n'),
     resuming ? '上一轮问题：' + pending.question : '',
     '当前任务与补充：\n' + effective.prompt,
-    effective.design ? '本条图片参数：' + JSON.stringify(effective.design) + '。文字中的生成数量若与参数冲突，先提问，不自动覆盖参数或直接生成；已明确回答的数量选择按最新回答执行。' : '',
+    effective.design ? '本条图片参数：' + JSON.stringify(effective.design) + '。用户本次明确写出的参数优先于面板默认值，不要仅因与面板冲突而提问。接口不支持的参数必须在生图前说明限制，禁止静默改尺寸或方形降级。' : '',
     '已提供的资源名称（待执行阶段读取）：' + [...effective.attachments, ...effective.references].map(item => item.name).join('、'),
   ].filter(Boolean).join('\n\n')
   const parsed = parseObject(await ask(prompt))

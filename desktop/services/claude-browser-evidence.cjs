@@ -4,31 +4,52 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-const REVIEW_GUIDANCE = '浏览器视觉检查先建立有限清单：用 reviewUpdates 的 open 状态记录用户要求、区域和必要视口；发现问题立即更新，复查后用 passed 和 evidenceId 记录实际结论。每项使用稳定的 check 名称，合并同类检查，不不断新增重复样本。每次截图用 purpose 说明具体未决问题。更新可随必要操作提交；最后一张图看完后用 stable_browser action=review 批量更新，无需重新截图、滚动或 read。reviewNotebook 是模型自述记录，不是自动验收；已通过且未受修改影响的证据可复用。旧画面只用真实 path 回看，不猜临时路径。尺寸/溢出/比例先 audit 或批量测量，视觉和交互仍需实际验证。先集中修复再复查受影响项和必要桌面/手机回归。区分图片内空白与容器额外留白，不能把可修复的布局缺陷直接归为素材限制；禁止为减少截图而忽略未修复问题。结束前更新所有检查：尚有 open/needs-recheck 就继续修复或验证；真正受权限、缺失数据等阻碍用 blocked 记录具体原因并在交付中明确未完成项，不得把它报为完成。'
+const REVIEW_GUIDANCE = '浏览器视觉检查先建立有限清单：用 reviewUpdates 的 open 状态记录用户要求、区域和必要视口；发现问题立即更新，复查后用 passed 和 evidenceId 记录实际结论。每项使用稳定的 check 名称，合并同类检查，不不断新增重复样本。每次截图用 purpose 说明具体未决问题。更新可随必要操作提交；最后一张图看完后用 stable_browser action=review 批量更新，无需重新截图、滚动或 read。reviewNotebook 是模型自述记录，不是自动验收；已通过且未受修改影响的证据可复用。旧画面只用真实 path 回看，不猜临时路径。尺寸/溢出/比例先 audit 或批量测量，视觉和交互仍需实际验证。先集中修复再复查受影响项和必要桌面/手机回归。区分图片内空白与容器额外留白，不能把可修复的布局缺陷直接归为素材限制；禁止为减少截图而忽略未修复问题。结束前更新所有检查：尚有 open/needs-recheck 就继续修复或验证；真正受权限、缺失数据等阻碍用 blocked 记录具体原因并在交付中明确未完成项，不得把它报为完成。若用户明确允许数据不足时说明限制，可从建立清单时使用 category=data，并仅在不违反用户最新要求时标 limited，limitationBasis 逐字引用用户许可；这只是带限制的交付，不是数据核验通过，功能/交互及自动发现的缺陷不能降为数据限制。'
 
 // Per-run evidence; files outlive the MCP server and SDK temporary tool results.
 // Capture is never cached: even identical pixels come from a fresh browser call.
-function createBrowserEvidence({ workspace, writable, resolveFile, review = {} }) {
+function createBrowserEvidence({ workspace, writable, resolveFile, review = {}, userInstructions = '' }) {
   let directory, actions = 0, screenshots = 0, repeated = 0
   const seen = new Set()
-  const tabs = new Map(), evidence = [], checks = new Map(), riskStates = new Map()
+  const tabs = new Map(), evidence = [], checks = new Map(), riskStates = new Map(), overflow = new Map(), completedChecks = []
   const scope = randomUUID()
-  let evidenceSerial = 0, revision = 0, stopAttempts = 0, lastPending = '', unchangedAttempts = 0, capacityExceeded = false
+  let evidenceSerial = 0, revision = 0, lastPending = '', unchangedAttempts = 0, explanationRequested = false
+  function makeRoom() {
+    if (checks.size < 24) return true
+    const passed = [...checks.entries()].find(([, item]) => item.status === 'passed')
+    if (!passed) return false
+    checks.delete(passed[0]); completedChecks.push(passed[1])
+    if (completedChecks.length > 24) completedChecks.shift()
+    return true
+  }
+  function promote() {
+    for (const [key, item] of overflow) {
+      if (!makeRoom()) break
+      checks.set(key, item); overflow.delete(key)
+    }
+  }
   review.stop = () => {
     if (!screenshots && !checks.size) return {}
     const pending = [...checks.values()].filter(c => c.status === 'open' || c.status === 'needs-recheck')
-    if (checks.size && !pending.length && !capacityExceeded) return {}
+    if (checks.size && !pending.length && !overflow.size) return {}
     const details = [pending.map(c => `${c.tabId}: ${c.check} (${c.status}) — ${c.note}`).join('\n'),
-      capacityExceeded ? '测量候选超出24项记录容量，尚有未覆盖的布局复核，不能声明全部完成。' : ''].filter(Boolean).join('\n') || '尚未提交检查记录'
+      overflow.size ? `测量候选超出24项当前记录容量，另有${overflow.size}项待调入；完成已有检查后会自动补入，不能声明全部完成。` : ''].filter(Boolean).join('\n') || '尚未提交检查记录'
+    if (details !== lastPending) explanationRequested = false
     unchangedAttempts = details === lastPending ? unchangedAttempts + 1 : 1
     lastPending = details
-    if (++stopAttempts > 3 || unchangedAttempts > 2) {
-      review.failure = `检查记录仍未完成，连续收尾未解决待验收项：\n${details}`
-      return { continue: false, stopReason: review.failure }
+    if (explanationRequested) return {}
+    if (unchangedAttempts > 2) {
+      explanationRequested = true
+      return { decision: 'block', reason: `检查记录仍未完成，任务没有被取消。请基于现有证据作最终说明：具体未完成原因、已经完成的部分、缺少的条件；不要宣称全部验收通过，也不要再原样收尾。\n${details}` }
     }
     return { decision: 'block', reason: `结束前还有未完成的检查记录：\n${details}\n复用已有证据，继续修复和必要复查，然后用 stable_browser action=review 更新原检查项。若实际受权限或数据阻碍，记录 blocked 及具体原因并如实交付未完成项；不要为通过检查而伪造结论。` }
   }
-  review.incomplete = () => [...checks.values()].filter(c => c.status === 'blocked').map(c => `${c.check}：${c.note}`).join('\n')
+  review.incomplete = () => [
+    ...[...checks.values()].filter(c => !['passed','limited'].includes(c.status)).map(c => `${c.check}（${c.status}）：${c.note}`),
+    overflow.size ? `还有${overflow.size}项测量候选未完成复核。` : '',
+    screenshots && !checks.size ? '已有截图，尚未提交检查记录。' : '',
+  ].filter(Boolean).join('\n')
+  review.limitations = () => [...checks.values()].filter(c=>c.status==='limited').map(c=>`${c.check}：${c.note}`).join('\n')
   function notebook(args, result) {
     const tabId = String(result.tabId || args.tabId || 'unknown')
     const previous = tabs.get(tabId) || {}
@@ -41,6 +62,10 @@ function createBrowserEvidence({ workspace, writable, resolveFile, review = {} }
     tabs.set(tabId, state)
     if (args.action === 'open' || previous.epoch !== undefined && epoch !== previous.epoch) {
       for (const entry of checks.values()) if (entry.tabId === tabId && entry.status === 'passed') entry.status = 'needs-recheck'
+      for (let i = completedChecks.length - 1; i >= 0; i--) if (completedChecks[i].tabId === tabId) {
+        const [entry] = completedChecks.splice(i, 1)
+        overflow.set(`${tabId}:${entry.check}`, { ...entry, status: 'needs-recheck' })
+      }
     }
     // This is an observation index, never a cache or an automatic quality verdict.
     if (result.screenshotArtifact || args.action === 'screenshot' && result.image || args.action === 'audit') {
@@ -88,43 +113,52 @@ function createBrowserEvidence({ workspace, writable, resolveFile, review = {} }
         if (signature === prior?.signature && checks.has(key)) continue
         // Keep separate labels across tab/section changes. Disappearing from
         // the visible page does not resolve an earlier observation.
-        if (!checks.has(key) && checks.size >= 24) capacityExceeded = true
-        else checks.set(key, { check, tabId, status: 'open', source, observedAfter: evidenceSerial,
+        const item = { check, tabId, status: 'open', source, observedAfter: evidenceSerial,
           viewportWidth: state.viewport.width,
           ...(source==='image-spacing'?{spacingTarget:candidate.target}:{}),
           note: source==='typography'?`测量发现末行单字，需复核：${String(candidate.label).slice(0,120)}。修复后复查；若为有意排版，结合当前画面说明依据。`:
-            `图片下方约${candidate.gap}px容器空白：${String(candidate.label).slice(0,90)}。区分素材内部空白和容器多余高度；检查相同组件的短/长图变体，修复后复核。若有意设计，结合当前证据说明。` })
+            `图片下方约${candidate.gap}px容器空白：${String(candidate.label).slice(0,90)}。区分素材内部空白和容器多余高度；检查相同组件的短/长图变体，修复后复核。若有意设计，结合当前证据说明。` }
+        if (checks.has(key) || makeRoom()) { checks.set(key, item); overflow.delete(key) }
+        else overflow.set(key, item)
       }
       // Absence never clears the checklist, but reappearing risks need a new
       // decision instead of inheriting a prior passed/intentional-layout note.
       for (const [key, seen] of riskStates) if (seen.group === group && !visible.has(key)) riskStates.delete(key)
     }
     for (const update of args.reviewUpdates || []) {
-      if (!checks.has(`${tabId}:${update.check}`) && checks.size >= 24) throw Error('检查清单已达24项；请更新或合并已有检查，不要新增重复检查。')
+      if (!checks.has(`${tabId}:${update.check}`) && !makeRoom()) throw Error('当前检查清单已达24项；请先完成已有检查，再继续新增检查。')
       const item = evidence.find(item => item.id === update.evidenceId)
-      const prior = checks.get(`${tabId}:${update.check}`)
+      const prior = checks.get(`${tabId}:${update.check}`) || overflow.get(`${tabId}:${update.check}`)
+      if(update.status==='limited'){
+        const basis=update.limitationBasis||''
+        if(update.category!=='data'||prior?.source||prior && prior.category!=='data'||!basis||!String(userInstructions).includes(basis)||!/(数据不足|数据缺失|缺少数据)/.test(basis)||!/(说明|披露|标明|允许)/.test(basis))throw Error('数据限制必须引用用户明确允许披露数据不足的原话；功能缺陷和未验证项不能标记为 limited。')
+      }
+      if (prior && update.category && update.category !== (prior.category || 'functional')) throw Error('已有检查项不能通过更改类别降低验收要求。')
       const verifiedReference = item && item.tabId === tabId && item.epoch === epoch && item.revision === state.revision &&
         (!prior?.observedAfter || item.serial >= prior.observedAfter && item.viewport?.width === prior.viewportWidth) &&
         (prior?.source !== 'image-spacing' || item.spacing?.observedTargets?.includes(prior.spacingTarget) && !item.spacing.candidates?.some(c=>c.target===prior.spacingTarget)) &&
         (item.kind === 'audit' || available.has(item.id))
       checks.set(`${tabId}:${update.check}`, {
-        ...prior, ...update, tabId,
+        ...prior, ...update, tabId, category: prior?.category || update.category || 'functional',
         status: update.status === 'passed' && !verifiedReference ? 'needs-recheck' : update.status,
         ...(update.status==='passed'&&!verifiedReference&&prior?.source==='image-spacing'?{note:'引用的同宽度测量未确认此图片容器空余高度已消失。请修复容器并复查，不用模糊背景、重复图片或装饰填充代替修复；若确有外部约束，明确记录 blocked，不宣称已完成。'}:{}),
       })
+      overflow.delete(`${tabId}:${update.check}`)
     }
     for (const entry of checks.values()) {
       const item = evidence.find(item => item.id === entry.evidenceId)
       if (entry.status === 'passed' && (!item || item.artifact && !available.has(item.id))) entry.status = 'needs-recheck'
     }
+    promote()
     return {
       scope, revision: ++revision,
-      ...(capacityExceeded ? { capacityExceeded: true } : {}),
+      ...(overflow.size ? { capacityExceeded: true, pendingCount: overflow.size } : {}),
       checks: [...checks.values()],
+      completedChecks: completedChecks.slice(-12),
       evidence: evidence.slice(-12).map(({ artifact, spacing, ...item }) => ({
         ...item, ...(artifact && available.has(item.id) ? { path: artifact.path } : {}),
       })),
-      limits: '最近12条历史观察及最多24项模型自述检查；不是当前页面缓存或自动验收。未列出不代表已检查。页面重开或导航后旧通过项需复核；外部文件/脚本/异步变化不能自动判定，模型必须把受影响项标 needs-recheck。仅必要时回读历史路径；不要把历史 ref 当作当前控件。',
+      limits: '最近12条历史观察、最多24项当前检查及最近12项已完成记录；完成当前检查后会自动调入排队候选。不是当前页面缓存或自动验收。未列出不代表已检查。页面重开或导航后旧通过项需复核；外部文件/脚本/异步变化不能自动判定，模型必须把受影响项标 needs-recheck。仅必要时回读历史路径；不要把历史 ref 当作当前控件。',
     }
   }
   function save(bytes, extension) {

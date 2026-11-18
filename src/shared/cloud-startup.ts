@@ -2,8 +2,8 @@ import type { BootstrapData } from '../types'
 
 // Recovery must settle in the UI even when a main-process IPC reply is lost.
 export function recoverCloudStartup(
-  startup: () => Promise<BootstrapData>,
-  complete: (value: BootstrapData) => void,
+  startup: () => Promise<Pick<BootstrapData, 'cloud' | 'models'>>,
+  complete: (value: Pick<BootstrapData, 'cloud' | 'models'>) => void,
   fail: (reason: unknown) => void,
   timeoutMs = 35_000,
 ) {

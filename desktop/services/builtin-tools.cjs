@@ -5,10 +5,10 @@ const { executeExcel } = require('./excel-tool.cjs')
 const { previewNetworkScope } = require('./browser-network-policy.cjs')
 
 class BuiltinTools {
-  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, resolveImageRoute, imageJobStore, imagePolicy, imageReferences = [], onImageAttempt = () => {}, networkAccess = true }) {
+  constructor({ workspace, writableRoots, electron, packaged = false, resourcesPath, browserSession, conversationId, browserEnabled=true, installSkill, resolveImageApiKey, resolveImageRoute, imageJobStore, imagePolicy, imageUserPrompt, imageReferences = [], onImageAttempt = () => {}, networkAccess = true }) {
     this.onImageAttempt = onImageAttempt
     this.networkAccess = networkAccess
-    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, references: imageReferences, resolveApiKey: resolveImageApiKey, resolveRoute: resolveImageRoute, jobStore: imageJobStore, nativeImage: electron?.nativeImage })
+    this.generateImage = require('./image-generation.cjs').createImageGenerator({ policy: imagePolicy, userPrompt: imageUserPrompt, references: imageReferences, resolveApiKey: resolveImageApiKey, resolveRoute: resolveImageRoute, jobStore: imageJobStore, nativeImage: electron?.nativeImage })
     this.installSkill = installSkill
     this.workspace = writableRoots?.length ? writableRoots : workspace
     this.localHtml = new (require('./local-html-preview.cjs').LocalHtmlPreview)(this.workspace)

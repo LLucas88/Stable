@@ -259,13 +259,22 @@ class StableStore {
   }
 
   listConversations() {
+    return this.conversationSummaries()
+  }
+
+  conversation(id) {
+    return typeof id === 'string' && id ? this.conversationSummaries(id)[0] : undefined
+  }
+
+  conversationSummaries(id) {
     const defaultModelId = this.modelCatalog().defaultModelId
     const pinnedIds = new Set(this.getSetting('pinnedConversationIds') || [])
     return this.db.prepare(`SELECT c.*,COUNT(m.id) AS message_count,
       (SELECT substr(content,1,240) FROM messages WHERE conversation_id=c.id ORDER BY seq DESC LIMIT 1) AS latest_preview,
       (SELECT CASE WHEN role='assistant' THEN trace_json END FROM messages WHERE conversation_id=c.id ORDER BY seq DESC LIMIT 1) AS latest_trace
       FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id
-      GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all().map((row) => ({
+      ${id === undefined ? '' : 'WHERE c.id=?'}
+      GROUP BY c.id ORDER BY COALESCE(MAX(CASE WHEN m.role='assistant' THEN m.created_at END), c.created_at) DESC,c.created_at DESC,c.id ASC`).all(...(id === undefined ? [] : [id])).map((row) => ({
       ...this.conversationContext(row.id),
       networkAccess: this.getSetting(`permission-boundary:${row.id}`)?.networkAccess ?? row.permission_mode === 'full',
       design: this.getSetting(`design:${row.id}`) || undefined,
@@ -284,7 +293,6 @@ class StableStore {
     }))
   }
 
-  conversation(id) { return this.listConversations().find((item) => item.id === id) }
   activeConversationId() { return this.getSetting('activeConversationId') }
 
   searchConversations(query, limit = 30, offset = 0) {

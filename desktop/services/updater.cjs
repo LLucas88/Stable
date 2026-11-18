@@ -5,7 +5,8 @@ function publicError(error) {
   return message.replace(/https?:\/\/[^\s]+/g, 'Stable 云端更新服务').slice(0, 300)
 }
 
-function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, onDiagnostic = () => {}, beforeInstall = async () => {}, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
+function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, onDiagnostic = () => {}, beforeInstall = async () => {}, prepareInstall, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
+  let installWindow
   let timer; let interval
   let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0, oneClick: false }
   let epoch = 0, armed = false, installPromise = null
@@ -22,6 +23,7 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
   }
 
   function failed(error, status = 'error') {
+    installWindow?.cancel(); installWindow = null
     epoch++; armed = false
     recordError(error)
     return emit({ status, oneClick: false, ...(status === 'downloaded' ? { progress: 100 } : {}), error: publicError(error) })
@@ -38,8 +40,15 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
         // Recheck after download: work may have started since the user clicked.
         await beforeInstall()
         if (attempt !== epoch || state.status !== 'downloaded') return false
+        if (prepareInstall) {
+          installWindow = await prepareInstall(state.availableVersion)
+          if (attempt !== epoch || state.status !== 'downloaded') { installWindow?.cancel(); return false }
+          await beforeInstall()
+          if (attempt !== epoch || state.status !== 'downloaded') { installWindow?.cancel(); return false }
+        }
         emit({ status: 'installing', progress: 0, error: undefined })
-        autoUpdater.quitAndInstall(false, true)
+        if (installWindow) installWindow.install(autoUpdater)
+        else autoUpdater.quitAndInstall(false, true)
         return state.status === 'installing'
       } catch (error) {
         if (attempt === epoch) failed(error, 'downloaded')

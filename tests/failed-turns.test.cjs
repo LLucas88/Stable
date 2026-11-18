@@ -24,6 +24,36 @@ function fixture(t, runtimeAdapter = { read: async () => ({ noRuntime: true }) }
   return { store, id, life, start }
 }
 
+test('failure and recovery context select aggregate sources by identity without losing legitimate repeated text', t => {
+ const {store,id,life,start}=fixture(t)
+ start('provenance','报告')
+ const items=[
+  {id:'a',type:'agentMessage',text:'重复行。'},
+  {id:'b',type:'agentMessage',text:'重复行。'},
+  {id:'other',type:'agentMessage',text:'独立的过程说明'},
+  {id:'combined',type:'agentMessage',phase:'final_answer',text:'重复行。重复行。',sourceIds:['a','b','msg-a','msg-b']},
+ ]
+ for(const item of items)life.item(id,'thread','provenance',item)
+ life.checkpoint('provenance',[
+  {id:'msg-a',eventType:'agent/answer',content:'重复行。'},
+  {id:'msg-b',eventType:'agent/answer',content:'重复行。'},
+  {id:'tool',kind:'tool',status:'running',title:'工具'},
+ ])
+ const snapshot=JSON.stringify(items)
+ for(const state of ['failed','interrupted','unknown']){
+  const result=failedTurn({id:'provenance',items,state,trace:[{id:'msg-a',eventType:'agent/answer',content:'重复行。'},{id:'msg-b',eventType:'agent/answer',content:'重复行。'}]})
+  assert.deepEqual(result.trace.filter(x=>x.eventType==='agent/answer').map(x=>x.content),['独立的过程说明','重复行。重复行。'])
+ }
+ assert.equal(JSON.stringify(items),snapshot)
+ life.status('provenance','failed',{error:'fixture'})
+ assert.equal(life.recoveryText(id).split('重复行。').length-1,2)
+ assert(life.finishFailure('provenance'))
+ const trace=store.listMessages(id).at(-1).trace
+ assert(!trace.some(x=>x.id==='msg-a'||x.id==='msg-b'))
+ assert.equal(trace.find(x=>x.id==='tool').status,'cancelled')
+ assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM runtime_items').get().n,4,'raw evidence is retained')
+})
+
 test('failure closes pending actions and keeps public partial text with a short error', () => {
   const stream = createStreamTranscript()
   stream.append({ id: 'partial', time: 1, delta: '已经读完表格，正在生成' })

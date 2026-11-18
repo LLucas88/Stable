@@ -1,0 +1,9 @@
+.dev-update-notice{position:fixed;inset-block-start:54px;inset-inline-end:20px;z-index:var(--z-toast,1000);display:flex;align-items:center;gap:18px;box-sizing:border-box;max-width:min(420px,calc(100vw - 32px));padding:12px 14px;border:1px solid var(--color-rule-soft,#e5e7e5);border-radius:12px;background:var(--color-paper,#fff);color:var(--color-ink,#272b28);box-shadow:0 4px 18px #0000000d;font-family:var(--font-body,inherit)}
+.dev-update-notice>div{min-width:0}
+.dev-update-notice p{margin:0;font-size:13px;line-height:1.5}
+.dev-update-notice small{display:block;margin-top:4px;color:var(--color-muted,#717771);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.dev-update-notice button{flex-shrink:0;min-height:30px;padding:5px 10px;border:0;border-radius:7px;background:var(--color-paper-3,#f0f2ef);color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.dev-update-notice button:hover:not(:disabled){background:var(--surface-hover,#e7ebe5)}
+.dev-update-notice button:focus-visible{outline:2px solid var(--color-focus,#637856);outline-offset:2px}
+.dev-update-notice button:disabled{cursor:default;opacity:.55}
+@media(max-width:480px){.dev-update-notice{inset-inline-end:16px;gap:12px}}

@@ -6,22 +6,30 @@ const { HTML_PREVIEW_GUIDANCE } = require('./browser-command-route.cjs')
 const TOOL_SPECS = [
   {
     name: 'stable_image_generate',
-    description: '使用 GLM-image 或云端 GPT Image 2.5 按文字描述生成新图片，默认1张；additionalImages 可附带第2张并发生成，云端模式使用 Stable 账号，直连模式使用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；GPT Image 支持本次参考图编辑；GLM 不支持图片输入。不是截图、看图或数据绘图工具。无需切换聊天模型。输出保存为工作区 PNG；父目录须存在，不覆盖文件。相同参数和输出路径可跨轮恢复结果，下载失败可重试下载；结果未知时停止重复生成。生成会产生费用，不要重复生成已经满足要求的图片。',
+    description: '使用 GLM-image 或GPT Image 2.5 / 2.6 按文字描述生成新图片，默认1张；additionalImages 可附带第2张并发生成，云端模式使用 Stable 账号，直连模式使用已配置的智谱标准 API Key。适用于插画、海报、封面和任务需要的新图片素材；GPT Image 支持本次参考图编辑；GLM 不支持图片输入。不是截图、看图或数据绘图工具。无需切换聊天模型。输出保存为所选真实格式；父目录须存在，不覆盖文件。相同参数和输出路径可跨轮恢复结果，下载失败可重试下载；结果未知时停止重复生成。生成会产生费用，不要重复生成已经满足要求的图片。',
     parameters: {
       prompt: { type: 'string', required: true, minLength: 1, maxLength: 1000, description: '图片内容、风格、构图和需要包含的文字，不超过1000字符' },
-      output: { type: 'string', required: true, description: '工作区内新的 .png 文件路径，父目录必须已存在' },
-      size: { type: 'string', description: '默认1280x1280；推荐1728x960横图、960x1728竖图。宽高512–2048，均为32的倍数，使用小写x分隔' },
-      model: { type: 'string', enum: ['glm-image','gpt-image-2.5-sunburst','gpt-image-2.5-flare'], description: '图片模型；Design 参数优先。GPT Image 需云端。' },
+      output: { type: 'string', required: true, description: '工作区内与 outputFormat 匹配的新文件路径（默认 .png），父目录必须已存在' },
+      size: { type: 'string', description: '默认1280x1280。GLM宽高512–2048且为32倍数；GPT为16倍数、单边不超过3840、总像素655360–8294400、比例1:3至3:1。使用小写x分隔，生成前验证' },
+      model: { type: 'string', enum: ['glm-image','gpt-image-2.5-sunburst','gpt-image-2.5-flare','gpt-image-2.6-sunburst','gpt-image-2.6-flare'], description: '图片模型；Design 使用本次已解析参数，用户要求通过 designOverrides 覆盖面板默认值。GPT Image 复用已配置的云端或官方/中转连接。' },
       quality: { type: 'string', enum: ['hd','low','medium','high','xhigh','max','auto'], description: 'GLM 仅 hd；GPT 默认 medium，支持 low/medium/high/xhigh/max/auto。' },
       background: { type: 'string', enum: ['opaque','transparent','auto'], description: 'GPT 可透明背景；GLM 仅 opaque。' },
+      outputFormat: {type:'string',enum:['png','jpeg','webp','svg','gif']}, complexity: {type:'string',enum:['low','medium','high']}, frameCount: {type:'integer',minimum:2,maximum:16}, frameDurationMs: {type:'integer',minimum:20,maximum:655350}, connectionId:{type:'string'},upstreamModel:{type:'string'},editTransport:{type:'string',enum:['json','multipart']},
       referenceIds: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string' }, description: '仅使用应用提供的参考图 ID。省略时上传本次全部参考图；不能传文件路径或 URL。' },
       additionalImages: { type: 'array', minItems: 1, maxItems: 1, description: '需要多个独立方案时，在此附带第二张，与主图片最多2张并发生成；其余方案下一批。失败后按各自原参数恢复，禁止整批重新生成。', items: { type: 'object', additionalProperties: false, properties: {
         prompt: { type: 'string', required: true, minLength: 1, maxLength: 1000 },
         output: { type: 'string', required: true },
         size: { type: 'string' },
         referenceIds: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string' } },
+        outputFormat: {type:'string',enum:['png','jpeg','webp','svg','gif']}, complexity: {type:'string',enum:['low','medium','high']}, frameCount: {type:'integer',minimum:2,maximum:16}, frameDurationMs: {type:'integer',minimum:20,maximum:655350}, connectionId:{type:'string'},upstreamModel:{type:'string'},editTransport:{type:'string',enum:['json','multipart']},
         model: { type: 'string' }, quality: { type: 'string' }, background: { type: 'string' },
       } } },
+      designOverrides: { type: 'object', additionalProperties: false, description: '仅 Design 模式：用户提示词明确指定、或读取参考图后确定的参数优先于面板默认值。首次生图前一次性填齐本轮覆盖字段；本轮后续调用保持相同参数。不能用来擅自改变用户要求或放宽模型限制。', properties: {
+        size: { type: 'string', description: '明确的宽x高；超限会在付费调用前报错，不会自动改成方图' },
+        outputFormat: {type:'string',enum:['png','jpeg','webp','svg','gif']}, complexity: {type:'string',enum:['low','medium','high']}, frameCount: {type:'integer',minimum:2,maximum:16}, frameDurationMs: {type:'integer',minimum:20,maximum:655350}, connectionId:{type:'string'},upstreamModel:{type:'string'},editTransport:{type:'string',enum:['json','multipart']},
+        model: { type: 'string' }, quality: { type: 'string' }, background: { type: 'string' },
+        count: { type: 'integer', minimum: 1, maximum: 4 }, text: { type: 'string' }, mode: { type: 'string', enum: ['generate','preserve'] }, fit: { type: 'string', enum: ['strict','contain','cover'] },
+      } },
     },
   },
   {
@@ -40,7 +48,7 @@ const TOOL_SPECS = [
       url: { type: 'string', description: 'open 使用 HTTP(S) URL，或工作区内 HTML 绝对路径/file URL（本地视觉验证）；跨站需要用户许可' },
       tabId: { type: 'string', description: '此对话标签页 ID' }, frameId: { type: 'string', description: 'frames 返回的 frame ID，默认 main' }, targetRef: { type: 'string', description: 'drag 的目标 ref' },
       ref: { type: 'string', description: '最近一次快照返回的元素 ref；不要猜测' },
-      value: { type: 'string', description: 'fill/select：非敏感文本或选项值。scroll：相对纵向像素字符串（负数向上，范围 -3000..3000，省略默认向下600）。locate：控件名称关键词。wait：等待出现的文字。key：仅 Enter、Tab、Escape、ArrowDown、ArrowUp、ArrowLeft、ArrowRight、Backspace，且需用户展开浏览器。' },
+      value: { type: 'string', description: 'fill/select：非敏感文本或选项值。scroll：相对纵向像素字符串（负数向上，范围 -3000..3000，省略默认向下600）。locate：控件名称关键词。wait：等待出现的文字。key：仅 Enter、Space、Tab、Escape、ArrowDown、ArrowUp、ArrowLeft、ArrowRight、Backspace；后台原生输入，不要求展开页面。敏感控件和用户接管时仍拒绝操作。' },
     },
   },
   {

@@ -5,11 +5,10 @@ const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { resolveBoundPath } = require('./claude-tools.cjs')
 const { HTML_PREVIEW_GUIDANCE, isBrowserScreenshotCommand } = require('./browser-command-route.cjs')
-const { TOOL_WATCHDOG_MS } = require('./run-progress.cjs')
 const { toolFailureRecovery } = require('./tool-failure-recovery.cjs')
 const { publicWebURL } = require('./deepseek-web.cjs')
-// Leave time for native process cleanup and the SDK result before the run guard.
-const BASH_TIMEOUT_MS = TOOL_WATCHDOG_MS - 60_000
+const BASH_TIMEOUT_MS = 600_000
+const BASH_BACKGROUND_TIMEOUT_MS = 7_200_000
 const TIMEOUT_RECOVERY = '本次命令超时，整轮任务仍可继续。根据已返回的输出检查已完成步骤和文件；超时不代表已有写入已回滚。请缩小范围、拆分为可恢复步骤或改用其他可用方法继续，不要原样重复长命令；仍须遵守用户停止、审批和费用上限。'
 const QUOTING_RECOVERY = 'Bash 报告了引号或变量展开错误。不要原样重复或继续叠加转义；先核对已有文件和部分写入，用原生 Write / Edit 保存脚本或长文本，再用简短 Bash 命令执行脚本文件。不要把 JavaScript 的 ${...} 或反引号直接放入 shell 双引号字符串。已有操作未自动回滚，后续写入和命令仍须审批。'
 
@@ -20,7 +19,7 @@ const MAX_MUTATION_BYTES = 2_000_000
 const FIELDS = {
   WebFetch: ['url', 'prompt', 'offset'],
   Bash: ['command', 'timeout', 'description', 'run_in_background', 'dangerouslyDisableSandbox'],
-  Read: ['file_path', 'offset', 'limit', 'pages'],
+  Read: ['file_path', 'offset', 'limit', 'pages', 'allow_large'],
   Write: ['file_path', 'content'],
   Edit: ['file_path', 'old_string', 'new_string', 'replace_all'],
   Glob: ['pattern', 'path'],
@@ -85,7 +84,7 @@ async function approval(requestApproval, request, signal) {
   } finally { signal?.removeEventListener('abort', listener) }
 }
 
-function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = [], sandboxMode = 'workspace-write', networkAccess = false, browserAvailable = false, requestApproval, signal, onToolEvent = () => {} }) {
+function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = [], sandboxMode = 'workspace-write', networkAccess = false, browserAvailable = false, requestApproval, signal, webFetchPolicy, runtimeHome, runtimeSessionId, taskOutputAllowed, onBackgroundResult, beforeTool, onToolEvent = () => {} }) {
   const cwd = fs.realpathSync(path.resolve(workspace))
   if (!fs.statSync(cwd).isDirectory()) throw Error('工作区路径不是文件夹。')
   const canonicalRoots = values => [...new Set(values.map(value => fs.realpathSync(path.resolve(value))))]
@@ -95,7 +94,24 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   const bashEnabled = sandboxMode !== 'read-only' && networkAccess === true
   const tools = [...TOOLS, ...(bashEnabled ? ['Bash'] : []), ...(networkAccess ? ['WebFetch'] : [])]
   const calls = new Map()
+  const nativeHome = runtimeHome ? fs.realpathSync(runtimeHome) : null
   let serial = 0
+  function nativeOutputFile(requested) {
+    if (taskOutputAllowed?.(requested)) return requested
+    if (!nativeHome) return null
+    // Verified with SDK 0.3.318: full command output is stored here. Grant only ordinary result
+    // files in this conversation, never transcripts, config, directories or writes.
+    const relative = path.relative(nativeHome, requested).split(path.sep)
+    const sessionId = typeof runtimeSessionId === 'function' ? runtimeSessionId() : runtimeSessionId
+    if (!sessionId || relative.length !== 5 || relative[0] !== 'projects' || relative[2] !== sessionId || relative[3] !== 'tool-results' || !/^[\w-]+\.txt$/.test(relative[4])) return null
+    let current = nativeHome
+    for (const [index, part] of relative.entries()) {
+      current = path.join(current, part)
+      let stat; try { stat = fs.lstatSync(current) } catch { return null }
+      if (stat.isSymbolicLink() || (index === relative.length - 1 ? !stat.isFile() || stat.nlink !== 1 : !stat.isDirectory())) return null
+    }
+    return samePath(fs.realpathSync(current), current) ? current : null
+  }
   function protectedWrite(target) {
     // Protect nested repositories/configuration as well as each root's files.
     if (writes.some(root => inside(root, target) && path.relative(root, target).split(path.sep).some(part => ['.git', '.codex', '.claude', '.agents'].includes(part.toLowerCase())))) throw Error('运行时和版本控制配置目录只允许读取。')
@@ -129,6 +145,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     if (!tools.includes(name)) throw Error('此原生工具未获准。')
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !FIELDS[name].includes(key))) throw Error('原生工具参数包含不支持的字段。')
     const args = { ...input }, writing = WRITES.has(name)
+    if (name === 'Read' && args.allow_large !== undefined && typeof args.allow_large !== 'boolean') throw Error('Read allow_large 必须是布尔值。')
     if (name === 'WebFetch') {
       args.url = publicWebURL(args.url)
       text(args.prompt, '网页提取要求')
@@ -139,12 +156,14 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     if (name === 'Bash') {
       text(args.command, '命令')
       if (!args.command.trim() || args.command.length > 100_000) throw Error('命令不能为空或超过 100000 字符。')
-      if (args.timeout !== undefined && (!Number.isInteger(args.timeout) || args.timeout < 1 || args.timeout > 600_000)) throw Error('Bash timeout 必须为 1 到 600000 毫秒。')
+      const maxTimeout = args.run_in_background === true ? BASH_BACKGROUND_TIMEOUT_MS : BASH_TIMEOUT_MS
+      if (args.timeout !== undefined && (!Number.isInteger(args.timeout) || args.timeout < 1 || args.timeout > maxTimeout)) throw Error(`Bash timeout 必须为 1 到 ${maxTimeout} 毫秒。`)
       if (args.description !== undefined && typeof args.description !== 'string') throw Error('Bash description 必须为文字。')
-      for (const key of ['run_in_background', 'dangerouslyDisableSandbox']) if (args[key] !== undefined && args[key] !== false) throw Error('Bash 不允许后台运行或覆盖沙箱设置。')
+      if (args.run_in_background !== undefined && typeof args.run_in_background !== 'boolean') throw Error('Bash run_in_background 必须是布尔值。')
+      if (args.dangerouslyDisableSandbox !== undefined && args.dangerouslyDisableSandbox !== false) throw Error('Bash 不允许覆盖沙箱设置。')
       if (browserAvailable && isBrowserScreenshotCommand(args.command)) throw Error('截图命令未执行。' + HTML_PREVIEW_GUIDANCE)
-      args.timeout = Math.min(args.timeout ?? 60_000, BASH_TIMEOUT_MS)
-      args.run_in_background = false
+      args.timeout ??= args.run_in_background ? 1_800_000 : 60_000
+      args.run_in_background ??= false
       const target = resolveBoundPath(executionCwd, cwd, writes)
       if (!fs.statSync(target).isDirectory()) throw Error('命令工作目录不是文件夹。')
       return { args, target, snapshot: JSON.stringify(directoryChain(target)) }
@@ -155,7 +174,13 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     // Win32 trims trailing dots/spaces and recognizes device names even when a
     // not-yet-created path looks harmless lexically (for example '.git /x').
     if (process.platform === 'win32' && requested.split(/[\\/]/).some(part => /[ .]$/.test(part) || /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$/i.test(part))) throw Error('不支持 Windows 设备名称或带末尾空格/点的路径。')
-    const target = resolveBoundPath(requested, cwd, writing ? writes : reads, { missing: name === 'Write', write: writing })
+    let target, runtimeOutput = false
+    try { target = resolveBoundPath(requested, cwd, writing ? writes : reads, { missing: name === 'Write', write: writing }) }
+    catch (error) {
+      target = ['Read', 'Grep'].includes(name) ? nativeOutputFile(requested) : null
+      if (!target) throw error
+      runtimeOutput = true
+    }
     if (writing) { protectedWrite(requested); protectedWrite(target) }
     if (name === 'Write') { if (typeof args.content !== 'string') throw Error('Write 需要 content。') }
     if (name === 'Edit') { text(args.old_string, 'old_string'); if (typeof args.new_string !== 'string') throw Error('Edit 需要 new_string。') }
@@ -165,7 +190,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
       if (name === 'Glob') pathGlob(args.pattern)
       else { text(args.pattern, '搜索正则'); if (args.glob !== undefined) pathGlob(args.glob) }
       if (name === 'Glob' && !fs.statSync(target).isDirectory()) throw Error('Glob 需要目录路径。')
-      await inspectSearchTree(target, activeSignal)
+      if (!runtimeOutput) await inspectSearchTree(target, activeSignal)
     } else if (name !== 'Write' && !fs.statSync(target).isFile()) throw Error('目标不是普通文件。')
     args[field] = target
     return { args, requested, target, snapshot: writing ? await writeSnapshot(requested, target, activeSignal) : undefined }
@@ -173,6 +198,10 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   async function authorize(name, input, id, options = {}) {
     const activeSignal = signal && options.signal ? AbortSignal.any([signal, options.signal]) : signal || options.signal
     const executionCwd = options.cwd || calls.get(id)?.cwd || cwd
+    if (!calls.has(id)) {
+      const blocked = beforeTool?.({ id, name, args: input, cwd: executionCwd })
+      if (blocked) throw require('./tool-outcome.cjs').repeatError(blocked)
+    }
     const checked = await validate(name, input, activeSignal, executionCwd)
     const signature = JSON.stringify(Object.fromEntries(Object.entries(checked.args).sort(([a], [b]) => a.localeCompare(b))))
     let entry = calls.get(id)
@@ -186,7 +215,8 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     }
     entry = { name, signature, cwd: executionCwd, args: checked.args, input: { ...input }, snapshot: checked.snapshot, target: checked.target }
     calls.set(id, entry)
-    onToolEvent({ id, name, args: checked.args, status: 'running' })
+    if (name === 'WebFetch') webFetchPolicy?.start(id, checked.args.url)
+    onToolEvent({ id, name, args: checked.args, cwd: executionCwd, status: 'running' })
     entry.promise = (async () => {
       if (WRITES.has(name) || name === 'Bash' || name === 'WebFetch') {
         await approval(requestApproval, { name, args: checked.args, cwd: name === 'Bash' ? checked.target : cwd, ...(name === 'Bash' ? { command: checked.args.command } : {}) }, activeSignal)
@@ -201,28 +231,40 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     // stop an external process swapping a junction/hard link after this check.
     return checked.args
   }
-  function failed(id, name, args, error) { calls.delete(id); onToolEvent({ id, name, args, status: 'failed', detail: String(error.message || error) }) }
+  function failed(id, name, args, error, executionCwd) {
+    if (name === 'WebFetch' && error.code !== 'STABLE_REPEAT_BLOCKED') webFetchPolicy?.blocked(id, args?.url)
+    calls.delete(id); onToolEvent({ id, name, args, cwd: executionCwd || cwd, status: 'failed', retryBlocked: error.code === 'STABLE_REPEAT_BLOCKED', detail: String(error.message || error) })
+  }
   async function preToolUse(input, toolUseID, options = {}) {
     const id = input.tool_use_id || toolUseID || `native-tool-${++serial}`
     try {
       const updatedInput = await authorize(input.tool_name, input.tool_input, id, { ...options, cwd: input.cwd })
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput } }
     } catch (error) {
-      failed(id, input.tool_name, input.tool_input, error)
+      failed(id, input.tool_name, input.tool_input, error, input.cwd)
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: String(error.message || error) } }
     }
   }
   async function canUseTool(name, input, options = {}) {
     const id = options.toolUseID || `native-tool-${++serial}`
     try { return { behavior: 'allow', updatedInput: await authorize(name, input, id, options) } }
-    catch (error) { failed(id, name, input, error); return { behavior: 'deny', message: String(error.message || error) } }
+    catch (error) { failed(id, name, input, error, options.cwd); return { behavior: 'deny', message: String(error.message || error) } }
   }
   async function postToolUse(input) {
     const id = input.tool_use_id
     const entry = calls.get(id)
     if (entry) {
-      const timedOut = entry.name === 'Bash' && !signal?.aborted && input.tool_response?.interrupted === true
+      if (entry.name === 'Bash' && input.tool_response?.backgroundTaskId) onBackgroundResult?.(input.tool_response, id, entry.args)
+      const timedOut = entry.name === 'Bash' && !signal?.aborted && !input.tool_response?.backgroundTaskId && input.tool_response?.interrupted === true
+      const webCode = entry.name === 'WebFetch' ? input.tool_response?.code : undefined
+      const webFailed = Number.isInteger(webCode) && (webCode < 200 || webCode >= 300)
       calls.delete(id)
+      if (entry.name === 'WebFetch') {
+        // SDK HTTP errors can arrive through PostToolUse, not the failure hook.
+        // Its structured status is trusted; extracted page text is not.
+        if (webFailed) webFetchPolicy?.failed(id, `HTTP ${webCode}`, signal?.aborted)
+        else webFetchPolicy?.complete(id)
+      }
       let changedFile
       if(WRITES.has(entry.name) && input.tool_response?.success!==false) {
         try {
@@ -230,22 +272,25 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
           if(after.file && before.file?.at(-1)!==after.file.at(-1)) changedFile=entry.target
         } catch { /* Unverifiable writes must not renew a retry budget. */ }
       }
-      onToolEvent({ id, name: entry.name, args: entry.args, status: timedOut ? 'failed' : entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response, ...(changedFile?{changedFile}:{}) })
-      if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: TIMEOUT_RECOVERY } }
+      const guidance = onToolEvent({ id, name: entry.name, args: entry.args, cwd: entry.cwd, status: timedOut || webFailed || WRITES.has(entry.name) && input.tool_response?.success === false ? 'failed' : entry.name === 'Bash' && input.tool_response?.interrupted ? 'cancelled' : 'completed', output: input.tool_response, ...(changedFile?{changedFile}:{}) })
+      const context = [timedOut ? TIMEOUT_RECOVERY : '', typeof guidance === 'string' ? guidance : ''].filter(Boolean).join('\n')
+      if (context) return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: context } }
     }
     return {}
   }
   async function postToolUseFailure(input) {
     const entry = calls.get(input.tool_use_id)
     if (entry) {
+      if (entry.name === 'WebFetch') webFetchPolicy?.failed(input.tool_use_id, input.error, input.is_interrupt || signal?.aborted)
       const timedOut = entry.name === 'Bash' && !signal?.aborted && /(?:timed out|timeout|超时)/i.test(String(input.error || ''))
       calls.delete(input.tool_use_id)
-      onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, status: input.is_interrupt && !timedOut ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
-      if (timedOut) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: TIMEOUT_RECOVERY } }
-      if (entry.name === 'Bash' && !signal?.aborted && !input.is_interrupt && /bad substitution|unexpected EOF|syntax error near unexpected token/i.test(String(input.error || ''))) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: QUOTING_RECOVERY } }
+      const repeated = onToolEvent({ id: input.tool_use_id, name: entry.name, args: entry.args, cwd: entry.cwd, status: input.is_interrupt && !timedOut ? 'cancelled' : 'failed', detail: input.error || '原生工具执行失败。' })
       if (!signal?.aborted && !input.is_interrupt) {
-        const guidance = toolFailureRecovery(entry.name, input.error)
+        const quoting = entry.name === 'Bash' && /bad substitution|unexpected EOF|syntax error near unexpected token/i.test(String(input.error || ''))
+        const guidance = [timedOut ? TIMEOUT_RECOVERY : '', quoting ? QUOTING_RECOVERY : toolFailureRecovery(entry.name, input.error), typeof repeated === 'string' ? repeated : ''].filter(Boolean).join('\n')
         if (guidance) return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: guidance } }
+      } else if (timedOut) {
+        return { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: TIMEOUT_RECOVERY } }
       }
     }
     return {}

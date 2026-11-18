@@ -16,7 +16,15 @@ class ConversationLifecycle {
  beginSteer(id,conversationId,payload){const digest=createHash('sha256').update(JSON.stringify(payload)).digest('hex'),old=this.store.db.prepare('SELECT * FROM steer_deliveries WHERE id=?').get(id);if(old){if(old.conversation_id!==conversationId||old.digest!==digest)throw Error('补充消息标识与内容不符');if(old.state==='accepted')return 'accepted';if(old.state!=='rejected')throw Object.assign(Error('此条补充消息接收状态尚未确认，不会重复发送。'),{code:'STEER_UNCERTAIN'});this.saveSteer(id,'pending');return 'pending'}this.store.db.prepare('INSERT INTO steer_deliveries VALUES(?,?,?,?,?,NULL,?)').run(id,conversationId,digest,payload.query,'pending',new Date().toISOString());return 'pending'}
  saveSteer(id,state,messageId){this.store.db.prepare('UPDATE steer_deliveries SET state=?,message_id=COALESCE(?,message_id),updated_at=? WHERE id=?').run(state,messageId?.id||messageId||null,new Date().toISOString(),id)}
  deliveries(id){return [...this.store.db.prepare('SELECT id,state,error,updated_at AS updatedAt FROM message_deliveries WHERE conversation_id=? ORDER BY updated_at DESC LIMIT 20').all(id),...this.store.db.prepare("SELECT id,state,'补充消息接收待核实' AS error,updated_at AS updatedAt FROM steer_deliveries WHERE conversation_id=? AND state='unknown' LIMIT 20").all(id)]}
- item(id,threadId,turnId,item){if(!item?.id||!this.store.conversation(id)||this.store.conversationContext(id).deletionState==='pending')return;this.store.db.prepare('INSERT INTO runtime_items VALUES(?,?,?,?,?) ON CONFLICT(conversation_id,thread_id,turn_id,item_id) DO UPDATE SET value_json=excluded.value_json').run(id,threadId,turnId||'unknown',item.id,JSON.stringify(item))}
+ item(id, threadId, turnId, item) {
+   if (!id || !item?.id) return
+   this.store.db.prepare(`INSERT INTO runtime_items (conversation_id,thread_id,turn_id,item_id,value_json)
+     SELECT c.id,?,?,?,? FROM conversations c
+     LEFT JOIN conversation_contexts ctx ON ctx.conversation_id=c.id
+     WHERE c.id=? AND COALESCE(ctx.deletion_state,'active') != 'pending'
+     ON CONFLICT(conversation_id,thread_id,turn_id,item_id) DO UPDATE SET value_json=excluded.value_json`)
+     .run(threadId, turnId || 'unknown', item.id, JSON.stringify(item), id)
+ }
  checkpoint(deliveryId,trace){this.store.db.prepare("UPDATE message_deliveries SET trace_json=? WHERE id=? AND assistant_message_id IS NULL AND state NOT IN ('cleared','rejected')").run(JSON.stringify(trace),deliveryId)}
  finishFailure(deliveryId,{error,state='failed'}={}){
    const delivery=this.store.db.prepare('SELECT * FROM message_deliveries WHERE id=?').get(deliveryId)
@@ -50,7 +58,13 @@ class ConversationLifecycle {
    const rows=this.store.db.prepare("SELECT id,state,error FROM message_deliveries WHERE conversation_id=? AND state IN ('unknown','interrupted','failed') AND assistant_message_id IS NULL ORDER BY updated_at").all(id)
    for(const row of rows)this.finishFailure(row.id,{state:row.state,error:row.error})
  }
- recoveryText(id){const pending=this.store.db.prepare("SELECT content FROM steer_deliveries WHERE conversation_id=? AND state='unknown'").all(id).map(r=>'用户补充（接收待核实）：'+r.content).join('\n');return pending+'\n'+this.store.db.prepare("SELECT r.value_json FROM runtime_items r JOIN message_deliveries d ON d.conversation_id=r.conversation_id AND d.thread_id=r.thread_id AND d.turn_id=r.turn_id WHERE d.conversation_id=? AND d.state IN ('unknown','interrupted','failed') ORDER BY d.updated_at DESC LIMIT 100").all(id).map(r=>JSON.parse(r.value_json)).filter(i=>i.type==='agentMessage'&&i.text).map(i=>i.text).join('\n\n')}
+ recoveryText(id){
+   const pending=this.store.db.prepare("SELECT content FROM steer_deliveries WHERE conversation_id=? AND state='unknown'").all(id).map(r=>'用户补充（接收待核实）：'+r.content).join('\n')
+   const rows=this.store.db.prepare("SELECT r.value_json,r.thread_id,r.turn_id FROM runtime_items r JOIN message_deliveries d ON d.conversation_id=r.conversation_id AND d.thread_id=r.thread_id AND d.turn_id=r.turn_id WHERE d.conversation_id=? AND d.state IN ('unknown','interrupted','failed') ORDER BY d.updated_at DESC LIMIT 100").all(id)
+   const turns=new Map()
+   for(const row of rows){const key=JSON.stringify([row.thread_id,row.turn_id]);if(!turns.has(key))turns.set(key,[]);turns.get(key).push(JSON.parse(row.value_json))}
+   return pending+'\n'+[...turns.values()].flatMap(items=>require('./answer-provenance.cjs').selectAnswerItems(items)).map(i=>i.text).join('\n\n')
+ }
  async startup(onChange){
    const ids=this.store.db.prepare("SELECT DISTINCT conversation_id FROM message_deliveries WHERE state IN ('unknown','interrupted','failed') AND assistant_message_id IS NULL").all()
    for(const row of ids){

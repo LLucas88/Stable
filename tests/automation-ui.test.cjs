@@ -33,7 +33,7 @@ test('Cloud updater is configured for the Stable download service', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   // Electron 43 lazily downloads on require(); initialize once before parallel tests.
   assert.equal(pkg.scripts.pretest, 'node node_modules/electron/install.js')
-  assert.deepEqual(pkg.build.publish[0], { provider: 'generic', url: 'https://116.62.83.85/updates/', useMultipleRangeRequest: false })
+  assert.deepEqual(pkg.build.publish[0], { provider: 'generic', url: 'https://121.40.181.213/updates/', useMultipleRangeRequest: false })
   assert.equal(pkg.build.directories.output, `release-${pkg.version}`)
   assert.equal(pkg.build.compression, 'normal')
   assert.equal(pkg.build.nsis.oneClick, false)

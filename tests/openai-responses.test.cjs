@@ -30,6 +30,34 @@ test('provider balance failure remains actionable without exposing response text
  const adapter=new OpenAIResponses({model:sol,apiKey:'fixture',fetchImpl:async()=>Response.json({error:{code:'upstream_insufficient_balance',message:'private'}},{status:402})})
  await assert.rejects(adapter.request({messages:[],max_tokens:128}),e=>e.status===402&&e.message.includes('余额不足')&&!e.message.includes('private'))
 })
+
+test('503 is not guessed to be a permissions error and known preflight failures stay specific',async()=>{
+ for(const fixture of [
+  {status:503,body:'<html>PRIVATE_SECRET</html>',expected:/服务暂时不可用/,permanent:false},
+  {status:503,code:'model_not_configured',expected:/服务器配置不完整/,permanent:true},
+  {status:503,code:'input_token_count_unavailable',expected:/尚未提交模型生成/,permanent:false},
+  {status:503,code:'openai_egress_unavailable',expected:/线路暂时不可用/,permanent:false},
+  {status:502,code:'upstream_authentication_failed',expected:/供应商凭据或权限异常/,permanent:true},
+  {status:503,code:'PRIVATE_SECRET',expected:/服务暂时不可用/,permanent:false},
+ ]){
+  let calls=0
+  const adapter=new OpenAIResponses({model:sol,apiKey:'fixture',fetchImpl:async()=>{calls++;return fixture.body?new Response(fixture.body,{status:fixture.status}):Response.json({error:{code:fixture.code,message:'PRIVATE_SECRET'}},{status:fixture.status})}})
+  await assert.rejects(adapter.request({messages:[],max_tokens:128}),e=>{
+   assert.equal(e.status,fixture.status);assert.match(e.message,fixture.expected);assert(!e.message.includes('PRIVATE_SECRET'));assert.notEqual(e.code,'PRIVATE_SECRET');assert.equal(e.permanentProviderFailure,fixture.permanent)
+   if(fixture.status===503&&fixture.code!=='model_not_configured')assert(!e.message.includes('权限'))
+   return true
+  })
+  assert.equal(calls,1,'failure handling must not automatically issue another request')
+ }
+})
+
+test('Stable quota and provider quota are distinct permanent failures with redacted details',async()=>{
+ for(const cloud of [false,true]){
+  const model=cloud?{...sol,providerId:'stable-cloud',baseURL:'http://127.0.0.1:12345/v1',cloudResponses:true}:sol
+  const adapter=new OpenAIResponses({model,apiKey:'fixture',fetchImpl:async()=>Response.json({error:{code:'insufficient_quota',message:'secret upstream detail'}},{status:429})})
+  await assert.rejects(adapter.request({messages:[],max_tokens:128}),e=>e.status===429&&e.code==='insufficient_quota'&&e.permanentProviderFailure&&e.message.includes(cloud?'Stable 账号可用额度不足':'OpenAI API 可用额度不足')&&!e.message.includes('secret upstream detail'))
+ }
+})
 test('API forced function and replay do not inherit subscription namespace selectors',()=>{
  const adapter=new OpenAIResponses({model:sol,apiKey:'fixture',fetchImpl:fetch})
  const body={messages:[{role:'user',content:'Use echo'}],tools:[{type:'function',function:{name:'echo',parameters:{type:'object',properties:{}}}}],tool_choice:{type:'function',function:{name:'echo'}},max_tokens:256}

@@ -115,13 +115,14 @@ contextBridge.exposeInMainWorld('stable', {
     },
   },
   browser: { command: payload => invoke('stable:browser:command', payload), onChanged: callback => { const listener=()=>callback();ipcRenderer.on('stable:browser:changed',listener);return()=>ipcRenderer.removeListener('stable:browser:changed',listener) } },
-  templates: { list:()=>invoke('stable:templates:list'),detail:id=>invoke('stable:templates:detail',{id}),import:()=>invoke('stable:templates:import'),save:(id,value)=>invoke('stable:templates:save',{id,value}),use:id=>invoke('stable:templates:use',{id}) },
+  templates: { list:()=>invoke('stable:templates:list'),detail:(id,options)=>invoke('stable:templates:detail',{id,thumbnail:options?.thumbnail===true}),import:()=>invoke('stable:templates:import'),save:(id,value)=>invoke('stable:templates:save',{id,value}),use:id=>invoke('stable:templates:use',{id}) },
   market: {
     list: () => invoke('stable:market:list'), detail: id => invoke('stable:market:detail', { id }), save: value => invoke('stable:market:save', value),
     toggle: (id, enabled) => invoke('stable:market:toggle', { id, enabled }), remove: id => invoke('stable:market:remove', { id }),
     checkUpdate: id => invoke('stable:market:update', { id }), use: id => invoke('stable:market:use', { id }),
   },
   projects: { pickFolders:()=>invoke('stable:projects:pickFolders'), create:(name,folders)=>invoke('stable:projects:create',{name,folders}), open:(projectId,conversationId)=>invoke('stable:projects:open',{projectId,conversationId}), manage: (id,action)=>invoke('stable:projects:manage',{id,action}), register: () => invoke('stable:projects:register'), bind: (id, projectId) => invoke('stable:projects:bind', { id, projectId }) },
+  imageEditor: Object.fromEntries(['open','select','save','submit','cancel','accept'].map(method => [method, (...args) => invoke('stable:imageEditor:' + method, args)])),
   agent: {
     prediction: (conversationId, messageId, requestId) => invoke('stable:agent:prediction', { conversationId, messageId, requestId }),
     cancelPrediction: requestId => invoke('stable:agent:cancelPrediction', { requestId }),
@@ -162,6 +163,7 @@ contextBridge.exposeInMainWorld('stable', {
     run: (conversationId, prompt, attachments = [], references = [], clientRequestId, clarificationResponse, design) => invoke('stable:agent:run', { conversationId, prompt, attachments, references, clientRequestId, clarificationResponse, design }),
     steer: (conversationId, requestId, prompt, attachments = [], references = []) => invoke('stable:agent:steer', { conversationId, requestId, prompt, attachments, references }),
     cancel: (conversationId) => invoke('stable:agent:cancel', { conversationId }),
+    taskAction: (conversationId, runId, taskId, action) => invoke('stable:agent:taskAction', { conversationId, runId, taskId, action }),
     answerApproval: (conversationId, requestId, decision) => invoke('stable:agent:answerApproval', { conversationId, requestId, ...(typeof decision === 'boolean' ? { allowed: decision } : { decision }) }),
     clear: (conversationId) => invoke('stable:agent:clear', { conversationId }),
     onEvent: (handler) => {
@@ -186,6 +188,15 @@ contextBridge.exposeInMainWorld('stable', {
       const listener = (_event, payload) => handler(payload)
       ipcRenderer.on('stable:automations:event', listener)
       return () => ipcRenderer.removeListener('stable:automations:event', listener)
+    },
+  },
+  development: {
+    state: () => invoke('stable:development:state'),
+    apply: revision => invoke('stable:development:apply', { revision }),
+    onState: handler => {
+      const listener = (_event, value) => handler(value)
+      ipcRenderer.on('stable:development:state', listener)
+      return () => ipcRenderer.removeListener('stable:development:state', listener)
     },
   },
   updater: {
@@ -282,13 +293,6 @@ contextBridge.exposeInMainWorld('stable', {
   appearance: {
     setCompletedCount: (count) => invoke('stable:appearance:completedCount', { count }),
     setTheme: (theme) => invoke('stable:appearance:theme', { theme }),
-    completeLaunch: () => invoke('stable:appearance:launchComplete'),
-    onLaunchStart: (handler) => {
-      const listener = () => handler()
-      ipcRenderer.on('stable:appearance:launchStart', listener)
-      ipcRenderer.send('stable:appearance:launchReady')
-      return () => ipcRenderer.removeListener('stable:appearance:launchStart', listener)
-    },
   },
   system: {
     openPath: (path) => invoke('stable:system:openPath', { path }),

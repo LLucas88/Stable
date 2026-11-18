@@ -156,8 +156,20 @@ class ModelRegistry {
     return { model: { ...model }, apiKey }
   }
 
-  resolveImageRoute(preferredModelId) {
-    if (this.cloudGateway) return this.cloudGateway.imageRoute()
+  resolveImageRoute(preferredModelId, request = {}) {
+    if (!this.cloudGateway && request.model && request.model !== 'glm-image') {
+      const catalog=this.store.modelCatalog()
+      const candidates=catalog.items.filter(item=>item.model===request.model)
+      const profile=request.connectionId ? catalog.items.find(item=>item.id===request.connectionId) : candidates.find(item=>item.id===preferredModelId)|| (candidates.length===1 ? candidates[0] : undefined)
+      if(request.connectionId&&!profile)throw Error('所选图片服务连接已不存在，请重新选择。')
+      if(!profile)throw Error(candidates.length>1?'存在多个图片服务，请在图像模型菜单选择服务连接。':'请在图像模型菜单选择已有服务连接，或在设置中配置图片模型的 API 地址与凭据。')
+      const base=new URL(normalizeBaseURL(profile.baseURL));base.pathname=base.pathname.replace(/\/+$/,'') || '/v1'
+      const endpoint=base.href.replace(/\/$/,'')
+      const apiKey=this.secrets.get(modelSecretKey(profile.id)) || (profile.id===catalog.legacyModelId?this.secrets.get('apiKey'):'')
+      if(!apiKey)throw Error('所选图片服务尚未配置 API Key。')
+      return {protocol:'openai-images',editTransport:request.editTransport||'json',upstreamModel:request.upstreamModel||request.model,endpoint:endpoint+'/images/generations',editEndpoint:endpoint+'/images/edits',apiKey,replay:false,scope:'images:'+require('node:crypto').createHash('sha256').update(JSON.stringify([profile.id,endpoint,apiKey])).digest('hex')}
+    }
+    if (this.cloudGateway) {if(request.upstreamModel)throw Error('云端模型映射由管理员配置，请清除本地上游模型名。');return this.cloudGateway.imageRoute()}
     const apiKey = this.resolveImageApiKey(preferredModelId)
     return { endpoint: require('./image-generation.cjs').ENDPOINT, apiKey, scope: 'direct:' + require('node:crypto').createHash('sha256').update(apiKey).digest('hex'), replay: false }
   }

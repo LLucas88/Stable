@@ -2,6 +2,7 @@
 const PRESETS = require('./design-presets.json')
 function deliverySpec(policy) {
   if (!policy) return null
+  if(policy.size==='auto'&&!policy.outputPreset)return {version:1,autoSize:true,maxBytes:20*1024*1024,background:policy.background||'auto',fit:'strict'}
   const preset = policy.outputPreset && PRESETS[policy.outputPreset]
   if (policy.outputPreset && !Object.hasOwn(PRESETS, policy.outputPreset)) throw Error('图片交付规格无效。')
   const [width, height] = String(policy.size || '').split('x').map(Number)
@@ -10,7 +11,7 @@ function deliverySpec(policy) {
 }
 function inspectDesignImage(image, spec, bytes) {
   const size = image.getSize()
-  if (image.isEmpty() || size.width !== spec.width || size.height !== spec.height) throw Error('交付图片实际尺寸与目标不一致。')
+  if (image.isEmpty() || !size.width || !size.height || (!spec.autoSize && (size.width !== spec.width || size.height !== spec.height))) throw Error('交付图片实际尺寸与目标不一致。')
   if (!bytes?.length || bytes.length >= spec.maxBytes) throw Error('交付图片文件大小超过规格上限。')
   if (spec.background === 'transparent') {
     const pixels = image.toBitmap({ scaleFactor: 1 })
@@ -24,6 +25,7 @@ function finishDesignImage(image, nativeImage, policy, background) {
   const spec = typeof policy === 'string' ? deliverySpec({ outputPreset: policy, background }) : deliverySpec(policy)
   const size = image.getSize()
   if (!size.width || !size.height || image.isEmpty()) throw Error('生成图片无法解码。')
+  if(spec.autoSize){const png=image.toPNG();inspectDesignImage(image,spec,png);return {png,dimensions:size,spec}}
   const scale = Math.min(spec.width / size.width, spec.height / size.height)
   const width = Math.max(1, Math.round(size.width * scale)), height = Math.max(1, Math.round(size.height * scale))
   let output

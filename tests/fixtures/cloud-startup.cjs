@@ -22,7 +22,17 @@ if (process.argv.includes('--packaged-default') || oneClickFixture) {
   updater.checkForUpdates = async () => { updateChecks++; updater.emit(oneClickFixture ? 'update-available' : 'update-not-available', { version: '99.0.0' }); return null }
   updater.downloadUpdate = async () => { updater.emit('update-downloaded', { version: '99.0.0' }); return [] }
   // Exercise the real quitAndInstall flag routing, but never spawn an installer or quit this fixture.
-  updater.install = (silent, forceRun) => { updateInstalls++; assert.equal(silent,false);assert.equal(forceRun,true);return false }
+  if (oneClickFixture) {
+    const helper = require(path.join(repo, 'desktop/services/update-window.cjs'))
+    const prepare = helper.prepareUpdateWindow
+    helper.prepareUpdateWindow = options => prepare({ ...options, spawnProcess(_exe, args) {
+      fs.writeFileSync(path.join(args[args.indexOf('-Directory') + 1], 'ready'), 'ready')
+      const child = new (require('node:events').EventEmitter)()
+      child.unref = () => {}
+      return child
+    } })
+  }
+  updater.install = (silent, forceRun) => { assert.equal(silent,true);assert.equal(forceRun,true);updateInstalls++;return false }
 } else process.env.STABLE_CLOUD_ENABLED = '1'
 delete process.env.STABLE_QA_CAPTURE
 delete process.env.STABLE_QA_CLOUD_AUTHENTICATED
@@ -37,7 +47,9 @@ CloudAccountService.prototype.restore = async function () {
   if (++restoreCalls === 1) await new Promise(resolve => { release = resolve })
   restored = true
   if (process.argv.includes('--failure') && restoreCalls === 1) throw Error('fixture connection closed')
-  this.snapshot = { ...this.snapshot, status: 'signed_out', error: '' }
+  this.snapshot = process.argv.includes('--existing-login')
+    ? { ...this.snapshot, status: 'authenticated', account: { id: 'fixture', username: 'fixture', displayName: '验证用户', role: 'member' } }
+    : { ...this.snapshot, status: 'signed_out', error: '' }
 }
 // Keep renderer-triggered model discovery local to this startup fixture.
 CloudAccountService.prototype.refresh = async function () { return this.publicState() }
@@ -60,6 +72,19 @@ app.on('browser-window-created', (_event, window) => {
       // A missing Cloud startup reply must not block support IPC.
       assert.ok(await window.webContents.executeJavaScript('window.stable.support.exportDiagnostics()'))
       release()
+      if (process.argv.includes('--existing-login')) {
+        for (let i = 0; i < 40; i++) {
+          if (await window.webContents.executeJavaScript("!document.querySelector('.cloud-login-notice') && Boolean(document.querySelector('.composer-send'))")) {
+            assert.equal(restoreCalls, 1)
+            console.log('CLOUD_STARTUP_RESULT restored-existing-login')
+            clearTimeout(timer)
+            app.exit(0)
+            return
+          }
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        throw Error('Saved login did not clear the checking state')
+      }
       const expected = process.argv.includes('--failure') ? '云端连接暂不可用' : '登录 Stable Cloud 后即可发送模型任务'
       for (let attempt = 0; attempt < 40; attempt++) {
         if (await window.webContents.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(expected)})`)) break

@@ -17,6 +17,16 @@ function fixture(t, fetch, resolveProxy = async () => 'DIRECT') {
   return { logPath, session, cloudFetch: createCloudFetch({ session, logPath, appVersion: require('../package.json').version }) }
 }
 
+test('image diagnostics correlate gateway IDs without logging response bodies or arbitrary headers',async t=>{
+  let id='req_fixture123456'
+  const ctx=fixture(t,async()=>Response.json({error:{message:'private prompt'}},{status:422,headers:{'x-stable-request-id':id,'x-other':'private'}}))
+  await ctx.cloudFetch('https://cloud.example/v1/images/generations',{method:'POST',body:'private request'})
+  id='Bearer private';await ctx.cloudFetch('https://cloud.example/v1/images/edits',{method:'POST'})
+  const text=fs.readFileSync(ctx.logPath,'utf8'),rows=text.trim().split('\n').map(JSON.parse)
+  assert.equal(rows[0].route,'/v1/images/generations');assert.equal(rows[0].gatewayRequestId,'req_fixture123456')
+  assert.equal(rows[1].route,'/v1/images/edits');assert.equal(rows[1].gatewayRequestId,undefined);assert.doesNotMatch(text,/private|Bearer/)
+})
+
 test('Chromium session receives bearer auth, body, abort signal; cookies, caching and redirects are disabled', async (t) => {
   const signal = new AbortController().signal
   let sent

@@ -19,9 +19,9 @@ async function main() {
   win = new BrowserWindow({ show: false, width: 1280, height: 800, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } })
   win.webContents.on('console-message', (_event, level, message) => { if(level >= 2) console.error(message) })
 
-  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(').replace('function LaunchSplash(', 'export function LaunchSplash(')
+  const source = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace('function AgentPage(', 'export function AgentPage(')
   const bundle = (await build({ stdin: { contents: `
-    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage,LaunchSplash} from './src/App';
+    import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {AgentPage} from './src/App';
     window.crypto.randomUUID ||=()=> 'test-'+Math.random().toString(16).slice(2);
     const conversations=['a','b'].map(id=>({id,title:id==='a'?'来源对话':'新 Catch 任务',capability:'auto',permissionMode:'full',modelId:'mock',dataIds:[],pinned:false,messageCount:2}));
     const messages=[{id:'u',role:'user',content:'本轮提问',createdAt:new Date().toISOString()},{id:'m',seq:2,role:'assistant',content:'完整回复\\n\\n'+('分析结果。\\n\\n'.repeat(80)),trace:[{id:'complete',kind:'status',status:'completed',title:'完成',time:2000}],createdAt:new Date().toISOString()}];
@@ -54,7 +54,6 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     function Test(){const [value,setValue]=useState(initial); window.changeState=setValue;window.fixtureState=state;window.draft=draft;
       return <AgentPage active={true} state={value} prefill='' consumePrefill={()=>{}} updateAgent={v=>setValue(s=>({...s,...v}))} updateAutomations={()=>{}} updateTeam={()=>{}} action={async(_,fn)=>{try{await fn()}catch(e){window.uiErrors.push(e.message)}}} openConversation={()=>{}} conversationTasksTarget={document.getElementById('tasks')}/>}
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
-    window.splash=()=>reactRoot.render(<LaunchSplash running={true} onFinish={()=>{}}/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   const fixtureHtml = '<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>';
   const fixturePath=path.join(output,'fixture.html');fs.writeFileSync(fixturePath,fixtureHtml);await win.loadFile(fixturePath)
@@ -306,14 +305,21 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     document.querySelector('.conversation-tools-trigger').click();await tick();Array.from(document.querySelectorAll('.conversation-tools-panel [role=menuitem]')).find(el=>el.textContent.startsWith('章节')).click();await tick();
     document.querySelector('.conversation-tools-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
     expect(!document.querySelector('.chapter-panel'),'Escape failed to close chapter directory');
-    window.splash();await tick();
-    expect(getComputedStyle(document.querySelector('.launch-splash')).backgroundColor==='rgb(255, 255, 255)','Splash is not white');
-    const logo=document.querySelector('.launch-logo');await logo.decode();
-    expect(logo.naturalWidth===1254&&logo.naturalHeight===1254,'Incorrect user logo');
-    const canvas=document.createElement('canvas');canvas.width=canvas.height=1254;const ctx=canvas.getContext('2d');ctx.drawImage(logo,0,0);
-    const pixels=ctx.getImageData(0,0,1254,1254).data;let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>128&&pixels[i]<100)ink++;
-    expect(ink>1000,'Logo has no visible black pixels');
-    return {legacyCatchDraftSupported:true,attachmentSentAndRemoved:true,scrollStatesAndPosition:true,historyPasteAndSelect:true,whiteSplashOriginalLogo:true};
+    const mergedBody='报告前五条完整内容。后续行动计划。';
+    const answerTrace=[
+      {id:'progress',kind:'reasoning',eventType:'agent/answer',content:'正在核对原始数据',title:'过程',status:'completed',time:1},
+      {id:'first',kind:'reasoning',eventType:'agent/answer',content:'报告前五条完整内容。',finalAnswerPart:true,title:'回答正文',status:'completed',time:2},
+      {id:'last',kind:'reasoning',eventType:'agent/answer',content:'后续行动计划。',finalAnswerPart:true,title:'回答正文',status:'completed',time:3},
+      {id:'runtime',kind:'status',title:'完成',status:'completed',time:4},
+    ];
+    window.changeState({...window.fixtureState('a'),messages:[{id:'merged-answer',seq:1,role:'assistant',content:mergedBody,trace:answerTrace,createdAt:new Date().toISOString()}]});await tick();await tick();
+    const mergedTurn=document.querySelector('[data-message-id="merged-answer"]');
+    expect(mergedTurn.textContent.includes(mergedBody),'Merged final answer is not complete');
+    mergedTurn.querySelector('.trace-summary').click();await tick();
+    const mergedTimeline=mergedTurn.querySelector('.trace-timeline');
+    expect(mergedTimeline.textContent.includes('正在核对原始数据'),'Ordinary progress was incorrectly hidden');
+    expect(!mergedTimeline.textContent.includes('报告前五条完整内容。')&&!mergedTimeline.textContent.includes('后续行动计划。'),'Final answer fragments still duplicated in process view');
+    return {legacyCatchDraftSupported:true,attachmentSentAndRemoved:true,scrollStatesAndPosition:true,historyPasteAndSelect:true};
   })().catch(error=>{throw new Error(error.stack)})`)
   console.log('CONVERSATION_TOOLS_UI_PASSED', JSON.stringify(result))
   win.destroy();app.exit(0)

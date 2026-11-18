@@ -19,7 +19,7 @@ function requireText(value) { if (typeof value !== 'string' || !value.trim()) th
 test('cloud startup reads the live promise assigned after IPC registration', async () => {
   const ipc = registry()
   let startup = Promise.resolve(), release, finished = false
-  registerCloudIpc({ ...ipc, getCloudStartup: () => startup, cloudAccount: null, bootstrap: () => 'ready', requireText })
+  registerCloudIpc({ ...ipc, getCloudStartup: () => startup, cloudAccount: null, cloudStartupState: () => 'ready', bootstrap: () => assert.fail('login recovery must not reload the conversation'), requireText })
   startup = new Promise(resolve => { release = resolve })
   const request = ipc.call('stable:cloud:startup').then(value => { finished = true; return value })
   await new Promise(resolve => setImmediate(resolve))

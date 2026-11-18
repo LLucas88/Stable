@@ -18,6 +18,46 @@ function fixture(t, options = {}) {
 const textOf = result => result.content.find(item => item.type === 'text')?.text || ''
 const screenshot = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='
 
+test('a tool deadline cancels only its own execution and returns failure for model recovery', { timeout: 1000 }, async t => {
+  const pending = new Map(), cancelled = []
+  const x = fixture(t, { toolTimeoutMs: 30, builtinTools: {
+    execute: request => request.args.url === 'https://slow.invalid/'
+      ? new Promise((resolve, reject) => pending.set(request.requestId, reject)) : Promise.resolve({ ok: true }),
+    cancel: id => { cancelled.push(id); pending.get(id)?.(new Error('operation aborted')) },
+  } })
+  const slow = x.invoke('stable_browser', { action: 'open', url: 'https://slow.invalid/' })
+  const fast = await x.invoke('stable_browser', { action: 'open', url: 'https://fast.invalid/' })
+  assert(!fast.isError)
+  const timeout = await slow
+  assert.equal(timeout.isError, true); assert.match(textOf(timeout), /超时.*任务仍可继续/)
+  assert.equal(cancelled.length, 1)
+  assert.equal(x.events.filter(event => event.status === 'failed').length, 1)
+})
+
+test('approval waiting does not spend the individual tool execution deadline', async t => {
+  let started = false, allow
+  const approval = new Promise(resolve => { allow = resolve })
+  const x = fixture(t, { toolTimeoutMs: 20, requestApproval: () => approval, builtinTools: {
+    execute: async () => { started = true; return { ok: true } }, cancel: () => assert.fail('waiting approval must not time out'),
+  } })
+  const result = x.invoke('stable_browser', { action: 'open', url: 'https://approved.invalid/' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(started, false)
+  allow(true)
+  assert(!(await result).isError); assert.equal(started, true)
+})
+
+test('an uncooperative timed-out writer must settle before any recovery result is returned', async t => {
+  let release, finished = false, cancelled = false
+  const pending = new Promise(resolve => { release = resolve })
+  const x = fixture(t, { toolTimeoutMs: 20, builtinTools: { execute: () => pending, cancel: () => { cancelled = true } } })
+  const result = x.invoke('stable_browser', { action: 'open', url: 'https://slow.invalid/' }).then(value => { finished = true; return value })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(cancelled, true); assert.equal(finished, false)
+  release({ ok: true })
+  assert.equal((await result).isError, true)
+})
+
 test('image container gaps stay pending across gallery changes and require current-width evidence', async t => {
   const review={};let width=390, candidates=[{target:'img-0-box-1',label:'short image',gap:150}], observedTargets=['img-0-box-1']
   const x=fixture(t,{review,builtinTools:{execute:async()=>({tabId:'t',epoch:1,viewport:{width,height:844},imageSpacing:{candidates,observedTargets}}),cancel(){}}})
@@ -119,17 +159,23 @@ test('repeated wrapping observations stay bounded but a resolved issue reappeari
   assert.equal(again.reviewNotebook.checks[0].status,'open','reappearing measured risk must not retain stale success')
 })
 
-test('wrapping checklist overflow cannot silently certify unrecorded findings', async t => {
-  const review={}; let offset=0
+test('wrapping checklist overflow promotes pending findings after completed checks, without losing unreviewed work', async t => {
+  const review={}; let offset=0,count=13
   const x=fixture(t,{review,builtinTools:{execute:async()=>({tabId:'t',epoch:1,viewport:{width:390,height:844},
-    typography:{candidates:Array.from({length:13},(_,i)=>({id:String(i+offset),label:'需要检查的标题'+(i+offset),lineCharacters:[8,1]}))}}),cancel(){}}})
+    typography:{candidates:Array.from({length:count},(_,i)=>({id:String(i+offset),label:'需要检查的标题'+(i+offset),lineCharacters:[8,1]}))}}),cancel(){}}})
   await x.invoke('stable_browser',{action:'audit',tabId:'t'})
   offset=13
   const full=JSON.parse(textOf(await x.invoke('stable_browser',{action:'audit',tabId:'t'}))).reviewNotebook
   assert.equal(full.checks.length,24)
   assert.equal(full.capacityExceeded,true)
   for(let i=0;i<24;i+=12) await x.invoke('stable_browser',{action:'review',tabId:'t',reviewUpdates:full.checks.slice(i,i+12).map(c=>({check:c.check,status:'passed',evidenceId:full.evidence.at(-1).id,note:'人工复核当前排版'}))})
-  assert.match(review.stop().reason,/超出24项/,'passing recorded items does not cover omitted findings')
+  assert.match(review.stop().reason,/未完成/,'passing recorded items does not cover omitted findings')
+  count=0
+  const clear=JSON.parse(textOf(await x.invoke('stable_browser',{action:'audit',tabId:'t'}))).reviewNotebook
+  assert.equal(clear.capacityExceeded,undefined)
+  const pending=clear.checks.filter(c=>c.status!=='passed');assert.equal(pending.length,2)
+  await x.invoke('stable_browser',{action:'review',tabId:'t',reviewUpdates:pending.map(c=>({check:c.check,status:'passed',evidenceId:clear.evidence.at(-1).id,note:'复核剩余候选已修复'}))})
+  assert.deepEqual(review.stop(),{})
 })
 
 test('browser batch stops on failure and preserves completed evidence without retrying effects', async t => {
@@ -193,6 +239,23 @@ test('browser batch never guesses labels and stops on navigation or structured f
   assert.equal(failed.isError, true); assert.equal(calls.length, 3)
 })
 
+test('batch uses controls actually observed after resize, rejects removed or duplicate controls', async t => {
+  for (const mode of ['revealed','removed','duplicate']) await t.test(mode, async t => {
+    const calls=[]
+    const x=fixture(t,{builtinTools:{execute:async r=>{
+      calls.push(r.args)
+      const controls=r.args.action==='read' ? [{label:'Old',ref:'old'}]
+        : mode==='removed' ? [] : mode==='duplicate' ? [{label:'New',ref:'a'},{label:'New',ref:'b'}] : [{label:'New',ref:'fresh'}]
+      return {tabId:'t',epoch:1,url:'https://fixture.invalid',controls}
+    },cancel(){}}})
+    await x.invoke('stable_browser',{action:'read',tabId:'t'})
+    const result=await x.invoke('stable_browser',{action:'batch',tabId:'t',steps:[{action:'resize',width:1440,height:1000},{action:'click',label:mode==='removed'?'Old':'New'}]})
+    assert.equal(Boolean(result.isError),mode!=='revealed')
+    assert.equal(calls.length,mode==='revealed'?3:2)
+    if(mode==='revealed'){assert.equal(calls[2].ref,'fresh');assert.equal(x.requests.length,1)}
+  })
+})
+
 test('read-only browser batches cannot introduce interactive permissions', async t => {
   const calls = []
   const x = fixture(t, { sandboxMode: 'read-only', builtinTools: { execute: async r => {
@@ -227,13 +290,26 @@ test('review can finish a check without a new capture or parent browser operatio
   assert.equal(x.requests.length, 0)
 })
 
-test('unfinished review cannot silently become success after bounded completion retries', async t => {
+test('unfinished review asks the model for an explanation instead of aborting, and retains missing checks', async t => {
   const review = {}
   const x = fixture(t, { review, builtinTools: { execute: async () => ({ tabId: 't', image: screenshot }), cancel() {} } })
   await x.invoke('stable_browser', { action: 'screenshot', tabId: 't' })
   for (let i = 0; i < 2; i++) assert.equal(review.stop().decision, 'block')
-  assert.equal(review.stop().continue, false)
-  assert.match(review.failure, /检查记录/)
+  assert.match(review.stop().reason, /最终说明/)
+  assert.deepEqual(review.stop(),{})
+  assert.equal(review.failure,undefined)
+  assert.match(review.incomplete(), /尚未提交检查记录/)
+})
+
+test('Stable tool envelopes report failure consistently without treating successful examples as errors',async t=>{
+ let value
+ const x=fixture(t,{builtinTools:{execute:async()=>value,dispose(){}}})
+ for(const [response,failed] of [[{ok:false},true],[{success:false,error:{message:'real failure'}},true],[{success:true,error:''},false],[{ok:true,text:'{"success":false}'},false]]){
+  value=response
+  const result=await x.invoke('stable_browser',{action:'open',url:'https://example.com/'})
+  assert.equal(Boolean(result.isError),failed)
+  assert.equal(x.events.at(-1).status,failed?'failed':'completed')
+ }
 })
 
 test('read-only review accepts real inline evidence; blocked work is reported separately', async t => {

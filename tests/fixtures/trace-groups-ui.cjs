@@ -135,6 +135,29 @@ async function main() {
     window.updateTrace(s=>({...s,status:'running'}));await tick();
     expect(!document.querySelector('.trace-timeline').hidden,'Resumed run should show progress');
   })()`)
+  await win.webContents.executeJavaScript(`(async()=>{
+    const inputDetail=JSON.stringify({file_path:'report.html',content:'经营指标 '.repeat(4000)});
+    const history=Array.from({length:100},(_,i)=>({id:'report-'+i,runId:'report',kind:'tool',toolName:'Write',title:'写入报告',status:'completed',time:i,inputDetail}));
+    window.updateTrace({items:history,status:'running'});
+    await wait(()=>document.querySelectorAll('.trace-action').length===100);
+    expect(!document.querySelector('.trace-action-detail pre'),'Folded tools mounted full report inputs');
+    let events=0;
+    const timer=setInterval(()=>window.updateTrace(s=>({...s,streaming:{id:'answer',time:101,content:'进度 '+ ++events}})),100);
+    try {
+      const group=document.querySelector('.trace-group');
+      group.open=true;
+      const action=group.querySelector('.trace-action');
+      for(const opened of [true,false]) {
+        await new Promise(resolve=>setTimeout(resolve,5100));
+        const before=events, clicked=performance.now();
+        action.querySelector('summary').click();
+        await wait(()=>action.open===opened && !!action.querySelector('pre')===opened && events>before);
+        expect(performance.now()-clicked<1500,'Tool details did not respond during report streaming');
+        if(opened) expect(action.querySelector('pre').textContent===inputDetail,'Full report input was lost');
+      }
+      expect(events>=50,'Streaming updates stalled during interaction');
+    } finally { clearInterval(timer) }
+  })()`)
   console.log('TRACE_GROUPS_UI_PASSED');win.destroy();app.exit(0)
 }
 main().catch(e=>{console.error(e);win?.destroy();app.exit(1)})

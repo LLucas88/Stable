@@ -137,6 +137,10 @@ FunctionEnd
 !macroend
 
 !macro stableStopUpdate code message
+  ${if} $stableProgressStatus != "failed_rolled_back"
+  ${andIf} $stableProgressStatus != "failed"
+    !insertmacro stableReportProgress "$stableProgressPercent" "install_failed" "failed" "${code}"
+  ${endif}
   StrCpy $stableUpdateCanClose "true"
   SetErrorLevel ${code}
   ${if} ${isUpdated}
