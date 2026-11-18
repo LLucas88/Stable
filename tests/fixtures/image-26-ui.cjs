@@ -8,6 +8,8 @@ async function main(){
   win=new BrowserWindow({show:false,width:1440,height:1000,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,offscreen:true,backgroundThrottling:false}})
   const bundle=(await build({stdin:{contents:`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {DesignControls,DEFAULT_DESIGN} from './src/DesignControls';function Fixture(){const [value,setValue]=useState({...DEFAULT_DESIGN});window.imageParameters=value;return <div className="design-controls-fixture composer-box"><div className="composer-actions"><DesignControls mode="generate" onModeChange={()=>{}} value={value} onChange={setValue} references={[]} onReference={()=>{}} connections={[{id:'proxy',providerId:'relay',displayName:'已有图片服务',model:'gpt-image-2.6-sunburst',baseURL:'https://relay.invalid/v1',hasApiKey:true}]}/></div></div>}createRoot(document.getElementById('root')).render(<Fixture/>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'}})).outputFiles[0].text
   const html=path.join(app.getPath('userData'),'toolbar.html');fs.writeFileSync(html,'<!doctype html><html lang="zh-CN" data-theme="light"><body><div id="root"></div></body></html>');await win.loadFile(html)
+  const viewport = (width,height) => win.webContents.enableDeviceEmulation({screenPosition:'desktop',viewSize:{width,height},deviceScaleFactor:1,scale:1})
+  viewport(1440,1000)
   await require('../helpers/visual-fixture.cjs')(win)
   for(const name of ['tokens.css','app.css','conversation-tools.css','design-activity.css','image-parameters.css'])await win.webContents.insertCSS(require('../helpers/read-source.cjs').readSource(path.join(root,'src/styles',name),'utf8'))
   await win.webContents.insertCSS('body{margin:0;background:var(--color-paper)}.design-controls-fixture{position:absolute;bottom:48px;left:calc((100% - min(900px,100% - 48px))/2);width:min(900px,100% - 48px)}')
@@ -41,7 +43,7 @@ async function main(){
   assert.equal(await run("document.activeElement.closest('.p26-submenu')?.matches(':popover-open')"),true)
   await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");assert.equal(await run("document.querySelector('.p26-background').open"),false);assert.equal(await run("document.querySelector('.p26-more').open"),true)
   await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");assert.equal(await run("document.querySelector('.p26-more').open"),false)
-  win.setSize(1000,900);await wait(150);await run("document.querySelector('.p26-more>summary').click()");await wait(120);await hover('.p26-complexity>summary')
+  viewport(1000,900);await wait(150);await run("document.querySelector('.p26-more>summary').click()");await wait(120);await hover('.p26-complexity>summary')
   assert.equal(await run("document.querySelector('.p26-complexity').dataset.side"),'left');await capture('flyout-left')
   await run("document.documentElement.dataset.theme='dark'");await capture('flyout-dark')
   await run("document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))");assert.equal(await run("document.querySelector('.p26-more').open"),false)

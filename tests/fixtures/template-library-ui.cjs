@@ -18,6 +18,7 @@ let win;
  win=new BrowserWindow({width:1440,height:1000,show:false,webPreferences:{preload,offscreen:true,backgroundThrottling:false,sandbox:true,contextIsolation:true,nodeIntegration:false}});
  await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(`<html><style>*{box-sizing:border-box}body{margin:0;font:15px 'Segoe UI',sans-serif;--color-paper:#fff;--color-ink:#252525;--color-muted:#777}#root{height:100vh}${css}</style><div id="root"></div></html>`));await win.webContents.executeJavaScript(bundle);
  const run=code=>win.webContents.executeJavaScript(`(async()=>{${code}})()`);
+ win.webContents.enableDeviceEmulation({screenPosition:'desktop',viewSize:{width:1440,height:1000},deviceScaleFactor:1,scale:1});
  await run(`window.wait=async f=>{for(let i=0;i<300;i++){if(f())return;await new Promise(r=>setTimeout(r,20))}throw Error('UI timeout')};window.expect=(v,m)=>{if(!v)throw Error(m)};await wait(()=>document.querySelectorAll('.template-card').length===47);await wait(()=>document.querySelectorAll('.template-thumbnail [data-loaded=true]').length>=3);
  const cards=[...document.querySelectorAll('.template-card')],names=cards.map(c=>c.querySelector('.template-card-info>button').textContent);
  expect(names.every(n=>/[\u4e00-\u9fff]/.test(n)),'Template names are not Chinese');expect(!names.includes('项目启动方案')&&!names.includes('品牌故事长页'),'Retired templates remain');
