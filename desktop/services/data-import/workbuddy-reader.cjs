@@ -42,22 +42,50 @@ function iso(value, fallback = '1970-01-01T00:00:00.000Z') {
   return Number.isFinite(date.getTime()) ? date.toISOString() : fallback
 }
 
+function hashMetadataFile(file, buffer, snapshot) {
+  const source = fs.openSync(regularPath(file), 'r')
+  let copy
+  try {
+    const before = fs.fstatSync(source)
+    if (!before.isFile()) throw Error('来源不是普通文件。')
+    if (snapshot) copy = fs.openSync(snapshot, 'wx', 0o600)
+    const hash = createHash('sha256')
+    let size = 0
+    while (size < before.size) {
+      const count = fs.readSync(source, buffer, 0, Math.min(buffer.length, before.size - size), null)
+      if (!count) return null
+      const chunk = buffer.subarray(0, count)
+      hash.update(chunk)
+      if (copy !== undefined) fs.writeFileSync(copy, chunk)
+      size += count
+    }
+    const after = fs.fstatSync(source)
+    return before.size === after.size && before.mtimeMs === after.mtimeMs ? hash.digest('hex') : null
+  } finally {
+    try { if (copy !== undefined) fs.closeSync(copy) }
+    finally { fs.closeSync(source) }
+  }
+}
+
 // Work on a private DB+WAL copy. Never open the source with SQLite (even a
 // read-only SQLite connection may create/update shared-memory files).
 function readMetadata(root, staging) {
   const source = path.join(root, 'workbuddy.db')
   if (!fs.existsSync(source)) return { sessions: [], workspaces: [], warning: '未找到会话数据库，将从本地会话文件恢复标题和分组。' }
-  const target = path.join(staging, 'metadata.db')
+  const walPath = source + '-wal'
+  const buffer = Buffer.allocUnsafe(1024 * 1024)
   for (let attempt = 0; attempt < 3; attempt++) {
-    const data = readFile(source, MAX_SESSION), walPath = source + '-wal'
-    const wal = fs.existsSync(walPath) ? readFile(walPath, MAX_SESSION) : null
-    if (digest(data) !== digest(readFile(source, MAX_SESSION))) continue
-    const nextWal = fs.existsSync(walPath) ? readFile(walPath, MAX_SESSION) : null
-    if (Boolean(wal) !== Boolean(nextWal) || (wal && digest(wal) !== digest(nextWal))) continue
-    fs.writeFileSync(target, data)
-    if (wal) fs.writeFileSync(target + '-wal', wal)
+    const snapshot = fs.mkdtempSync(path.join(staging, 'metadata-'))
+    const target = path.join(snapshot, 'metadata.db')
     let db
     try {
+      const databaseHash = hashMetadataFile(source, buffer, target)
+      if (databaseHash === null) continue
+      const walHash = fs.existsSync(walPath) ? hashMetadataFile(walPath, buffer, target + '-wal') : undefined
+      if (walHash === null || databaseHash !== hashMetadataFile(source, buffer)) continue
+      const nextWalHash = fs.existsSync(walPath) ? hashMetadataFile(walPath, buffer) : undefined
+      if (walHash !== nextWalHash) continue
+
       db = new DatabaseSync(target)
       const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name))
       if (!tables.has('sessions')) throw Error('WorkBuddy 数据库缺少 sessions 表。')
@@ -67,9 +95,11 @@ function readMetadata(root, staging) {
       const sessions = db.prepare(`SELECT ${fields.join(',')} FROM sessions`).all()
       const workspaces = tables.has('workspaces') ? db.prepare('SELECT path FROM workspaces').all() : []
       return { sessions, workspaces }
+    } catch (error) {
+      if (error.code !== 'ENOENT' || (error.path !== source && error.path !== walPath)) throw error
     } finally {
-      db?.close()
-      for (const suffix of ['', '-wal', '-shm']) fs.rmSync(target + suffix, { force: true })
+      try { db?.close() }
+      finally { fs.rmSync(snapshot, { recursive: true, force: true }) }
     }
   }
   throw Error('WorkBuddy 数据库持续变化，未获得一致快照；请暂停 WorkBuddy 任务后重试。')

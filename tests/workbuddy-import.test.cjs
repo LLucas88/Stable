@@ -2,6 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { DatabaseSync } = require('node:sqlite')
@@ -10,9 +11,9 @@ const { scanWorkBuddy, parseSession, digest, regularPath } = require('../desktop
 const { WorkBuddyImportService } = require('../desktop/services/workbuddy-import.cjs')
 const { registerWorkBuddyIpc } = require('../desktop/services/workbuddy-ipc.cjs')
 
-function fixture(t) {
+function fixture(t, sourceName = 'source') {
   const parent = path.resolve(__dirname, '../.local/workbuddy-tests'); fs.mkdirSync(parent, { recursive: true })
-  const root = fs.mkdtempSync(path.join(parent, 'case-')), source = path.join(root, 'source'), output = path.join(root, 'stable'), workspace = path.join(output, 'workspace'), project = path.join(root, 'original-project')
+  const root = fs.mkdtempSync(path.join(parent, 'case-')), source = path.join(root, sourceName), output = path.join(root, 'stable'), workspace = path.join(output, 'workspace'), project = path.join(root, 'original-project')
   for (const folder of [source, output, workspace, project, path.join(source, 'projects', 'project-a'), path.join(source, 'memory'), path.join(source, 'blobs'), path.join(source, 'artifact-index'), path.join(source, 'skills', 'example')]) fs.mkdirSync(folder, { recursive: true })
   fs.writeFileSync(path.join(source, 'memory', 'account.md'), '# 记忆\n用户要求保留零值。')
   fs.writeFileSync(path.join(source, 'USER.md'), '# 偏好\n用中文。')
@@ -238,6 +239,46 @@ test('IPC accepts only native-selected sources and scan IDs; cancellation leaves
   const next = call('continue', { id: result.results[0].targetId, documentIds: [] })
   assert.notEqual(next.activeConversationId, result.results[0].targetId)
   assert(!f.store.listMessages(next.activeConversationId).some(m => m.content === 'injected'))
+})
+
+test('local scan and import preserve WAL metadata when the WorkBuddy database and WAL each exceed 100 MiB', async t => {
+  const f = fixture(t, '.workbuddy')
+  const oldLimit = 100 * 1024 * 1024
+  const payloadBytes = 101 * 1024 * 1024
+  const title = '尚未写入主库的用户标题'
+  f.db.exec('CREATE TABLE cached_payloads (payload BLOB)')
+  const appendPayload = f.db.prepare('INSERT INTO cached_payloads VALUES (zeroblob(?))')
+  appendPayload.run(payloadBytes)
+  assert.equal(f.db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get().busy, 0)
+  f.db.exec('BEGIN')
+  appendPayload.run(payloadBytes)
+  f.db.prepare('UPDATE sessions SET custom_title = ? WHERE id = ?').run(title, 'session-one')
+  f.db.exec('COMMIT')
+
+  const sourceStats = () => ['workbuddy.db', 'workbuddy.db-wal', 'workbuddy.db-shm'].map(name => {
+    const { size, mtimeMs } = fs.statSync(path.join(f.source, name))
+    return { size, mtimeMs }
+  })
+  const before = sourceStats()
+  assert(before[0].size > oldLimit)
+  assert(before[1].size > oldLimit)
+
+  t.mock.method(os, 'homedir', () => f.root)
+  const handlers = {}
+  registerWorkBuddyIpc({ ipcMain: { handle: (name, handler) => handlers[name] = handler }, service: () => f.service })
+  const preview = await handlers['stable:workbuddy:scan'](null, { provider: 'workbuddy', chooseDirectory: false })
+  const session = preview.items.find(item => item.kind === 'session' && item.status === 'ready')
+  assert.equal(session?.name, title)
+  assert.equal(f.store.listConversations().length, 1)
+  assert.deepEqual(fs.readdirSync(path.join(f.service.stagingRoot, preview.token)), [session.id + '.jsonl'])
+
+  const result = await handlers['stable:workbuddy:import'](null, { token: preview.token, ids: [session.id] })
+  assert.equal(result.results.length, 1)
+  assert.equal(result.results[0].status, 'imported')
+  const id = result.results[0].targetId
+  assert.equal(f.store.conversation(id).title, title)
+  assert.equal(f.store.listMessages(id).length, 4)
+  assert.deepEqual(sourceStats(), before)
 })
 
 test('Q/A import excludes intermediate analysis and tool blocks without guessing by language', () => {

@@ -1,6 +1,6 @@
 {
   "name": "stable-desktop",
-  "version": "1.11.5",
+  "version": "1.11.6",
   "description": "Stable local agent workbench powered by Claude Agent SDK",
   "main": "desktop/main.cjs",
   "private": true,
@@ -139,11 +139,11 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.11.5"
+      "output": "release-1.11.6"
     },
     "win": {
       "icon": "build/stable_app_icon.ico",
-      "artifactName": "Stable-Setup-1.11.5-${arch}.${ext}",
+      "artifactName": "Stable-Setup-1.11.6-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -173,5 +173,5 @@
     ],
     "afterPack": "scripts/copy-bundled-skills.cjs"
   },
-  "releaseVersion": "1.11.5"
+  "releaseVersion": "1.11.6"
 }
