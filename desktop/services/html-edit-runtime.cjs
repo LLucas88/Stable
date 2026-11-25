@@ -18,6 +18,7 @@ function installHtmlEditor(config) {
   document.documentElement.setAttribute('data-stable-editing','')
   root.innerHTML=config.toolbar
   let selected=[],changes=[],history=[[]],index=0,revision=0,events=[],disposed=false,textEdit=null,drag=null,requestId=0,cropState=null,region=null,regionMode=false
+  let quitInputLock
   const touched=new Set(),contentTouched=new Set(),pending=new Map(),bar=root.querySelector('.bar'),marks=root.querySelector('.marks'),hover=root.querySelector('.hover'),marquee=root.querySelector('.marquee'),status=root.querySelector('.status'),error=root.querySelector('.error')
   const copy=value=>JSON.parse(JSON.stringify(value)),box=el=>{const r=el.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}}
   const draw=(el,r)=>Object.assign(el.style,{left:r.x+'px',top:r.y+'px',width:r.width+'px',height:r.height+'px'})
@@ -154,12 +155,32 @@ function installHtmlEditor(config) {
   function double(e){if(own(e))return;e.preventDefault();e.stopImmediatePropagation();choose(e.target);startText(e.target,e.clientX,e.clientY)}
   function down(e,fromRegion=false){if((own(e)&&!fromRegion)||textEdit?.item.el.contains(e.target)||e.button!==0)return;if(fromRegion){e.preventDefault();e.stopPropagation();e.target.setPointerCapture(e.pointerId)}drag={region:fromRegion,startX:e.clientX,startY:e.clientY,scrollX,scrollY,add:e.shiftKey,original:[...selected]}}
   function move(e){
-    if(drag?.resize){const el=drag.resize,w=Math.max(10,drag.rect.width+e.clientX-drag.startX);el.style.setProperty('width',w+'px','important');el.style.setProperty('height',w*drag.rect.height/drag.rect.width+'px','important');paint();return}
+    if(drag?.resize){const el=drag.resize,w=Math.max(10,drag.rect.width+e.clientX-drag.startX);drag.moved=true;el.style.setProperty('width',w+'px','important');el.style.setProperty('height',w*drag.rect.height/drag.rect.width+'px','important');paint();return}
     if(drag?.region){e.preventDefault();const x=e.clientX+scrollX,y=e.clientY+scrollY,sx=drag.startX+drag.scrollX,sy=drag.startY+drag.scrollY;if(Math.abs(x-sx)+Math.abs(y-sy)>5){drag.moved=true;region={x:Math.min(x,sx),y:Math.min(y,sy),width:Math.abs(x-sx),height:Math.abs(y-sy)};marquee.hidden=false;draw(marquee,regionBox())}return}
     if(drag){const y=e.clientY+scrollY-drag.scrollY;if(Math.abs(e.clientX-drag.startX)+Math.abs(y-drag.startY)>5){drag.moved=true;const r={x:Math.min(drag.startX,e.clientX),y:Math.min(drag.startY+drag.scrollY-scrollY,e.clientY),width:Math.abs(e.clientX-drag.startX),height:Math.abs(y-drag.startY)};marquee.hidden=false;draw(marquee,r);const found=[...document.body.querySelectorAll('*')].filter(el=>!['SCRIPT','STYLE','LINK','META'].includes(el.tagName)).filter(el=>{const b=box(el);return b.width&&b.height&&b.x>=r.x&&b.y>=r.y&&b.x+b.width<=r.x+r.width&&b.y+b.height<=r.y+r.height});selected=[...new Set([...(drag.add?drag.original:[]),...found.filter(el=>!found.some(p=>p!==el&&p.contains(el)))])];paint();if(e.clientY>innerHeight-40)scrollBy(0,18);if(e.clientY<40)scrollBy(0,-18)}return}
     if(!own(e)&&e.target instanceof Element){draw(hover,box(e.target));hover.hidden=false}
   }
-  function up(){if(drag?.region){const valid=drag.moved&&region?.width>=8&&region?.height>=8;drag=null;if(valid){regionMode=false;root.querySelector('.region-surface').hidden=true;paint();toggleMenu('ai');status.textContent='输入要在区域内新增的内容';root.querySelector('.notice').hidden=false}else{region=null;paint()}return}if(drag?.resize){const el=drag.resize,w=el.style.width,h=el.style.height;mutate(()=>{patch(reverse.get(el)).styles={...(patch(reverse.get(el)).styles||{}),width:w,height:h}})}const old=drag;marquee.hidden=true;setTimeout(()=>{if(drag===old)drag=null},0)}
+  function finishResize(){
+    if(!drag?.resize)return false
+    const {resize:el,moved}=drag, width=el.style.width, height=el.style.height
+    drag=null
+    if(moved)mutate(()=>{const change=patch(reverse.get(el));change.styles={...change.styles,width,height}})
+    return true
+  }
+  function up(){if(drag?.region){const valid=drag.moved&&region?.width>=8&&region?.height>=8;drag=null;if(valid){regionMode=false;root.querySelector('.region-surface').hidden=true;paint();toggleMenu('ai');status.textContent='输入要在区域内新增的内容';root.querySelector('.notice').hidden=false}else{region=null;paint()}return}if(finishResize()){marquee.hidden=true;return}const old=drag;marquee.hidden=true;setTimeout(()=>{if(drag===old)drag=null},0)}
+  function lockForQuit(){
+    if(quitInputLock)return true
+    const body=document.body,focused=root.activeElement||document.activeElement
+    quitInputLock={body,bodyInert:body.inert,toolbarInert:host.inert}
+    if(focused?.matches('[data-style]')||textEdit?.item.el.contains(focused))focused.blur()
+    body.inert=true;host.inert=true
+    return true
+  }
+  function unlockAfterQuit(){
+    if(!quitInputLock)return
+    const {body,bodyInert,toolbarInert}=quitInputLock
+    body.inert=bodyInert;host.inert=toolbarInert;quitInputLock=null
+  }
   function key(e){
     if(own(e)&&!['Escape'].includes(e.key))return
     if(e.key==='Escape'){if(regionMode||region){regionMode=false;region=null;drag=null;root.querySelector('.region-surface').hidden=true;closeMenus();status.textContent='';root.querySelector('.notice').hidden=true;paint()}else if(cropState){root.querySelector('.crop').hidden=true;cropState=null}else if(menuName){closeMenus()}else if(textEdit)finishText(true);else{selected=[];paint()}e.preventDefault();return}
@@ -177,13 +198,14 @@ function installHtmlEditor(config) {
   const onScroll=()=>{paint();hover.hidden=true};window.addEventListener('scroll',onScroll,true);window.addEventListener('resize',onScroll)
   globalThis.__stableHtmlEditor={
     read(){return{revision,changes:copy(changes),events:events.splice(0),editingText:!!textEdit,busy:!!textEdit||!!cropState||pending.size>0||!!drag||regionMode||!!region}},
-    finish(){finishText();return this.read()},
+    finish(){finishText();finishResize();return this.read()},
+    lockForQuit,unlockAfterQuit,
     status(value,problem=''){status.textContent=value;error.textContent=problem;root.querySelector('.notice').hidden=!value&&!problem},
     async capture(hidden,targets=[],area=null){if(hidden)window.scrollTo({left:scrollX,top:scrollY,behavior:'instant'});capturing=hidden;bar.hidden=hidden;marquee.hidden=hidden||!region;marks.hidden=hidden;root.querySelector('.notice').hidden=true;for(const p of root.querySelectorAll('[data-panel]'))p.hidden=true;hover.hidden=true;if(!hidden){positionBar();root.querySelector('.notice').hidden=!status.textContent&&!error.textContent}else await new Promise(resolve=>{const timer=setTimeout(resolve,250);requestAnimationFrame(()=>requestAnimationFrame(()=>{clearTimeout(timer);resolve()}))});return {width:innerWidth,height:innerHeight,regionRect:area?{x:area.rect.x-scrollX,y:area.rect.y-scrollY,width:area.rect.width,height:area.rect.height}:null,rects:targets.map(t=>{const el=document.querySelector(t.selector);return el&&el.localName===t.tag?box(el):null})}},
     restore(value){changes=copy(value);for(const p of changes){touched.add(p.id);if(p.text!==undefined||p.html!==undefined)contentTouched.add(p.id)}history=[[],copy(changes)];index=1;revision++;renderChanges()},
     resolve(id,value,problem){const callback=pending.get(id);pending.delete(id);root.querySelector('[data-action=draft]').disabled=!root.querySelector('.ai').value.trim();if(problem){message(problem);status.textContent='操作失败，可重试'}else callback?.(value)},
     choose(selector){choose(document.querySelector(selector))},run,
-    dispose(){if(disposed)return;disposed=true;finishText();for(const [name,fn]of listeners)document.removeEventListener(name,fn,true);window.removeEventListener('scroll',onScroll,true);window.removeEventListener('resize',onScroll);document.documentElement.removeAttribute('data-stable-editing');host.remove()},
+    dispose(){if(disposed)return;disposed=true;unlockAfterQuit();finishText();for(const [name,fn]of listeners)document.removeEventListener(name,fn,true);window.removeEventListener('scroll',onScroll,true);window.removeEventListener('resize',onScroll);document.documentElement.removeAttribute('data-stable-editing');host.remove()},
   }
   paint();return {mapped:items.size,total:config.nodes.length}
 }

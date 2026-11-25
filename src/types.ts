@@ -406,6 +406,7 @@ export interface ChatGPTConnectionState {
 
 export interface ModelProfile {
   authType?: 'chatgpt'
+  billingCurrency?: 'CNY' | 'USD'
   reasoningOptions?: Array<{ id: AgentCapability; label: string }>
   id: string
   providerId: string
@@ -548,20 +549,28 @@ export interface CloudQuota {
   periodEnd: string
 }
 
+export interface CloudUsageMoney {
+  actual_micros?: number
+  confirmed_micros?: number
+  uncertain_micros?: number
+}
+
 export interface CloudUsageSummary {
   accountId: string
   from: string
   to: string
-  totals: { request_count?: number; settled_count?: number; exception_count?: number; prompt_tokens?: number; completion_tokens?: number; usage_unknown_count?: number; actual_micros?: number; confirmed_micros?: number; uncertain_micros?: number }
-  byModel: Array<{ model_id: string; request_count: number; prompt_tokens: number; completion_tokens: number; actual_micros: number }>
+  totals: CloudUsageMoney & { request_count?: number; settled_count?: number; exception_count?: number; prompt_tokens?: number; completion_tokens?: number; usage_unknown_count?: number }
+  byCurrency?: Array<CloudUsageMoney & { currency: string }>
+  byModel: Array<{ model_id: string; currency?: string; request_count: number; prompt_tokens: number; completion_tokens: number; actual_micros: number }>
 }
 
 export interface CloudState {
   status: CloudStatus
   account: CloudAccount | null
   quota: CloudQuota | null
+  quotas?: CloudQuota[]
   usage: CloudUsageSummary | null
-  models: Array<{ id: string; object: 'model'; display_name?: string; provider?: string; context_window?: number; max_output_tokens?: number }>
+  models: Array<{ id: string; object: 'model'; display_name?: string; provider?: string; currency?: 'CNY' | 'USD'; context_window?: number; max_output_tokens?: number }>
   error: string
   baseURL: string
 }

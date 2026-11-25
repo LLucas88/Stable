@@ -1,15 +1,26 @@
 import { GatewayValidationError } from './gateway.ts';
-export const efforts: Record<string,string[]> = {
-  'gpt-6.1-sol':['low','medium','high','xhigh','max'],
-  'gpt-6.1-terra':['none','low','medium','high','xhigh','max'],
+// Public Responses reasoning levels, from the OpenAI API model pages and reasoning guide.
+const STANDARD_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const OPTIONAL_EFFORTS = ['none', ...STANDARD_EFFORTS] as const;
+const efforts: Readonly<Record<string, readonly string[]>> = {
+  'gpt-6.2-astra': STANDARD_EFFORTS,
+  'gpt-6.2-sol': STANDARD_EFFORTS,
+  'gpt-6.1-sol': STANDARD_EFFORTS,
+  'gpt-6.1-terra': OPTIONAL_EFFORTS,
+  'gpt-6-astra': STANDARD_EFFORTS,
+  'gpt-6-sol': OPTIONAL_EFFORTS,
+  'gpt-6-luna': OPTIONAL_EFFORTS,
 };
+export function supportsOpenAIResponses(model: unknown): model is string {
+  return typeof model === 'string' && Object.hasOwn(efforts, model);
+}
 function invalid(message:string):never { throw new GatewayValidationError('invalid_responses_request',message); }
 export function assertResponsesBody(value:unknown):asserts value is Record<string,unknown> {
   if (!value || typeof value!=='object' || Array.isArray(value)) invalid('请求必须是对象。');
   const b=value as Record<string,any>;
   const allowed=['model','input','tools','tool_choice','parallel_tool_calls','reasoning','text','max_output_tokens','stream','store','include'];
   if(Object.keys(b).some(k=>!allowed.includes(k))) invalid('不支持该 Responses 参数。');
-  if(!Object.hasOwn(efforts,b.model)) invalid('未开放此 Responses 模型。');
+  if(!supportsOpenAIResponses(b.model)) invalid('未开放此 Responses 模型。');
   if(b.store!==false || (b.stream!==undefined && typeof b.stream!=='boolean')) invalid('需要 store:false。');
   if(!Number.isSafeInteger(b.max_output_tokens)||b.max_output_tokens<1||b.max_output_tokens>128000) invalid('最大输出须为 1–128000。');
   if(b.reasoning && (typeof b.reasoning!=='object'||Object.keys(b.reasoning).some(k=>k!=='effort')||!efforts[b.model].includes(b.reasoning.effort))) invalid('模型不支持此思考深度。');

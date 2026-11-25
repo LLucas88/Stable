@@ -114,7 +114,7 @@ async function drive(window) {
   await evaluate(`document.querySelector('input[value="${selected.id}"]').click()`)
   await until(() => evaluate(`(async()=>{const b=await window.stable.bootstrap();return b.conversations.find(c=>c.id===${JSON.stringify(conversationId)})?.modelId===${JSON.stringify(selected.id)}})()`))
   await new Promise(resolve => { window.webContents.once('did-finish-load', resolve); window.webContents.reload() })
-  await until(() => evaluate(`document.querySelector('.model-menu summary')?.textContent.includes('CHATGPT')`))
+  await until(() => evaluate(`document.querySelector('.model-menu summary')?.textContent.includes('ChatGPT')`))
   report.checks.push('main_chat_model_selection_persisted')
   if (process.argv.includes('--restore-only')) { report.checks.push('restart_restored_encrypted_login'); console.log('CHATGPT_RESTART_OK'); finish(0); return }
   await evaluate(`window.__chatgptEvents=[];window.stable.agent.onEvent(event=>{window.__chatgptEvents.push(event);if(event.kind==='approval'&&event.status==='running')void window.stable.agent.answerApproval(${JSON.stringify(conversationId)},event.requestId,false)});void 0`)

@@ -104,6 +104,41 @@ test('native command outputs are readable across resume but never grant other se
   assert.equal(approvals,0);assert.equal(fs.readFileSync(output,'utf8'),'output')
 })
 
+test('an approved Bash result grants only its own verified output in the current project', async t => {
+  const x = fixture(t)
+  const home = path.join(x.root, 'sdk-home')
+  const project = path.join(home, 'projects', 'current-project')
+  const outputDirectory = path.join(project, 'transient-output-id', 'tool-results')
+  fs.mkdirSync(outputDirectory, { recursive: true })
+  const output = path.join(outputDirectory, 'result.txt')
+  const sibling = path.join(outputDirectory, 'unrelated.txt')
+  const otherProject = path.join(home, 'projects', 'other-project', 'other-session', 'tool-results', 'result.txt')
+  fs.mkdirSync(path.dirname(otherProject), { recursive: true })
+  for (const file of [output, sibling, otherProject]) fs.writeFileSync(file, 'fixture')
+  const guard = createNativeToolGuard({ workspace: x.workspace, runtimeHome: home, runtimeSessionId: 'active-session',
+    networkAccess: true, requestApproval: async () => true })
+  let nextId = 0
+  const pre = (name, tool_input, tool_use_id = 'file-' + (++nextId)) => guard.preToolUse({ tool_use_id, tool_name: name, tool_input })
+  const publishResult = (id, tool_response) => guard.postToolUse({ tool_use_id: id, tool_name: 'Bash',
+    transcript_path: path.join(project, 'active-session.jsonl'), tool_response })
+
+  assert.equal(decision(await pre('Read', { file_path: output })), 'deny')
+  await publishResult('unknown-bash', { persistedOutputPath: sibling })
+  assert.equal(decision(await pre('Bash', { command: 'printf fixture' }, 'outside-bash')), 'allow')
+  await publishResult('outside-bash', { persistedOutputPath: otherProject, stdout: 'Full output saved to: ' + sibling })
+  assert.equal(decision(await pre('Bash', { command: 'printf fixture' }, 'approved-bash')), 'allow')
+  await publishResult('approved-bash', { persistedOutputPath: output })
+  assert.equal(decision(await pre('Read', { file_path: output, offset: 1 })), 'allow')
+  assert.equal(decision(await pre('Grep', { path: output, pattern: 'fixture' })), 'allow')
+  for (const file of [sibling, otherProject]) assert.equal(decision(await pre('Read', { file_path: file })), 'deny')
+  assert.equal(decision(await pre('Write', { file_path: output, content: 'overwrite' })), 'deny')
+  assert.equal(decision(await pre('Glob', { path: outputDirectory, pattern: '*.txt' })), 'deny')
+
+  fs.unlinkSync(output)
+  fs.linkSync(sibling, output)
+  assert.equal(decision(await pre('Read', { file_path: output })), 'deny')
+})
+
 test('native WebFetch preserves long-page offsets and requires approval even in read-only mode', async t => {
   const x = fixture(t, { networkAccess: true, sandboxMode: 'read-only' })
   assert(x.guard.tools.includes('WebFetch'))

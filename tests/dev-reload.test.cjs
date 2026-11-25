@@ -147,3 +147,76 @@ test('a task becoming busy during applying IPC prevents exit and consumes the ma
   busy=false;await service.attempt();assert.equal(restarts,0)
  }finally{service.dispose()}
 })
+
+test('manual restart waits for the editor check and a cancelled check consumes the click',async()=>{
+ let release,restarts=0,checks=0
+ const prepared=[],events=[]
+ const service=createDevReload({
+  prepare:async action=>prepared.push(action),reload:()=>{},restart:()=>restarts++,
+  send:message=>{events.push(message);return true},
+  withRestart:async commit=>{if(++checks===1)return new Promise(resolve=>release=()=>resolve(false));return commit()},
+ })
+ try {
+  service.receive({type:'stable:dev:change',id:1,action:'restart'})
+  const applying=service.apply(1)
+  await tick()
+  assert.deepEqual(prepared,['restart','restart','restart'])
+  assert.equal(restarts,0)
+  assert.equal(events.at(-1).type,'stable:dev:applying')
+  release()
+  const cancelled=await applying
+  assert.equal(cancelled.action,'restart')
+  assert.equal(cancelled.applying,false)
+  assert.match(cancelled.message,/重启已取消/)
+  assert.equal(events.at(-1).type,'stable:dev:waiting')
+  assert.equal(events.at(-1).id,1)
+  await service.attempt()
+  assert.equal(restarts,0)
+  assert.equal(checks,1)
+  await service.apply(1)
+  assert.equal(restarts,1)
+  assert.equal(events.at(-1).type,'stable:dev:applied')
+ } finally {service.dispose()}
+})
+
+test('a newer source change during editor readiness invalidates the restart callback',async()=>{
+ let release,restarts=0,checks=0
+ const events=[]
+ const service=createDevReload({
+  prepare:async()=>{},reload:()=>{},restart:()=>restarts++,
+  send:message=>{events.push(message);return true},
+  withRestart:async commit=>{if(++checks===1)await new Promise(resolve=>release=resolve);return commit()},
+ })
+ try {
+  service.receive({type:'stable:dev:change',id:1,action:'restart'})
+  const applying=service.apply(1)
+  await tick()
+  service.receive({type:'stable:dev:change',id:2,action:'restart',message:'新的源码更新'})
+  release()
+  await applying
+  assert.equal(restarts,0)
+  assert.equal(service.state().revision,2)
+  assert.equal(service.state().message,'新的源码更新')
+  assert.equal(events.at(-1).type,'stable:dev:waiting')
+  assert.equal(events.at(-1).id,1)
+  await service.attempt()
+  assert.equal(restarts,0)
+  await service.apply(2)
+  assert.equal(restarts,1)
+ } finally {service.dispose()}
+})
+
+test('an automatic renderer refresh never enters the restart confirmation',async()=>{
+ const prepared=[]
+ let reloads=0
+ const service=createDevReload({
+  prepare:async action=>prepared.push(action),reload:()=>reloads++,restart:()=>assert.fail('reload triggered restart'),
+  send:()=>true,withRestart:()=>assert.fail('reload opened restart confirmation'),
+ })
+ try {
+  service.receive({type:'stable:dev:change',id:1,action:'reload'})
+  await tick()
+  assert.deepEqual(prepared,['reload','reload'])
+  assert.equal(reloads,1)
+ } finally {service.dispose()}
+})

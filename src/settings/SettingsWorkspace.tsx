@@ -3,7 +3,7 @@ import { ModelConnectionSettings } from '../ModelConnectionSettings'
 import { DataImport } from '../imports/DataImport'
 import { useEffect, useRef, useState } from 'react'
 import { Settings, ArrowUp, Check, CircleAlert, Download, FolderInput, Home, LoaderCircle, LogOut, MessageSquareText, Moon, Network, Save, RotateCw, Shield, ShieldCheck, Sun, Search } from 'lucide-react'
-import type { AgentState, BootstrapData, GlobalInstructionsFile, ThemeMode } from '../types'
+import type { AgentState, BootstrapData, CloudQuota, GlobalInstructionsFile, ThemeMode } from '../types'
 import { errorMessage } from '../shared/format'
 import { UpdateRecovery } from './SupportActions'
 export type AccountModuleId = 'appearance' | 'account' | 'updates' | 'agent-history' | 'models' | 'workbuddy'
@@ -118,28 +118,46 @@ function formatCloudMoney(micros: number, currency = 'CNY') {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(micros || 0) / 1_000_000)
 }
 
+function cloudCurrencyLabel(currency: string) {
+  return currency === 'CNY' ? '人民币' : currency === 'USD' ? '美元' : currency
+}
+
+function CloudQuotaCard({ quota, label }: { quota: CloudQuota; label: string }) {
+  const committed = quota.spentMicros + quota.reservedMicros
+  const percent = quota.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
+  return <article className="cloud-quota-card" data-currency={quota.currency}>
+    <div><span>{label}</span><strong>{formatCloudMoney(committed, quota.currency)} / {formatCloudMoney(quota.limitMicros, quota.currency)}</strong></div>
+    <div className="cloud-quota-track" role="progressbar" aria-label={`${label}使用比例`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>
+    <div className="cloud-quota-meta"><span>剩余 {formatCloudMoney(quota.remainingMicros, quota.currency)}</span><span>截止 {new Date(quota.periodEnd).toLocaleDateString('zh-CN')}</span></div>
+  </article>
+}
+
 function CloudAccountModule({ state, replaceState, action, onOpenUpdates }: { state: BootstrapData; replaceState: (state: BootstrapData) => void; action: (label: string, run: () => Promise<void>) => Promise<void>; onOpenUpdates: () => void }) {
-  const account = state.cloud.account
-  const quota = state.cloud.quota
-  const usage = state.cloud.usage?.totals
+  const { account, quota, quotas, usage } = state.cloud
   if (cloudAccessHint(state.cloud.status)) return <CloudAccessSettings state={state} onComplete={replaceState} onOpenUpdates={onOpenUpdates} />
   if (!account) return <div className="account-module-empty"><Shield size={22} aria-hidden="true" /><strong>本地直连模式</strong><span>无需 Stable Cloud 登录。模型连接在设置中配置，用量与额度由模型供应商管理。</span></div>
-  const committed = quota ? quota.spentMicros + quota.reservedMicros : 0
-  const percent = quota?.limitMicros ? Math.min(100, Math.round((committed / quota.limitMicros) * 100)) : 0
+  const balances = quotas ?? (quota ? [quota] : [])
+  const totals = usage?.totals
+  const spending = usage?.byCurrency ?? [{ ...totals, currency: quota?.currency || 'CNY' }]
   return <section className="cloud-account-settings account-module">
     <div className="cloud-account-grid">
       <article className="cloud-account-identity"><span className="cloud-account-avatar" aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{account.displayName}</strong><span>{account.username} · {account.role === 'admin' ? '管理员' : '成员'}</span></div><em><ShieldCheck size={13} aria-hidden="true" />已登录</em></article>
-      <article className="cloud-quota-card">
-        <div><span>本期额度</span><strong>{quota ? `${formatCloudMoney(committed, quota.currency)} / ${formatCloudMoney(quota.limitMicros, quota.currency)}` : '未分配'}</strong></div>
-        {quota && <><div className="cloud-quota-track" role="progressbar" aria-label="本期额度使用比例" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div className="cloud-quota-meta"><span>剩余 {formatCloudMoney(quota.remainingMicros, quota.currency)}</span><span>截止 {new Date(quota.periodEnd).toLocaleDateString('zh-CN')}</span></div></>}
-      </article>
+      {balances.length ? balances.map(item => <CloudQuotaCard key={item.id} quota={item} label={quotas ? `${cloudCurrencyLabel(item.currency)}本期额度` : '本期额度'} />)
+        : <article className="cloud-quota-card"><div><span>本期额度</span><strong>未分配</strong></div></article>}
     </div>
-    <div className="cloud-usage-grid" aria-label="近 30 天模型用量">
-      <div><span>模型请求</span><strong>{Number(usage?.request_count || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>输入 Token</span><strong>{Number(usage?.prompt_tokens || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>输出 Token</span><strong>{Number(usage?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
-      <div><span>{typeof usage?.confirmed_micros === 'number' ? '已确认消费' : '账面用量（含待核对）'}</span><strong>{formatCloudMoney(Number(usage?.confirmed_micros ?? usage?.actual_micros ?? 0), quota?.currency || 'CNY')}</strong></div>
-      <div><span>待核对额度</span><strong>{typeof usage?.uncertain_micros === 'number' ? formatCloudMoney(usage.uncertain_micros, quota?.currency || 'CNY') : '旧网关暂未提供'}</strong></div>
+    <div role="group" aria-label="近 30 天模型用量">
+      <div className="cloud-usage-grid">
+        <div><span>模型请求</span><strong>{Number(totals?.request_count || 0).toLocaleString('zh-CN')}</strong></div>
+        <div><span>输入 Token</span><strong>{Number(totals?.prompt_tokens || 0).toLocaleString('zh-CN')}</strong></div>
+        <div><span>输出 Token</span><strong>{Number(totals?.completion_tokens || 0).toLocaleString('zh-CN')}</strong></div>
+      </div>
+      {spending.map(item => {
+        const currency = quotas || usage?.byCurrency ? `${cloudCurrencyLabel(item.currency)} ` : ''
+        return <div className="cloud-usage-grid" data-currency={item.currency} key={item.currency}>
+          <div><span>{currency}{typeof item.confirmed_micros === 'number' ? '已确认消费' : '账面用量（含待核对）'}</span><strong>{formatCloudMoney(item.confirmed_micros ?? item.actual_micros ?? 0, item.currency)}</strong></div>
+          <div><span>{currency}待核对额度</span><strong>{typeof item.uncertain_micros === 'number' ? formatCloudMoney(item.uncertain_micros, item.currency) : '旧网关暂未提供'}</strong></div>
+        </div>
+      })}
     </div>
     <div className="account-module-actions"><button className="button" type="button" onClick={() => void action('正在刷新账号数据', async () => replaceState(await window.stable.cloud.refresh()))}><RotateCw size={15} aria-hidden="true" />刷新账号</button><button className="text-button account-logout" type="button" onClick={() => void action('正在退出云端账号', async () => replaceState(await window.stable.cloud.logout()))}><LogOut size={15} aria-hidden="true" />退出账号</button></div>
   </section>

@@ -193,8 +193,54 @@ html[data-theme="dark"] .market-avatar[data-tone] { background: color-mix(in srg
 
 /* More space around the conversation; keep line height and font size intact. */
 .conversation .conversation-topbar { padding-inline:calc(var(--space-md) * 2); }
-.conversation .message-scroll { padding-block:calc(var(--space-xl) * 2) calc(var(--space-2xl) * 2); }
-.conversation .composer { padding-block:calc(var(--space-sm) * 2) var(--space-md); }
+.conversation .message-scroll { padding-block:calc(var(--space-xl) * 2) var(--space-sm); }
+.conversation .composer { padding-block:0 var(--space-md); }
+.conversation[data-empty="true"] .composer { padding-block-start:calc(var(--space-sm) * 2); }
+
+/* Let history scroll under the header while keeping the composer in its own row. */
+@supports (backdrop-filter: blur(1px)) {
+  @media (forced-colors: none) and (prefers-reduced-transparency: no-preference) {
+    .conversation:not([data-empty="true"]) {
+      --conversation-header-size: 3.25rem;
+    }
+    .conversation:not([data-empty="true"]) > .conversation-topbar {
+      grid-area: 1 / 1;
+      position: relative;
+      z-index: 2;
+      background: transparent;
+    }
+    .conversation:not([data-empty="true"]) > .message-scroll {
+      grid-area: 1 / 1 / 3 / 2;
+      position: relative;
+      z-index: 0;
+      padding-block-start: calc(var(--conversation-header-size) + var(--space-xl) * 2);
+      scroll-padding-block-start: var(--conversation-header-size);
+      mask-image: none;
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+    .conversation:not([data-empty="true"]) > .message-scroll::-webkit-scrollbar-track {
+      margin-block-start: var(--conversation-header-size);
+    }
+    .conversation:not([data-empty="true"]) > .composer {
+      grid-area: 3 / 1;
+      z-index: 1;
+    }
+    .conversation:not([data-empty="true"]) > .conversation-topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background: color-mix(in srgb, var(--color-paper) 78%, transparent);
+      backdrop-filter: blur(9px);
+    }
+  }
+  @media (min-width: 60.001rem) and (forced-colors: none) and (prefers-reduced-transparency: no-preference) {
+    .conversation:not([data-empty="true"]) { --conversation-header-size: 60px; }
+  }
+}
+
 .plugin-skill-list { display: grid; gap: 12px; }
 .plugin-skill-list article { display: flex; align-items: center; gap: 20px; padding: 16px; border-radius: 16px; background: var(--surface-hover, #f6f6f6); }
 .plugin-skill-list article > div { flex: 1; min-width: 0; }

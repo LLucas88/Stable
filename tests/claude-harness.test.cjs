@@ -285,6 +285,7 @@ test('external config requires opt-in and activation approval; revoked config re
   assert.equal(approvals, 1)
   assert.equal(sdk.captures[1].parameters.options.resume, undefined)
   assert(sdk.captures[1].parameters.options.mcpServers.reports)
+  assert.equal(sdk.captures[1].parameters.options.mcpServersDelivery, 'initialize')
   assert.deepEqual(sdk.captures[1].parameters.options.allowedTools, ['mcp__stable__*'])
   assert(events.some(event => event.id === 'runtime-info' && event.detail.includes('2.1.304')))
   value.enabled = false; fs.writeFileSync(file, JSON.stringify(value))

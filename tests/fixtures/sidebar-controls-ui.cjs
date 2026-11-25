@@ -49,7 +49,7 @@ async function main() {
     const reactRoot=createRoot(document.getElementById('root'));reactRoot.render(<Test/>);
   `, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, format: 'iife', loader: { '.svg': 'dataurl', '.png': 'dataurl', '.mp4': 'dataurl', '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'test-export', setup(build) { build.onLoad({ filter: /[\\/]src[\\/]App\.tsx$/ }, () => ({ contents: source, loader: 'tsx', resolveDir: path.join(root, 'src') })) } }] })).outputFiles[0].text
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail side-rail"><div id="tasks" class="rail-conversation-tasks-slot"></div><div id="settings" style="display:contents"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>'))
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'design-activity.css', 'conversation-tools.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.main-frame > #root{background:var(--color-paper)}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 350))
@@ -71,17 +71,49 @@ async function main() {
     expect(!document.querySelector('.account-menu-popover')&&document.activeElement===trigger,'Settings Escape/focus broken');
     const scroll=document.querySelector('.message-scroll');
     scroll.scrollTop=0;scroll.dispatchEvent(new Event('scroll'));await tick();
-    expect(scroll.dataset.fadeTop==='false'&&scroll.dataset.fadeBottom==='true','Top-of-history fade state incorrect');
+    expect(scroll.dataset.fadeTop==='false','Top-of-history fade state incorrect');
     scroll.scrollTop=(scroll.scrollHeight-scroll.clientHeight)/2;scroll.dispatchEvent(new Event('scroll'));await tick();
-    expect(scroll.dataset.fadeTop==='true'&&scroll.dataset.fadeBottom==='true','Middle-of-history fades missing');
-    expect(getComputedStyle(scroll).maskImage.includes('24px')&&getComputedStyle(scroll).maskImage.includes('28px'),'Narrow fade mask missing');
-    const rect=scroll.getBoundingClientRect();expect(scroll.contains(document.elementFromPoint(rect.left+60,rect.top+12)),'Fade intercepts pointer');
+    expect(scroll.dataset.fadeTop==='true','Top fade missing after scrolling');
+    const rect=scroll.getBoundingClientRect(),scrollStyle=getComputedStyle(scroll);
+    const glass=CSS.supports('backdrop-filter','blur(1px)')&&matchMedia('(forced-colors: none) and (prefers-reduced-transparency: no-preference)').matches;
+    const header=scroll.previousElementSibling,composer=scroll.parentElement.querySelector(':scope > .composer');
+    const checkComposer=()=>{
+      const decoration=getComputedStyle(composer,'::before');
+      expect(decoration.content==='none'&&decoration.backdropFilter==='none'&&decoration.maskImage==='none','Composer retains a decorative overlay');
+      expect(Math.abs(rect.bottom-composer.getBoundingClientRect().top)<2,'History scrolls under the composer');
+      expect(Math.abs(rect.bottom-composer.querySelector('.composer-box').getBoundingClientRect().top)<2,'Blank strip remains above the composer');
+    };
+    const checkGlass=()=>{
+      const headerRect=header.getBoundingClientRect(),top=getComputedStyle(header,'::before');
+      expect(scrollStyle.maskImage==='none','Legacy scroll mask hides the glass backdrop');
+      expect(rect.top<headerRect.bottom&&Math.abs(rect.top+parseFloat(scrollStyle.scrollPaddingBlockStart)-headerRect.bottom)<2,'Header glass does not overlap the scroller at its visible inset '+JSON.stringify({scrollTop:rect.top,headerBottom:headerRect.bottom,padding:scrollStyle.scrollPaddingBlockStart}));
+      expect(top.backdropFilter.includes('blur('),'Header lacks glass blur');
+      expect(top.pointerEvents==='none','Header glass intercepts pointer input');
+      expect(scroll.contains(document.elementFromPoint(rect.left+60,headerRect.bottom+12)),'Header glass obstructs readable history');
+      const tools=header.querySelector('.conversation-tools-trigger'),button=tools.getBoundingClientRect();
+      expect(tools.contains(document.elementFromPoint(button.left+button.width/2,button.top+button.height/2)),'Glass obstructs conversation tools');
+      const toBottom=composer.querySelector('.conversation-bottom'),arrow=toBottom.getBoundingClientRect();
+      expect(toBottom.contains(document.elementFromPoint(arrow.left+arrow.width/2,arrow.top+arrow.height/2)),'Glass obstructs the return-to-bottom button');
+    };
+    checkComposer();
+    if(glass)checkGlass();
+    else {
+      expect(scrollStyle.maskImage.endsWith('24px)'),'Fallback fade must affect only the top edge');
+      expect(scroll.contains(document.elementFromPoint(rect.left+60,rect.top+12)),'Fallback fade intercepts pointer');
+    }
     document.documentElement.dataset.theme='dark';await tick();expect(getComputedStyle(title).maskImage.includes('linear-gradient'),'Dark theme title mask missing');
+    checkComposer();
+    if(glass)checkGlass();
   })()`)
   fs.writeFileSync(path.join(output,'fades-dark.png'),(await win.webContents.capturePage()).toPNG())
   await win.webContents.executeJavaScript(`document.documentElement.dataset.theme='light'`)
   fs.writeFileSync(path.join(output,'fades-light.png'),(await win.webContents.capturePage()).toPNG())
-  await win.webContents.executeJavaScript(`(async()=>{const scroll=document.querySelector('.message-scroll');scroll.scrollTop=scroll.scrollHeight;scroll.dispatchEvent(new Event('scroll'));await new Promise(r=>setTimeout(r,100));if(scroll.dataset.fadeBottom!=='false'||scroll.dataset.fadeTop!=='true')throw Error('Bottom fade should clear at latest message');})()`)
+  await win.webContents.executeJavaScript(`(async()=>{
+    const scroll=document.querySelector('.message-scroll');document.querySelector('.conversation-bottom').click();await new Promise(r=>setTimeout(r,100));
+    if(Math.abs(scroll.scrollHeight-scroll.clientHeight-scroll.scrollTop)>1||document.querySelector('.conversation-bottom'))throw Error('Return to bottom did not reach the latest message');
+    const gap=scroll.getBoundingClientRect().bottom-scroll.querySelector('.assistant-turn').getBoundingClientRect().bottom;
+    if(gap<0||gap>16)throw Error('Last answer is clipped or leaves excess space above the composer: '+gap);
+  })()`)
   // Force a CSS hover in this isolated renderer, without moving the user's mouse.
   await new Promise(resolve => setTimeout(resolve, 200))
   win.webContents.debugger.attach('1.3')
@@ -135,7 +167,7 @@ async function main() {
     expect(document.querySelector('.conversation-tools-trigger')?.textContent.trim()==='' ,'Conversation tools button must be icon only');expect(!document.querySelector('.conversation-section-head').textContent.includes('归档'),'Archive button remains');
     expect(!document.querySelector('.recent-heading .sidebar-project-more'),'Recent ellipsis should not exist');
     click('.recent-toggle');await tick();expect(!document.querySelector('.recent-conversations'),'Recent collapse failed');expect(document.querySelector('[data-conversation-id="pc"]'),'Collapse hid project tasks');
-    click('.recent-new');await tick();expect(window.newCount===1&&document.querySelector('.recent-conversations'),'New conversation did not expand recents');expect(document.querySelector('.message-scroll').dataset.fadeTop==='false'&&document.querySelector('.message-scroll').dataset.fadeBottom==='false','Empty conversation retained fade');
+    click('.recent-new');await tick();expect(window.newCount===1&&document.querySelector('.recent-conversations'),'New conversation did not expand recents');expect(document.querySelector('.message-scroll').dataset.fadeTop==='false','Empty conversation retained fade');
     click('[aria-label="更多操作 来源对话"]');await tick();
     const anchor=document.querySelector('[aria-label="更多操作 来源对话"]'),menu=document.querySelector('.sidebar-action-menu');
     expect(menu.getBoundingClientRect().left>=anchor.getBoundingClientRect().right,'Task menu did not open to the right');expect(menu.getBoundingClientRect().bottom<=innerHeight,'Menu outside screen');expect(!document.querySelector('.rail').contains(menu),'Menu remains inside clipped sidebar');

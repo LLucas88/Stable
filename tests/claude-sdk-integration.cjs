@@ -487,6 +487,68 @@ test('real SDK Stop returns unfinished review to the same run and review complet
   assert.equal(captures, 1)
 })
 
+test('real SDK browser review completes after a verified check supersedes its unbound duplicate', { timeout: 45000 }, async t => {
+  const { deliveryRequest, runWithDeliveryChecks } = require('../desktop/services/delivery.cjs')
+  const browserTool = 'mcp__stable__stable_browser'
+  const check = '附录图片嵌入与桌面对齐'
+  const prompt = '请检查附录图片与桌面对齐，并生成 HTML 文件。'
+  const browser = (id, input) => upstream({ calls: [{ id, name: browserTool, input }] })
+  const review = (id, update, tabId) => browser(id, {
+    action: 'review', ...(tabId ? { tabId } : {}), reviewUpdates: [{ check, ...update }],
+  })
+  let fixtureError, evidenceId, audits = 0
+  const { workspace, runner, requests } = fixture(t, (body, number) => {
+    try {
+      if (number === 1) return upstream({ calls: [
+        { id: 'discover-review-browser', name: 'ToolSearch', input: { query: 'select:' + browserTool, max_results: 1 } },
+      ] })
+      if (number === 2) return review('review-unbound', { status: 'open', note: '先记录需验证的桌面布局' })
+      if (number === 3) return browser('review-audit', { action: 'audit', tabId: 'fixture' })
+      if (number === 4) {
+        const { reviewNotebook } = JSON.parse(toolResult(body, 'review-audit').split('\n\n')[0])
+        const observation = reviewNotebook.evidence.at(-1)
+        assert.equal(observation.tabId, 'fixture')
+        evidenceId = observation.id
+        return review('review-verified', { status: 'passed', evidenceId, note: '当前桌面对齐实测通过' }, observation.tabId)
+      }
+      if (number === 5) return review('review-unbound-missing-proof', { status: 'passed', note: '旧检查未传入证据' }, 'unknown')
+      if (number === 6) return review('review-unbound-duplicate', { status: 'blocked', note: '重复记录，早期未绑定标签' }, 'unknown')
+      assert.equal(number, 7)
+      const { reviewNotebook } = JSON.parse(toolResult(body, 'review-unbound-duplicate').split('\n\n')[0])
+      const verified = reviewNotebook.checks.find(entry => entry.check === check && entry.tabId === 'fixture')
+      assert.equal(verified?.status, 'passed')
+      assert.equal(verified.evidenceId, evidenceId)
+      assert.equal(reviewNotebook.checks.length, 1)
+      fs.writeFileSync(report, '<!doctype html><title>Checked layout</title>')
+      return upstream({ text: '桌面对齐已核验。\n' + report })
+    } catch (error) {
+      fixtureError = error
+      return upstream({ text: '[[STABLE_WAITING_FOR_INPUT]]' })
+    }
+  }, { builtinTools: () => ({
+    execute: async ({ args }) => {
+      assert.equal(args.action, 'audit')
+      audits++
+      return { tabId: 'fixture', epoch: 1, viewport: { width: 1440, height: 900 } }
+    },
+    cancel() {}, dispose() {},
+  }) })
+
+  const report = path.join(workspace, 'checked-report.html')
+  const result = await runWithDeliveryChecks({
+    workspace, prompt, delivery: deliveryRequest(prompt),
+    execute: task => runner.run(task, model, credential, 35000, undefined, 'workspace-write', [], { cwd: workspace }),
+    getExecutionOutcome: () => runner.lastOutcome,
+  })
+  assert.ifError(fixtureError)
+  assert.equal(result.status, 'completed')
+  assert.equal(runner.lastOutcome.status, 'completed')
+  assert.equal(result.answer, '桌面对齐已核验。\n' + report)
+  assert.deepEqual(result.artifacts, [report])
+  assert.equal(audits, 1)
+  assert.equal(requests.length, 7)
+})
+
 test('real SDK browser evidence survives MCP and can be read by the native image tool', { timeout: 45000 }, async t => {
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='
   let evidencePath, evidenceId, captures = 0, failure

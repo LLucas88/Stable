@@ -41,7 +41,7 @@ import type { AnswerChapter } from './types'
 import { useConversationScroll } from './use-conversation-scroll'
 import { memo, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, Palette, Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
+import { Bell, Palette, Globe, Gift, ArrowLeft, ArrowRight, ArrowUp, AtSign, BookOpenText, Bot, Box, Braces, BriefcaseBusiness, Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Database, Download, ExternalLink, FilePlus2, FileText, FileSpreadsheet, FlaskConical, FolderInput, FolderClosed, FolderOpen, Home, Library, ListTree, Image as ImageIcon, Laptop2, LoaderCircle, MessageSquareText, Minus, MoreHorizontal, SquarePen, Network, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Share2, Shield, ShieldCheck, ShieldAlert, TriangleAlert, Info, Sparkles, Trash2, Search, UsersRound, Wallet, Wifi, Workflow, Wrench, Terminal, X } from 'lucide-react'
 import logoUrl from '../build/stable_logo_transparent.png'
 import conversationStartAnimationUrl from './assets/bloub-2.mp4'
 import { ReportPage } from './ReportPage'
@@ -974,6 +974,7 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
   const activePermission = PERMISSION_OPTIONS.find((item) => item.id === activeConversation?.permissionMode) || PERMISSION_OPTIONS[0]
   const defaultModel = state.models.items.find((item) => item.id === state.models.defaultModelId) || state.models.items[0]
   const activeModel = state.models.items.find((item) => item.id === activeConversation?.modelId) || (activeConversation?.modelId?.startsWith('chatgpt:') ? { id: activeConversation.modelId, providerId: 'chatgpt', displayName: 'ChatGPT（请重新登录）', model: activeConversation.modelId.split(':').at(-1) || '', baseURL: 'https://api.openai.com/v1', hasApiKey: false, reasoningOptions: [] } : defaultModel)
+  const activeModelName = activeModel?.displayName || ''
   const latestMessage = state.messages.at(-1)
   const prediction = useMessagePrediction({
     conversationId: state.activeConversationId, messageId: latestMessage?.id, modelId: activeModel?.id,
@@ -1708,20 +1709,23 @@ function AgentPage({ onOpenAccount, onDraftsChange, active, state, prefill, cons
               {!imageMode && <ContextUsageButton key={state.activeConversationId + ':' + activeModel?.id} conversationId={state.activeConversationId} modelId={activeModel?.id} running={running} />}
               {!designMode && <div className="model-effort-control">
               <details className="composer-menu model-menu capability-menu" ref={modelMenuRef} onToggle={event=>{if(!event.currentTarget.open)setShowModelList(false)}}>
-                <summary aria-label={`模型与思考强度：${activeModel?.displayName.toUpperCase() || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}>{activeModel && <ModelProviderIcon model={activeModel} />}<span>{activeModel?.displayName.toUpperCase() || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
+                <summary aria-label={`模型与思考强度：${activeModelName || '尚未配置'} ${capabilityOptions.length ? activeCapability.label : ''}`}>{activeModel && <ModelProviderIcon model={activeModel} />}<span>{activeModelName || '配置模型'}</span>{capabilityOptions.length > 0 && <span className="current-effort">{activeCapability.label}</span>}<ChevronDown size={14} aria-hidden="true"/></summary>
                 <div className="composer-popover model-popover effort-popover" data-models={showModelList || undefined} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();if(showModelList)setShowModelList(false);else if(modelMenuRef.current)modelMenuRef.current.open=false;modelMenuRef.current?.querySelector<HTMLElement>('summary')?.focus()}}}>
                   {showModelList ? <><button type="button" className="effort-back" aria-label="返回思考强度" title="返回" onClick={()=>setShowModelList(false)}><ArrowLeft size={14}/></button>
                   {state.models.items.length ? <div className="model-options-scroll"><fieldset className="model-options"><legend className="sr-only">当前对话使用的模型</legend>{state.models.items.map((item) => {
                     const selected = item.id === activeModel?.id
+                    const balance = item.billingCurrency === 'USD' ? '美元额度' : item.billingCurrency === 'CNY' ? '人民币额度' : '免费使用'
+                    const badgeLabel = item.providerId === 'chatgpt' ? '订阅额度' : balance
+                    const BadgeIcon = item.billingCurrency ? Wallet : Gift
                     return <label className="model-option" data-active={selected || undefined} key={item.id}>
                       <input type="radio" name={`conversation-model-${activeConversation.id}`} value={item.id} checked={selected} disabled={switchingModel} onChange={() => configureModel(item.id)} />
                       <ModelProviderIcon model={item} />
-                      <span className="model-option-copy"><strong>{item.displayName.toUpperCase()}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}<span className="model-free-badge"><Gift size={12} aria-hidden="true" />{item.providerId === 'chatgpt' ? '订阅额度' : '免费使用'}</span>{['glm-5.3-flashx', 'deepseek-flash', 'glm-5.3-flash'].includes(item.model.toLowerCase()) && <span className="model-recommended-badge">推荐</span>}</span>
+                      <span className="model-option-copy"><strong>{item.displayName}</strong>{item.model.toLowerCase() === 'deepseek-flash' && <small className="model-version-label">4.1</small>}<span className="model-free-badge"><BadgeIcon size={12} aria-hidden="true" />{badgeLabel}</span>{['glm-5.3-flashx', 'deepseek-flash', 'glm-5.3-flash'].includes(item.model.toLowerCase()) && <span className="model-recommended-badge">推荐</span>}</span>
                       <span className="model-option-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
                     </label>
                   })}</fieldset></div> : <p className="composer-menu-empty">{cloudAccessHint(state.cloud.status) ? <>登录后可选择云端模型。<button type="button" className="text-button" onClick={onOpenAccount}>账号设置</button></> : '还没有可用模型，请先在设置页添加。'}</p>}
 
-                  </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModel?.displayName.toUpperCase() || ''} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
+                  </> : <EffortSlider key={state.activeConversationId+':'+activeModel?.id} options={capabilityOptions} value={activeCapability.id as AgentCapability} model={activeModelName} onChange={value=>configure(value, [])} onModels={()=>setShowModelList(true)}/>}
                 </div>
               </details>
               </div>}

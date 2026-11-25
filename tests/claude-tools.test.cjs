@@ -325,6 +325,74 @@ test('read-only review accepts real inline evidence; blocked work is reported se
   assert.match(review.incomplete(), /read-only task/)
 })
 
+test('a verified tab-bound review absorbs an earlier unbound draft and its late duplicate update', async t => {
+  const review = {}
+  const x = fixture(t, { review, builtinTools: { execute: async () => ({ tabId: 'report', epoch: 1 }), cancel() {} } })
+  const notebook = async args => {
+    const response = await x.invoke('stable_browser', args)
+    assert.equal(response.isError, undefined, textOf(response))
+    return JSON.parse(textOf(response)).reviewNotebook
+  }
+  const check = '附录图片嵌入与桌面对齐'
+  const update = (status, tabId, evidenceId) => notebook({
+    action: 'review', ...(tabId ? { tabId } : {}),
+    reviewUpdates: [{ check, status, note: '合成检查记录', ...(evidenceId ? { evidenceId } : {}) }],
+  })
+  await update('open')
+  const audit = await notebook({ action: 'audit', tabId: 'report' })
+  const proof = audit.evidence[0].id
+  await update('passed', 'report', proof)
+  const duplicateWithProof = await update('blocked', undefined, proof)
+  assert.deepEqual(duplicateWithProof.checks.map(({ tabId, status }) => [tabId, status]), [['report', 'passed']])
+  await update('passed', 'unknown')
+  const after = await update('blocked', 'unknown')
+  assert.deepEqual(after.checks.map(({ tabId, status }) => [tabId, status]), [['report', 'passed']])
+  assert.deepEqual(review.stop(), {})
+  assert.equal(review.incomplete(), '')
+
+  await update('blocked', 'report')
+  assert.match(review.incomplete(), /附录图片嵌入与桌面对齐（blocked）/)
+})
+
+test('a review without tabId uses the evidence tab and never passes an older page version', async t => {
+  const review = {}
+  let epoch = 1
+  const x = fixture(t, { review, builtinTools: { execute: async () => ({ tabId: 'report', epoch }), cancel() {} } })
+  const audit = async () => JSON.parse(textOf(await x.invoke('stable_browser', { action: 'audit' }))).reviewNotebook.evidence.at(-1).id
+  const pass = async evidenceId => JSON.parse(textOf(await x.invoke('stable_browser', { action: 'review',
+    reviewUpdates: [{ check: '附录布局', status: 'passed', evidenceId, note: '依据布局测量' }] }))).reviewNotebook.checks
+  const first = await audit()
+  const [passed] = await pass(first)
+  assert.equal(passed.tabId, 'report')
+  assert.equal(passed.status, 'passed')
+  epoch = 2
+  const second = await audit()
+  assert.equal((await pass(first))[0].status, 'needs-recheck')
+  assert.match(review.incomplete(), /附录布局/)
+  assert.equal((await pass(second))[0].status, 'passed')
+  assert.equal(review.incomplete(), '')
+})
+
+test('the same check on two tabs cannot resolve an ambiguous draft or use the other tab’s evidence', async t => {
+  const review = {}
+  const x = fixture(t, { review, builtinTools: { execute: async request => ({ tabId: request.args.tabId, epoch: 1 }), cancel() {} } })
+  const notebook = async args => JSON.parse(textOf(await x.invoke('stable_browser', args))).reviewNotebook
+  const check = '移动端排版'
+  const update = (tabId, status, evidenceId) => notebook({ action: 'review', ...(tabId ? { tabId } : {}),
+    reviewUpdates: [{ check, status, note: tabId || '尚未指定标签', ...(evidenceId ? { evidenceId } : {}) }] })
+  await update(undefined, 'open')
+  await update('first', 'open')
+  await update('second', 'open')
+  const audit = await notebook({ action: 'audit', tabId: 'first' })
+  const proof = audit.evidence.at(-1).id
+  await update('first', 'passed', proof)
+  const after = await update('second', 'passed', proof)
+  assert.deepEqual(after.checks.map(({ tabId, status }) => [tabId, status]), [
+    ['unknown', 'open'], ['first', 'passed'], ['second', 'needs-recheck'],
+  ])
+  assert.equal(review.stop().decision, 'block')
+})
+
 test('browser review notebook carries evidence and checks across views without changing parent calls or UI', async t => {
   const calls = []
   const x = fixture(t, { builtinTools: { execute: async request => {

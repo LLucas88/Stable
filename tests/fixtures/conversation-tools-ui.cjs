@@ -29,7 +29,7 @@ async function main() {
     const initial={cloud:{status:'disabled',enabled:false},activeConversationId:'a',conversations,messages,data:[],skills:[],knowledge:[],library:[],workflows:[],theme:'light',paths:{workspace:'D:/mock/workspace'},models:{items:[{id:'mock',displayName:'测试模型',model:'mock',providerId:'mock'}],defaultModelId:'mock'},team:{devices:[],conversationOffers:[]}};
     let listener=()=>{},paste=()=>{},selectAll=()=>{}; window.sent=[];window.uiErrors=[];window.caught=[];window.views={};
     const state=id=>({...initial,activeConversationId:id,messages:id==='a'?(window.failureMessages||messages):[],catchAttachments:id==='b'?[draft]:[]});
-    const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:'glm-Flash-'+i,model:'model-'+i,providerId:'glm'}))],defaultModelId:'mock'};
+    const discovered={items:[...initial.models.items,...Array.from({length:12},(_,i)=>({id:'api-'+i,displayName:i===0?'GPT-6.1 Sol':'glm-Flash-'+i,model:'model-'+i,providerId:'stable-cloud',billingCurrency:i===0?'USD':i===11?'CNY':undefined}))],defaultModelId:'mock'};
     window.stable={updater:{onPrepare:()=>()=>{}},model:{discover:async()=>({catalog:discovered,added:12,errors:[]})},clipboard:{writeText:async text=>{window.copiedText=text}},appearance:{setCompletedCount:async()=>{}},preview:{close:async()=>{},onEvent:()=>()=>{}},files:{path:()=>''},editor:{onPasteIntoComposer:fn=>{paste=fn;return()=>{}},onSelectAllMessages:fn=>{selectAll=fn;return()=>{}}},agent:{
       chapters:async id=>window.chapterRows?.[id]||[],
       setChapter:async(id,messageId,title)=>{window.chapterRows||={};let rows=window.chapterRows[id]||[];rows=rows.filter(row=>row.messageId!==messageId);if(title!==null)rows.push({messageId,seq:2,title});window.chapterRows[id]=rows;return rows},
@@ -58,17 +58,21 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
   const fixtureHtml = '<html lang="zh-CN" data-theme="light"><body><div class="app-shell"><aside class="rail"><div id="tasks"></div></aside><main class="main-frame"><div id="root"></div></main></div></body></html>';
   const fixturePath=path.join(output,'fixture.html');fs.writeFileSync(fixturePath,fixtureHtml);await win.loadFile(fixturePath)
   await prepareVisualFixture(win)
-  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
+  for (const name of ['tokens.css', 'app.css', 'workbench-surfaces.css', 'design-activity.css', 'context-usage.css', 'answer-tools.css', 'tool-trace.css']) await win.webContents.insertCSS(readSource(path.join(root, 'src/styles', name), 'utf8'))
   await win.webContents.insertCSS('body{margin:0}#root{height:100vh;width:100%}.app-shell{height:100vh;grid-template-columns:280px minmax(0,1fr)}.main-frame{height:100vh}.rail{padding:18px}')
   await win.webContents.executeJavaScript(`(()=>{${bundle};return true})()`)
   await new Promise(resolve => setTimeout(resolve, 300))
   await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));
     document.querySelector('.model-menu > summary').click();await tick();
+    if(document.querySelector('.effort-model-name').textContent!=='测试模型')throw Error('Display name changed in the effort panel');
     document.querySelector('.effort-model-expand').click();await tick();
     const list=document.querySelector('.model-options-scroll');
     if(document.querySelector('.model-refresh, .model-discovery-status'))throw Error('Sync controls still visible');
-    for(const name of list.querySelectorAll('strong'))if(name.textContent!==name.textContent.toUpperCase())throw Error('Model name is not uppercase');
+    const names=[...list.querySelectorAll('.model-option-copy strong')].map(name=>name.textContent);
+    if(names[0]!=='测试模型'||names[1]!=='GPT-6.1 Sol'||names.slice(2).some((name,index)=>name!=='glm-Flash-'+(index+1)))throw Error('Model labels must preserve their display names');
+    const billingBadge=id=>list.querySelector('input[value="'+id+'"]').closest('label').querySelector('.model-free-badge').textContent;
+    if(billingBadge('api-0')!=='美元额度'||billingBadge('api-11')!=='人民币额度'||billingBadge('api-1')!=='免费使用')throw Error('Model billing labels do not follow currency metadata');
     if(list.offsetWidth-list.clientWidth<10)throw Error('Permanent scrollbar gutter missing');
     if(list.querySelectorAll('.model-option').length!==13)throw Error('Discovered models missing from selector');
     if(list.scrollHeight<=list.clientHeight)throw Error('Long model list does not scroll');
@@ -107,8 +111,11 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     const tick=()=>new Promise(r=>setTimeout(r,100));
     document.querySelector('input[value="api-11"]').click();await tick();
     if(window.selectedModel!=='api-11')throw Error('Discovered model selection failed');
-    if(!document.querySelector('.model-menu > summary').textContent.includes('GLM-FLASH-11'))throw Error('Selected model label is not uppercase');
-    document.querySelector('.model-menu > summary').click();await tick();document.querySelector('.effort-model-expand').click();await tick();
+    const summary=document.querySelector('.model-menu > summary');
+    if(!summary.textContent.includes('glm-Flash-11')||!summary.getAttribute('aria-label').includes('glm-Flash-11'))throw Error('Selected model label casing is inconsistent');
+    summary.click();await tick();
+    if(document.querySelector('.effort-model-name').textContent!=='glm-Flash-11')throw Error('Effort panel shows different model casing');
+    document.querySelector('.effort-model-expand').click();await tick();
     document.querySelector('input[value="mock"]').click();await tick();
   })()`)
   const bubble = await win.webContents.executeJavaScript(`(()=>{
@@ -198,6 +205,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
   })()`)
   const result = await win.webContents.executeJavaScript(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,100));const expect=(yes,msg)=>{if(!yes)throw Error(msg)};
+    const visibleTop=scroll=>scroll.getBoundingClientRect().top+(parseFloat(getComputedStyle(scroll).scrollPaddingBlockStart)||0);
     await tick();await tick();
     expect(!document.querySelector('.assistant-mark,.answer-label'),'Reply avatar/name remains');
     document.querySelector('.conversation-item-actions > button').click();await tick();
@@ -231,7 +239,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(document.querySelector('.answer-toolbar'),'Answer actions missing');
     document.querySelector('.conversation-bottom').click();await tick();
     expect(scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-3,'Return to bottom failed');
-    scroller.scrollTop+=document.querySelector('[data-message-id="m"]').getBoundingClientRect().top-scroller.getBoundingClientRect().top+20;scroller.dispatchEvent(new Event('scroll'));await tick();await tick();await tick();const savedAnchor=window.views.a;expect(savedAnchor.anchor==='m'&&!savedAnchor.following,'Message anchor not persisted');window.changeState(window.fixtureState('b'));await tick();window.changeState(window.fixtureState('a'));await tick();await tick();await tick();await tick();await tick();scroller=document.querySelector('.message-scroll');const anchor=document.querySelector('[data-message-id="m"]');expect(Math.abs(anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-savedAnchor.offset)<3,'Message anchor did not restore '+JSON.stringify({savedAnchor,top:scroller.scrollTop,actualOffset:anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top,stored:window.views.a}));
+    scroller.scrollTop+=document.querySelector('[data-message-id="m"]').getBoundingClientRect().top-visibleTop(scroller)+20;scroller.dispatchEvent(new Event('scroll'));await tick();await tick();await tick();const savedAnchor=window.views.a;expect(savedAnchor.anchor==='m'&&!savedAnchor.following,'Message anchor not persisted');window.changeState(window.fixtureState('b'));await tick();window.changeState(window.fixtureState('a'));await tick();await tick();await tick();await tick();await tick();scroller=document.querySelector('.message-scroll');const anchor=document.querySelector('[data-message-id="m"]'),actualOffset=anchor.getBoundingClientRect().top-visibleTop(scroller);expect(Math.abs(actualOffset-savedAnchor.offset)<3,'Message anchor did not restore '+JSON.stringify({savedAnchor,top:scroller.scrollTop,actualOffset,stored:window.views.a}));
     window.selectAll();expect(window.getSelection().toString().includes('完整回复'),'History select all failed');
     window.paste('草稿');await tick();const input=document.querySelector('#agent-prompt');
     input.setSelectionRange(1,2);window.paste('插入');await tick();expect(input.value==='草插入','History paste failed replacement into composer');
@@ -301,7 +309,7 @@ return new Promise(resolve=>{window.resolveRun=()=>resolve({...state(id),catchAt
     expect(window.pageRequest.id==='c'&&window.pageRequest.cursor===201,'Chapter did not load older history');
     const early=document.querySelector('[data-message-id="early-answer"]'),scroll=document.querySelector('.message-scroll');
     expect(early&&document.activeElement===early,'Early chapter not focused');
-    expect(Math.abs(early.getBoundingClientRect().top-scroll.getBoundingClientRect().top-16)<4,'Early chapter not scrolled into view');
+    expect(Math.abs(early.getBoundingClientRect().top-visibleTop(scroll)-16)<4,'Early chapter not scrolled into view');
     document.querySelector('.conversation-tools-trigger').click();await tick();Array.from(document.querySelectorAll('.conversation-tools-panel [role=menuitem]')).find(el=>el.textContent.startsWith('章节')).click();await tick();
     document.querySelector('.conversation-tools-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await tick();
     expect(!document.querySelector('.chapter-panel'),'Escape failed to close chapter directory');

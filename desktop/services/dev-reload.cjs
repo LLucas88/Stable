@@ -1,6 +1,6 @@
 'use strict'
 // Only the development launcher can send these messages over its private child IPC.
-function createDevReload({ prepare, reload, restart, send, confirmRestart = async () => true, onState = () => {}, intervalMs = 1500 }) {
+function createDevReload({ prepare, reload, restart, send, confirmRestart = async () => true, withRestart = async commit => commit(), onState = () => {}, intervalMs = 1500 }) {
   let pending = null, active = false, disposed = false, revision = 0, authorized = null, message = ''
   const state = () => ({ enabled: !disposed, revision, action: pending?.action || null, applying: active, blocked: pending?.blocked === true, message })
   const publish = () => { try { onState(state()) } catch { /* A notice renderer cannot authorize an update. */ } }
@@ -11,11 +11,11 @@ function createDevReload({ prepare, reload, restart, send, confirmRestart = asyn
     const request = pending
     active = true; message = request.action === 'restart' ? '正在检查重启条件…' : ''; publish()
     try {
-      await prepare()
+      await prepare(request.action)
       if (!current(request)) return state()
       if (request.action === 'restart') {
         if (!await confirmRestart(request.id)) throw Error('启动器未确认接管重启，保留当前应用。')
-        await prepare()
+        await prepare(request.action)
         if (!current(request)) {
           await send({ type: 'stable:dev:waiting', id: request.id, message: '代码再次变更，已取消旧的重启请求，请重新确认。' })
           return state()
@@ -28,14 +28,29 @@ function createDevReload({ prepare, reload, restart, send, confirmRestart = asyn
       }
       // IPC can wait while a new task starts or a draft becomes dirty. Recheck
       // readiness after that wait, then commit without another awaited send.
-      await prepare()
+      await prepare(request.action)
       if (!current(request)) {
         await send({ type: 'stable:dev:waiting', id: request.id, message: '代码再次变更，已取消旧的更新请求。' })
         return state()
       }
-      pending = null; authorized = null
-      if (request.action === 'restart') { message = '正在重启…'; publish(); restart() }
-      else { await reload(); if (!pending) message = '' }
+      if (request.action === 'restart') {
+        const committed = await withRestart(() => {
+          if (!current(request)) return false
+          pending = null; authorized = null
+          message = '正在重启…'; publish()
+          restart()
+          return true
+        })
+        if (!committed) {
+          const reason = pending === request ? '重启已取消，可以再次点击重启应用。' : '代码再次变更，已取消旧的重启请求，请重新确认。'
+          if (pending === request && !disposed) message = reason
+          await send({ type: 'stable:dev:waiting', id: request.id, message: reason })
+          return state()
+        }
+      } else {
+        pending = null; authorized = null
+        await reload(); if (!pending) message = ''
+      }
       await send({ type: 'stable:dev:applied', id: request.id, action: request.action })
     } catch (error) {
       if (!pending && !disposed) pending = request

@@ -3,12 +3,23 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 async function main(){
  const source=path.resolve(process.argv[2]||'.local/ecs-production/source')
  const load=p=>import(pathToFileURL(path.join(source,p)).href)
- const {assertResponsesBody,responseReservationBody}=await load('lib/core/openai-responses.ts')
+ const {assertResponsesBody,responseReservationBody,supportsOpenAIResponses}=await load('lib/core/openai-responses.ts')
  const {normalizeUsage,calculateActualCostMicros}=await load('lib/core/gateway.ts')
  const {OpenAiSseMeter}=await load('lib/core/sse.ts')
  const {validateOpenAIImageBody,imageActualCost,imageReservation}=await load('lib/core/openai-images.ts')
  const body={model:'gpt-6.1-sol',input:[{role:'user',content:'hi'}],store:false,stream:true,max_output_tokens:32,tools:[{type:'namespace',name:'stable_tools',tools:[{type:'function',name:'read',parameters:{type:'object'}}]}]}
  assertResponsesBody(body);assert.equal(responseReservationBody(body).max_tokens,32)
+ const optionalEffort=new Set(['gpt-6.1-terra','gpt-6-sol','gpt-6-luna'])
+ for(const model of ['gpt-6.2-astra','gpt-6.2-sol','gpt-6.1-sol','gpt-6.1-terra','gpt-6-astra','gpt-6-sol','gpt-6-luna']){
+  assert(supportsOpenAIResponses(model));assertResponsesBody({...body,model})
+  for(const effort of ['low','medium','high','xhigh','max'])assertResponsesBody({...body,model,reasoning:{effort}})
+  const request={...body,model,reasoning:{effort:'none'}}
+  if(optionalEffort.has(model))assertResponsesBody(request);else assert.throws(()=>assertResponsesBody(request),/思考深度/)
+  assert.throws(()=>assertResponsesBody({...body,model,reasoning:{effort:'ultra'}}),/思考深度/)
+ }
+ for(const model of ['gpt-5.6','gpt-6.3-unreleased','gpt-image-2.6-sunburst','constructor',['gpt-6-sol']]){
+  assert(!supportsOpenAIResponses(model));assert.throws(()=>assertResponsesBody({...body,model}),/未开放/)
+ }
  for(const changes of [{store:true},{previous_response_id:'other'},{tools:[{type:'web_search'}]},{reasoning:{effort:'ultra'}},{input:[{type:'item_reference',id:'other'}]}])assert.throws(()=>assertResponsesBody({...body,...changes}))
  assert.throws(()=>assertResponsesBody({...body,input:[{role:'user',content:[{type:'input_text',text:'a',prompt_cache_breakpoint:{ttl:'12h'}}]}]}))
  const usage={input_tokens:12000,output_tokens:100,input_tokens_details:{cached_tokens:4000,cache_write_tokens:7000,cache_write_tokens_details:{ttl_30m_tokens:3000,ttl_12h_tokens:4000}}}

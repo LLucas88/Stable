@@ -63,6 +63,7 @@ class ModelRegistry {
     const items = state.models.filter(item => item.id !== 'glm-image').map((item) => ({
       ...cloudReasoningProfile(item), id: String(item.id), providerId: 'stable-cloud', displayName: displayName(item.id, String(item.display_name || item.id)),
       baseURL: this.cloudGateway.baseURL, model: String(item.id), hasApiKey: true,
+      ...(item.currency === 'CNY' || item.currency === 'USD' ? { billingCurrency: item.currency } : {}),
       reasoningOptions: reasoningOptions({ ...cloudReasoningProfile(item), providerId: 'stable-cloud', baseURL: this.cloudGateway.baseURL, model: String(item.id) }),
     }))
     if ((this.store?.getSetting('flash1017DefaultV1') || this.store?.getSetting('flashHighDefaultV1')) && !items.some(item => item.id === 'deepseek-flash')) {

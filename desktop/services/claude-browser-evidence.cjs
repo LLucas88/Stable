@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
+const UNBOUND_TAB = 'unknown'
 const REVIEW_GUIDANCE = '浏览器视觉检查先建立有限清单：用 reviewUpdates 的 open 状态记录用户要求、区域和必要视口；发现问题立即更新，复查后用 passed 和 evidenceId 记录实际结论。每项使用稳定的 check 名称，合并同类检查，不不断新增重复样本。每次截图用 purpose 说明具体未决问题。更新可随必要操作提交；最后一张图看完后用 stable_browser action=review 批量更新，无需重新截图、滚动或 read。reviewNotebook 是模型自述记录，不是自动验收；已通过且未受修改影响的证据可复用。旧画面只用真实 path 回看，不猜临时路径。尺寸/溢出/比例先 audit 或批量测量，视觉和交互仍需实际验证。先集中修复再复查受影响项和必要桌面/手机回归。区分图片内空白与容器额外留白，不能把可修复的布局缺陷直接归为素材限制；禁止为减少截图而忽略未修复问题。结束前更新所有检查：尚有 open/needs-recheck 就继续修复或验证；真正受权限、缺失数据等阻碍用 blocked 记录具体原因并在交付中明确未完成项，不得把它报为完成。若用户明确允许数据不足时说明限制，可从建立清单时使用 category=data，并仅在不违反用户最新要求时标 limited，limitationBasis 逐字引用用户许可；这只是带限制的交付，不是数据核验通过，功能/交互及自动发现的缺陷不能降为数据限制。'
 
 // Per-run evidence; files outlive the MCP server and SDK temporary tool results.
@@ -28,6 +29,13 @@ function createBrowserEvidence({ workspace, writable, resolveFile, review = {}, 
       checks.set(key, item); overflow.delete(key)
     }
   }
+  function evidenceMatches(item, tabId, prior, available) {
+    const tab = tabs.get(tabId)
+    return tabId !== UNBOUND_TAB && tab && item && item.tabId === tabId && item.epoch === tab.epoch && item.revision === tab.revision &&
+      (!prior?.observedAfter || item.serial >= prior.observedAfter && item.viewport?.width === prior.viewportWidth) &&
+      (prior?.source !== 'image-spacing' || item.spacing?.observedTargets?.includes(prior.spacingTarget) && !item.spacing.candidates?.some(c => c.target === prior.spacingTarget)) &&
+      (item.kind === 'audit' || available.has(item.id))
+  }
   review.stop = () => {
     if (!screenshots && !checks.size) return {}
     const pending = [...checks.values()].filter(c => c.status === 'open' || c.status === 'needs-recheck')
@@ -51,7 +59,7 @@ function createBrowserEvidence({ workspace, writable, resolveFile, review = {}, 
   ].filter(Boolean).join('\n')
   review.limitations = () => [...checks.values()].filter(c=>c.status==='limited').map(c=>`${c.check}：${c.note}`).join('\n')
   function notebook(args, result) {
-    const tabId = String(result.tabId || args.tabId || 'unknown')
+    const tabId = String(result.tabId || args.tabId || UNBOUND_TAB)
     const previous = tabs.get(tabId) || {}
     const epoch = result.epoch ?? previous.epoch
     const state = {
@@ -126,24 +134,42 @@ function createBrowserEvidence({ workspace, writable, resolveFile, review = {}, 
       for (const [key, seen] of riskStates) if (seen.group === group && !visible.has(key)) riskStates.delete(key)
     }
     for (const update of args.reviewUpdates || []) {
-      if (!checks.has(`${tabId}:${update.check}`) && !makeRoom()) throw Error('当前检查清单已达24项；请先完成已有检查，再继续新增检查。')
       const item = evidence.find(item => item.id === update.evidenceId)
-      const prior = checks.get(`${tabId}:${update.check}`) || overflow.get(`${tabId}:${update.check}`)
+      const targetTab = args.action === 'review' && tabId === UNBOUND_TAB && item ? item.tabId : tabId
+      const key = `${targetTab}:${update.check}`
+      const unboundKey = `${UNBOUND_TAB}:${update.check}`
+      const prior = checks.get(key) || overflow.get(key)
+      const draft = checks.get(unboundKey)
+      const scoped = [...checks.values(), ...overflow.values(), ...completedChecks].filter(entry => entry.tabId !== UNBOUND_TAB && entry.check === update.check)
+      const verifiedReference = evidenceMatches(item, targetTab, prior, available)
+      const canBindDraft = update.status === 'passed' && verifiedReference && draft && !draft.source &&
+        (!draft.evidenceId || draft.evidenceId === item.id) &&
+        draft.status !== 'limited' && !prior?.source && scoped.every(entry => entry.tabId === targetTab)
+      const category = prior?.category || update.category || (canBindDraft && draft.category) || 'functional'
+      const bindDraft = canBindDraft && (draft.category || 'functional') === category
+      const bindFromEvidence = tabId === UNBOUND_TAB && update.status === 'passed' && verifiedReference && !prior?.source
+      // A late update to a draft that was already adopted cannot recreate it
+      // without a scope or new evidence. Explicitly scoped blockers still apply.
+      const owner = scoped[0]
+      const repeatsDraft = update.status === 'passed' && !update.evidenceId ||
+        update.status === 'blocked' && (!update.evidenceId || update.evidenceId === owner?.evidenceId)
+      if (tabId === UNBOUND_TAB && repeatsDraft && !draft &&
+          owner?.boundFromDraft && owner.status === 'passed' && (!update.category || update.category === owner.category) &&
+          scoped.every(entry => entry.tabId === owner.tabId) &&
+          evidenceMatches(evidence.find(item => item.id === owner.evidenceId), owner.tabId, owner, available)) continue
       if(update.status==='limited'){
         const basis=update.limitationBasis||''
         if(update.category!=='data'||prior?.source||prior && prior.category!=='data'||!basis||!String(userInstructions).includes(basis)||!/(数据不足|数据缺失|缺少数据)/.test(basis)||!/(说明|披露|标明|允许)/.test(basis))throw Error('数据限制必须引用用户明确允许披露数据不足的原话；功能缺陷和未验证项不能标记为 limited。')
       }
       if (prior && update.category && update.category !== (prior.category || 'functional')) throw Error('已有检查项不能通过更改类别降低验收要求。')
-      const verifiedReference = item && item.tabId === tabId && item.epoch === epoch && item.revision === state.revision &&
-        (!prior?.observedAfter || item.serial >= prior.observedAfter && item.viewport?.width === prior.viewportWidth) &&
-        (prior?.source !== 'image-spacing' || item.spacing?.observedTargets?.includes(prior.spacingTarget) && !item.spacing.candidates?.some(c=>c.target===prior.spacingTarget)) &&
-        (item.kind === 'audit' || available.has(item.id))
-      checks.set(`${tabId}:${update.check}`, {
-        ...prior, ...update, tabId, category: prior?.category || update.category || 'functional',
+      if (bindDraft) checks.delete(unboundKey)
+      if (!checks.has(key) && !makeRoom()) throw Error('当前检查清单已达24项；请先完成已有检查，再继续新增检查。')
+      checks.set(key, {
+        ...prior, ...update, tabId: targetTab, category, ...(bindDraft || bindFromEvidence ? { boundFromDraft: true } : {}),
         status: update.status === 'passed' && !verifiedReference ? 'needs-recheck' : update.status,
         ...(update.status==='passed'&&!verifiedReference&&prior?.source==='image-spacing'?{note:'引用的同宽度测量未确认此图片容器空余高度已消失。请修复容器并复查，不用模糊背景、重复图片或装饰填充代替修复；若确有外部约束，明确记录 blocked，不宣称已完成。'}:{}),
       })
-      overflow.delete(`${tabId}:${update.check}`)
+      overflow.delete(key)
     }
     for (const entry of checks.values()) {
       const item = evidence.find(item => item.id === entry.evidenceId)

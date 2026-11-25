@@ -5,7 +5,7 @@ function publicError(error) {
   return message.replace(/https?:\/\/[^\s]+/g, 'Stable 云端更新服务').slice(0, 300)
 }
 
-function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, onDiagnostic = () => {}, beforeInstall = async () => {}, prepareInstall, checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
+function createUpdateController({ autoUpdater, isPackaged, currentVersion, publish = () => {}, onDiagnostic = () => {}, beforeInstall = async () => {}, prepareInstall, withInstallQuit = async commit => commit(), checkDelayMs = 1_500, checkIntervalMs = 6 * 60 * 60 * 1_000 }) {
   let installWindow
   let timer; let interval
   let state = { status: isPackaged ? 'idle' : 'development', currentVersion, progress: 0, oneClick: false }
@@ -22,8 +22,11 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     try { onDiagnostic({ version: currentVersion, updateStatus: 'error', updateCode: error?.code, elapsedMs: Date.now() - stageStarted }) } catch { /* keep update recovery available */ }
   }
 
-  function failed(error, status = 'error') {
+  function closeInstallWindow() {
     installWindow?.cancel(); installWindow = null
+  }
+  function failed(error, status = 'error') {
+    closeInstallWindow()
     epoch++; armed = false
     recordError(error)
     return emit({ status, oneClick: false, ...(status === 'downloaded' ? { progress: 100 } : {}), error: publicError(error) })
@@ -33,23 +36,43 @@ function createUpdateController({ autoUpdater, isPackaged, currentVersion, publi
     if (installPromise) return installPromise
     if (state.status === 'installing') return true
     if (!isPackaged || !autoUpdater || state.status !== 'downloaded') throw new Error('更新尚未下载完成。')
-    const attempt = epoch
+    const attempt = epoch, version = state.availableVersion
+    const current = () => attempt === epoch && state.status === 'downloaded' && state.availableVersion === version
+    const cancel = () => {
+      closeInstallWindow()
+      if (attempt === epoch && state.status === 'downloaded') {
+        armed = false
+        emit({ oneClick: false })
+      }
+      return false
+    }
     emit({ oneClick: true, error: undefined })
     installPromise = (async () => {
       try {
         // Recheck after download: work may have started since the user clicked.
         await beforeInstall()
-        if (attempt !== epoch || state.status !== 'downloaded') return false
+        if (!current()) return cancel()
         if (prepareInstall) {
-          installWindow = await prepareInstall(state.availableVersion)
-          if (attempt !== epoch || state.status !== 'downloaded') { installWindow?.cancel(); return false }
+          installWindow = await prepareInstall(version)
+          if (!current()) return cancel()
           await beforeInstall()
-          if (attempt !== epoch || state.status !== 'downloaded') { installWindow?.cancel(); return false }
+          if (!current()) return cancel()
         }
-        emit({ status: 'installing', progress: 0, error: undefined })
-        if (installWindow) installWindow.install(autoUpdater)
-        else autoUpdater.quitAndInstall(false, true)
-        return state.status === 'installing'
+        let pending = true, launched = false
+        try {
+          // quitAndInstall may launch the installer before Electron's
+          // before-quit event. Save or resolve active editors before this call.
+          await withInstallQuit(() => {
+            if (!pending || !current()) return false
+            pending = false
+            emit({ status: 'installing', progress: 0, error: undefined })
+            if (installWindow) installWindow.install(autoUpdater)
+            else autoUpdater.quitAndInstall(false, true)
+            launched = state.status === 'installing'
+            return launched
+          })
+        } finally { pending = false }
+        return launched || cancel()
       } catch (error) {
         if (attempt === epoch) failed(error, 'downloaded')
         throw error

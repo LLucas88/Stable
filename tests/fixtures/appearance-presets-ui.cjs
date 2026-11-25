@@ -37,8 +37,10 @@ async function main() {
     await js(`document.documentElement.dataset.theme='${theme}'`)
     for(const [name,selector] of [['main','.main-frame'],['rail','.rail-task-pane'],['composer','.composer-box']]) assert.equal(await js(`getComputedStyle(document.querySelector('${selector}')).backgroundColor`),expected[name])
     assert.equal(await js(`getComputedStyle(document.querySelector('.message-scroll')).maskImage`),'none')
-    await js(`document.querySelector('.conversation').dataset.empty='false'`)
-    assert.notEqual(await js(`getComputedStyle(document.querySelector('.message-scroll')).maskImage`),'none')
+    await js(`document.querySelector('.conversation').dataset.empty='false';document.querySelector('.message-scroll').dataset.fadeTop='true'`)
+    const glass = await js(`CSS.supports('backdrop-filter','blur(1px)') && matchMedia('(forced-colors: none) and (prefers-reduced-transparency: no-preference)').matches`)
+    const scrollMask = await js(`getComputedStyle(document.querySelector('.message-scroll')).maskImage`)
+    assert.equal(scrollMask === 'none',glass)
     await js(`document.querySelector('.conversation').dataset.empty='true'`)
     for(const time of [1,5,10]) {
       await js(`new Promise((resolve,reject)=>{const v=document.querySelector('video');v.onerror=()=>reject(Error('Video decode failed'));v.onseeked=()=>setTimeout(resolve,80);v.currentTime=${time}})`)
@@ -48,6 +50,10 @@ async function main() {
     }
     fs.writeFileSync(path.join(output,theme+'.png'),(await win.webContents.capturePage()).toPNG())
   }
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] })
+  await js(`document.querySelector('.conversation').dataset.empty='false'`)
+  assert.match(await js(`getComputedStyle(document.querySelector('.message-scroll')).maskImage`), /24px\)$/)
+  await js(`document.querySelector('.conversation').dataset.empty='true'`)
   await js(`(async()=>{
     const tick=()=>new Promise(r=>setTimeout(r,80)),expect=(v,m)=>{if(!v)throw Error(m)};
     const select=()=>document.querySelector('.model-connection-settings select');

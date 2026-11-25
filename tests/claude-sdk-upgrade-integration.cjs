@@ -13,6 +13,7 @@ const path = require('node:path')
 const Module = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { ClaudeHarnessRunner, SDK_VERSION, sessionDirectory } = require('../desktop/services/claude-harness.cjs')
+const { CLI_VERSION } = require('../desktop/services/claude-runtime-loader.cjs')
 
 const model = { providerId: 'fixture', model: 'sdk-upgrade-fixture', baseURL: 'https://provider.invalid/v1' }
 const credential = 'local-sdk-upgrade-fixture-key'
@@ -22,11 +23,10 @@ const legacyBinary = path.join(legacyDirectory, `claude-agent-sdk-${process.plat
 const legacyHarness = path.join(legacyDirectory, 'claude-harness.cjs')
 const legacyAvailable = [legacyEntry, legacyBinary, legacyHarness].every(file => fs.existsSync(file))
 
-for (const samePolicy of [false, true]) test(`0.3.308 to 0.3.318 with ${samePolicy ? 'matching' : 'changed'} tool policy and a second process restart`, {
+for (const samePolicy of [false, true]) test(`0.3.308 to ${SDK_VERSION} with ${samePolicy ? 'matching' : 'changed'} tool policy and a second process restart`, {
   timeout: 120_000,
 }, async t => {
   assert.ok(legacyAvailable, 'The upgrade gate requires the preserved 0.3.308 SDK, native CLI and harness. Set STABLE_LEGACY_SDK_DIR; a missing migration fixture must not silently pass.')
-  assert.equal(SDK_VERSION, '0.3.318')
   const legacyMetadata = JSON.parse(fs.readFileSync(path.join(legacyDirectory, 'claude-agent-sdk', 'package.json'), 'utf8'))
   assert.equal(legacyMetadata.version, '0.3.308')
   // Compile the preserved harness with its original module location so local
@@ -78,8 +78,8 @@ for (const samePolicy of [false, true]) test(`0.3.308 to 0.3.318 with ${samePoli
   assert.match(await newRunner.run('继续原会话。', model, credential, 40_000, undefined, 'workspace-write', [], session), /UPGRADED_ASSISTANT_MARKER/)
   const upgraded = JSON.parse(fs.readFileSync(pointer, 'utf8'))
   assert.equal(upgraded.threadId === oldSaved.threadId, samePolicy)
-  assert.equal(upgraded.version, '0.3.318')
-  assert.equal(upgraded.cliVersion, '2.1.318')
+  assert.equal(upgraded.version, SDK_VERSION)
+  assert.equal(upgraded.cliVersion, CLI_VERSION)
   assert.match(fs.readFileSync(oldTranscript, 'utf8'), /LEGACY_ASSISTANT_MARKER/)
 
   const restarted = createRunner()
@@ -92,10 +92,9 @@ for (const samePolicy of [false, true]) test(`0.3.308 to 0.3.318 with ${samePoli
   assert.deepEqual(journal.map(turn => turn.threadId), [oldSaved.threadId, upgraded.threadId, upgraded.threadId])
 })
 
-test('0.3.318 repeated Read returns contents and observes the next on-disk edit', { timeout: 60_000 }, async t => {
+test('repeated native Read returns contents and observes the next on-disk edit', { timeout: 60_000 }, async t => {
   let filename
   const { workspace, createRunner, requests } = fixture(t, (body, number) => {
-    assert.equal(SDK_VERSION, '0.3.318')
     if (number === 1) return upstream({ calls: [{ id: 'read-first', name: 'Read', input: { file_path: filename } }] })
     if (number === 2) {
       assert.match(toolResult(body, 'read-first'), /原始报告 REPEATED_READ_CONTENT/)
@@ -119,7 +118,7 @@ test('0.3.318 repeated Read returns contents and observes the next on-disk edit'
   assert.equal(requests.length, 4)
 })
 
-test('0.3.318 a throwing permission hook blocks the native write and reports the failure', { timeout: 60_000 }, async t => {
+test('a throwing permission hook blocks the native write and reports the failure', { timeout: 60_000 }, async t => {
   const realSdk = await import('@anthropic-ai/claude-agent-sdk')
   let filename, injected = false
   const events = []
@@ -154,10 +153,9 @@ test('0.3.318 a throwing permission hook blocks the native write and reports the
   assert.equal(fs.existsSync(filename), false)
 })
 
-test('0.3.318 native Glob, Grep and Read handle a nested Chinese path longer than 260 characters', { timeout: 60_000 }, async t => {
+test('native Glob, Grep and Read handle a nested Chinese path longer than 260 characters', { timeout: 60_000 }, async t => {
   let filename, directory
   const { workspace, createRunner } = fixture(t, (body, number) => {
-    assert.equal(SDK_VERSION, '0.3.318')
     if (number === 1) return upstream({ calls: [{ id: 'long-glob', name: 'Glob', input: { path: directory, pattern: '*.txt' } }] })
     if (number === 2) {
       assert.match(toolResult(body, 'long-glob'), /经营分析报告\.txt/)

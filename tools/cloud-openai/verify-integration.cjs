@@ -7,7 +7,7 @@ async function main(){
   [path.resolve(source,'lib/core/openai-images.ts'),path.resolve(__dirname,'overlay/lib/core/openai-images.ts')],
   [path.resolve(source,'lib/server/openai-image-gateway.ts'),path.resolve(__dirname,'../cloud-image-recovery/overlay/lib/server/openai-image-gateway.ts')],
  ]:[])
- await require('esbuild').build({stdin:{contents:`export {POST as chat} from '${file('app/v1/responses/route.ts')}';export {POST as image} from '${file('app/v1/images/generations/route.ts')}';export {POST as edit} from '${file('app/v1/images/edits/route.ts')}';export {hashSessionToken} from '${file('lib/server/crypto.ts')}';`,resolveDir:source,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'cjs',plugins:[{name:'fixture',setup(b){
+ await require('esbuild').build({stdin:{contents:`export {POST as chat} from '${file('app/v1/responses/route.ts')}';export {POST as image} from '${file('app/v1/images/generations/route.ts')}';export {POST as edit} from '${file('app/v1/images/edits/route.ts')}';export {hashSessionToken} from '${file('lib/server/crypto.ts')}';export {listPublicModels} from '${file('lib/server/model-catalog.ts')}';`,resolveDir:source,loader:'ts'},outfile:out,bundle:true,platform:'node',format:'cjs',plugins:[{name:'fixture',setup(b){
  b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const env=globalThis.__openaiFixtureEnv',loader:'js'}));b.onResolve({filter:/^@\//},a=>({path:path.join(source,a.path.slice(2))+'.ts'}))
  if(image26){
   b.onLoad({filter:/\.ts$/},a=>{const override=overrides.get(path.resolve(a.path));if(override)return {contents:fs.readFileSync(override,'utf8'),loader:'ts',resolveDir:path.dirname(a.path)}})
@@ -24,7 +24,8 @@ async function main(){
  sql.exec(`INSERT INTO accounts(id,username,display_name,role,status,password_algorithm,password_hash,password_salt,password_iterations,must_change_password,auth_version,created_at,updated_at) VALUES('test','tester','Tester','member','active','pbkdf2-sha256','hash','salt',100000,0,1,1,1);
  INSERT INTO quota_buckets(id,account_id,currency,limit_micros,spent_micros,reserved_micros,period_start,period_end,status,created_at,updated_at) VALUES('quota','test','CNY',1000000000,0,0,0,9999999999999,'active',1,1);`)
  sql.prepare("INSERT INTO sessions(id,account_id,token_hash,auth_version,device_id,device_name,platform,app_version,expires_at,last_seen_at,created_at) VALUES('session','test',?,1,'device','Fixture','win32','test',9999999999999,1,1)").run(hash)
- for(const id of ['gpt-6.1-sol','gpt-image-2.5-sunburst','gpt-image-2.5-flare',...(image26?['gpt-image-2.6-sunburst','gpt-image-2.6-flare']:[])]){
+ const textModels=['gpt-6.2-astra','gpt-6.2-sol','gpt-6.1-sol','gpt-6.1-terra','gpt-6-astra','gpt-6-sol','gpt-6-luna']
+ for(const id of [...textModels,'gpt-image-2.5-sunburst','gpt-image-2.5-flare',...(image26?['gpt-image-2.6-sunburst','gpt-image-2.6-flare']:[])]){
  sql.prepare("INSERT INTO models(id,display_name,provider,upstream_model,upstream_base_url,secret_name,context_window,max_output_tokens,status,created_at,updated_at) VALUES(?,?,'openai',?,'https://api.openai.com/v1','OPENAI_API_KEY',1050000,128000,'active',1,1)").run(id,id,id)
  const policy={version:1,kind:'openai-cache',source:'https://openai.com',verifiedAt:'2026-10-29',tiers:[{label:'fixture',inputMicrosPerMillion:1000000,cachedInputMicrosPerMillion:100000,outputMicrosPerMillion:5000000}]}
  if(id.startsWith('gpt-image-'))policy.imageInput={inputMicrosPerMillion:2000000,cachedInputMicrosPerMillion:500000};
@@ -121,6 +122,22 @@ async function main(){
   sql.prepare("UPDATE models SET upstream_base_url='https://api.openai.com/v1',upstream_model=id WHERE id='gpt-image-2.6-sunburst'").run();globalThis.__image26EgressDown=false;
   console.log('PASS Image 2.6 overlays: real handlers + in-memory SQLite; JSON mask/markup edits, SVG double billing and missing-usage uncertainty, GIF frames/reference, legacy multipart, official egress pre-reservation, replay during outage, proxy origin/alias; synthetic upstream only')
  }
+ mode='success';
+ const catalog=await api.listPublicModels();
+ assert.deepEqual(catalog.filter(model=>model.responses_supported).map(model=>model.id).sort(),[...textModels].sort());
+ assert(!catalog.some(model=>String(model.id).startsWith('gpt-image-')));
+ for(const model of textModels){
+  const key='catalog-route-'+model, response=await call('chat',key,{model,input:[{role:'user',content:'fixture'}],reasoning:{effort:'high'},max_output_tokens:32,store:false,stream:true});
+  assert.equal(response.status,200,await response.clone().text());await response.text();
+  assert.equal(lastUpstream.url,'https://api.openai.com/v1/responses');assert.equal(lastUpstream.body.model,model);
+  assert.equal(sql.prepare('SELECT state FROM gateway_requests WHERE idempotency_key=?').get(key).state,'settled');
+ }
+ sql.prepare("UPDATE models SET status='disabled' WHERE id='gpt-6-luna'").run();
+ assert(!(await api.listPublicModels()).some(model=>model.id==='gpt-6-luna'));
+ const callsBeforeDisabled=calls;
+ assert.equal((await call('chat','disabled-luna',{model:'gpt-6-luna',input:[{role:'user',content:'fixture'}],max_output_tokens:32,store:false,stream:true})).status,404);
+ assert.equal(calls,callsBeforeDisabled);
+ console.log('PASS: seven GPT-6 text models are catalogued and routed through Responses; disabled models cannot reach the upstream');
  console.log('PASS: multipart reference pixels, image-input billing, real auth/quota/SQLite + mock OpenAI; Responses settlement includes cache writes; image token settlement, replay, conflict, balance and uncertain-result protections')
  }finally{globalThis.fetch=original;delete globalThis.__image26EgressDown;delete globalThis.__image26EgressChecks;sql.close()}
 }

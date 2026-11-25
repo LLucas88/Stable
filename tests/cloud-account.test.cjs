@@ -40,10 +40,40 @@ test('login stores only the device token and loads account, quota, models, and u
   assert.equal(state.status, 'authenticated')
   assert.equal(state.models[0].id, 'model-a')
   assert.equal(state.usage.totals.request_count, 2)
+  assert.equal(state.quotas, undefined)
   const loginBody = JSON.parse(ctx.requests[0].options.body)
   assert.equal(loginBody.username, 'member')
   assert.equal(loginBody.device.appVersion, '0.9.39')
   assert.equal(ctx.requests[1].options.headers.authorization, 'Bearer device-secret')
+})
+
+test('refresh preserves both wallet amounts, downgrades to a legacy server, and clears expired balances', async () => {
+  const account = { id: 'acc_1', username: 'member', displayName: '成员', role: 'member', status: 'active', mustChangePassword: false }
+  const cny = { id: 'quota-cny', currency: 'CNY', limitMicros: 30_000_000, spentMicros: 12_000_000, reservedMicros: 1_000_000, remainingMicros: 17_000_000 }
+  const usd = { id: 'quota-usd', currency: 'USD', limitMicros: 10_000_000, spentMicros: 4_000_000, reservedMicros: 2_000_000, remainingMicros: 4_000_000 }
+  const byCurrency = [{ currency: 'CNY', confirmed_micros: 12_000_000 }, { currency: 'USD', confirmed_micros: 4_000_000 }]
+  let response = { account, quota: cny, quotas: [cny, usd] }
+  const ctx = context({
+    '/api/account': () => response,
+    '/v1/models': { data: [{ id: 'gpt-6.2-sol', currency: 'USD' }] },
+    '/api/usage/summary': { totals: { request_count: 3, confirmed_micros: 12_000_000 }, byCurrency },
+  }, 'saved-token')
+  const current = await ctx.service.restore()
+  assert.deepEqual(current.quotas, [cny, usd])
+  assert.deepEqual(current.usage.byCurrency, byCurrency)
+  assert.equal(current.models[0].currency, 'USD')
+  response = { account, quota: cny }
+  const legacy = await ctx.service.refresh()
+  assert.deepEqual(legacy.quota, cny)
+  assert.equal(legacy.quotas, undefined)
+  response = { account, quota: cny, quotas: [cny, usd] }
+  await ctx.service.refresh()
+  ctx.secrets.delete(DEVICE_TOKEN_KEY)
+  const signedOut = await ctx.service.restore()
+  assert.equal(signedOut.account, null)
+  assert.equal(signedOut.quota, null)
+  assert.equal(signedOut.quotas, undefined)
+  assert.equal(signedOut.usage, null)
 })
 
 test('temporary password blocks model access until password change rotates the token', async () => {

@@ -1,8 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
-function updateScrollFades(element: HTMLDivElement) {
+function updateTopFade(element: HTMLDivElement) {
   element.dataset.fadeTop = String(element.scrollTop > 1)
-  element.dataset.fadeBottom = String(element.scrollHeight - element.scrollTop - element.clientHeight > 1)
+}
+
+function visibleTop(element: HTMLDivElement) {
+  return element.getBoundingClientRect().top + (Number.parseFloat(getComputedStyle(element).scrollPaddingBlockStart) || 0)
 }
 
 type Position = { top: number; following: boolean; anchor?: string; seq?: number; offset?: number }
@@ -17,7 +20,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     if (!element) return
     following.current = true
     element.scrollTo({ top: element.scrollHeight, behavior: 'auto' })
-    updateScrollFades(element)
+    updateTopFade(element)
     setAwayFromBottom(false)
   }, [])
   useLayoutEffect(() => {
@@ -38,7 +41,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
             let previous = Number.NaN, stableFrames = 0
             for (let frame = 0; frame < 45 && stableFrames < 4; frame++) {
               if (cancelled || !anchor.isConnected) return
-              const position = element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top
+              const position = element.scrollTop + anchor.getBoundingClientRect().top - visibleTop(element)
               element.scrollTop = position - (saved.offset || 0)
               stableFrames = Math.abs(position - previous) < .5 ? stableFrames + 1 : 0
               previous = position
@@ -50,7 +53,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
           setAwayFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > 64)
         }
       } else scrollToBottom()
-    })().catch(() => { if (!cancelled) scrollToBottom() }).finally(() => { if (!cancelled) { restoring.current = false; if (scrollRef.current) updateScrollFades(scrollRef.current) } })
+    })().catch(() => { if (!cancelled) scrollToBottom() }).finally(() => { if (!cancelled) { restoring.current = false; if (scrollRef.current) updateTopFade(scrollRef.current) } })
     return () => { cancelled = true }
   }, [conversationId, active, scrollToBottom])
   useLayoutEffect(() => {
@@ -59,23 +62,23 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     let timer: ReturnType<typeof setTimeout> | undefined
     const save = () => { const value = positions.current.get(conversationId); if (value) void window.stable.agent.viewState?.(conversationId, value).catch(() => {}) }
     const measure = () => {
-      updateScrollFades(element)
+      updateTopFade(element)
       if (restoring.current) return
       const away = element.scrollHeight - element.scrollTop - element.clientHeight > 64
       following.current = !away; setAwayFromBottom(away)
-      const top = element.getBoundingClientRect().top
+      const top = visibleTop(element)
       const anchor = [...element.querySelectorAll<HTMLElement>('[data-message-id]')].find(item => item.getBoundingClientRect().bottom > top)
       positions.current.set(conversationId, { top: element.scrollTop, following: !away, anchor: anchor?.dataset.messageId, seq: Number(anchor?.dataset.messageSeq) || undefined, offset: anchor ? anchor.getBoundingClientRect().top - top : 0 })
       clearTimeout(timer); timer = setTimeout(save, 250)
     }
     const resize = () => {
-      updateScrollFades(element)
+      updateTopFade(element)
       if (restoring.current) return
       if (following.current) scrollToBottom()
       else {
         const saved = positions.current.get(conversationId)
         const anchor = saved?.anchor && [...element.querySelectorAll<HTMLElement>('[data-message-id]')].find(item => item.dataset.messageId === saved.anchor)
-        if (anchor) element.scrollTop += anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - (saved.offset || 0)
+        if (anchor) element.scrollTop += anchor.getBoundingClientRect().top - visibleTop(element) - (saved.offset || 0)
         setAwayFromBottom(element.scrollHeight - element.scrollTop - element.clientHeight > 64)
       }
     }
@@ -93,7 +96,7 @@ export function useConversationScroll(conversationId: string, revision: unknown,
     const element = scrollRef.current
     const target = element && [...element.querySelectorAll<HTMLElement>('[data-message-id]')].find(item => item.dataset.messageId === messageId)
     if (!element || !target) throw new Error('找不到该章节对应的回答。')
-    element.scrollTop += target.getBoundingClientRect().top - element.getBoundingClientRect().top - 16
+    element.scrollTop += target.getBoundingClientRect().top - visibleTop(element) - 16
     element.dispatchEvent(new Event('scroll'))
     target.tabIndex = -1
     target.focus({ preventScroll: true })

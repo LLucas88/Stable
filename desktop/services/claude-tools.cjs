@@ -192,7 +192,7 @@ function createClaudeTools({ sdk, workspace, writableRoots = [], readableRoots =
         limitationBasis: z.string().min(10).max(500).optional().describe('limited 仅用于用户明确允许披露的数据不足，必须逐字引用用户的许可句；不得用于功能、交互、权限或未验证项。'),
         evidenceId: z.string().max(40).optional(),
         note: z.string().min(1).max(240),
-      }).strict()).max(12).optional().describe('更新稳定 check 名称的检查结论，可随必要操作或 action=review 提交。passed 引用实际观察的 evidenceId；修改后标 needs-recheck；blocked 仅用于确实无法解决的权限/数据等障碍并说明原因，不能代替可修复问题。仅模型自述。'),
+      }).strict()).max(12).optional().describe('更新稳定 check 名称的检查结论，可随必要操作或 action=review 提交。passed 引用实际观察的 evidenceId；修改后标 needs-recheck；更新已绑定检查的状态时指定实际 tabId。blocked 仅用于确实无法解决的权限/数据等障碍并说明原因，不能代替可修复问题。仅模型自述。'),
     } : {}
     const description = spec.name === 'stable_browser' ? spec.description + '\n已明确且不依赖中间观察的检查步骤优先用 action=batch 合并（最多12步、4张截图），例如 resize→click已观察的唯一label→scroll→screenshot；仍逐图检查。发现的问题先集中修复，再验证受影响区域；用 reviewUpdates 随下一次必要操作更新记录，最后用 review 收尾，不为更新记录再截图。' : spec.description
     add(spec.name, description, { ...shape, ...reviewShape }, async (args, context) => {

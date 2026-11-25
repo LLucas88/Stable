@@ -6,15 +6,27 @@ const {installHtmlEditor}=require('./html-edit-runtime.cjs')
 const {toolbarMarkup}=require('./html-editor-toolbar.cjs')
 const {resolveWorkspaceEntry}=require('./preview.cjs')
 const WORLD=1015
+const MAX_FLUSH_BATCHES=8
 const documentURL=value=>{const url=new URL(value);url.hash='';return url.href}
 function safeDirectory(workspace,roots,...segments){let dir=resolveWorkspaceEntry(workspace,roots).path;for(const segment of segments){dir=path.join(dir,segment);if(!fs.existsSync(dir))fs.mkdirSync(dir);resolveWorkspaceEntry(dir,roots);if(fs.realpathSync(dir)!==dir)throw Error('编辑目录不能是链接。')}return dir}
 class HtmlVisualEditors {
-  constructor(electron){this.electron=electron;this.sessions=new Map()}
+  constructor(electron){this.electron=electron;this.sessions=new Map();this.opening=new Set();this.quitLocked=false}
+  get needsQuitPreparation(){return this.sessions.size>0||this.opening.size>0}
   find(conversationId,file){return [...this.sessions.values()].find(s=>s.conversationId===conversationId&&s.document.path.toLowerCase()===file.toLowerCase())}
   forContents(contents){return [...this.sessions.values()].find(s=>s.contents===contents)}
   get(conversationId,id){const s=this.sessions.get(id);if(!s||s.conversationId!==conversationId)throw Error('编辑会话已失效。');return s}
   async call(s,method,...args){if(s.contents.isDestroyed())throw Error('编辑页面已关闭。');return s.contents.executeJavaScriptInIsolatedWorld(WORLD,[{code:`globalThis.__stableHtmlEditor?.${method}(...${JSON.stringify(args)})`}])}
-  async start({conversationId,file,view,roots,workspace,window}){
+  pageAvailable(s){
+    if(s.contents.isDestroyed())return false
+    try{return documentURL(s.contents.getURL())===documentURL(s.url)}catch{return false}
+  }
+  async start(options){
+    if(this.quitLocked)throw Error('正在准备退出，暂时无法打开 HTML 编辑。')
+    const open=this.open(options)
+    this.opening.add(open)
+    try{return await open}finally{this.opening.delete(open)}
+  }
+  async open({conversationId,file,view,roots,workspace,window}){
     const existing=this.find(conversationId,file);if(existing)return this.state(existing)
     if([...this.sessions.values()].some(s=>s.document.path.toLowerCase()===file.toLowerCase()))throw Error('此文件正在另一个对话中编辑，请先退出编辑。')
     let document=new HtmlDocument(file,roots)
@@ -40,7 +52,8 @@ class HtmlVisualEditors {
     await this.call(s,'dispose');await s.contents.loadFile(document.path)
     s.document=document;s.url=s.contents.getURL();s.changes=[];s.revision=0;s.savedRevision=0;s.error='';await this.install(s);await this.call(s,'status','已载入 AI / 外部修改，编辑历史已重置')
   }
-  startTimer(s){s.timer=setInterval(()=>{if(s.ticking)return;s.ticking=true;void this.queue(s,()=>this.tick(s)).catch(()=>{}).finally(()=>{s.ticking=false})},200);s.timer.unref()}
+  startTimer(s){if(this.quitLocked||s.timer)return;s.timer=setInterval(()=>{if(s.ticking)return;s.ticking=true;void this.queue(s,()=>this.tick(s)).catch(()=>{}).finally(()=>{s.ticking=false})},200);s.timer.unref()}
+  stopTimer(s){clearInterval(s.timer);s.timer=null}
   state(s){return{sessionId:s.id,filePath:s.document.path,dirty:s.revision!==s.savedRevision,error:s.error,mapped:s.mapped,status:s.error?'保存失败':s.revision!==s.savedRevision?'待保存':'已保存到本地'}}
   queue(s,fn){const operation=s.chain.catch(()=>{}).then(fn);s.chain=operation;return operation}
   recovery(s){
@@ -55,30 +68,42 @@ class HtmlVisualEditors {
     }finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary)}
   }
   async collect(s,finish=false){
-    if(s.contents.isDestroyed()||documentURL(s.contents.getURL())!==documentURL(s.url))throw Object.assign(Error('编辑页面已关闭或地址已改变，无法继续读取页面编辑状态。'),{code:'EDITOR_PAGE_UNAVAILABLE'})
+    if(!this.pageAvailable(s))throw Object.assign(Error('编辑页面已关闭或地址已改变，无法继续读取页面编辑状态。'),{code:'EDITOR_PAGE_UNAVAILABLE'})
     const update=await this.call(s,finish?'finish':'read');if(!update)throw Object.assign(Error('编辑页面已重新加载，原编辑状态不可用。'),{code:'EDITOR_PAGE_UNAVAILABLE'})
+    // The renderer takes these events out of its mailbox when returning a snapshot.
+    // Retain them across a failed draft write or a bounded flush before retrying.
+    const pending=s.pendingEvents??=[]
+    for(const event of update.events)pending.push(event)
     s.busy=update.busy
     if(update.revision!==s.revision){compile(s.document.source,s.document.nodes,update.changes);s.revision=update.revision;s.changes=update.changes;s.lastChange=Date.now();this.recovery(s)}
-    return update.events
+    return pending
   }
+  async applyEvents(s,events){while(events.length)await this.event(s,events.shift())}
   async save(s){
     try{
       for(const p of s.changes){if(p.attrs?.src)s.images.read(p.attrs.src)}
       s.document.save(s.changes);s.savedRevision=s.revision;s.error='';if(fs.existsSync(s.recovery))fs.unlinkSync(s.recovery)
-      await this.call(s,'status','已自动保存');return this.state(s)
+      await this.call(s,'status','已自动保存').catch(()=>{});return this.state(s)
     }catch(e){s.error=e.message;this.recovery(s);await this.call(s,'status','保存失败，草稿已保留',s.error).catch(()=>{});throw e}
   }
   async tick(s){
     try{
       const events=await this.collect(s)
-      for(const event of events)await this.event(s,event)
+      await this.applyEvents(s,events)
       if(s.revision!==s.savedRevision&&!s.error&&Date.now()-s.lastChange>=500)await this.save(s)
       else if(s.revision===s.savedRevision&&!s.error&&!s.busy&&Date.now()-(s.lastExternalCheck||0)>1000){s.lastExternalCheck=Date.now();if(hash(fs.readFileSync(s.document.path))!==s.document.version)await this.refresh(s)}
-    }catch(e){s.error=e.message;if(e.code==='EDITOR_PAGE_UNAVAILABLE')clearInterval(s.timer);await this.call(s,'status','编辑需要处理',s.error).catch(()=>{})}
+    }catch(e){s.error=e.message;if(e.code==='EDITOR_PAGE_UNAVAILABLE')this.stopTimer(s);await this.call(s,'status','编辑需要处理',s.error).catch(()=>{})}
   }
   async flush(s){return this.queue(s,async()=>{
-    const events=await this.collect(s,true)
-    try{for(const event of events)await this.event(s,event);return s.revision===s.savedRevision?this.state(s):await this.save(s)}
+    let events=await this.collect(s,true)
+    for(let batch=0;events.length;batch++){
+      if(batch===MAX_FLUSH_BATCHES)throw Error('HTML 编辑仍有操作在处理中，请稍后重试。')
+      try{await this.applyEvents(s,events)}
+      catch(error){error.editorSnapshotCaptured=true;throw error}
+      // Image callbacks update the renderer revision after the previous snapshot.
+      events=await this.collect(s,true)
+    }
+    try{return s.revision===s.savedRevision?this.state(s):await this.save(s)}
     catch(error){error.editorSnapshotCaptured=true;throw error}
   })}
   async event(s,event){
@@ -134,7 +159,7 @@ class HtmlVisualEditors {
   async poll(conversationId,id){const s=this.get(conversationId,id);return{...this.state(s),deliveries:[...s.deliveries]}}
   acknowledge(conversationId,id,deliveryId){const s=this.get(conversationId,id);s.deliveries=s.deliveries.filter(d=>d.id!==deliveryId);return true}
   async stop(conversationId,id,{discard=false}={}){
-    const s=this.get(conversationId,id);clearInterval(s.timer)
+    const s=this.get(conversationId,id);this.stopTimer(s)
     try{if(!discard)await this.flush(s);else await s.chain.catch(()=>{})}catch(e){this.startTimer(s);throw e}
     await this.call(s,'dispose').catch(()=>{});s.contents.removeListener('will-navigate',s.guard);this.sessions.delete(id)
     return true
@@ -154,20 +179,56 @@ class HtmlVisualEditors {
     }
     fs.writeFileSync(target,output);return target
   }
+  async lockForQuit(){
+    if(this.quitLocked)throw Error('正在准备退出，请稍候。')
+    this.quitLocked=true
+    const existing=new Set(this.sessions.values()),paused=new Set(),frozen=new Set()
+    for(const s of existing){
+      if(!s.timer)continue
+      paused.add(s);this.stopTimer(s)
+    }
+    let releasing
+    const release=()=>releasing||=(async()=>{
+      await Promise.allSettled([...frozen].map(s=>this.queue(s,()=>this.pageAvailable(s)&&this.call(s,'unlockAfterQuit'))))
+      this.quitLocked=false
+      for(const s of paused)if(this.sessions.get(s.id)===s&&this.pageAvailable(s))this.startTimer(s)
+    })()
+    try{
+      // An editor admitted before the quit request can still be installing.
+      await Promise.allSettled([...this.opening])
+      for(const s of this.sessions.values()){
+        if(!existing.has(s))paused.add(s)
+        await this.queue(s,async()=>{
+          if(this.sessions.get(s.id)!==s||!this.pageAvailable(s))return
+          frozen.add(s)
+          await this.call(s,'lockForQuit')
+        })
+      }
+      return release
+    }catch(error){
+      await release()
+      throw error
+    }
+  }
   async flushAll({closing=false,preserveDrafts=false}={}){
-    const preserved=[]
+    const preserved=[],failures=[]
     for(const s of this.sessions.values()){
       try{await this.flush(s)}catch(error){
         const unavailable=error.code==='EDITOR_PAGE_UNAVAILABLE'
         // A dead, already-saved editor must not trap the whole application.
         // Do not delete any recovery file: it may contain an older conflict.
         if(closing&&unavailable&&s.revision===s.savedRevision&&!s.busy)continue
-        if(!closing||!preserveDrafts||!unavailable&&!error.editorSnapshotCaptured)throw error
-        await this.queue(s,()=>this.recovery(s))
-        preserved.push({file:s.document.path,recovery:s.recovery,lastCollectedOnly:unavailable})
+        if(!closing)throw error
+        if(!preserveDrafts||!unavailable&&!error.editorSnapshotCaptured){failures.push(error);continue}
+        try{
+          await this.queue(s,()=>this.recovery(s))
+          preserved.push({file:s.document.path,recovery:s.recovery,lastCollectedOnly:unavailable})
+        }catch(failure){failures.push(failure)}
       }
     }
-    if(closing)for(const s of this.sessions.values())clearInterval(s.timer)
+    if(failures.length===1)throw failures[0]
+    if(failures.length)throw new AggregateError(failures,failures.map(error=>error.message).join('\n'))
+    if(closing)for(const s of this.sessions.values())this.stopTimer(s)
     return {preserved}
   }
 }

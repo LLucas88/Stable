@@ -14,6 +14,16 @@ test('official effort ranges and trusted cloud capability gate',()=>{
  assert.deepEqual(reasoningOptions({...sol,baseURL:'https://untrusted.example/v1'}),[])
  assert.equal(cloudReasoningProfile({id:sol.model,provider:'openai',responses_supported:true}).cloudResponses,true)
  assert.equal(cloudReasoningProfile({id:sol.model,provider:'openai'}).cloudResponses,undefined)
+ for(const [id,acceptsNone] of [
+  ['gpt-6.2-astra',false],['gpt-6.2-sol',false],['gpt-6-astra',false],['gpt-6-sol',true],['gpt-6-luna',true],
+ ]){
+  const flags=cloudReasoningProfile({id,provider:'openai',responses_supported:true})
+  assert.equal(flags.cloudResponses,true,id)
+  const cloud={...flags,providerId:'stable-cloud',baseURL:'http://127.0.0.1:12345/v1',model:id}
+  assert.deepEqual(reasoningOptions(cloud).map(option=>option.id),['auto',...(acceptsNone?['none']:[]),'low','medium','high','xhigh','max'],id)
+  assert.deepEqual(reasoningParameters(cloud,'none'),acceptsNone?{reasoning_effort:'none'}:{},id)
+  assert.equal(cloudReasoningProfile({id,provider:'openai'}).cloudResponses,undefined,id)
+ }
 })
 test('API transport enforces output cap, store false and encrypted reasoning request',async()=>{
  const adapter=new OpenAIResponses({model:sol,apiKey:'fixture',fetchImpl:async(url,init)=>{

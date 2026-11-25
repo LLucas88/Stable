@@ -5,7 +5,17 @@
 // https://docs.bigmodel.cn/cn/guide/capabilities/thinking
 // https://huggingface.co/zai-org/GLM-5.3-Flash (model-specific effort levels)
 const LABELS = { auto:'默认', none:'关闭思考', enabled:'开启思考', low:'低', medium:'中', high:'高', xhigh:'超高', max:'最高' }
-const OPENAI_EFFORTS = { 'gpt-6.1-sol':['low','medium','high','xhigh','max'], 'gpt-6.1-terra':['none','low','medium','high','xhigh','max'] }
+const OPENAI_REQUIRED_EFFORT = ['low', 'medium', 'high', 'xhigh', 'max']
+const OPENAI_OPTIONAL_EFFORT = ['none', ...OPENAI_REQUIRED_EFFORT]
+const OPENAI_EFFORTS = {
+  'gpt-6.2-astra': OPENAI_REQUIRED_EFFORT,
+  'gpt-6.2-sol': OPENAI_REQUIRED_EFFORT,
+  'gpt-6.1-sol': OPENAI_REQUIRED_EFFORT,
+  'gpt-6.1-terra': OPENAI_OPTIONAL_EFFORT,
+  'gpt-6-astra': OPENAI_REQUIRED_EFFORT,
+  'gpt-6-sol': OPENAI_OPTIONAL_EFFORT,
+  'gpt-6-luna': OPENAI_OPTIONAL_EFFORT,
+}
 function openAiResponsesModel(model = {}) {
   if (!Object.hasOwn(OPENAI_EFFORTS, model.model || '')) return false
   try {

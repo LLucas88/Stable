@@ -61,6 +61,7 @@ const {
 const { automationIntent, automationTemplates, parseProposalOutput, proposalPrompt } = require('./services/automation.cjs')
 const { createUpdateController } = require('./services/updater.cjs')
 const { createWindowPresence, registerCompletedCountIpc } = require('./services/window-presence.cjs')
+const { defaultMainWindowSize, applyDefaultMainWindowSize } = require('./services/main-window-size.cjs')
 const { cleanupStaleInstalls } = require('./services/update-maintenance.cjs')
 const { WendingCliService, isWendingCliPrompt } = require('./services/wending-cli.cjs')
 const { registerWendingLoginIpc } = require('./services/wending-login.cjs')
@@ -381,8 +382,12 @@ function closePreviewView() {
   cleanupPreviewTemporaryFile()
   if (!view) return true
   try { mainWindow?.contentView.removeChildView(view) } catch {}
-  const editor=htmlEditors.forContents(view.webContents)
-  if (editor) { view.setVisible(false);void htmlEditors.flush(editor).catch(()=>{});return true }
+  const editor = htmlEditors.forContents(view.webContents)
+  if (editor && !editorsFlushedForQuit) {
+    view.setVisible(false)
+    if (!editorQuitPending) void htmlEditors.flush(editor).catch(() => {})
+    return true
+  }
   try { if (!view.webContents.isDestroyed()) view.webContents.close() } catch {}
   return true
 }
@@ -2970,14 +2975,12 @@ function createWindow() {
   const qaWidth = Number.parseInt(process.env.STABLE_QA_WIDTH || '', 10)
   const qaHeight = Number.parseInt(process.env.STABLE_QA_HEIGHT || '', 10)
   const isQa = Number.isFinite(qaWidth) && Number.isFinite(qaHeight)
-  // Product defaults are physical pixels; Electron window dimensions are DIP.
   const display = screen.getPrimaryDisplay()
-  const defaultWidth = Math.min(Math.round(1600 / display.scaleFactor), display.workArea.width)
-  const defaultHeight = Math.min(Math.round(916 / display.scaleFactor), display.workArea.height)
+  const { width, height, minWidth, minHeight } = defaultMainWindowSize(display)
   const theme = normalizeTheme(store.getSetting('theme'))
   const chrome = require('./services/window-appearance.cjs').WINDOW_CHROME[theme]
   const window = new BrowserWindow({
-    width: isQa ? qaWidth : defaultWidth, height: isQa ? qaHeight : defaultHeight, minWidth: isQa ? 320 : Math.min(1180, defaultWidth), minHeight: isQa ? 480 : Math.min(720, defaultHeight), show: false, autoHideMenuBar: true,
+    width: isQa ? qaWidth : width, height: isQa ? qaHeight : height, minWidth: isQa ? 320 : minWidth, minHeight: isQa ? 480 : minHeight, show: false, autoHideMenuBar: true,
     backgroundColor: chrome.backgroundColor, icon: resourcePath('build', 'stable_app_icon.png'),
     ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden',
@@ -2987,16 +2990,14 @@ function createWindow() {
   })
   if (!isQa) {
     window.center()
-    // Fractional Windows DPI can add border rounding during creation/resizing.
-    let width = defaultWidth
-    let height = defaultHeight
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const actual = window.getBounds()
-      if (actual.width === defaultWidth && actual.height === defaultHeight) break
-      width += defaultWidth - actual.width
-      height += defaultHeight - actual.height
-      window.setSize(width, height)
-    }
+    applyDefaultMainWindowSize(window, display)
+    window.on('unmaximize', () => {
+      // Wait for Windows to finish applying its previous normal bounds.
+      setImmediate(() => {
+        if (window.isDestroyed() || window.isMaximized() || window.isMinimized() || window.isFullScreen()) return
+        applyDefaultMainWindowSize(window, screen.getDisplayMatching(window.getBounds()))
+      })
+    })
   }
   if (process.platform === 'win32' && app.isPackaged) {
     window.setAppDetails({
@@ -3027,7 +3028,11 @@ function createWindow() {
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('file:')) event.preventDefault() })
   window.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) wendingCli?.dispose() })
-  window.on('close', event=>{if(!event.defaultPrevented&&htmlEditors.sessions.size&&!editorsFlushedForQuit){event.preventDefault();if(!editorQuitPending)app.quit()}})
+  window.on('close', event => {
+    if (event.defaultPrevented || editorsFlushedForQuit || (!editorQuitPending && !htmlEditors.needsQuitPreparation)) return
+    event.preventDefault()
+    if (!editorQuitPending) app.quit()
+  })
   window.on('closed', () => { wendingCli?.dispose(); closePreviewView(); mainWindow = undefined })
   return window
 }
@@ -3167,18 +3172,24 @@ async function boot() {
   modelRegistry.migrateDeepSeekModels()
   modelRegistry.migrateFlash1017Default()
   runner = createHarnessRunner()
+  const updateBlocker = action => {
+    if (agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size || runner?.busy || scriptRunner?.child || activeWorkflowRun) return '有任务正在运行，请等待完成或先停止任务，再点击一键更新。'
+    if (action === 'reload' && htmlEditors.needsQuitPreparation) return 'HTML 编辑期间暂缓自动刷新。'
+    return ''
+  }
   const prepareForSourceReload = require('./services/update-readiness.cjs').createUpdateReadiness({
-      ipcMain, getWindow: () => mainWindow,
-      blockers: () => {
-        if (agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size || runner?.busy || scriptRunner?.child || activeWorkflowRun) return '有任务正在运行，请等待完成或先停止任务，再点击一键更新。'
-        if (htmlEditors.sessions.size) return '请先保存并退出 HTML 编辑，再点击一键更新。'
-        return ''
-      },
-    })
+    ipcMain, getWindow: () => mainWindow, blockers: updateBlocker,
+  })
+  const withUpdateExit = commit => quitWithSavedEditors(() => {
+    const blocker = updateBlocker()
+    if (blocker) throw Error(blocker)
+    return commit()
+  })
   updateController = createUpdateController({
     autoUpdater, isPackaged: app.isPackaged, currentVersion: app.getVersion(),
     prepareInstall: process.platform === 'win32' ? version => require('./services/update-window.cjs').prepareUpdateWindow({ userData: paths.userData, version, bounds: mainWindow?.getBounds() }) : undefined,
     beforeInstall: prepareForSourceReload,
+    withInstallQuit: withUpdateExit,
     onDiagnostic: record => require('./services/support-diagnostics.cjs').recordRecovery(path.join(paths.userData, 'logs/cloud-recovery.jsonl'), record),
     publish: (value) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:update:event', value) },
   })
@@ -3232,7 +3243,7 @@ async function boot() {
     developmentReload = require('./services/dev-reload.cjs').createDevReload({
       prepare: prepareForSourceReload,
       reload: () => mainWindow.loadFile(resourcePath('dist', 'index.html')),
-      restart: () => app.quit(), send,
+      restart: () => app.quit(), withRestart: withUpdateExit, send,
       confirmRestart: id => developmentIpc.confirmRestart(process,id),
       onState: state => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stable:development:state', state)
@@ -3247,7 +3258,7 @@ async function boot() {
     executable: require('./services/claude-harness.cjs').runtimePath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath }),
   })
   runtimePreloader.schedule(() => Boolean(agentRunners.size || automationRunners.size || teamTaskRunners.size || collaborationRunners.size))
-  app.once('before-quit', () => runtimePreloader.close())
+  app.once('will-quit', () => runtimePreloader.close())
   if (app.isPackaged) setTimeout(() => cleanupStaleInstalls(process.execPath), 5_000)
   updateController.start()
   automationTimer = setInterval(checkDueAutomations, 15_000)
@@ -3545,12 +3556,65 @@ if (upgradeMaintenance) {
   app.on('activate', () => { if (!mainWindow) void boot() })
 }
 app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => chatgptAccount?.dispose())
-app.on('before-quit', () => wendingCli?.dispose())
-app.on('before-quit', () => messagePredictions.invalidate())
-app.on('before-quit', () => conversationTitles?.close())
-let editorsFlushedForQuit=false,editorQuitPending=false
-app.on('before-quit', (event) => { if(!editorsFlushedForQuit&&htmlEditors.sessions.size){event.preventDefault();if(editorQuitPending)return;editorQuitPending=true;void require('./services/editor-quit.cjs').prepareEditorQuit({editors:htmlEditors,dialog,getWindow:()=>mainWindow}).then(ready=>{editorQuitPending=false;if(ready){editorsFlushedForQuit=true;app.quit()}else{app.emit('stable:quit-cancelled');mainWindow?.show()}}).catch(async error=>{try{await dialog.showMessageBox({type:'error',message:'退出检查失败，已保留应用',detail:error.message})}finally{editorQuitPending=false;app.emit('stable:quit-cancelled');mainWindow?.show()}});return} browserSession?.dispose(); closePreviewView(); cancelWorkflow(); clearInterval(automationTimer); updateController?.dispose(); runner?.cancel(); for (const control of agentRunners.values()) { control.cancelled=true;control.runner.cancel(); for (const reviewer of control.reviewers) reviewer.cancel() } for (const automationRunner of automationRunners.values()) automationRunner.cancel(); for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel(); for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel(); for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer); if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() } if (cloudGateway) void cloudGateway.stop(); scriptRunner?.cancel(); })
+let editorsFlushedForQuit = false, editorQuitPending = false
+async function quitWithSavedEditors(commit) {
+  if (editorQuitPending) throw Error('正在保存 HTML 编辑，请稍候。')
+  editorQuitPending = true
+  let release, committed = false
+  try {
+    release = await htmlEditors.lockForQuit()
+    const ready = await require('./services/editor-quit.cjs').prepareEditorQuit({ editors: htmlEditors, dialog, getWindow: () => mainWindow })
+    if (!ready) return false
+    editorsFlushedForQuit = true
+    committed = commit() !== false
+    return committed
+  } finally {
+    try {
+      if (!committed) {
+        editorsFlushedForQuit = false
+        await release?.()
+      }
+    } finally {
+      editorQuitPending = false
+      if (!committed) app.emit('stable:quit-cancelled')
+    }
+  }
+}
+app.on('before-quit', event => {
+  if (!editorsFlushedForQuit && (editorQuitPending || htmlEditors.needsQuitPreparation)) {
+    event.preventDefault()
+    if (editorQuitPending) return
+    void quitWithSavedEditors(() => app.quit()).then(ready => {
+      if (!ready && mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
+    }).catch(error => {
+      void dialog.showMessageBox({ type: 'error', message: '退出检查失败，已保留应用', detail: error.message }).catch(() => {})
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
+    })
+    return
+  }
+  chatgptAccount?.dispose()
+  wendingCli?.dispose()
+  messagePredictions.invalidate()
+  conversationTitles?.close()
+  browserSession?.dispose()
+  closePreviewView()
+  cancelWorkflow()
+  clearInterval(automationTimer)
+  updateController?.dispose()
+  runner?.cancel()
+  for (const control of agentRunners.values()) {
+    control.cancelled = true
+    control.runner.cancel()
+    for (const reviewer of control.reviewers) reviewer.cancel()
+  }
+  for (const automationRunner of automationRunners.values()) automationRunner.cancel()
+  for (const taskRunner of teamTaskRunners.values()) taskRunner.cancel()
+  for (const collaborationRunner of collaborationRunners.values()) collaborationRunner.cancel()
+  for (const timer of pendingCollaborationChecks.values()) clearTimeout(timer)
+  if (teamNetwork) { teamNetwork.onEvent = () => {}; void teamNetwork.close() }
+  if (cloudGateway) void cloudGateway.stop()
+  scriptRunner?.cancel()
+})
 
 // The renderer can still send IPC during before-quit; close only after windows are gone.
 require('./services/store-shutdown.cjs').closeStoreOnQuit(app, () => store)

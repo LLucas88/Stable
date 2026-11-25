@@ -414,7 +414,7 @@ class ClaudeHarnessRunner {
         systemPrompt: { type: 'custom', prompt: instructions, snapshot: false }, settings: { autoCompactEnabled: !prediction, autoCompactWindow: limits.autoCompactWindow, autoMemoryEnabled: memory.enabled, ...(memory.enabled ? { autoMemoryDirectory: memory.directory } : {}) },
         ...(prediction ? { maxTurns: 1 } : {}),
         includePartialMessages: true, persistSession: Boolean(session.key && !session.textOnly),
-        mcpServers, ...(server ? { allowedTools: ['mcp__stable__*'] } : {}),
+        mcpServers, mcpServersDelivery: 'initialize', ...(server ? { allowedTools: ['mcp__stable__*'] } : {}),
         ...(server ? {
           agents: { 'stable-worker': { description: '在当前任务目录与审批边界内执行可独立委派的子任务。', prompt: instructions, model: 'inherit', tools: workerTools,
             autoCompactWindow: limits.autoCompactWindow } },

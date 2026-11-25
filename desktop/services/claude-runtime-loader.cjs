@@ -4,8 +4,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 
-const SDK_VERSION = '0.3.318'
-const CLI_VERSION = '2.1.318'
+const SDK_VERSION = '0.3.329'
+const CLI_VERSION = '2.1.329'
 const REQUIRED_SDK_EXPORTS = ['query', 'tool', 'createSdkMcpServer']
 
 function runtimeError(code, message, cause) {

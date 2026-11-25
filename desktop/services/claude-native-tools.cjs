@@ -95,22 +95,38 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
   const tools = [...TOOLS, ...(bashEnabled ? ['Bash'] : []), ...(networkAccess ? ['WebFetch'] : [])]
   const calls = new Map()
   const nativeHome = runtimeHome ? fs.realpathSync(runtimeHome) : null
+  const bashOutputFiles = new Set()
+  const outputKey = file => process.platform === 'win32' ? file.toLowerCase() : file
+  const outputParts = file => path.relative(nativeHome, file).split(path.sep)
   let serial = 0
-  function nativeOutputFile(requested) {
-    if (taskOutputAllowed?.(requested)) return requested
-    if (!nativeHome) return null
-    // Verified with SDK 0.3.318: full command output is stored here. Grant only ordinary result
-    // files in this conversation, never transcripts, config, directories or writes.
-    const relative = path.relative(nativeHome, requested).split(path.sep)
-    const sessionId = typeof runtimeSessionId === 'function' ? runtimeSessionId() : runtimeSessionId
-    if (!sessionId || relative.length !== 5 || relative[0] !== 'projects' || relative[2] !== sessionId || relative[3] !== 'tool-results' || !/^[\w-]+\.txt$/.test(relative[4])) return null
+  function verifyNativeOutputFile(relative) {
+    if (relative.length !== 5 || relative[0] !== 'projects' || relative[3] !== 'tool-results' || !/^[\w-]+\.txt$/.test(relative[4])) return null
     let current = nativeHome
     for (const [index, part] of relative.entries()) {
       current = path.join(current, part)
       let stat; try { stat = fs.lstatSync(current) } catch { return null }
       if (stat.isSymbolicLink() || (index === relative.length - 1 ? !stat.isFile() || stat.nlink !== 1 : !stat.isDirectory())) return null
     }
-    return samePath(fs.realpathSync(current), current) ? current : null
+    try { return samePath(fs.realpathSync(current), current) ? current : null } catch { return null }
+  }
+  function nativeOutputFile(requested) {
+    if (taskOutputAllowed?.(requested)) return requested
+    if (!nativeHome) return null
+    const relative = outputParts(requested)
+    const sessionId = typeof runtimeSessionId === 'function' ? runtimeSessionId() : runtimeSessionId
+    if ((!sessionId || relative[2] !== sessionId) && !bashOutputFiles.has(outputKey(requested))) return null
+    return verifyNativeOutputFile(relative)
+  }
+  function rememberBashOutput(input) {
+    const output = input.tool_response?.persistedOutputPath
+    const transcript = input.transcript_path
+    if (!nativeHome || typeof output !== 'string' || !path.isAbsolute(output) || typeof transcript !== 'string' || !path.isAbsolute(transcript)) return
+    const relative = outputParts(path.resolve(output))
+    if (!samePath(path.dirname(path.resolve(transcript)), path.join(nativeHome, 'projects', relative[1] || ''))) return
+    const verified = verifyNativeOutputFile(relative)
+    // Nonpersistent runs may store Bash output under a separate runtime ID.
+    // The native result grants this file only, for the life of the guard.
+    if (verified) bashOutputFiles.add(outputKey(verified))
   }
   function protectedWrite(target) {
     // Protect nested repositories/configuration as well as each root's files.
@@ -224,6 +240,7 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
         if (current.target !== checked.target || current.snapshot !== checked.snapshot) throw Error('审批期间文件或路径已变化，请重新读取再操作。')
       }
       aborted(activeSignal)
+      entry.authorized = true
     })()
     await entry.promise
     // Native code opens the file AFTER this hook returns. Unlike stable_file's
@@ -254,7 +271,10 @@ function createNativeToolGuard({ workspace, writableRoots = [], readableRoots = 
     const id = input.tool_use_id
     const entry = calls.get(id)
     if (entry) {
-      if (entry.name === 'Bash' && input.tool_response?.backgroundTaskId) onBackgroundResult?.(input.tool_response, id, entry.args)
+      if (entry.name === 'Bash' && entry.authorized) {
+        rememberBashOutput(input)
+        if (input.tool_response?.backgroundTaskId) onBackgroundResult?.(input.tool_response, id, entry.args)
+      }
       const timedOut = entry.name === 'Bash' && !signal?.aborted && !input.tool_response?.backgroundTaskId && input.tool_response?.interrupted === true
       const webCode = entry.name === 'WebFetch' ? input.tool_response?.code : undefined
       const webFailed = Number.isInteger(webCode) && (webCode < 200 || webCode >= 300)

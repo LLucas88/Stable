@@ -81,12 +81,12 @@ test('failed automatic download can retry without installing, and failed install
   controller.dispose()
 })
 
-function scenario(beforeInstall = async () => {}) {
+function scenario(beforeInstall = async () => {}, options = {}) {
   const updater = new EventEmitter(), calls = { checks:0, downloads:0, installs:[] }
   updater.checkForUpdates = async () => { calls.checks++; updater.emit('update-available',{version:'1.2.0'}) }
   updater.downloadUpdate = async () => { calls.downloads++; updater.emit('update-downloaded',{version:'1.2.0'}) }
   updater.quitAndInstall = (...args) => calls.installs.push(args)
-  const controller = createUpdateController({autoUpdater:updater,isPackaged:true,currentVersion:'1.1.0',beforeInstall})
+  const controller = createUpdateController({autoUpdater:updater,isPackaged:true,currentVersion:'1.1.0',beforeInstall,...options})
   return {updater,calls,controller}
 }
 const tick = () => new Promise(resolve=>setImmediate(resolve))
@@ -106,6 +106,69 @@ test('a downloaded update is reused without another download', async () => {
   await controller.oneClick(); await tick()
   assert.equal(calls.checks,1); assert.equal(calls.downloads,1); assert.equal(calls.installs.length,1)
   controller.dispose()
+})
+test('the installer waits for final quit preparation only after downloading', async t => {
+  let finish, prepareCalls = 0
+  const {controller,calls} = scenario(undefined, {withInstallQuit: async commit => {
+    prepareCalls++
+    await new Promise(resolve => { finish = resolve })
+    return commit()
+  }})
+  t.after(() => controller.dispose())
+  await controller.check()
+  assert.equal(prepareCalls, 0, 'background download does not request permission to quit')
+  const pending = controller.install()
+  await tick()
+  assert.equal(prepareCalls, 1)
+  assert.deepEqual(calls.installs, [])
+  assert.equal(controller.state().status, 'downloaded')
+  finish()
+  assert.equal(await pending, true)
+  assert.deepEqual(calls.installs, [[false, true]])
+})
+test('canceling final quit preparation keeps the downloaded update and invalidates the old commit', async t => {
+  let canceled = 0, allowed = false, abandonedCommit
+  const {controller,calls,updater} = scenario(undefined, {
+    prepareInstall: async () => ({cancel: () => { canceled++ }, install: target => target.quitAndInstall(true, true)}),
+    withInstallQuit: async commit => {
+      if (allowed) return commit()
+      abandonedCommit = commit
+      return false
+    },
+  })
+  t.after(() => controller.dispose())
+  await controller.oneClick()
+  await tick()
+  assert.equal(canceled, 1)
+  assert.equal(controller.state().oneClick, false)
+  assert.equal(controller.state().status, 'downloaded')
+  assert.equal(abandonedCommit(), false)
+  updater.emit('update-downloaded', {version:'1.2.0'})
+  assert.deepEqual(calls.installs, [])
+  allowed = true
+  await controller.oneClick()
+  assert.equal(calls.downloads, 1)
+  assert.deepEqual(calls.installs, [[true, true]])
+})
+test('an update error invalidates final quit preparation before it can launch an installer', async t => {
+  let finish, canceled = 0
+  const {controller,calls,updater} = scenario(undefined, {
+    prepareInstall: async () => ({cancel: () => { canceled++ }, install: target => target.quitAndInstall(true, true)}),
+    withInstallQuit: async commit => {
+      await new Promise(resolve => { finish = resolve })
+      return commit()
+    },
+  })
+  t.after(() => controller.dispose())
+  await controller.check()
+  const pending = controller.install()
+  await tick()
+  updater.emit('error', Error('update no longer valid'))
+  finish()
+  assert.equal(await pending, false)
+  assert.deepEqual(calls.installs, [])
+  assert.equal(canceled, 1)
+  assert.equal(controller.state().status, 'error')
 })
 test('duplicate clicks during preflight and download join the same operation', async () => {
   let ready, finish

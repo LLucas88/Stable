@@ -7,6 +7,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { drainSdkMessages, sdkDiagnostic, startupFailure } = require('../desktop/services/claude-sdk-completion.cjs')
 const { ClaudeHarnessRunner, sessionDirectory } = require('../desktop/services/claude-harness.cjs')
+const { CLI_VERSION } = require('../desktop/services/claude-runtime-loader.cjs')
 const { createClaudeLifecycle } = require('../desktop/services/claude-lifecycle.cjs')
 
 const model = { providerId: 'fixture', model: 'fixture-model', baseURL: 'https://provider.invalid/v1' }
@@ -24,7 +25,7 @@ function fixture(t, scenario, extra = {}) {
       let close; const closed = new Promise(resolve => { close = resolve })
       const capture = { parameters, closed, input: parameters.prompt[Symbol.asyncIterator](), closeCalled: false }; captures.push(capture)
       return {
-        async initializationResult() { return { claude_code_version: '2.1.318' } },
+        async initializationResult() { return { claude_code_version: CLI_VERSION } },
         close() { capture.closeCalled = true; close() },
         async *[Symbol.asyncIterator]() {
           capture.first = (await capture.input.next()).value

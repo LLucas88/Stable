@@ -93,9 +93,7 @@
 .conversation-wending-loading { display: flex; gap: var(--space-md); align-items: center; justify-content: space-between; }
 .conversation-sidebar-toggle { display: none; width: 2.25rem; height: 2.25rem; padding: 0; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-ink-2); }
 .message-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--space-xl) clamp(var(--space-lg), 4vw, var(--space-2xl)) var(--space-2xl); scrollbar-width: thin; scrollbar-color: var(--color-rule) transparent; }
-.message-scroll { --scroll-fade-top: 0px; --scroll-fade-bottom: 0px; mask-image: linear-gradient(to bottom, transparent, #000 var(--scroll-fade-top), #000 calc(100% - var(--scroll-fade-bottom)), transparent); }
-.message-scroll[data-fade-top="true"] { --scroll-fade-top: 24px; }
-.message-scroll[data-fade-bottom="true"] { --scroll-fade-bottom: 28px; }
+.message-scroll[data-fade-top="true"] { mask-image: linear-gradient(to bottom, transparent, #000 24px); }
 .message-scroll::-webkit-scrollbar { width: 0.6rem; }
 .message-scroll::-webkit-scrollbar-track { background: transparent; }
 .message-scroll::-webkit-scrollbar-thumb { border: 0.18rem solid transparent; border-radius: 999px; background: var(--color-rule); background-clip: padding-box; }

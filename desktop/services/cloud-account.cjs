@@ -18,6 +18,14 @@ function cleanBaseURL(value) {
   return raw
 }
 
+function accountQuotas({ quota, quotas }) {
+  return { quota: quota ?? null, quotas: Array.isArray(quotas) ? quotas : undefined }
+}
+
+function signedOutSnapshot(snapshot, error = '') {
+  return { ...snapshot, status: 'signed_out', account: null, quota: null, quotas: undefined, usage: null, models: [], error }
+}
+
 class CloudAccountService {
   constructor({ store, secrets, appVersion, fetchImpl = globalThis.fetch, baseURL = process.env.STABLE_CLOUD_URL, requestTimeoutMs = 15_000, onDiagnostic = () => {} }) {
     this.store = store
@@ -95,13 +103,13 @@ class CloudAccountService {
 
   async restore() {
     const token = this.token()
-    if (!token) { this.snapshot = { ...this.snapshot, status: 'signed_out', error: '' }; return this.publicState() }
+    if (!token) { this.snapshot = signedOutSnapshot(this.snapshot); return this.publicState() }
     try {
       await this.refresh()
     } catch (error) {
       if (error.status === 401) {
         this.secrets.remove(DEVICE_TOKEN_KEY)
-        this.snapshot = { ...this.snapshot, status: 'signed_out', account: null, quota: null, usage: null, models: [], error: '登录已失效，请重新登录。' }
+        this.snapshot = signedOutSnapshot(this.snapshot, '登录已失效，请重新登录。')
       } else {
         this.snapshot = { ...this.snapshot, status: 'unavailable', error: error.message }
       }
@@ -117,7 +125,7 @@ class CloudAccountService {
     this.secrets.set(DEVICE_TOKEN_KEY, result.device_token)
     this.snapshot = {
       ...this.snapshot, status: result.account.mustChangePassword ? 'password_change_required' : 'authenticated',
-      account: result.account, quota: result.quota, usage: null, models: [], error: '',
+      account: result.account, ...accountQuotas(result), usage: null, models: [], error: '',
     }
     if (!result.account.mustChangePassword) await this.refresh()
     return this.publicState()
@@ -135,7 +143,7 @@ class CloudAccountService {
     const account = await this.request('/api/account')
     if (!account?.account) throw new Error('Stable Cloud 账号响应不完整。')
     if (account.account.mustChangePassword) {
-      this.snapshot = { ...this.snapshot, status: 'password_change_required', account: account.account, quota: account.quota, usage: null, models: [], error: '' }
+      this.snapshot = { ...this.snapshot, status: 'password_change_required', account: account.account, ...accountQuotas(account), usage: null, models: [], error: '' }
       return this.publicState()
     }
     const [catalog, usage] = await Promise.all([
@@ -143,7 +151,7 @@ class CloudAccountService {
       this.request('/api/usage/summary'),
     ])
     this.snapshot = {
-      ...this.snapshot, status: 'authenticated', account: account.account, quota: account.quota,
+      ...this.snapshot, status: 'authenticated', account: account.account, ...accountQuotas(account),
       usage, models: Array.isArray(catalog?.data) ? catalog.data : [], error: '',
     }
     return this.publicState()
@@ -155,7 +163,7 @@ class CloudAccountService {
       try { await this.request('/api/auth/logout', { method: 'POST', token }) } catch { /* local logout must always succeed */ }
     }
     this.secrets.remove(DEVICE_TOKEN_KEY)
-    this.snapshot = { ...this.snapshot, status: 'signed_out', account: null, quota: null, usage: null, models: [], error: '' }
+    this.snapshot = signedOutSnapshot(this.snapshot)
     return this.publicState()
   }
 }

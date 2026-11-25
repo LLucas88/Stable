@@ -1,0 +1,1250 @@
+diff --git a/app/admin/accounts/page.tsx b/app/admin/accounts/page.tsx
+index 59ab0bc..3a69d46 100644
+--- a/app/admin/accounts/page.tsx
++++ b/app/admin/accounts/page.tsx
+@@ -40,6 +40,7 @@ import {
+ } from '@/components/ui/table';
+ import {
+   AccountRecord,
++  QuotaWallet,
+   amountToMicros,
+   apiRequest,
+   errorMessage,
+@@ -183,13 +184,19 @@ export default function AccountsPage() {
+                       )}
+                   </TableCell>
+                   <TableCell>
+-                    {account.quota ? (
+-                      <QuotaSummary quota={account.quota} />
++                    {account.quotas.length ? (
++                      <div className="space-y-3">
++                        {account.quotas.map(quota => <QuotaSummary key={quota.id} quota={quota} />)}
++                      </div>
+                     ) : (
+                       <span className="text-muted-foreground">无活动额度</span>
+                     )}
+                   </TableCell>
+-                  <TableCell>{formatDate(account.quota?.periodEnd)}</TableCell>
++                  <TableCell>
++                    {account.quotas.length ? account.quotas.map(quota => (
++                      <p className="whitespace-nowrap" key={quota.id}>{quota.currency} · {formatDate(quota.periodEnd)}</p>
++                    )) : '—'}
++                  </TableCell>
+                   <TableCell className="whitespace-nowrap">{formatModelRequestTime(account.lastModelRequestAt)}</TableCell>
+                   <TableCell>
+                     {account.role === 'member' ? (
+@@ -199,6 +206,7 @@ export default function AccountsPage() {
+                           variant="ghost"
+                           size="sm"
+                           className="min-h-9"
++                          disabled={!account.quotas.some(quota => quota.currency === 'CNY' || quota.currency === 'USD')}
+                           onClick={() => openAction(account, 'adjust')}
+                         >
+                           调额
+@@ -209,7 +217,7 @@ export default function AccountsPage() {
+                           className="min-h-9"
+                           onClick={() => openAction(account, 'renew')}
+                         >
+-                          续期
++                          发放或续期
+                         </Button>
+                         <Button
+                           variant="ghost"
+@@ -255,6 +263,7 @@ export default function AccountsPage() {
+         }}
+       />
+       <AccountActionDialog
++        key={`${selected?.id ?? ''}:${action ?? ''}`}
+         account={selected}
+         action={action}
+         onClose={() => {
+@@ -273,11 +282,7 @@ export default function AccountsPage() {
+   );
+ }
+ 
+-function QuotaSummary({
+-  quota,
+-}: {
+-  quota: NonNullable<AccountRecord['quota']>;
+-}) {
++function QuotaSummary({ quota }: { quota: QuotaWallet }) {
+   const committed = quota.spentMicros + quota.reservedMicros;
+   const percentage =
+     quota.limitMicros > 0
+@@ -287,7 +292,7 @@ function QuotaSummary({
+     <div>
+       <div className="mb-2 flex items-center justify-between gap-4 text-xs">
+         <span>
+-          {formatMoney(committed, quota.currency)} /{' '}
++          {quota.currency} · {formatMoney(committed, quota.currency)} /{' '}
+           {formatMoney(quota.limitMicros, quota.currency)}
+         </span>
+         <span className="text-muted-foreground">
+@@ -296,7 +301,7 @@ function QuotaSummary({
+       </div>
+       <Progress
+         value={percentage}
+-        aria-label={`额度已使用 ${percentage.toFixed(0)}%`}
++        aria-label={`${quota.currency} 额度已使用 ${percentage.toFixed(0)}%`}
+       />
+       {quota.reservedMicros > 0 && (
+         <p className="mt-2 text-xs text-muted-foreground">
+@@ -451,6 +456,10 @@ function AccountActionDialog({
+ }) {
+   const [pending, setPending] = useState(false);
+   const [error, setError] = useState('');
++  const [currency, setCurrency] = useState<'CNY' | 'USD'>(
++    action === 'adjust' && !account?.quotas.some(quota => quota.currency === 'CNY') ? 'USD' : 'CNY',
++  );
++  const wallet = account?.quotas.find(quota => quota.currency === currency);
+   const errorRef = useRef<HTMLDivElement>(null);
+   const open = Boolean(account && action);
+ 
+@@ -468,25 +477,27 @@ function AccountActionDialog({
+         onCompleted(result.password);
+         return;
+       } else if (action === 'adjust') {
++        if (!wallet) throw new Error('当前币种暂无活动额度。');
+         await apiRequest(
+           `/api/admin/accounts/${encodeURIComponent(account.id)}`,
+           {
+             method: 'PATCH',
+             body: JSON.stringify({
+               limitMicros: amountToMicros(formString(data, 'limitAmount')),
++              currency,
++              expectedQuotaId: wallet.id,
+             }),
+           },
+         );
+       } else if (action === 'renew') {
+-        if (!account.quota) throw new Error('账号没有可续期的活动额度。');
+         await apiRequest(
+           `/api/admin/accounts/${encodeURIComponent(account.id)}/renew-quota`,
+           {
+             method: 'POST',
+             body: JSON.stringify({
+-              expectedQuotaId: account.quota.id,
++              expectedQuotaId: wallet?.id,
+               limitMicros: amountToMicros(formString(data, 'limitAmount')),
+-              currency: account.quota.currency,
++              currency,
+               periodDays: Number(formString(data, 'periodDays')),
+             }),
+           },
+@@ -525,7 +536,7 @@ function AccountActionDialog({
+     action === 'reveal' ? '查看成员密码' : action === 'adjust'
+       ? '调整当前额度'
+       : action === 'renew'
+-        ? '开启新额度周期'
++        ? wallet ? '开启新额度周期' : '发放额度'
+         : action === 'reset'
+           ? '重置成员密码'
+           : account?.status === 'active'
+@@ -547,7 +558,7 @@ function AccountActionDialog({
+           <DialogTitle>{title}</DialogTitle>
+           <DialogDescription>
+             {action === 'reveal' ? '请输入你当前的管理员密码。每次查看都会记录审计。' : action === 'renew'
+-              ? '新周期立即生效，旧周期不结转。若存在在途预占请求，系统会拒绝续期。'
++              ? wallet ? '新周期立即生效，旧周期不结转。若存在在途预占请求，系统会拒绝续期。' : '新额度立即生效。'
+               : action === 'reset'
+                 ? '所有设备需重新登录，原设备聊天记录保留。系统将生成临时密码，成员登录后须修改。'
+                 : action === 'status'
+@@ -559,18 +570,31 @@ function AccountActionDialog({
+         <form id="account-action-form" onSubmit={submit} className="space-y-4">
+           {action === 'reveal' && <FormField id="reveal-admin-password" label="管理员当前密码"><Input id="reveal-admin-password" name="adminPassword" type="password" autoComplete="current-password" required maxLength={128} /></FormField>}
+           {(action === 'adjust' || action === 'renew') && (
+-            <FormField id="action-limit" label="额度（元）">
+-              <Input
+-                id="action-limit"
+-                name="limitAmount"
+-                inputMode="decimal"
+-                defaultValue={
+-                  account?.quota ? microsToInput(account.quota.limitMicros) : ''
+-                }
+-                className="min-h-11"
+-                required
+-              />
+-            </FormField>
++            <>
++              <FormField id="action-currency" label="币种">
++                <select
++                  id="action-currency"
++                  value={currency}
++                  onChange={event => setCurrency(event.currentTarget.value === 'USD' ? 'USD' : 'CNY')}
++                  className="min-h-11 w-full rounded-md border bg-background px-3 text-sm"
++                >
++                  {(['CNY','USD'] as const).filter(code => action === 'renew' || account?.quotas.some(quota => quota.currency === code)).map(code => (
++                    <option key={code} value={code}>{code === 'CNY' ? '人民币（CNY）' : '美元（USD）'}</option>
++                  ))}
++                </select>
++              </FormField>
++              <FormField id="action-limit" label={`额度（${currency}）`}>
++                <Input
++                  key={currency}
++                  id="action-limit"
++                  name="limitAmount"
++                  inputMode="decimal"
++                  defaultValue={wallet ? microsToInput(wallet.limitMicros) : ''}
++                  className="min-h-11"
++                  required
++                />
++              </FormField>
++            </>
+           )}
+           {action === 'renew' && (
+             <FormField id="action-days" label="新周期天数">
+diff --git a/app/admin/page.tsx b/app/admin/page.tsx
+index f1ceae5..b7caddd 100644
+--- a/app/admin/page.tsx
++++ b/app/admin/page.tsx
+@@ -23,6 +23,12 @@ import {
+   formatMoney,
+ } from '@/lib/admin-client';
+ 
++type CurrencyCost = {
++  currency: string;
++  confirmed_micros: number;
++  uncertain_micros: number;
++};
++
+ type DashboardData = {
+   accounts: AccountRecord[];
+   models: ModelRecord[];
+@@ -33,10 +39,15 @@ type DashboardData = {
+       uncertain_micros: number;
+       usage_unknown_count: number;
+     };
++    byCurrency?: CurrencyCost[];
+   };
+   pending: number;
+ };
+ 
++function formatCosts(costs: CurrencyCost[], field: 'confirmed_micros' | 'uncertain_micros') {
++  return costs.map(cost => formatMoney(cost[field], cost.currency)).join(' / ') || formatMoney(0);
++}
++
+ export default function AdminOverviewPage() {
+   const [data, setData] = useState<DashboardData | null>(null);
+   const [error, setError] = useState('');
+@@ -75,6 +86,7 @@ export default function AdminOverviewPage() {
+     ).length ?? 0;
+   const activeModels =
+     data?.models.filter((model) => model.status === 'active').length ?? 0;
++  const costs = data ? data.usage.byCurrency ?? [{ currency: 'CNY', ...data.usage.totals }] : [];
+ 
+   return (
+     <>
+@@ -115,7 +127,7 @@ export default function AdminOverviewPage() {
+             />
+             <MetricCard
+               label="近 30 天确认成本"
+-              value={formatMoney(data.usage.totals.confirmed_micros)}
++              value={formatCosts(costs, 'confirmed_micros')}
+               detail={`${formatInteger(data.usage.totals.request_count)} 笔网关请求`}
+             />
+             <MetricCard
+@@ -123,7 +135,7 @@ export default function AdminOverviewPage() {
+               value={formatInteger(data.pending)}
+               detail={
+                 data.pending > 0
+-                  ? `当前预扣 ${formatMoney(data.usage.totals.uncertain_micros)}`
++                  ? `当前预扣 ${formatCosts(costs, 'uncertain_micros')}`
+                   : '异常队列为空'
+               }
+             />
+diff --git a/app/admin/usage/page.tsx b/app/admin/usage/page.tsx
+index 80ff8ca..6e9a1c4 100644
+--- a/app/admin/usage/page.tsx
++++ b/app/admin/usage/page.tsx
+@@ -39,6 +39,11 @@ type UsageRow = {
+   actual_micros: number;
+ };
+ 
++type CurrencyUsage = Pick<UsageRow, 'actual_micros' | 'uncertain_micros'> & {
++  currency: string;
++  confirmed_micros: number;
++};
++
+ type UsageData = {
+   from: string;
+   to: string;
+@@ -53,6 +58,7 @@ type UsageData = {
+     UsageRow & { account_id: string; username: string; display_name: string }
+   >;
+   byModel: Array<UsageRow & { model_id: string; display_name: string }>;
++  byCurrency?: CurrencyUsage[];
+ };
+ 
+ export default function UsagePage() {
+@@ -79,6 +85,10 @@ export default function UsagePage() {
+     return () => window.clearTimeout(timer);
+   }, [days]);
+ 
++  const currencies = data
++    ? data.byCurrency ?? [{ currency: 'CNY', ...data.totals }]
++    : [];
++
+   return (
+     <>
+       <PageHeader
+@@ -115,7 +125,7 @@ export default function UsagePage() {
+       ) : (
+         <div className="space-y-6">
+           <section
+-            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
++            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+             aria-label="用量关键指标"
+           >
+             <MetricCard
+@@ -123,16 +133,6 @@ export default function UsagePage() {
+               value={formatInteger(data.totals.request_count)}
+               detail={`${formatInteger(data.totals.settled_count)} 已结算`}
+             />
+-            <MetricCard
+-              label="确认成本"
+-              value={formatMoney(data.totals.confirmed_micros)}
+-              detail="已结算 + 已对账"
+-            />
+-            <MetricCard
+-              label="待对账预扣"
+-              value={formatMoney(data.totals.uncertain_micros)}
+-              detail={`${formatInteger(data.totals.uncertain_count)} 笔待处理`}
+-            />
+             <MetricCard
+               label="已知 Token"
+               value={formatInteger(
+@@ -147,9 +147,24 @@ export default function UsagePage() {
+             />
+           </section>
+ 
++          {currencies.map((usage) => (
++            <section key={usage.currency} className="grid gap-4 sm:grid-cols-2" aria-label={`${usage.currency} 用量费用`}>
++              <MetricCard
++                label={`${usage.currency} 确认成本`}
++                value={formatMoney(usage.confirmed_micros, usage.currency)}
++                detail="已结算 + 已对账"
++              />
++              <MetricCard
++                label={`${usage.currency} 待对账预扣`}
++                value={formatMoney(usage.uncertain_micros, usage.currency)}
++                detail="等待确认实际成本"
++              />
++            </section>
++          ))}
++
+           <UsageTable
+             title="按账号"
+-            caption="账号维度汇总；账面金额包含待对账预扣。"
++            caption="请求与 Token 汇总所有币种。此表金额为 CNY，含待对账预扣。"
+             rows={data.byAccount.map((row) => ({
+               ...row,
+               key: row.account_id,
+@@ -159,7 +174,7 @@ export default function UsagePage() {
+           />
+           <UsageTable
+             title="按模型"
+-            caption="模型维度汇总；历史请求按其冻结价格版本计入。"
++            caption="请求与 Token 汇总所有币种。此表金额为 CNY，按请求的冻结价格版本计入。"
+             rows={data.byModel.map((row) => ({
+               ...row,
+               key: row.model_id,
+@@ -195,8 +210,8 @@ function UsageTable({
+             <TableHead>请求</TableHead>
+             <TableHead>输入 Token</TableHead>
+             <TableHead>输出 Token</TableHead>
+-            <TableHead>待对账</TableHead>
+-            <TableHead>账面金额</TableHead>
++            <TableHead>待对账（CNY）</TableHead>
++            <TableHead>账面金额（CNY）</TableHead>
+           </TableRow>
+         </TableHeader>
+         <TableBody>
+diff --git a/app/api/admin/accounts/[id]/route.ts b/app/api/admin/accounts/[id]/route.ts
+index 2daf03b..a345789 100644
+--- a/app/api/admin/accounts/[id]/route.ts
++++ b/app/api/admin/accounts/[id]/route.ts
+@@ -1,4 +1,4 @@
+-import { requireAdmin, updateMemberAccount } from '@/lib/server/auth';
++import { readExpectedQuotaId, readQuotaCurrency, requireAdmin, updateMemberAccount } from '@/lib/server/auth';
+ import {
+   AppError,
+   assertRecord,
+@@ -35,7 +35,12 @@ export async function PATCH(request: Request) {
+         ? undefined
+         : readSafeInteger(body.limitMicros, 'limitMicros');
+     return noStoreJson(
+-      await updateMemberAccount(actor, accountId, { status, limitMicros }),
++      await updateMemberAccount(actor, accountId, {
++        status,
++        limitMicros,
++        currency: body.currency === undefined ? undefined : readQuotaCurrency(body.currency),
++        expectedQuotaId: readExpectedQuotaId(body.expectedQuotaId),
++      }),
+     );
+   } catch (error) {
+     return openAiError(error);
+diff --git a/app/api/admin/accounts/[id]/renew-quota/route.ts b/app/api/admin/accounts/[id]/renew-quota/route.ts
+index c7627a8..188b0ac 100644
+--- a/app/api/admin/accounts/[id]/renew-quota/route.ts
++++ b/app/api/admin/accounts/[id]/renew-quota/route.ts
+@@ -1,11 +1,10 @@
+-import { renewMemberQuota, requireAdmin } from '@/lib/server/auth';
++import { readExpectedQuotaId, readQuotaCurrency, renewMemberQuota, requireAdmin } from '@/lib/server/auth';
+ import {
+   AppError,
+   assertRecord,
+   openAiError,
+   noStoreJson,
+   readJson,
+-  readRequiredString,
+   readSafeInteger,
+ } from '@/lib/server/http';
+ 
+@@ -15,23 +14,11 @@ export async function POST(request: Request) {
+     const accountId = readAccountId(request);
+     const body = await readJson(request);
+     assertRecord(body);
+-    const currency = readRequiredString(
+-      body.currency ?? 'CNY',
+-      'currency',
+-      3,
+-    ).toUpperCase();
+-    if (!/^[A-Z]{3}$/.test(currency)) {
+-      throw new AppError(
+-        400,
+-        'invalid_currency',
+-        'currency 必须是三位币种代码。',
+-      );
+-    }
+     return noStoreJson(
+       await renewMemberQuota(actor, accountId, {
+-        expectedQuotaId: readQuotaId(body.expectedQuotaId),
++        expectedQuotaId: readExpectedQuotaId(body.expectedQuotaId),
+         limitMicros: readSafeInteger(body.limitMicros, 'limitMicros'),
+-        currency,
++        currency: readQuotaCurrency(body.currency),
+         periodDays: readSafeInteger(
+           body.periodDays ?? 30,
+           'periodDays',
+@@ -45,14 +32,6 @@ export async function POST(request: Request) {
+   }
+ }
+ 
+-function readQuotaId(value: unknown) {
+-  const quotaId = readRequiredString(value, 'expectedQuotaId', 128);
+-  if (!/^quota_[A-Za-z0-9_-]+$/.test(quotaId)) {
+-    throw new AppError(400, 'invalid_quota_id', 'expectedQuotaId 格式不正确。');
+-  }
+-  return quotaId;
+-}
+-
+ function readAccountId(request: Request) {
+   const parts = new URL(request.url).pathname.split('/');
+   const accountId = decodeURIComponent(parts.at(-2) ?? '');
+diff --git a/app/api/auth/login/route.ts b/app/api/auth/login/route.ts
+index e8f4c24..314f2bd 100644
+--- a/app/api/auth/login/route.ts
++++ b/app/api/auth/login/route.ts
+@@ -40,6 +40,7 @@ export async function POST(request: Request) {
+       token_type: result.tokenType,
+       expires_at: result.expiresAt,
+       quota: result.quota,
++      quotas: result.quotas,
+     });
+   } catch (error) {
+     return openAiError(error);
+diff --git a/app/api/web/auth/login/route.ts b/app/api/web/auth/login/route.ts
+index d5aec3d..f6eb7fb 100644
+--- a/app/api/web/auth/login/route.ts
++++ b/app/api/web/auth/login/route.ts
+@@ -32,6 +32,7 @@ export async function POST(request: Request) {
+       account: result.account,
+       expiresAt: result.expiresAt,
+       quota: result.quota,
++      quotas: result.quotas,
+     });
+     response.headers.set(
+       'Set-Cookie',
+diff --git a/db/schema.ts b/db/schema.ts
+index dc9f650..dd766d9 100644
+--- a/db/schema.ts
++++ b/db/schema.ts
+@@ -101,15 +101,16 @@ export const quotaBuckets = sqliteTable(
+     updatedAt: integer('updated_at').notNull(),
+   },
+   (table) => [
+-    uniqueIndex('uidx_quota_account_period').on(
++    uniqueIndex('uidx_quota_account_currency_period').on(
+       table.accountId,
++      table.currency,
+       table.periodStart,
+       table.periodEnd,
+     ),
+-    uniqueIndex('uidx_quota_one_active_per_account')
+-      .on(table.accountId)
++    uniqueIndex('uidx_quota_one_active_per_currency')
++      .on(table.accountId, table.currency)
+       .where(sql`${table.status} = 'active'`),
+-    index('idx_quota_account_active').on(table.accountId, table.status),
++    index('idx_quota_account_active').on(table.accountId, table.status, table.currency),
+   ],
+ );
+ 
+diff --git a/drizzle/0014_dual_currency_quota.sql b/drizzle/0014_dual_currency_quota.sql
+new file mode 100644
+index 0000000..12bc670
+--- /dev/null
++++ b/drizzle/0014_dual_currency_quota.sql
+@@ -0,0 +1,10 @@
++DROP INDEX uidx_quota_account_period;
++DROP INDEX uidx_quota_one_active_per_account;
++DROP INDEX idx_quota_account_active;
++
++CREATE UNIQUE INDEX uidx_quota_account_currency_period
++  ON quota_buckets (account_id, currency, period_start, period_end);
++CREATE UNIQUE INDEX uidx_quota_one_active_per_currency
++  ON quota_buckets (account_id, currency) WHERE status = 'active';
++CREATE INDEX idx_quota_account_active
++  ON quota_buckets (account_id, status, currency);
+diff --git a/lib/admin-client.ts b/lib/admin-client.ts
+index d3f7ee9..06d8907 100644
+--- a/lib/admin-client.ts
++++ b/lib/admin-client.ts
+@@ -122,6 +122,17 @@ function readApiError(payload: unknown) {
+   return { code, message };
+ }
+ 
++export type QuotaWallet = {
++  id: string;
++  currency: string;
++  limitMicros: number;
++  spentMicros: number;
++  reservedMicros: number;
++  remainingMicros: number;
++  periodStart: string;
++  periodEnd: string;
++};
++
+ export type AccountRecord = {
+   passwordAvailable: boolean;
+   lastModelRequestAt: string | null;
+@@ -133,16 +144,8 @@ export type AccountRecord = {
+   mustChangePassword: boolean;
+   authVersion: number;
+   createdAt: string;
+-  quota: null | {
+-    id: string;
+-    currency: string;
+-    limitMicros: number;
+-    spentMicros: number;
+-    reservedMicros: number;
+-    remainingMicros: number;
+-    periodStart: string;
+-    periodEnd: string;
+-  };
++  quota: QuotaWallet | null;
++  quotas: QuotaWallet[];
+ };
+ 
+ export type ModelRecord = {
+diff --git a/lib/core/openai-responses.ts b/lib/core/openai-responses.ts
+index a70e855..8d096a2 100644
+--- a/lib/core/openai-responses.ts
++++ b/lib/core/openai-responses.ts
+@@ -1,15 +1,26 @@
+ import { GatewayValidationError } from './gateway.ts';
+-export const efforts: Record<string,string[]> = {
+-  'gpt-6.1-sol':['low','medium','high','xhigh','max'],
+-  'gpt-6.1-terra':['none','low','medium','high','xhigh','max'],
++// Public Responses reasoning levels, from the OpenAI API model pages and reasoning guide.
++const STANDARD_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
++const OPTIONAL_EFFORTS = ['none', ...STANDARD_EFFORTS] as const;
++const efforts: Readonly<Record<string, readonly string[]>> = {
++  'gpt-6.2-astra': STANDARD_EFFORTS,
++  'gpt-6.2-sol': STANDARD_EFFORTS,
++  'gpt-6.1-sol': STANDARD_EFFORTS,
++  'gpt-6.1-terra': OPTIONAL_EFFORTS,
++  'gpt-6-astra': STANDARD_EFFORTS,
++  'gpt-6-sol': OPTIONAL_EFFORTS,
++  'gpt-6-luna': OPTIONAL_EFFORTS,
+ };
++export function supportsOpenAIResponses(model: unknown): model is string {
++  return typeof model === 'string' && Object.hasOwn(efforts, model);
++}
+ function invalid(message:string):never { throw new GatewayValidationError('invalid_responses_request',message); }
+ export function assertResponsesBody(value:unknown):asserts value is Record<string,unknown> {
+   if (!value || typeof value!=='object' || Array.isArray(value)) invalid('请求必须是对象。');
+   const b=value as Record<string,any>;
+   const allowed=['model','input','tools','tool_choice','parallel_tool_calls','reasoning','text','max_output_tokens','stream','store','include'];
+   if(Object.keys(b).some(k=>!allowed.includes(k))) invalid('不支持该 Responses 参数。');
+-  if(!Object.hasOwn(efforts,b.model)) invalid('未开放此 Responses 模型。');
++  if(!supportsOpenAIResponses(b.model)) invalid('未开放此 Responses 模型。');
+   if(b.store!==false || (b.stream!==undefined && typeof b.stream!=='boolean')) invalid('需要 store:false。');
+   if(!Number.isSafeInteger(b.max_output_tokens)||b.max_output_tokens<1||b.max_output_tokens>128000) invalid('最大输出须为 1–128000。');
+   if(b.reasoning && (typeof b.reasoning!=='object'||Object.keys(b.reasoning).some(k=>k!=='effort')||!efforts[b.model].includes(b.reasoning.effort))) invalid('模型不支持此思考深度。');
+diff --git a/lib/server/auth.ts b/lib/server/auth.ts
+index b847ddb..0417f5d 100644
+--- a/lib/server/auth.ts
++++ b/lib/server/auth.ts
+@@ -53,6 +53,21 @@ type QuotaRow = {
+   period_end: number;
+ };
+ 
++type QuotaCurrency = 'CNY' | 'USD';
++
++export function readQuotaCurrency(value: unknown): QuotaCurrency {
++  if (value === undefined) return 'CNY';
++  const currency = typeof value === 'string' ? value.trim().toUpperCase() : '';
++  if (currency === 'CNY' || currency === 'USD') return currency;
++  throw new AppError(400, 'invalid_currency', 'currency 只能是 CNY 或 USD。');
++}
++
++export function readExpectedQuotaId(value: unknown) {
++  if (value === undefined) return undefined;
++  if (typeof value === 'string' && /^quota_[A-Za-z0-9_-]{1,122}$/.test(value)) return value;
++  throw new AppError(400, 'invalid_quota_id', 'expectedQuotaId 格式不正确。');
++}
++
+ export type AuthContext = {
+   account: {
+     id: string;
+@@ -270,7 +285,7 @@ export async function login({
+       ? getIntegerSetting('WEB_SESSION_TTL_SECONDS', 43_200, 1_800, 604_800)
+       : undefined,
+   );
+-  const quota = await getCurrentQuota(row.id);
++  const quotas = await getCurrentQuotas(row.id);
+   await writeAudit({
+     actorAccountId: row.id,
+     targetAccountId: row.id,
+@@ -285,7 +300,7 @@ export async function login({
+     deviceToken: session.token,
+     tokenType: 'Bearer',
+     expiresAt: new Date(session.expiresAt).toISOString(),
+-    quota: quota ? publicQuota(quota) : null,
++    ...publicWallets(quotas),
+   };
+ }
+ 
+@@ -618,10 +633,29 @@ export async function listAccounts() {
+       FROM accounts a
+       LEFT JOIN quota_buckets q
+         ON q.account_id = a.id AND q.status = 'active'
+-      ORDER BY a.created_at DESC`,
++      ORDER BY a.created_at DESC, a.id, q.currency`,
+     )
+     .all<Record<string, unknown>>();
+-  return rows.results.map((row) => ({
++  const distinct = new Map<unknown, { row: Record<string, unknown>; wallets: QuotaRow[] }>();
++  for (const row of rows.results) {
++    let account = distinct.get(row.id);
++    if (!account) {
++      account = { row, wallets: [] };
++      distinct.set(row.id, account);
++    }
++    if (row.quota_id) {
++      account.wallets.push({
++        id: String(row.quota_id),
++        currency: String(row.currency),
++        limit_micros: Number(row.limit_micros),
++        spent_micros: Number(row.spent_micros),
++        reserved_micros: Number(row.reserved_micros),
++        period_start: Number(row.period_start),
++        period_end: Number(row.period_end),
++      });
++    }
++  }
++  return [...distinct.values()].map(({ row, wallets }) => ({
+     id: row.id,
+     username: row.username,
+     displayName: row.display_name,
+@@ -632,40 +666,27 @@ export async function listAccounts() {
+     passwordAvailable: Boolean(row.password_available),
+     lastModelRequestAt: row.last_model_request_at == null ? null : new Date(Number(row.last_model_request_at)).toISOString(),
+     createdAt: new Date(Number(row.created_at)).toISOString(),
+-    quota: row.quota_id
+-      ? {
+-          id: row.quota_id,
+-          currency: row.currency,
+-          limitMicros: row.limit_micros,
+-          spentMicros: row.spent_micros,
+-          reservedMicros: row.reserved_micros,
+-          remainingMicros:
+-            Number(row.limit_micros) -
+-            Number(row.spent_micros) -
+-            Number(row.reserved_micros),
+-          periodStart: new Date(Number(row.period_start)).toISOString(),
+-          periodEnd: new Date(Number(row.period_end)).toISOString(),
+-        }
+-      : null,
++    ...publicWallets(wallets),
+   }));
+ }
+ 
+ export async function updateMemberAccount(
+   actor: AuthContext,
+   accountId: string,
+-  changes: { status?: 'active' | 'disabled'; limitMicros?: number },
++  changes: { status?: 'active' | 'disabled'; limitMicros?: number; currency?: QuotaCurrency; expectedQuotaId?: string },
+ ) {
+   const db = await getD1();
++  const currency = changes.currency ?? 'CNY';
+   const target = await db
+     .prepare(
+       `SELECT
+         a.id, a.username, a.role, a.status, a.auth_version,
+         q.id AS quota_id, q.limit_micros, q.spent_micros, q.reserved_micros
+       FROM accounts a
+-      LEFT JOIN quota_buckets q ON q.account_id = a.id AND q.status = 'active'
++      LEFT JOIN quota_buckets q ON q.account_id = a.id AND q.currency = ? AND q.status = 'active'
+       WHERE a.id = ? LIMIT 1`,
+     )
+-    .bind(accountId)
++    .bind(currency, accountId)
+     .first<Record<string, unknown>>();
+   if (!target) throw new AppError(404, 'account_not_found', '账号不存在。');
+   if (target.role === 'admin') {
+@@ -678,6 +699,9 @@ export async function updateMemberAccount(
+   if (changes.status === undefined && changes.limitMicros === undefined) {
+     throw new AppError(400, 'no_changes', '没有需要更新的字段。');
+   }
++  if (changes.expectedQuotaId !== undefined && changes.expectedQuotaId !== target.quota_id) {
++    throw new AppError(409, 'quota_changed', '额度周期已经变化，请刷新账号列表后重试。');
++  }
+   if (
+     changes.limitMicros !== undefined &&
+     changes.limitMicros <
+@@ -725,9 +749,10 @@ export async function updateMemberAccount(
+       db
+         .prepare(
+           `UPDATE quota_buckets SET limit_micros = ?, updated_at = ?
+-           WHERE id = ? AND account_id = ? AND status = 'active'`,
++           WHERE id = ? AND account_id = ? AND currency = ? AND status = 'active'
++             AND spent_micros + reserved_micros <= ?`,
+         )
+-        .bind(changes.limitMicros, now, target.quota_id, accountId),
++        .bind(changes.limitMicros, now, target.quota_id, accountId, currency, changes.limitMicros),
+     );
+     statements.push(
+       db
+@@ -735,7 +760,7 @@ export async function updateMemberAccount(
+           `INSERT INTO quota_ledger (
+             quota_bucket_id, account_id, kind, spent_delta_micros,
+             reserved_delta_micros, note, created_at
+-          ) VALUES (?, ?, 'adjust', 0, 0, ?, ?)`,
++          ) VALUES (CASE WHEN changes() = 1 THEN ? END, ?, 'adjust', 0, 0, ?, ?)`,
+         )
+         .bind(
+           target.quota_id,
+@@ -760,12 +785,20 @@ export async function updateMemberAccount(
+         JSON.stringify({
+           status: target.status,
+           limitMicros: target.limit_micros,
++          currency,
+         }),
+         JSON.stringify(changes),
+         now,
+       ),
+   );
+-  await db.batch(statements);
++  try {
++    await db.batch(statements);
++  } catch (error) {
++    if (String(error).includes('quota_ledger.quota_bucket_id')) {
++      throw new AppError(409, 'quota_changed', '额度或预占已变化，请刷新账号列表后重试。');
++    }
++    throw error;
++  }
+   return getAccountSnapshot(accountId);
+ }
+ 
+@@ -869,9 +902,9 @@ export async function renewMemberQuota(
+   actor: AuthContext,
+   accountId: string,
+   input: {
+-    expectedQuotaId: string;
++    expectedQuotaId?: string;
+     limitMicros: number;
+-    currency: string;
++    currency: QuotaCurrency;
+     periodDays: number;
+   },
+ ) {
+@@ -883,10 +916,10 @@ export async function renewMemberQuota(
+         q.id AS quota_id
+        FROM accounts a
+        LEFT JOIN quota_buckets q
+-         ON q.account_id = a.id AND q.status = 'active'
++         ON q.account_id = a.id AND q.currency = ? AND q.status = 'active'
+        WHERE a.id = ? LIMIT 1`,
+     )
+-    .bind(accountId)
++    .bind(input.currency, accountId)
+     .first<{
+       id: string;
+       username: string;
+@@ -901,10 +934,7 @@ export async function renewMemberQuota(
+       '不能通过成员接口续期管理员额度。',
+     );
+   }
+-  if (!target.quota_id) {
+-    throw new AppError(409, 'quota_unavailable', '账号没有可续期的活动额度。');
+-  }
+-  if (target.quota_id !== input.expectedQuotaId) {
++  if ((target.quota_id ?? undefined) !== input.expectedQuotaId) {
+     throw new AppError(
+       409,
+       'quota_changed',
+@@ -915,15 +945,15 @@ export async function renewMemberQuota(
+   const now = Date.now();
+   const periodEnd = now + input.periodDays * 86_400_000;
+   const quotaId = createId('quota');
++  const close = target.quota_id
++    ? [db.prepare(`UPDATE quota_buckets
++        SET status = 'closed', updated_at = ?
++        WHERE id = ? AND account_id = ? AND currency = ? AND status = 'active'`)
++        .bind(now, target.quota_id, accountId, input.currency)]
++    : [];
+   try {
+     await db.batch([
+-      db
+-        .prepare(
+-          `UPDATE quota_buckets
+-           SET status = 'closed', updated_at = ?
+-           WHERE id = ? AND account_id = ? AND status = 'active'`,
+-        )
+-        .bind(now, input.expectedQuotaId, accountId),
++      ...close,
+       db
+         .prepare(
+           `INSERT INTO quota_buckets (
+@@ -946,11 +976,12 @@ export async function renewMemberQuota(
+           `INSERT INTO audit_logs (
+             actor_account_id, target_account_id, action, entity_type,
+             entity_id, after_json, created_at
+-          ) VALUES (?, ?, 'quota.renewed', 'quota_bucket', ?, ?, ?)`,
++          ) VALUES (?, ?, ?, 'quota_bucket', ?, ?, ?)`,
+         )
+         .bind(
+           actor.account.id,
+           accountId,
++          input.expectedQuotaId ? 'quota.renewed' : 'quota.granted',
+           quotaId,
+           JSON.stringify({
+             currency: input.currency,
+@@ -989,23 +1020,24 @@ export async function getAccountSnapshot(accountId: string) {
+     .bind(accountId)
+     .first<AccountRow>();
+   if (!row) throw new AppError(404, 'account_not_found', '账号不存在。');
+-  const quota = await getCurrentQuota(accountId);
++  const quotas = await getCurrentQuotas(accountId);
+   return {
+     account: publicAccount(row),
+-    quota: quota ? publicQuota(quota) : null,
++    ...publicWallets(quotas),
+   };
+ }
+ 
+-export async function getCurrentQuota(accountId: string, now = Date.now()) {
+-  return await (await getD1())
++async function getCurrentQuotas(accountId: string, now = Date.now()) {
++  const rows = await (await getD1())
+     .prepare(
+       `SELECT * FROM quota_buckets
+        WHERE account_id = ? AND status = 'active'
+          AND period_start <= ? AND period_end > ?
+-       ORDER BY period_start DESC LIMIT 1`,
++       ORDER BY currency, period_start DESC`,
+     )
+     .bind(accountId, now, now)
+-    .first<QuotaRow>();
++    .all<QuotaRow>();
++  return rows.results;
+ }
+ 
+ async function createSession(
+@@ -1224,6 +1256,14 @@ function publicQuota(row: QuotaRow) {
+   };
+ }
+ 
++function publicWallets(rows: QuotaRow[]) {
++  const quotas = rows.map(publicQuota);
++  return {
++    quota: quotas.find(quota => quota.currency === 'CNY') ?? null,
++    quotas,
++  };
++}
++
+ function passwordIterations() {
+   return getIntegerSetting(
+     'PASSWORD_PBKDF2_ITERATIONS',
+diff --git a/lib/server/model-catalog.ts b/lib/server/model-catalog.ts
+index 520eeaf..4afb2a0 100644
+--- a/lib/server/model-catalog.ts
++++ b/lib/server/model-catalog.ts
+@@ -1,3 +1,4 @@
++import { supportsOpenAIResponses } from '../core/openai-responses';
+ import { createId } from './crypto';
+ import { assertAllowedUpstream, getD1, getProviderSecret } from './env';
+ import { AppError } from './http';
+@@ -56,7 +57,11 @@ export async function listPublicModels() {
+     .prepare(
+       `SELECT
+         m.id, m.display_name, m.provider, m.context_window,
+-        m.max_output_tokens, m.created_at
++        m.max_output_tokens, m.created_at,
++        (SELECT p.currency FROM model_prices p
++          WHERE p.model_id = m.id AND p.effective_at <= ?
++            AND (p.retired_at IS NULL OR p.retired_at > ?)
++          ORDER BY p.effective_at DESC LIMIT 1) AS currency
+       FROM models m
+       WHERE m.status = 'active' AND m.upstream_model NOT IN ('deepseek-search', 'deepseek-fetch') AND m.upstream_model <> 'glm-image' AND m.upstream_model NOT LIKE 'gpt-image-%'
+         AND EXISTS (
+@@ -66,7 +71,7 @@ export async function listPublicModels() {
+         )
+       ORDER BY m.display_name`,
+     )
+-    .bind(now, now)
++    .bind(now, now, now, now)
+     .all<Record<string, unknown>>();
+   return rows.results.map((row) => ({
+     id: row.id,
+@@ -77,7 +82,8 @@ export async function listPublicModels() {
+     provider: row.provider,
+     context_window: row.context_window,
+     max_output_tokens: row.max_output_tokens,
+-    responses_supported: row.provider === 'openai' && ['gpt-6.1-sol','gpt-6.1-terra'].includes(String(row.id)),
++    currency: row.currency,
++    responses_supported: row.provider === 'openai' && supportsOpenAIResponses(row.id),
+   }));
+ }
+ 
+diff --git a/lib/server/quota.ts b/lib/server/quota.ts
+index 6a3b505..797eb5c 100644
+--- a/lib/server/quota.ts
++++ b/lib/server/quota.ts
+@@ -49,18 +49,18 @@ export async function reserveRequest({
+   const now = Date.now();
+   const quota = await (await getD1())
+     .prepare(
+-      `SELECT id, currency FROM quota_buckets
+-       WHERE account_id = ? AND status = 'active'
++      `SELECT id FROM quota_buckets
++       WHERE account_id = ? AND currency = ? AND status = 'active'
+          AND period_start <= ? AND period_end > ?
+        ORDER BY period_start DESC LIMIT 1`,
+     )
+-    .bind(auth.account.id, now, now)
+-    .first<{ id: string; currency: string }>();
+-  if (!quota || quota.currency !== model.currency) {
++    .bind(auth.account.id, model.currency, now, now)
++    .first<{ id: string }>();
++  if (!quota) {
+     throw new AppError(
+       429,
+       'insufficient_quota',
+-      '账号没有可用额度。',
++      `账号没有可用的 ${model.currency} 额度。请在账号设置中查看，或联系管理员。`,
+       'quota_error',
+     );
+   }
+@@ -96,7 +96,7 @@ export async function reserveRequest({
+       throw new AppError(
+         429,
+         'insufficient_quota',
+-        '账号额度不足。',
++        `账号的 ${model.currency} 额度不足。`,
+         'quota_error',
+       );
+     }
+@@ -235,78 +235,97 @@ export async function markUncertain(
+   assertD1MutationApplied(result, 'request_not_inflight');
+ }
+ 
++function usageMoneyFields(cnyOnly = false) {
++  // Use the request's historical quota bucket, not the model's current price.
++  const condition = cnyOnly ? "q.currency = 'CNY' AND " : '';
++  const amount = cnyOnly ? "CASE WHEN q.currency = 'CNY' THEN r.actual_micros ELSE 0 END" : 'r.actual_micros';
++  return `COALESCE(SUM(CASE WHEN ${condition}r.state IN ('settled', 'reconciled') THEN r.actual_micros ELSE 0 END), 0) AS confirmed_micros,
++          COALESCE(SUM(CASE WHEN ${condition}r.state = 'uncertain' THEN r.actual_micros ELSE 0 END), 0) AS uncertain_micros,
++          COALESCE(SUM(${amount}), 0) AS actual_micros`;
++}
++
++type CurrencyUsage = {
++  currency: string;
++  actual_micros: number;
++  confirmed_micros: number;
++  uncertain_micros: number;
++};
++
+ export async function getUsageSummary(
+   accountId: string,
+   from: number,
+   to: number,
+ ) {
+   const db = await getD1();
+-  const [totals, byModel] = await Promise.all([
++  const [totals, byModel, byCurrency] = await Promise.all([
+     db
+       .prepare(
+         `SELECT
+           COUNT(*) AS request_count,
+-          SUM(CASE WHEN state = 'settled' THEN 1 ELSE 0 END) AS settled_count,
+-          SUM(CASE WHEN state IN ('released', 'uncertain') THEN 1 ELSE 0 END) AS exception_count,
+-          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+-          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
++          SUM(CASE WHEN r.state = 'settled' THEN 1 ELSE 0 END) AS settled_count,
++          SUM(CASE WHEN r.state IN ('released', 'uncertain') THEN 1 ELSE 0 END) AS exception_count,
++          COALESCE(SUM(r.prompt_tokens), 0) AS prompt_tokens,
++          COALESCE(SUM(r.completion_tokens), 0) AS completion_tokens,
+           SUM(CASE
+-            WHEN prompt_tokens IS NULL OR completion_tokens IS NULL THEN 1
++            WHEN r.prompt_tokens IS NULL OR r.completion_tokens IS NULL THEN 1
+             ELSE 0
+           END) AS usage_unknown_count,
+-          COALESCE(SUM(CASE WHEN state IN ('settled','reconciled') THEN actual_micros ELSE 0 END),0) AS confirmed_micros,
+-          COALESCE(SUM(CASE WHEN state='uncertain' THEN actual_micros ELSE 0 END),0) AS uncertain_micros,
+-          COALESCE(SUM(actual_micros), 0) AS actual_micros
+-        FROM gateway_requests
+-        WHERE account_id = ? AND created_at >= ? AND created_at < ?`,
++          ${usageMoneyFields(true)}
++        FROM gateway_requests r
++        JOIN quota_buckets q ON q.id = r.quota_bucket_id
++        WHERE r.account_id = ? AND r.created_at >= ? AND r.created_at < ?`,
+       )
+       .bind(accountId, from, to)
+       .first<Record<string, number>>(),
+     db
+       .prepare(
+         `SELECT
+-          model_id, COUNT(*) AS request_count,
+-          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+-          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+-          COALESCE(SUM(CASE WHEN state IN ('settled','reconciled') THEN actual_micros ELSE 0 END),0) AS confirmed_micros,
+-          COALESCE(SUM(CASE WHEN state='uncertain' THEN actual_micros ELSE 0 END),0) AS uncertain_micros,
+-          COALESCE(SUM(actual_micros), 0) AS actual_micros
+-        FROM gateway_requests
+-        WHERE account_id = ? AND created_at >= ? AND created_at < ?
+-        GROUP BY model_id ORDER BY actual_micros DESC`,
++          r.model_id, q.currency, COUNT(*) AS request_count,
++          COALESCE(SUM(r.prompt_tokens), 0) AS prompt_tokens,
++          COALESCE(SUM(r.completion_tokens), 0) AS completion_tokens,
++          ${usageMoneyFields()}
++        FROM gateway_requests r
++        JOIN quota_buckets q ON q.id = r.quota_bucket_id
++        WHERE r.account_id = ? AND r.created_at >= ? AND r.created_at < ?
++        GROUP BY r.model_id, q.currency ORDER BY q.currency, actual_micros DESC`,
+       )
+       .bind(accountId, from, to)
+       .all<Record<string, number | string>>(),
++    db
++      .prepare(
++        `SELECT q.currency, ${usageMoneyFields()}
++        FROM gateway_requests r
++        JOIN quota_buckets q ON q.id = r.quota_bucket_id
++        WHERE r.account_id = ? AND r.created_at >= ? AND r.created_at < ?
++        GROUP BY q.currency ORDER BY q.currency`,
++      )
++      .bind(accountId, from, to)
++      .all<CurrencyUsage>(),
+   ]);
+-  return { totals, byModel: byModel.results };
++  return { totals, byModel: byModel.results, byCurrency: byCurrency.results };
+ }
+ 
+ export async function getAdminUsageOverview(from: number, to: number) {
+   const db = await getD1();
+-  const [totals, byAccount, byModel] = await Promise.all([
++  const [totals, byAccount, byModel, byCurrency] = await Promise.all([
+     db
+       .prepare(
+         `SELECT
+           COUNT(*) AS request_count,
+-          SUM(CASE WHEN state = 'settled' THEN 1 ELSE 0 END) AS settled_count,
+-          SUM(CASE WHEN state = 'released' THEN 1 ELSE 0 END) AS released_count,
+-          SUM(CASE WHEN state = 'uncertain' THEN 1 ELSE 0 END) AS uncertain_count,
+-          SUM(CASE WHEN state = 'reconciled' THEN 1 ELSE 0 END) AS reconciled_count,
+-          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+-          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
++          SUM(CASE WHEN r.state = 'settled' THEN 1 ELSE 0 END) AS settled_count,
++          SUM(CASE WHEN r.state = 'released' THEN 1 ELSE 0 END) AS released_count,
++          SUM(CASE WHEN r.state = 'uncertain' THEN 1 ELSE 0 END) AS uncertain_count,
++          SUM(CASE WHEN r.state = 'reconciled' THEN 1 ELSE 0 END) AS reconciled_count,
++          COALESCE(SUM(r.prompt_tokens), 0) AS prompt_tokens,
++          COALESCE(SUM(r.completion_tokens), 0) AS completion_tokens,
+           SUM(CASE
+-            WHEN prompt_tokens IS NULL OR completion_tokens IS NULL THEN 1
++            WHEN r.prompt_tokens IS NULL OR r.completion_tokens IS NULL THEN 1
+             ELSE 0
+           END) AS usage_unknown_count,
+-          COALESCE(SUM(CASE
+-            WHEN state = 'uncertain' THEN actual_micros ELSE 0
+-          END), 0) AS uncertain_micros,
+-          COALESCE(SUM(CASE
+-            WHEN state IN ('settled', 'reconciled') THEN actual_micros ELSE 0
+-          END), 0) AS confirmed_micros,
+-          COALESCE(SUM(actual_micros), 0) AS actual_micros
+-        FROM gateway_requests
+-        WHERE created_at >= ? AND created_at < ?`,
++          ${usageMoneyFields(true)}
++        FROM gateway_requests r
++        JOIN quota_buckets q ON q.id = r.quota_bucket_id
++        WHERE r.created_at >= ? AND r.created_at < ?`,
+       )
+       .bind(from, to)
+       .first<Record<string, number>>(),
+@@ -322,13 +341,11 @@ export async function getAdminUsageOverview(from: number, to: number) {
+               AND (r.prompt_tokens IS NULL OR r.completion_tokens IS NULL)
+             THEN 1 ELSE 0
+           END) AS usage_unknown_count,
+-          COALESCE(SUM(CASE
+-            WHEN r.state = 'uncertain' THEN r.actual_micros ELSE 0
+-          END), 0) AS uncertain_micros,
+-          COALESCE(SUM(r.actual_micros), 0) AS actual_micros
++          ${usageMoneyFields(true)}
+         FROM accounts a
+         LEFT JOIN gateway_requests r
+           ON r.account_id = a.id AND r.created_at >= ? AND r.created_at < ?
++        LEFT JOIN quota_buckets q ON q.id = r.quota_bucket_id
+         GROUP BY a.id, a.username, a.display_name
+         ORDER BY actual_micros DESC, a.created_at DESC`,
+       )
+@@ -346,23 +363,32 @@ export async function getAdminUsageOverview(from: number, to: number) {
+               AND (r.prompt_tokens IS NULL OR r.completion_tokens IS NULL)
+             THEN 1 ELSE 0
+           END) AS usage_unknown_count,
+-          COALESCE(SUM(CASE
+-            WHEN r.state = 'uncertain' THEN r.actual_micros ELSE 0
+-          END), 0) AS uncertain_micros,
+-          COALESCE(SUM(r.actual_micros), 0) AS actual_micros
++          ${usageMoneyFields(true)}
+         FROM models m
+         LEFT JOIN gateway_requests r
+           ON r.model_id = m.id AND r.created_at >= ? AND r.created_at < ?
++        LEFT JOIN quota_buckets q ON q.id = r.quota_bucket_id
+         GROUP BY m.id, m.display_name
+         ORDER BY actual_micros DESC, m.display_name`,
+       )
+       .bind(from, to)
+       .all<Record<string, number | string>>(),
++    db
++      .prepare(
++        `SELECT q.currency, ${usageMoneyFields()}
++        FROM gateway_requests r
++        JOIN quota_buckets q ON q.id = r.quota_bucket_id
++        WHERE r.created_at >= ? AND r.created_at < ?
++        GROUP BY q.currency ORDER BY q.currency`,
++      )
++      .bind(from, to)
++      .all<CurrencyUsage>(),
+   ]);
+   return {
+     totals: totals ?? emptyUsageTotals(),
+     byAccount: byAccount.results,
+     byModel: byModel.results,
++    byCurrency: byCurrency.results,
+   };
+ }
+ 
+diff --git a/tests/quota-currency.test.cjs b/tests/quota-currency.test.cjs
+new file mode 100644
+index 0000000..73826d7
+--- /dev/null
++++ b/tests/quota-currency.test.cjs
+@@ -0,0 +1,96 @@
++'use strict'
++
++const assert = require('node:assert/strict')
++const fs = require('node:fs')
++const path = require('node:path')
++const test = require('node:test')
++const { build } = require('esbuild')
++
++test('mixed-currency requests reserve and report each historical wallet independently', async () => {
++  const source = path.resolve(__dirname, '..')
++  const { SqliteD1 } = await import('../runtime/sqlite-d1.mjs')
++  const database = new SqliteD1(':memory:')
++  const sql = database.database
++  const migrations = path.join(source, 'drizzle')
++  for (const name of fs.readdirSync(migrations).filter(name => /^\d{4}_.+\.sql$/.test(name)).sort()) {
++    sql.exec(fs.readFileSync(path.join(migrations, name), 'utf8'))
++  }
++  const bundled = await build({
++    entryPoints: [path.join(source, 'lib/server/quota.ts')],
++    tsconfig: path.join(source, 'tsconfig.json'),
++    bundle: true,
++    platform: 'node',
++    format: 'cjs',
++    write: false,
++    plugins: [{ name: 'in-memory-d1', setup(builder) {
++      builder.onResolve({ filter: /^\.\/env$/ }, () => ({ path: 'fixture-env', namespace: 'quota-test' }))
++      builder.onLoad({ filter: /.*/, namespace: 'quota-test' }, () => ({ contents: 'export async function getD1() { return globalThis.__quotaCurrencyTestDb }' }))
++    } }],
++  })
++  const quotaModule = { exports: {} }
++  new Function('module', 'exports', 'require', bundled.outputFiles[0].text)(quotaModule, quotaModule.exports, require)
++  const { reserveRequest, getUsageSummary, getAdminUsageOverview } = quotaModule.exports
++  globalThis.__quotaCurrencyTestDb = database
++  const now = Date.now()
++  try {
++    sql.exec(`INSERT INTO accounts (id, username, display_name, password_algorithm, password_hash, password_salt, password_iterations, created_at, updated_at)
++      VALUES ('a','tester','Tester','pbkdf2-sha256','hash','salt',100000,1,1),
++        ('b','cny_only','CNY only','pbkdf2-sha256','hash','salt',100000,1,1);
++      INSERT INTO models(id,display_name,provider,upstream_model,upstream_base_url,secret_name,context_window,max_output_tokens,status,created_at,updated_at)
++      VALUES('gpt-6.1-sol','GPT-6.1 Sol','openai','gpt-6.1-sol','https://api.openai.com/v1','OPENAI_API_KEY',1050000,128000,'active',1,1);
++      INSERT INTO model_prices(id,model_id,currency,input_micros_per_million,output_micros_per_million,effective_at,created_at)
++      VALUES('price-cny','gpt-6.1-sol','CNY',1,1,0,1),('price-usd','gpt-6.1-sol','USD',1,1,1,1);`)
++    const wallet = sql.prepare(`INSERT INTO quota_buckets (id,account_id,currency,limit_micros,period_start,period_end,created_at,updated_at)
++      VALUES (?, ?, ?, 1000, ?, ?, ?, ?)`)
++    for (const [id, account, currency] of [['cny', 'a', 'CNY'], ['usd', 'a', 'USD'], ['other', 'b', 'CNY']]) {
++      wallet.run(id, account, currency, now - 60_000, now + 60_000, now, now)
++    }
++    const reserve = (account, currency, key) => reserveRequest({
++      auth: { account: { id: account } },
++      model: { id: 'gpt-6.1-sol', priceVersionId: `price-${currency.toLowerCase()}`, currency, pricingAt: now },
++      body: { input: 'synthetic' },
++      idempotencyKey: key,
++      estimate: { reservedMicros: 100, maxOutputTokens: 20 },
++    })
++    const cny = await reserve('a', 'CNY', 'request-cny-1')
++    const usd = await reserve('a', 'USD', 'request-usd-1')
++    const disputed = await reserve('a', 'USD', 'request-usd-2')
++    assert.equal(cny.quotaBucketId, 'cny')
++    assert.equal(usd.quotaBucketId, 'usd')
++    assert.equal(disputed.quotaBucketId, 'usd')
++    await assert.rejects(reserve('b', 'USD', 'request-usd-3'), err => err.status === 429 && /USD/.test(err.message))
++    assert.equal(sql.prepare("SELECT reserved_micros FROM quota_buckets WHERE id='other'").get().reserved_micros, 0)
++    sql.exec("UPDATE gateway_requests SET state='inflight' WHERE state='reserved'")
++    const settle = sql.prepare("UPDATE gateway_requests SET state='settled',actual_micros=?,prompt_tokens=?,completion_tokens=? WHERE id=?")
++    settle.run(12, 3, 7, cny.id)
++    settle.run(3, 8, 2, usd.id)
++    sql.prepare("UPDATE gateway_requests SET state='uncertain',actual_micros=100 WHERE id=?").run(disputed.id)
++
++    const expected = [
++      { currency: 'CNY', confirmed_micros: 12, uncertain_micros: 0, actual_micros: 12 },
++      { currency: 'USD', confirmed_micros: 3, uncertain_micros: 100, actual_micros: 103 },
++    ]
++    const summary = await getUsageSummary('a', now, Date.now() + 1)
++    assert.deepEqual(summary.byCurrency, expected)
++    assert.equal(summary.totals.request_count, 3)
++    assert.equal(summary.totals.prompt_tokens, 11)
++    assert.equal(summary.totals.completion_tokens, 9)
++    assert.equal(summary.totals.actual_micros, 12)
++    assert.equal(summary.totals.uncertain_micros, 0)
++    assert.deepEqual(summary.byModel.map(({ model_id, currency, actual_micros }) => [model_id, currency, actual_micros]), [
++      ['gpt-6.1-sol', 'CNY', 12], ['gpt-6.1-sol', 'USD', 103],
++    ])
++    const admin = await getAdminUsageOverview(now, Date.now() + 1)
++    assert.deepEqual(admin.byCurrency, expected)
++    assert.equal(admin.totals.actual_micros, 12)
++    assert.equal(admin.byAccount.find(row => row.account_id === 'a').actual_micros, 12)
++    assert.equal(admin.byModel[0].actual_micros, 12)
++    assert.equal(admin.byModel[0].request_count, 3)
++    const empty = await getUsageSummary('b', now, Date.now() + 1)
++    assert.deepEqual(empty.byCurrency, [])
++    assert.equal(empty.totals.actual_micros, 0)
++  } finally {
++    delete globalThis.__quotaCurrencyTestDb
++    database.close()
++  }
++})

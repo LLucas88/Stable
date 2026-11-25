@@ -11,12 +11,12 @@ function createUpdateReadiness({ ipcMain, getWindow, blockers, timeoutMs = 5000 
     request.resolve(payload.result === 'ready' ? '' : payload.result === 'busy' ? '文件处理或消息编辑尚未完成，请处理后再次点击一键更新。' : '草稿尚未安全保存，请保存重要内容后再次点击一键更新。')
     return true
   })
-  function assertIdle() {
-    const message = blockers()
+  function assertIdle(action) {
+    const message = blockers(action)
     if (message) throw Error(message)
   }
-  return async () => {
-    assertIdle()
+  return async action => {
+    assertIdle(action)
     const window = getWindow()
     if (!window || window.isDestroyed()) throw Error('客户端界面尚未准备好，请稍后重试更新。')
     const id = randomUUID(), contents = window.webContents
@@ -29,7 +29,7 @@ function createUpdateReadiness({ ipcMain, getWindow, blockers, timeoutMs = 5000 
       })
       if (message) throw Error(message)
       contents.session?.flushStorageData()
-      assertIdle()
+      assertIdle(action)
     } finally { clearTimeout(timer); pending.delete(id) }
   }
 }

@@ -62,7 +62,7 @@ async function main(){
  await assert.rejects(ui(`window.stable.browser.command({conversationId:${JSON.stringify(id)},action:'editorSave',sessionId:${JSON.stringify(finalEditor.sessionId)}})`),/修改/)
  await finalContents.loadURL('about:blank')
  let preserving=false
- electron.dialog.showMessageBox=async(...args)=>{const options=args.at(-1);assert(options.buttons.includes('保留草稿并退出'));preserving=true;return {response:1}}
+ electron.dialog.showMessageBox=async(...args)=>{const options=args.at(-1),response=options.buttons.indexOf('保留草稿并退出');assert.notEqual(response,-1);preserving=true;return {response}}
  app.once('will-quit',()=>{
   try{
    assert(preserving);assert.equal(fs.readFileSync(file,'utf8'),finalOriginal)
