@@ -1,208 +1,138 @@
+<div align="center">
+
+<img src="./build/stable_app_icon.png" width="88" alt="Stable 应用图标">
+
 # Stable
 
-> `cluade-sdk-bash` 分支：聊天、工作流、定时和协作的本机模型执行使用 Claude Agent SDK，沿用已有模型服务与加密 Key。命令执行采用 Windows Git Bash，保留 Stable 审批，只读或禁网任务禁用 Bash。参见 [SDK 接入](docs/CLAUDE_AGENT_SDK.md)和[原生 Bash 权限边界](docs/CLAUDE_NATIVE_BASH.md)。
+**Windows 本地 AI Agent 工作台**
 
-Stable 是一个 Windows 本地 Agent 工作台。本分支当前包版本为 **1.1.0**，采用 Electron、React、Claude Agent SDK 和本地 SQLite；包含对话、项目、定时任务、资源与技能、工作流、数据导入、应用更新和 Team 协作。
+*让 Agent 读取项目文件、分析 Excel，并把结果交付成可打开、可核对的报告。*
 
-当前模块边界、导入兼容标识和样式顺序见 [结构说明](docs/ARCHITECTURE.md)。本地修改后执行 `npm run typecheck`、`npm run build`，再用 `npm start` 启动；普通启动读取构建后的 `dist`。以下发布和安装章节保留历史记录，不代表本分支已经发布或当前最新远端版本。
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/LLucas88/Stable/releases/latest)
+[![GitHub Release](https://img.shields.io/github/v/release/LLucas88/Stable?label=Release)](https://github.com/LLucas88/Stable/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-Desktop-47848F?logo=electron)](https://www.electronjs.org/)
 
-## v1.0.01 开发与交付总结
+[核心功能](#features) · [快速开始](#quick-start) · [案例演示](#demo) · [系统架构](#architecture) · [开发文档](#documentation)
 
-> 更新于 2026-09-12。本节按实际交付版本汇总本轮调整，区分正式发布与本地验收包；未单独发布的中间改动不另编版本号。
+</div>
 
-| 版本 / 阶段 | 完成与发布状态 | 交付内容 |
+---
+
+<a name="why-stable"></a>
+
+## 🎯 为什么用 Stable？
+
+做一份门店周报，往往得打开 Excel、计算周环比、找拖累增长的门店，最后再把图表和结论整理成可分享的文件。Stable 把这些步骤放进同一个桌面项目：你给出数据、分析口径和交付要求，Agent 调用工具处理，结果以文件形式返回。
+
+- **以项目为单位**：把数据表、参考资料和生成的文件放在同一个工作区。
+- **以文件为交付物**：在应用内打开报告或表格，核对数据，再把文件带走。
+- **把反复做的事留下来**：用 Skills 保存规则，用工作流组织步骤，用定时任务重复运行。
+
+**In English:** Stable is an open-source Windows desktop AI agent workbench for local files, Excel analysis, HTML report generation, and recurring office workflows. Its agent runs on the desktop; model inference may use an online service.
+
+<a name="features"></a>
+
+## ✨ 核心功能
+
+| 场景 | 怎么用 | 交付或查看什么 |
 | --- | --- | --- |
-| **v1.0.01**（内部版本 **1.0.1**） | **已合入 main、已发布**，发布日期 2026-09-08 | 浏览器、文档预览、批注、技能与插件市场、模型设置、任务交互及安装回滚；[版本说明](docs/releases/v1.0.01.md) · [GitHub Release](https://github.com/LLucas88/Stable/releases/tag/v1.0.01) |
-| **基于 v1.0.01 的 DSH 精简包**（内部版本仍为 1.0.1） | **本地代码及完整安装包已完成，待其他设备验收；未发布** | 移除旧 DSH，统一 Codex 执行入口，调整安装与回滚检查；尚未替换 Release，也不代表远端 main 已包含此优化 |
+| Excel 分析与经营复盘 | 添加表格，指定日期、指标、分组和输出格式 | 趋势、门店拆解和可预览的 HTML 报告 |
+| 本地文件处理 | 在项目中引用资料，要求 Agent 整理、改写或生成文件 | 工作区中的文件与对话里的产物入口 |
+| Skills 与可视化工作流 | 把业务口径保存为技能，把重复步骤串成流程 | 可复用的任务规则与流程 |
+| 定时任务 | 为周期性工作设定运行时间 | 任务结果与运行记录 |
+| 工具与审批 | 查看执行记录，按任务设置处理需要授权的工具操作 | 已调用的工具、审批及结果 |
 
-### 已纳入 v1.0.01 的更新
+本地运行指应用、项目文件与 Agent 执行环境位于 Windows 设备上。在线推理、网页访问和云服务仍需要联网；调用这些服务时，任务所需内容可能发给对应服务。处理敏感文件前，请先检查模型连接与任务权限。
 
-| 模块 | 更新、修复与调整 |
-| --- | --- |
-| Skill 分类 | 根据实际内容整理标签与筛选分类，顺序优先考虑会员运营相关度；删除卡片上的“已启用·相关度”文字 |
-| 市场导航 | 调整为“Skill技能 → Agent专家 → CLI与MCP → Plugin插件”，增加分界线，统一 CLI 与 MCP 名称 |
-| 插件与资源 | 增加“品牌复盘采集与标准化”“问鼎经营分析”入口；随包提供 617 个 Skill，修复测试启动或安装后遗漏技能资源的问题 |
-| 页面与按钮 | 调整对话页留白、文字间距及输入框底部距离；浏览器按钮仅显示图标，问鼎按钮仅显示“问鼎”，按钮缩小并靠右 |
-| 新对话与输入框 | 未发送的新对话不占用侧边栏列表；附件、Skill、引用和知识资源入口整合到“＋”菜单 |
-| 暂停与取消 | 修复发送后立即停止、队列取消及停止后删除对话等状态处理问题 |
-| 模型菜单 | 简化为模型名称，统一显示 DeepSeek-V4-Flash、GLM-5.3-Flash；模型与思考强度合并入口，先显示强度面板，再展开切换模型；去掉闪电标识，仅悬停时加深背景 |
-| 思考强度 | 删除通过提示词注入规则的旧方式，按已确认的接口和模型能力传递 API 参数；未确认支持的接口使用服务端默认值 |
-| 内置浏览器 | 参照 Codex 调整标签页、地址输入、导航和侧栏展示，增加网页访问入口，调整首次打开文件及窗口尺寸变化时的布局同步 |
-| 文档与下载 | HTML、Markdown、Excel 使用相应预览方式；修复下载和保存原文件流程，避免 Excel 仅显示抽取文本 |
-| 页面批注 | 支持选择元素或文字、批注标记、评论及元素属性面板；批注先加入输入框草稿，由用户确认发送 |
-| 安装与升级 | 修复运行时保留、目录链接清理和连续失败回滚；升级保留已有数据，随包登记 Skill 并保留自定义内容 |
+<a name="quick-start"></a>
 
-应用图标替换曾在本轮提出，并明确应用内 Logo 暂不替换；未逐项核验的图标替换不列为已完成项。
+## 🚀 快速开始
 
-### DSH 精简包：完成情况与验证边界
+1. 打开 [GitHub Releases](https://github.com/LLucas88/Stable/releases/latest)，在 **Assets** 里下载 **`Stable-Setup-<版本>-x64.exe`**。首次安装用 Setup，不用 Update。
+2. 打开 Stable，连接可用的模型服务。例如，在「设置 → 模型连接 → ChatGPT 订阅」授权后，从聊天模型菜单里选择账号可用的模型；也可以使用已有的 Stable Cloud 账号。安装包本身不提供模型额度。
+3. 新建项目，添加文件，发出一条带交付要求的任务。完成后，从对话里打开生成的文件。
 
-- **体积**：完整包约 592.29 MB → 423.85 MB，减少约 **168.44 MB（28.44%）**。此处为十进制 MB；Windows 约显示 404 MB。移除的旧运行环境解压后约 **696 MiB**。
-- **保留内容**：头像未动；Codex、问鼎 CLI、Excel 工具、617 个 Skill 和两个插件完整保留。现有外置 `runtime-v1` 不会被此次更新主动删除，因此升级后磁盘不一定立即释放同等空间。
-- **安装逻辑**：更新前检查新包中的 Codex 及辅助程序；旧安装目录整体保留，失败时整体恢复，不再要求迁移 DSH 才能升级。
-- **已通过**：类型检查、前端构建、16 个隔离 NSIS 安装/回滚场景、打包 Skill/插件完整性，以及无 DSH 条件下的启动健康检查。
-- **回归记录**：初次广泛回归为 449 项，441 通过、5 失败、3 跳过；随后修正旧运行环境断言，旧 DSH 原生测试改为按需执行，相关定向复测为 22 通过、3 跳过，技能市场复测 1 项通过。这不等于一次完整无失败回归。
-- **待验收**：本机 Codex 写文件协议测试在 45 秒内超时，保留 DSH 的旧构建也复现，原因尚未确定；新设备需重点验证创建并读取文件。当前记录尚无新设备验收反馈。
+<a name="demo"></a>
 
-### 安装包与数据说明
+## 📊 案例：从 Excel 到门店经营周报
 
-其他 Windows x64 设备首次安装只需完整的 `Stable-Setup-1.0.01-x64.exe`，无需发送 `win-unpacked`、构建日志、`latest.yml` 或 `.blockmap`。**同名的本地 DSH 精简包与当前 Release 完整包不是同一构建**：公开下载请使用上方 Release 链接，精简包仅单独交付验收。
+下载 [示例销售数据（CSV）](./examples/stable-demo-sales.csv?raw=true)，用 Excel 另存为 `.xlsx` 后添加到项目，然后发送：
 
-公开安装包不包含私人数据库、聊天记录、API 密钥或登录状态。升级保留已有数据；新设备需配置相应账号和模型服务。本机测试要求同时保留旧数据库和 Skill，不代表将私人数据公开打包。
+> 以表内日期为准，对比数据覆盖的最后两个完整自然周（周一至周日）。按门店汇总销售额、订单量和销售额周环比，找出拉动和拖累总销售额的门店。生成一份带每日销售趋势和门店贡献图的单文件 HTML 报告，标注对比日期和缺失数据，不覆盖原始 Excel。图表和样式不要依赖外部资源。
 
-## 历史开发完成情况（v0.9.34–v0.91.2）
+**验收参考。** 样表含 4 家虚构门店、56 条日记录。对比 2026 年 11 月 2–8 日与 11 月 9–15 日，销售额从 **119,210 元**涨到 **123,410 元（+3.52%）**，订单量从 **1,386** 增至 **1,449**。总盘上涨，但 **B 店少了 4,900 元**。以上是按样表核算的对照值，实际报告的措辞和图表会随模型而异。
 
-> 本节记录 2026 年 8 月至 9 月本次开发对话中已经实现并验证的历史阶段，不代表仓库当前最新版。发布状态以 GitHub Releases 为准；其中 `v0.91.2` 只合入过 `main`，没有创建同版本 Release。
+<a name="architecture"></a>
 
-| 版本 | 交付状态 | 已完成内容 | 验证结果 |
-| --- | --- | --- | --- |
-| `v0.9.34` | 已发布（历史版本） | 更新安装器增加真实阶段百分比、安装中关闭保护、完成后关窗但不自动重启；健康检查失败时回滚旧程序和 Runtime，并显示明确终态 | GitHub Hosted Windows 验证成功更新、可见失败回滚和静默失败回滚 |
-| `v0.9.35` | 源码阶段，后续版本继承 | 支持多个 OpenAI Chat Completions 兼容模型；每个模型独立保存服务地址和加密 Key；默认模型按新对话快照，单个对话切换从下一条消息生效，运行中任务保持原配置 | 125 项自动化测试、类型检查和生产构建通过 |
-| `v0.9.39` | 已发布（历史版本） | 接入 Stable Cloud 内部账号、首次强制改密、Windows 安全存储设备会话、金额额度、近 30 天用量、云端模型目录和本机回环网关；请求使用独立幂等键，额度不足时在调用供应商前强制拒绝 | 141 项桌面测试、类型检查、构建、完整包/轻量包健康检查和 GitHub Windows 安装器预检通过；生产隔离账号验证真实调用结算及 HTTP 429 超额阻断 |
-| `v0.91.1` | 已发布（历史版本） | 去掉账号页重复的云端模型区；左侧底部改为“头像 + 用户名”账号入口，菜单仅保留主题、账号情况、软件更新和 Agent 对话记录，并在菜单旁显示独立内容气泡；同时完成工作/实验室导航、任务清单、置顶、全文搜索、侧栏折叠、更新红点和主 Agent 增量回答 | 161 项自动化测试、类型检查、生产构建、Harness 流式集成及隔离 Electron 界面检查通过；GitHub Release 四类更新资产完成核验 |
-| `v0.91.2` | 已合入 `main`，未单独发布 | 修复“浏览器可访问但 Stable 在公司网络/代理下登录返回 HTTP 403”：账号、用量、模型目录和模型请求统一使用 Chromium 系统代理/PAC 路径；增加 403/407、证书、代理、超时和中止分类及脱敏诊断日志，不关闭 TLS 校验、不静默直连 | `0.9.40-proxy.1` 测试安装包在原故障设备确认恢复；主线通过 172 项测试、类型检查、生产构建、Harness 流式集成和 8 项 Electron 代理冒烟，提交为 [`40b034f`](https://github.com/LLucas88/Stable/commit/40b034f8ef54e504f5c1c5303df15ec217d1b670) |
-
-### Stable Cloud 管理平台
-
-与 `v0.9.39` 桌面接入同步完成的独立 Stable Cloud 服务包括：
-
-- Sites 公网入口与远程 D1；匿名请求可以到达健康检查，但账号、额度、模型、统计和管理接口继续由应用鉴权保护。
-- 首个管理员一次性初始化；初始化后移除 Bootstrap Token。内部成员由管理员创建，使用临时密码首次登录并强制改密，不开放公众注册或邮件找回。
-- 管理后台提供账号创建、搜索、停启、调额、续期、密码重置、模型与价格管理、7/30/90 天用量统计和异常请求人工对账。
-- 模型请求先原子预占金额，再按实际 usage 结算并释放差额；usage 不可靠时进入 `uncertain` 队列。供应商 Key 只保存在服务端 Secret，客户端不能提交任意上游地址。
-- 修复生产初始化 PBKDF2 参数上限、D1 Trigger 部署/成功判断、后台导航和模型上游白名单映射问题；41 项本地测试和 15 项隔离 HTTP 全流程验收通过，首个管理员已实际创建。
-
-
-## v0.9.39 账号与云端模型（发布准备中）
-
-- 安装版使用管理员分发的 Stable Cloud 内部账号登录；账号密码不会保存，设备会话令牌由 Windows 安全存储加密。
-- 临时密码首次登录后必须设置正式密码；设置页显示账号、本期金额额度、剩余金额、周期和近 30 天请求/Token/消耗。
-- 模型、价格和供应商 API Key 由 Stable Cloud 管理员统一维护，桌面端只显示可用目录并允许每个对话独立选择。
-- 模型调用经本机回环代理转发，真实云端令牌不进入渲染页面或 Harness；每次请求自动生成独立幂等键，额度不足时服务端在调用供应商前拒绝。
-- 当前源码已通过 141 项自动化测试、类型检查和生产构建；本地完整安装包、轻量更新包与打包后健康检查也已通过。GitHub Hosted Windows 手动预检 Run `33431193467` 已验证 v0.9.31 → v0.9.39 成功更新、100% 后关窗不自动重启、数据保留，以及可见/静默失败回滚；该预检未发布 Release。Stable Cloud 已公网可达且未登录业务接口仍由应用返回 JSON 401；配置真实供应商模型与密钥并完成计费验收后，才会发布 GitHub Release。
-
-## v0.9.38 开发中
-
-- Agent 回答中的工作区绝对文件路径会生成可点击文件卡片；用户已经发送并复制到工作区的附件也使用同一套卡片。
-- 点击生成文件、上传附件或对话中的本地文件链接，会在当前窗口右侧打开可调宽预览；切换、新建或删除对话会同步关闭旧预览，原“本次上下文”按钮、面板和布局已移除。
-- 文件预览、系统打开和附件暂存只接受 Stable 工作区内真实存在的 canonical 路径；UNC 文件 URL、工作区内 Junction 或符号链接指向外部时会在访问或复制前被拒绝。
-- Markdown、文本、Office/PDF 提取内容、图片及静态 HTML 均有侧栏预览或安全文件信息页；本地 HTML 禁用脚本、联网、权限、下载与新窗口。
-- Agent 的通用提示词明确要求任何格式的生成或修改文件都位于当前工作区、已经验证存在，并将每个绝对路径单独列出供 Stable 生成卡片；已识别的文件交付任务继续执行更严格的交付完成检查。
-- 当前源码已通过 133 项自动化测试、类型检查、生产构建，以及深色/浅色隔离 Electron 文件卡片与侧栏冒烟；尚未打包、发布或进行真实用户文件人工验收，正式安装包仍为 v0.9.34。
-
-## v0.9.37 Runtime 修复（未发布）
-
-- 修复 Electron 清理单次 Harness 临时目录时沿 Windows Junction 删除真实 Runtime 的问题；临时目录现在先识别并解除链接，再删除自身。
-- 清理目标父目录严格绑定到本次 Runner 的 `userData/harness/runs`，只接受其直接 `run-*` 子目录；路径异常时宁可保留临时目录，也不会递归清理未知位置。
-- 增加 Electron 宿主 Junction 与越界哨兵回归测试，并连续五次运行本地模拟 Harness 集成流程；每次结束后 Runtime 文件数、总字节数和入口哈希均保持不变。
-- 当前只完成源码与本机测试，尚未打包、发布、调用真实模型服务或执行桌面 GUI 人工验收；正式安装包仍为 v0.9.34。
-
-## v0.9.36 大附件源码（未发布）
-
-- 大附件正文不再因合计超过 30 万字符而拒绝发送；通过数量、总字节、文件数和路径安全检查后，完整原件会复制到工作区供 Agent 按路径读取。
-- 初始提示词中的附件正文改为有明确截断状态的头尾预览：全部附件合计最多 24000 字符、单项最多 6000 字符，避免多个大文件挤爆模型上下文。
-- 附件预处理失败会清理本批未提交副本并恢复原草稿、附件和引用；发送错误改为输入区内联提示，不再遮挡权限、模型与发送按钮。
-- 当前源码已通过 129 项自动化测试、类型检查和生产构建；尚未打包、发布或进行桌面 GUI 人工验收，安装包仍为 v0.9.34。
-
-## v0.9.35 多模型源码（未发布）
-
-- 设置页可管理多个 OpenAI Chat Completions 兼容模型配置，每个配置使用独立服务地址和加密 API Key。
-- 新对话继承默认模型，已有对话可在输入区切换；切换从下一条消息生效，不改变正在运行的任务。
-- 并发 Harness 运行使用独立配置目录，避免不同模型互相覆盖。
-- 该阶段完成源码、125 项自动化测试、类型检查和生产构建；相关能力已继承到当前 v0.9.38 源码，仍未打包或发布。
-
-## v0.9.34 主要改进
-
-- 用户点击“安装更新”后会看到独立的 Windows 更新窗口，百分比和文案对应解压、Runtime 检查、目录切换、健康检查、快捷方式更新等真实阶段。
-- 更新进行中不能误关窗口；只有新版健康检查、安装记录和快捷方式全部完成，进度才会到 100% 并自动关闭窗口。
-- 安装完成后不再自动重启 Stable，用户重新点击原图标即可打开新版，避免安装器强制拉起应用。
-- 更新失败时窗口保持打开，明确显示回滚结果和错误码；旧程序或 Runtime 未完整恢复时不会误报成功。
-- Release 流水线会在一次性 Windows runner 中从 v0.9.31 执行可见成功更新和强制失败回滚，验证通过后才上传资产。
-
-## v0.9.27 主要能力
-
-- 多任务 Agent 对话与可折叠执行过程卡片。
-- 数据、脚本、知识库和 Skill 的按需引用。
-- 可视化模块化工作流、并行分支执行和结果文件出口。
-- Team 在线设备发现、对话快照发送，以及接收端接受或拒绝。
-- Windows 深色/浅色主题与本地持久化数据。
-- 应用开启期间运行的一次、每天、每周和每月定时任务，可手动创建或在对话中确认创建。
-- 安装版从 GitHub Releases 后台检查并下载更新，下载完成后提示重启安装。
-- Coding 默认开放工作区读写、命令、依赖安装、联网搜索与子 Agent；删除、覆盖和未知程序仍需人工确认。
-
-## 安装
-
-在仓库的 **Releases** 页面下载：
+## 🏗️ 系统架构
 
 ```text
-Stable-Setup-1.0.01-x64.exe
+React + TypeScript                      对话、项目、预览、工作流
+         │ Electron IPC
+Electron 主进程                         会话调度、权限审批、定时任务
+         ├── SQLite + 项目工作区         会话状态和本地文件
+         └── Claude Agent SDK            Agent 执行循环
+               ├── 文件 / Excel / 浏览器等工具
+               └── 模型适配层 → 已配置的推理服务
 ```
 
-安装包包含 Stable 所需的本地 Harness 运行时。安装或升级不会把用户数据提交到本仓库。
+- **桌面层**负责接收任务、呈现执行过程，并把产物打开给人检查。
+- **执行层**负责模型交互和工具调用；Stable 对工具应用当前任务的权限。
+- **模型服务**与执行框架是两层。使用 Claude Agent SDK 不等于只能使用 Claude 模型，具体模型和工具能力取决于连接方式及账号。
 
-## 本地开发
+<a name="documentation"></a>
 
-要求：Windows x64、Node.js 22+、npm。
+## 📚 开发文档
+
+- [源码结构](./docs/ARCHITECTURE.md)：前端、Electron 主进程和数据导入模块。
+- [ChatGPT 订阅接入](./docs/chatgpt-subscription.md)：授权、模型选择与额度说明。
+- [Windows 打包与验证](./.github/workflows/release.yml)：发布流水线和构建依赖。
+- [GitHub Releases](https://github.com/LLucas88/Stable/releases) · [历史 README 与开发记录](https://github.com/LLucas88/Stable/blob/71de9af849096a7cf24a4b15fc7f1e621ac481cf/README.md)。
+
+<a name="testing"></a>
+
+## 🧪 从源码运行和测试
+
+在 Windows 上准备 Git 和 Node.js。发布流水线使用 Node.js 24.14.0；打包所需的附加工具和运行时见上方工作流。
 
 ```powershell
+git clone https://github.com/LLucas88/Stable.git
+cd Stable
 npm ci
-npm run sandbox:setup
 npm run typecheck
-npm test
-npm run dev
-```
-
-桌面开发模式：
-
-```powershell
 npm run build
 npm start
 ```
 
-## Harness 运行时
+用 `npm test` 运行仓库测试。类型检查和构建不代替真实 Windows 安装、升级或在线模型验证。
 
-`npm ci` 安装固定的 Claude Agent SDK。命令使用 SDK 原生 Bash，Windows 需要 Git for Windows。运行 `npm run test:claude-integration` 验证本地 SDK/命令链路。本分支只有 Claude 执行入口；模型服务仍取 Stable 当前配置。详见 [接入文档](docs/CLAUDE_NATIVE_BASH.md)。
+<a name="faq"></a>
 
-## 构建安装包
+## 💬 常见问题
 
-准备好本地 `runtime/` 后运行：
+**支持哪些系统？** 公开安装包为 Windows x64。当前 Releases 未提供 macOS 或 Linux 安装包。
 
-```powershell
-npm run typecheck
-npm test
-npm run dist
-npm run dist:update
-```
+**Stable 是 Stable Diffusion 吗？** 不是。这里的 Stable 是 [LLucas88/Stable](https://github.com/LLucas88/Stable)，用于桌面文件处理、数据分析和工作流自动化。
 
-`npm run dist` 生成包含 Runtime 的完整 NSIS x64 安装包，供首次安装；`npm run dist:update` 生成复用持久 Runtime 的轻量远程更新包。版本号以 `package.json` 为准，发布标签采用 `vMAJOR.MINOR.PATCH`。
+**可以完全离线使用吗？** 应用和工作区在本机；若任务使用在线模型或网页工具，就需要网络。
 
-## 发布与自动更新
+**模型调用免费吗？** 源码采用 MIT 许可证。模型服务的费用、可用模型和使用额度由所选服务及账号决定。
 
-首次启用自动发布时，先把本机已验证的 `runtime/` 作为固定 Release 资产上传一次（以后版本复用，无需重复上传）：
+## 🤝 贡献与反馈
 
-```powershell
-npm run runtime:archive
-gh release create runtime-v1 stable-runtime-win-x64.zip --title "Stable Runtime v1" --notes "Stable Windows x64 bundled runtime"
-```
+在 [Issues](https://github.com/LLucas88/Stable/issues) 发问题时，请写清 Stable 版本、Windows 版本、复现步骤和预期结果。截图、日志和样表请先脱敏，不要附 API Key、登录令牌或真实经营数据。
 
-推送版本标签会触发 `.github/workflows/release.yml`，在 Windows runner 上测试、构建并发布完整安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml`：
+## 📄 许可证
 
-```powershell
-git tag v0.9.34
-git push origin v0.9.34
-```
+Stable 由 [LLucas88](https://github.com/LLucas88) 维护，源码采用 [MIT License](./LICENSE)。第三方组件和模型服务适用各自的条款。
 
-已安装的 Stable 会在启动后自动检查该 GitHub Release，后台下载完成后显示“安装更新”。安装窗口到达 100% 并关闭后，用户重新点击 Stable 图标打开新版。仅推送普通分支不会创建可安装版本；必须推送与 `package.json` 一致的版本标签。
+---
 
-面向普通用户的更新 Release 必须允许匿名读取。当前 `LLucas88/Stable` 仓库及 Release 已公开，客户端无需 GitHub 访问令牌即可检查和下载更新；禁止把任何发布凭据打进客户端。
+<div align="center">
 
-## 数据与安全
+<strong>如果 Stable 帮你少做了一张重复的表，欢迎给项目一颗 ⭐。</strong>
 
-- 用户数据保存在 Electron 用户数据目录，不纳入 Git 版本管理。
-- API Key、临时附件、测试工作区和本地运行日志不会提交。
-- Team 发送的是用户主动选择时的对话快照，不会持续同步之后的消息。
+[下载 Windows 版](https://github.com/LLucas88/Stable/releases/latest) · [反馈问题或建议](https://github.com/LLucas88/Stable/issues)
 
-## 版本管理
-
-- 版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
-- Git 标签与 GitHub Release 使用相同版本号。
-- 每个远程更新 Release 同时提供完整首次安装包、轻量更新包、轻量更新包 blockmap 和指向轻量包的 `latest.yml` 更新清单。
+</div>
