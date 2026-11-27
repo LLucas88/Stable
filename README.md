@@ -19,6 +19,10 @@
 
 ---
 
+![Stable Windows 客户端的新对话：左侧导航，中央是项目选择和任务输入框](./docs/images/stable-windows-client.png)
+
+*Stable Windows 客户端实机截图，展示新建对话界面。*
+
 <a name="why-stable"></a>
 
 ## 🎯 为什么用 Stable？
