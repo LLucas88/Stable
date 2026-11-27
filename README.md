@@ -4,7 +4,7 @@
 
 # Stable
 
-**Windows 本地 AI Agent**
+**数据分析 & 数据可视化 Agent**
 
 *让 Agent 读取项目文件、分析 Excel，并把结果交付成可打开、可核对的报告。*
 
@@ -33,7 +33,7 @@
 - **以文件为交付物**：在应用内打开报告或表格，核对数据，再把文件带走。
 - **把反复做的事留下来**：用 Skills 保存规则，用工作流组织步骤，用定时任务重复运行。
 
-**In English:** Stable is an open-source Windows desktop AI agent for local files, Excel analysis, HTML report generation, and recurring office workflows. Its agent runs on the desktop; model inference may use an online service.
+**In English:** Stable is an open-source AI agent for data analysis and visualization on Windows. It analyzes local files and spreadsheets, generates HTML reports, and supports recurring workflows. Its agent runs on the desktop; model inference may use an online service.
 
 <a name="features"></a>
 
